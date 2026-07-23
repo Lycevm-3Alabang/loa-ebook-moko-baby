@@ -411,26 +411,6 @@ export default function BulkFacultyImport({ departmentId, semesterId }: { depart
         </div>
       )}
 
-      {removedRows.length > 0 && (
-        <div className="bg-slate-50 dark:bg-slate-800/30 rounded-2xl px-5 py-4 space-y-2">
-          <p className="text-sm font-semibold text-secondary">{removedRows.length} row{removedRows.length !== 1 ? "s" : ""} removed — you can download them to correct and re-upload.</p>
-          <button
-            type="button"
-            onClick={() => {
-              const headers = ["faculty email", "name", "section", "subject code", "subject name"]
-              const csv = [headers.join(","), ...removedRows.map((r) => [r.email, r.name, r.section, r.subjectCode, r.subjectName].map((v) => `"${v}"`).join(","))].join("\n")
-              downloadBlob(csv, "removed-rows.csv")
-            }}
-            className="flex items-center justify-center gap-2 text-xs font-semibold px-4 py-2.5 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
-          >
-            <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            Download Removed (.csv)
-          </button>
-        </div>
-      )}
-
       {importResult && (
         <div className="space-y-5">
           <div className="grid grid-cols-2 gap-3">
@@ -485,6 +465,23 @@ export default function BulkFacultyImport({ departmentId, semesterId }: { depart
               </div>
               <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">All {importResult.matched} row{importResult.matched !== 1 ? "s" : ""} imported successfully.</p>
             </div>
+          )}
+
+          {removedRows.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                const headers = ["faculty email", "name", "section", "subject code", "subject name"]
+                const csv = [headers.join(","), ...removedRows.map((r) => [r.email, r.name, r.section, r.subjectCode, r.subjectName].map((v) => `"${v}"`).join(","))].join("\n")
+                downloadBlob(csv, "removed-rows.csv")
+              }}
+              className="w-full flex items-center justify-center gap-2 text-xs font-semibold px-4 py-3 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
+            >
+              <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download Removed (.csv)
+            </button>
           )}
 
           <button type="button" onClick={handleReset} className="w-full text-sm font-semibold px-4 py-3 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors">
