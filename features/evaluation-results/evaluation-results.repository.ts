@@ -199,6 +199,23 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
     for (const res of results) {
       if (res.error) throw res.error
     }
+
+    const { data: allExisting } = await supabase
+      .from("evaluation_results")
+      .select("id, facultyId")
+      .eq("evaluation_period_id", evaluationPeriodId)
+    if (allExisting && allExisting.length > 0) {
+      const staleIds = allExisting
+        .filter((r) => !facEvalMap.has(r.facultyId))
+        .map((r) => r.id)
+      if (staleIds.length > 0) {
+        const { error: delErr } = await supabase
+          .from("evaluation_results")
+          .delete()
+          .in("id", staleIds)
+        if (delErr) throw delErr
+      }
+    }
   },
 
   async computeAll(evaluationPeriodId) {
