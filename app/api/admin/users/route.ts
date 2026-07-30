@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@/lib/auth'
 import { requireAdmin } from '@/lib/route-guard'
 import { userRepository, departmentRepository } from '@/lib/repositories/factory'
 import { bulkPreviewUsers, bulkUpsertUsers } from '@/features/users/users.service'
+import { logAuditEvent } from '@/lib/services/audit'
 
 function extractErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message
@@ -25,6 +27,9 @@ export async function POST(request: NextRequest) {
   const authErr = await requireAdmin(request)
   if (authErr) return authErr
 
+  const session = await auth()
+  const currentUserId = (session?.user as Record<string, unknown>)?.id as string | undefined
+
   try {
     const body = await request.json()
 
@@ -35,6 +40,11 @@ export async function POST(request: NextRequest) {
 
     if (Array.isArray(body.users)) {
       const result = await bulkUpsertUsers(body.users)
+      await logAuditEvent({
+        userId: currentUserId,
+        action: "BULK_IMPORT_USERS",
+        details: `Imported ${result.created} created, ${result.updated} updated, ${result.failed} failed (${body.users.length} total rows)`,
+      })
       return NextResponse.json(result)
     }
 
@@ -47,6 +57,11 @@ export async function POST(request: NextRequest) {
     }
 
     const user = await userRepository.create({ name, email, role, departmentId })
+    await logAuditEvent({
+      userId: currentUserId,
+      action: "CREATE_USER",
+      details: `Created user ${email} with role ${role}`,
+    })
     return NextResponse.json({ user }, { status: 201 })
   } catch (err) {
     console.error("[POST /api/admin/users]", err)
@@ -58,6 +73,9 @@ export async function PATCH(request: NextRequest) {
   const authErr = await requireAdmin(request)
   if (authErr) return authErr
 
+  const session = await auth()
+  const currentUserId = (session?.user as Record<string, unknown>)?.id as string | undefined
+
   try {
     const body = await request.json()
     const { userId, ...fields } = body
@@ -66,6 +84,12 @@ export async function PATCH(request: NextRequest) {
     }
 
     const user = await userRepository.update(userId, fields)
+    const updatedFields = Object.keys(fields).join(", ")
+    await logAuditEvent({
+      userId: currentUserId,
+      action: "UPDATE_USER",
+      details: `Updated user ${userId} [${updatedFields}]`,
+    })
     return NextResponse.json({ user })
   } catch (err) {
     console.error("[PATCH /api/admin/users]", err)
