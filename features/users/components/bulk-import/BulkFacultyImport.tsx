@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import { parseCsvRows } from "@/lib/csv-utils"
 
 interface FacultyCsvRow {
   row: number
@@ -39,10 +40,10 @@ function downloadBlob(csv: string, filename: string) {
 }
 
 function parseClientCsv(text: string): { rows: FacultyCsvRow[]; error?: string } {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim())
-  if (lines.length < 2) return { rows: [], error: "CSV file is empty" }
+  const allRows = parseCsvRows(text)
+  if (allRows.length < 2) return { rows: [], error: "CSV file is empty" }
 
-  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase())
+  const headers = allRows[0].map((h) => h.trim().toLowerCase())
   const expected = ["faculty email", "name", "section", "subject code", "subject name"]
   if (headers.length < expected.length) {
     return { rows: [], error: `Expected headers: ${expected.join(", ")}` }
@@ -54,16 +55,16 @@ function parseClientCsv(text: string): { rows: FacultyCsvRow[]; error?: string }
   }
 
   const rows: FacultyCsvRow[] = []
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(",").map((c) => c.trim())
+  for (let i = 1; i < allRows.length; i++) {
+    const cols = allRows[i]
     if (cols.length < 5) continue
     rows.push({
       row: i + 1,
-      email: cols[0],
-      name: cols[1],
-      subjectCode: cols[3],
-      section: cols[2],
-      subjectName: cols[4],
+      email: cols[0].trim(),
+      name: cols[1].trim(),
+      subjectCode: cols[3].trim(),
+      section: cols[2].trim(),
+      subjectName: cols[4].trim(),
     })
   }
   return { rows }
@@ -186,12 +187,20 @@ export default function BulkFacultyImport({ departmentId, semesterId }: { depart
           })),
         }),
       })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error || "Import failed"); setImporting(false); return }
-      setImportResult(data as FacultyImportResult)
+      let data: Record<string, unknown>
+      try {
+        data = await res.json()
+      } catch {
+        const text = await res.text().catch(() => "")
+        setError(`Server returned an invalid response (${res.status}). ${text.slice(0, 200) || "No details available."}`)
+        setImporting(false)
+        return
+      }
+      if (!res.ok) { setError(String(data.error) || "Import failed"); setImporting(false); return }
+      setImportResult(data as unknown as FacultyImportResult)
       setPreviewRows(null)
     } catch {
-      setError("Network error")
+      setError("Could not reach the server. Please check your connection and try again.")
     } finally {
       setLoading(false)
       setImporting(false)

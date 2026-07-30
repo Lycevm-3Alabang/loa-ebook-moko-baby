@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { cleanCell, parseCsvLines } from "@/lib/csv-utils"
+import { cleanCell, parseCsvRows, parseCsvLines } from "@/lib/csv-utils"
 
 // ── cleanCell ─────────────────────────────────────────────
 
@@ -34,6 +34,64 @@ describe("cleanCell", () => {
 
   it("handles mixed whitespace and quotes", () => {
     expect(cleanCell("  ' CS101 '  ")).toBe(" CS101 ")
+  })
+})
+
+// ── parseCsvLines ─────────────────────────────────────────
+
+// ── parseCsvRows ──────────────────────────────────────────
+
+describe("parseCsvRows", () => {
+  it("parses basic CSV", () => {
+    const rows = parseCsvRows("a,b,c\n1,2,3\n4,5,6")
+    expect(rows).toHaveLength(3)
+    expect(rows[0]).toEqual(["a", "b", "c"])
+    expect(rows[1]).toEqual(["1", "2", "3"])
+    expect(rows[2]).toEqual(["4", "5", "6"])
+  })
+
+  it("handles quoted fields with embedded commas", () => {
+    const rows = parseCsvRows('name,email\n"Reynaldo, Jr. Lagrada",r.lagrada@test.com')
+    expect(rows).toHaveLength(2)
+    expect(rows[1][0]).toBe("Reynaldo, Jr. Lagrada")
+    expect(rows[1][1]).toBe("r.lagrada@test.com")
+  })
+
+  it("handles quoted fields with embedded newlines (your exact use case)", () => {
+    const text = "name,email,role,dept_code,program_code,employee_no\nRakel Abapo,r.abapo@test.ph,\"Faculty\n\",CREM,,"
+    const rows = parseCsvRows(text)
+    expect(rows).toHaveLength(2)
+    expect(rows[1][0]).toBe("Rakel Abapo")
+    expect(rows[1][2].trim()).toBe("Faculty")
+    expect(rows[1][3]).toBe("CREM")
+  })
+
+  it("handles escaped double-quotes inside quoted fields", () => {
+    const rows = parseCsvRows('note\n"He said ""Hello"" to me"')
+    expect(rows).toHaveLength(2)
+    expect(rows[1][0]).toBe('He said "Hello" to me')
+  })
+
+  it("handles Windows CRLF line endings", () => {
+    const rows = parseCsvRows("a,b\r\n1,2\r\n3,4")
+    expect(rows).toHaveLength(3)
+    expect(rows[1]).toEqual(["1", "2"])
+  })
+
+  it("skips empty rows", () => {
+    const rows = parseCsvRows("a,b\n1,2\n\n3,4\n")
+    expect(rows).toHaveLength(3)
+    expect(rows[2]).toEqual(["3", "4"])
+  })
+
+  it("returns single row for header-only content", () => {
+    const rows = parseCsvRows("a,b")
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toEqual(["a", "b"])
+  })
+
+  it("returns empty array for empty string", () => {
+    expect(parseCsvRows("")).toEqual([])
   })
 })
 

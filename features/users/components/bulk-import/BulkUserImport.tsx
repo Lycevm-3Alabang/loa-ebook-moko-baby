@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
+import { parseCsvRows } from "@/lib/csv-utils"
 
 interface UserCsvRow {
   row: number
@@ -48,10 +49,10 @@ function downloadBlob(csv: string, filename: string) {
 }
 
 function parseClientCsv(text: string): { rows: UserCsvRow[]; error?: string } {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim())
-  if (lines.length < 2) return { rows: [], error: "CSV file is empty" }
+  const allRows = parseCsvRows(text)
+  if (allRows.length < 2) return { rows: [], error: "CSV file is empty" }
 
-  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase())
+  const headers = allRows[0].map((h) => h.trim().toLowerCase())
   const expected5 = ["name", "email", "role", "department_code", "program_code"]
   const expected6 = ["name", "email", "role", "department_code", "program_code", "employee_no"]
 
@@ -64,18 +65,18 @@ function parseClientCsv(text: string): { rows: UserCsvRow[]; error?: string } {
   }
 
   const rows: UserCsvRow[] = []
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(",").map((c) => c.trim())
+  for (let i = 1; i < allRows.length; i++) {
+    const cols = allRows[i]
     if (is6Col && cols.length < 6) continue
     if (is5Col && cols.length < 5) continue
     rows.push({
       row: i + 1,
-      name: cols[0],
-      email: cols[1],
-      role: cols[2],
-      departmentCode: cols[3],
-      programCode: cols[4],
-      employeeNo: is6Col ? cols[5] : "",
+      name: cols[0].trim(),
+      email: cols[1].trim(),
+      role: cols[2].trim(),
+      departmentCode: cols[3].trim(),
+      programCode: cols[4].trim(),
+      employeeNo: is6Col ? (cols[5] || "").trim() : "",
     })
   }
   return { rows }
@@ -103,12 +104,18 @@ export default function BulkUserImport({
   const [existingEmails, setExistingEmails] = useState<Set<string>>(new Set())
   const [deptMap, setDeptMap] = useState<Map<string, string>>(new Map())
   const [deptCourses, setDeptCourses] = useState<DeptCourse[]>([])
+  const [refError, setRefError] = useState("")
 
   const fetchReferenceData = useCallback(async () => {
     try {
       const res = await fetch("/api/import/users/reference")
-      if (!res.ok) return
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        setRefError(d.error || "Failed to load reference data. Department codes may not validate correctly.")
+        return
+      }
       const d = await res.json()
+      setRefError("")
       if (d.users) {
         setExistingEmails(new Set((d.users as { email: string }[]).map((u) => u.email.toLowerCase())))
       }
@@ -122,7 +129,9 @@ export default function BulkUserImport({
       if (Array.isArray(d.departmentCourses)) {
         setDeptCourses(d.departmentCourses as DeptCourse[])
       }
-    } catch { /* silent */ }
+    } catch {
+      setRefError("Could not connect to server. Department codes may not validate correctly.")
+    }
   }, [])
 
   useEffect(() => { Promise.resolve().then(() => fetchReferenceData()) }, [fetchReferenceData])
@@ -290,14 +299,22 @@ export default function BulkUserImport({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ users: submittedRows }),
       })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error || "Import failed"); setImporting(false); return }
-      setImportResult(data as ImportResult)
+      let data: Record<string, unknown>
+      try {
+        data = await res.json()
+      } catch {
+        const text = await res.text().catch(() => "")
+        setError(`Server returned an invalid response (${res.status}). ${text.slice(0, 200) || "No details available."}`)
+        setImporting(false)
+        return
+      }
+      if (!res.ok) { setError(String(data.error) || "Import failed"); setImporting(false); return }
+      setImportResult(data as unknown as ImportResult)
       setPreviewRows(null)
       fetchReferenceData()
       onImportComplete?.()
     } catch {
-      setError("Network error")
+      setError("Could not reach the server. Please check your connection and try again.")
     } finally {
       setLoading(false)
       setImporting(false)
@@ -381,6 +398,12 @@ export default function BulkUserImport({
           </button>
 
           {previewError && <p className="text-sm font-medium text-red-600 text-center">{previewError}</p>}
+
+          {refError && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded-xl px-4 py-3">
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">{refError}</p>
+            </div>
+          )}
         </div>
       )}
 
