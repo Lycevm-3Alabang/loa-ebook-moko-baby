@@ -62,11 +62,12 @@ export async function POST(request: NextRequest) {
         result.coursesSkipped++
       }
     } catch (err) {
+      const msg = err instanceof Error ? err.message : (typeof err === "string" ? err : (err && typeof err === "object" && "message" in err ? String((err as { message: unknown }).message) : "Unknown error"))
       result.errors.push({
         row: i + 1,
         departmentCode: deptCode,
         courseCode: cCode,
-        message: err instanceof Error ? err.message : "Unknown error",
+        message: msg,
       })
     }
   }

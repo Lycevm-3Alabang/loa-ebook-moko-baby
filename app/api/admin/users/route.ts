@@ -3,6 +3,15 @@ import { requireAdmin } from '@/lib/route-guard'
 import { userRepository, departmentRepository } from '@/lib/repositories/factory'
 import { bulkPreviewUsers, bulkUpsertUsers } from '@/features/users/users.service'
 
+function extractErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (typeof err === "string") return err
+  if (err && typeof err === "object" && "message" in err) {
+    return String((err as { message: unknown }).message)
+  }
+  return "Unknown error"
+}
+
 export async function GET(
   _request: NextRequest
 ) {
@@ -40,8 +49,8 @@ export async function POST(request: NextRequest) {
     const user = await userRepository.create({ name, email, role, departmentId })
     return NextResponse.json({ user }, { status: 201 })
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error"
-    return NextResponse.json({ error: message }, { status: 400 })
+    console.error("[POST /api/admin/users]", err)
+    return NextResponse.json({ error: extractErrorMessage(err) }, { status: 400 })
   }
 }
 
@@ -59,7 +68,7 @@ export async function PATCH(request: NextRequest) {
     const user = await userRepository.update(userId, fields)
     return NextResponse.json({ user })
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error"
-    return NextResponse.json({ error: message }, { status: 400 })
+    console.error("[PATCH /api/admin/users]", err)
+    return NextResponse.json({ error: extractErrorMessage(err) }, { status: 400 })
   }
 }

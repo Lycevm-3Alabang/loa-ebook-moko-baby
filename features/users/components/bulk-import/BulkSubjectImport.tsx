@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
-import { cleanCell } from "@/lib/csv-utils"
+import { cleanCell, parseCsvRows } from "@/lib/csv-utils"
 
 interface SubjectCsvRow {
   row: number
@@ -39,10 +39,10 @@ function downloadBlob(csv: string, filename: string) {
 }
 
 function parseClientCsv(text: string): { rows: SubjectCsvRow[]; error?: string } {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim())
-  if (lines.length < 2) return { rows: [], error: "CSV file is empty" }
+  const allRows = parseCsvRows(text)
+  if (allRows.length < 2) return { rows: [], error: "CSV file is empty" }
 
-  const headers = lines[0].split(",").map((h) => cleanCell(h).toLowerCase())
+  const headers = allRows[0].map((h) => cleanCell(h).toLowerCase())
   const expected = ["code", "name"]
 
   if (headers.length < expected.length) {
@@ -55,8 +55,8 @@ function parseClientCsv(text: string): { rows: SubjectCsvRow[]; error?: string }
   }
 
   const rows: SubjectCsvRow[] = []
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(",").map((c) => cleanCell(c))
+  for (let i = 1; i < allRows.length; i++) {
+    const cols = allRows[i].map((c) => cleanCell(c))
     if (cols.length < 2) continue
     const code = cols[0].toUpperCase()
     const name = cols[1]
