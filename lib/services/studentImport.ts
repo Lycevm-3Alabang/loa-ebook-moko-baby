@@ -102,7 +102,7 @@ export async function importStudents(
   let skipped = 0
 
   if (rows.length === 0) {
-    return { created, enrolled, failed, parseErrors: [], successCsv: "", failureCsv: "", totalRows: 0 }
+    return { created, enrolled, skipped, failed, parseErrors: [], successCsv: "", failureCsv: "", totalRows: 0 }
   }
 
   const uniqueEmails = [...new Set(rows.map((r) => r.email.toLowerCase().trim()))]
