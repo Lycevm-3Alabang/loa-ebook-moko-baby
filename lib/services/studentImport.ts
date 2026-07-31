@@ -21,6 +21,7 @@ export interface StudentCsvRow {
 export interface StudentImportResult {
   created: { name: string; email: string; role: string }[]
   enrolled: number
+  skipped: number
   failed: { row: number; email: string; subjectCode: string; section: string; remark: string }[]
   parseErrors: { row: number; message: string }[]
   successCsv: string
@@ -98,6 +99,7 @@ export async function importStudents(
   const failed: StudentImportResult["failed"] = []
   const created: StudentImportResult["created"] = []
   let enrolled = 0
+  let skipped = 0
 
   if (rows.length === 0) {
     return { created, enrolled, failed, parseErrors: [], successCsv: "", failureCsv: "", totalRows: 0 }
@@ -193,7 +195,8 @@ export async function importStudents(
   }
 
   if (toEnroll.length > 0) {
-    await studentEnrollmentRepository.addEnrollments(toEnroll)
+    const { skipped: dupSkipped } = await studentEnrollmentRepository.addEnrollments(toEnroll)
+    skipped = dupSkipped
   }
 
   const successRows = rows
@@ -211,6 +214,7 @@ export async function importStudents(
   return {
     created,
     enrolled,
+    skipped,
     failed,
     parseErrors: [],
     successCsv: toCsv(successRows, ["name", "email", "subject code", "section", "faculty email"]),
