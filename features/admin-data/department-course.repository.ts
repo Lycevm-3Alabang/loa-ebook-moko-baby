@@ -13,6 +13,11 @@ export const departmentCourseRepository: IDepartmentCourseRepository = {
     if (error) throw error
     return created as DepartmentCourseData
   },
+  async update(id, data) {
+    const { data: updated, error } = await supabase.from("department_courses").update(data).eq("id", id).select("*").single()
+    if (error) throw error
+    return updated as DepartmentCourseData
+  },
   async findAll() {
     const { data, error } = await supabase.from("department_courses").select("*")
     if (error) throw error
