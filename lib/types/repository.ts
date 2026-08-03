@@ -100,12 +100,13 @@ export interface DepartmentCourseData {
 }
 
 export interface IDepartmentCourseRepository {
-  findById(id: string): Promise<DepartmentCourseData | null>
-  findByDepartmentAndCode(departmentId: string, code: string): Promise<DepartmentCourseData | null>
-  create(data: { departmentId: string; name: string; code: string }): Promise<DepartmentCourseData>
-  findAll(): Promise<DepartmentCourseData[]>
-  deleteById(id: string): Promise<void>
-}
+   findById(id: string): Promise<DepartmentCourseData | null>
+   findByDepartmentAndCode(departmentId: string, code: string): Promise<DepartmentCourseData | null>
+   create(data: { departmentId: string; name: string; code: string }): Promise<DepartmentCourseData>
+   update(id: string, data: Partial<DepartmentCourseData>): Promise<DepartmentCourseData>
+   findAll(): Promise<DepartmentCourseData[]>
+   deleteById(id: string): Promise<void>
+ }
 
 // ── Appointment ─────────────────────────────────────────
 

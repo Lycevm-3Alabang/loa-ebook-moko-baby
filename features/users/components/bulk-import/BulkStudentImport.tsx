@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
-import { parseCsvRows } from "@/lib/csv-utils"
+import { cleanCell, parseCsvRows } from "@/lib/csv-utils"
 
 interface StudentCsvRow {
   row: number
@@ -68,12 +68,12 @@ function parseClientCsv(text: string): { rows: StudentCsvRow[]; error?: string }
     if (cols.length < 5) continue
     rows.push({
       row: i + 1,
-      name: cols[0].trim(),
-      email: cols[1].trim(),
-      subjectCode: cols[2].trim(),
-      section: cols[3].trim(),
-      facultyEmail: cols[4].trim(),
-      departmentCode: cols[5]?.trim().toUpperCase() || "",
+      name: cleanCell(cols[0]),
+      email: cleanCell(cols[1]),
+      subjectCode: cleanCell(cols[2]),
+      section: cleanCell(cols[3]),
+      facultyEmail: cleanCell(cols[4]),
+      departmentCode: cols[5] ? cleanCell(cols[5]).toUpperCase() : "",
     })
   }
   return { rows }

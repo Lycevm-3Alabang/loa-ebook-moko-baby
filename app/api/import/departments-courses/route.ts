@@ -31,8 +31,10 @@ export async function POST(request: NextRequest) {
   const result = {
     departmentsCreated: 0,
     departmentsSkipped: 0,
+    departmentsUpdated: 0,
     coursesCreated: 0,
     coursesSkipped: 0,
+    coursesUpdated: 0,
     errors: [] as { row: number; departmentCode: string; courseCode: string; message: string }[],
   }
 
@@ -41,26 +43,32 @@ export async function POST(request: NextRequest) {
     const deptCode = departmentCode.toUpperCase().trim()
     const cCode = courseCode.toUpperCase().trim()
 
-    try {
-      let dept = await departmentRepository.findByCode(deptCode)
-      if (!dept) {
-        dept = await departmentRepository.create({ name: departmentName.trim(), code: deptCode })
-        result.departmentsCreated++
-      } else {
-        result.departmentsSkipped++
-      }
+     try {
+       let dept = await departmentRepository.findByCode(deptCode)
+       if (!dept) {
+         dept = await departmentRepository.create({ name: departmentName.trim(), code: deptCode })
+         result.departmentsCreated++
+       } else if (dept.name !== departmentName.trim()) {
+         await departmentRepository.update(dept.id, { name: departmentName.trim() })
+         result.departmentsUpdated++
+       } else {
+         result.departmentsSkipped++
+       }
 
-      const existing = await departmentCourseRepository.findByDepartmentAndCode(dept.id, cCode)
-      if (!existing) {
-        await departmentCourseRepository.create({
-          departmentId: dept.id,
-          name: courseName.trim(),
-          code: cCode,
-        })
-        result.coursesCreated++
-      } else {
-        result.coursesSkipped++
-      }
+       const existing = await departmentCourseRepository.findByDepartmentAndCode(dept.id, cCode)
+       if (!existing) {
+         await departmentCourseRepository.create({
+           departmentId: dept.id,
+           name: courseName.trim(),
+           code: cCode,
+         })
+         result.coursesCreated++
+       } else if (existing.name !== courseName.trim()) {
+         await departmentCourseRepository.update(existing.id, { name: courseName.trim() })
+         result.coursesUpdated++
+       } else {
+         result.coursesSkipped++
+       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : (typeof err === "string" ? err : (err && typeof err === "object" && "message" in err ? String((err as { message: unknown }).message) : "Unknown error"))
       result.errors.push({
@@ -76,7 +84,7 @@ export async function POST(request: NextRequest) {
   await logAuditEvent({
     userId: currentUserId,
     action: "IMPORT_DEPARTMENTS_COURSES",
-    details: `Imported ${result.departmentsCreated} departments, ${result.coursesCreated} courses (${result.departmentsSkipped} depts skipped, ${result.coursesSkipped} courses skipped, ${result.errors.length} errors)`,
+    details: `Imported ${result.departmentsCreated} departments, ${result.coursesCreated} courses (${result.departmentsSkipped} depts skipped, ${result.coursesSkipped} courses skipped, ${result.departmentsUpdated} depts updated, ${result.coursesUpdated} courses updated, ${result.errors.length} errors)`,
   })
 
   return NextResponse.json(result)

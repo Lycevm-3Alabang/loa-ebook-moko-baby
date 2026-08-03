@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase"
 import { userRepository, sectionRepository, subjectRepository, facultySubjectRepository, studentEnrollmentRepository } from "@/lib/repositories/factory"
+import { cleanCell } from "@/lib/csv-utils"
 
 function parseSectionIdentifier(raw: string): { name: string; program: string } {
   const dashIdx = raw.indexOf("-")
@@ -71,12 +72,12 @@ export function parseFacultySubjectCsv(text: string): {
       continue
     }
 
-    let email = cols[0].toLowerCase().trim()
-    const displayName = cols[1].trim()
-    const sectionRaw = cols[2]
-    const subjectCode = cols[3].trim()
-    const subjectName = cols[4].trim()
-    const departmentCode = cols[5].trim().toUpperCase()
+    let email = cleanCell(cols[0]).toLowerCase().trim()
+    const displayName = cleanCell(cols[1])
+    const sectionRaw = cleanCell(cols[2])
+    const subjectCode = cleanCell(cols[3])
+    const subjectName = cleanCell(cols[4])
+    const departmentCode = cleanCell(cols[5]).toUpperCase()
     const { program, name: sectionName } = parseSectionIdentifier(sectionRaw.trim())
 
     if (email.length === 0) {
