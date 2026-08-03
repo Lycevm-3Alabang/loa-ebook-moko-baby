@@ -85,13 +85,16 @@ export const userRepository: IUserRepository = {
   },
 
   async createMany(inputs) {
-    if (inputs.length === 0) return new Map()
+    if (inputs.length === 0) return { created: new Map(), failures: [] }
     const userFields = inputs.map(({ role: _role, ...fields }) => ({
       ...fields,
       email: fields.email.toLowerCase().trim(),
     }))
     const { data: users, error: userErr } = await supabase.from("users").insert(userFields).select("id, email")
-    if (userErr) throw userErr
+    if (userErr) {
+      console.error("[createMany] Bulk insert failed:", JSON.stringify(userErr, null, 2))
+      return { created: new Map(), failures: inputs.map((i) => i.email.toLowerCase().trim()) }
+    }
 
     const roleInserts = (users as DbRecord[]).flatMap((row) => {
       const input = inputs.find((i) => i.email.toLowerCase().trim() === (row.email as string).toLowerCase())
@@ -100,7 +103,7 @@ export const userRepository: IUserRepository = {
     })
     if (roleInserts.length > 0) {
       const { error: roleErr } = await supabase.from("userrole").insert(roleInserts)
-      if (roleErr) throw roleErr
+      if (roleErr) console.warn("[createMany] Role insert failed:", roleErr.message)
     }
 
     const { data: withRoles } = await supabase.from("users").select(USER_SELECT).in("id", (users as DbRecord[]).map((u) => u.id))
@@ -109,7 +112,7 @@ export const userRepository: IUserRepository = {
       result.set((row.email as string).toLowerCase(), toUserWithRole(row))
     }
     await logUserAction("system", "BULK_CREATE_USERS", `Created ${inputs.length} users via ETL`)
-    return result
+    return { created: result, failures: [] }
   },
 
   async listByRole(role, options) {

@@ -203,6 +203,7 @@ export async function bulkUpsertUsers(
   const failures: BulkFailureRow[] = []
   let created = 0
   let updated = 0
+  const seenEmails = new Set<string>()
 
   const toCreate: {
     email: string
@@ -260,6 +261,20 @@ export async function bulkUpsertUsers(
       continue
     }
 
+    if (seenEmails.has(email)) {
+      failures.push({
+        name: r.name,
+        email,
+        role: r.role,
+        department: r.department || "",
+        program: r.program || "",
+        employeeNo: r.employeeNo || "",
+        remark: `Duplicate email in import file: ${email}`,
+      })
+      continue
+    }
+    seenEmails.add(email)
+
     const existing = existingUsers.get(email)
     const base = {
       email,
@@ -277,26 +292,59 @@ export async function bulkUpsertUsers(
     }
   }
 
+  let createdUsers: Map<string, UserData> = new Map()
+  let createFailures: string[] = []
+
   if (toCreate.length > 0) {
-    const createdUsers = await userRepository.createMany(toCreate)
-    created = createdUsers.size
+    const result = await userRepository.createMany(toCreate)
+    createdUsers = result.created
+    createFailures = result.failures
+  }
+  created = createdUsers.size
+  for (const email of createFailures) {
+      const input = toCreate.find((i) => i.email.toLowerCase().trim() === email.toLowerCase().trim())
+      if (input) {
+        failures.push({
+          name: input.name,
+          email: input.email,
+          role: input.role,
+          department: input.departmentId || "",
+          program: input.course || "",
+          employeeNo: input.employeeNo || "",
+          remark: "Failed to create user",
+         })
+       }
+   }
+
+   for (const u of toUpdate) {
+    try {
+      await userRepository.update(u.existingId, {
+        name: u.name,
+        role: u.role,
+        departmentId: u.departmentId,
+        course: u.course,
+        employeeNo: u.employeeNo,
+      })
+      updated++
+    } catch (_err) {
+      failures.push({
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        department: u.departmentId || "",
+        program: u.course || "",
+        employeeNo: u.employeeNo || "",
+        remark: "Failed to update user",
+      })
+    }
   }
 
-  for (const u of toUpdate) {
-    await userRepository.update(u.existingId, {
-      name: u.name,
-      role: u.role,
-      departmentId: u.departmentId,
-      course: u.course,
-      employeeNo: u.employeeNo,
-    })
-    updated++
-  }
+  const createdEmails = new Set(createdUsers.keys())
 
   const csvCell = (v: string) => `"${v.replace(/"/g, '""')}"`
   const successRows: { email: string; action: string }[] = []
-  for (const u of toCreate) {
-    successRows.push({ email: u.email, action: "created" })
+  for (const email of createdEmails) {
+    successRows.push({ email, action: "created" })
   }
   for (const u of toUpdate) {
     successRows.push({ email: u.email, action: "updated" })
