@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
   const session = await auth()
   const currentUserId = (session?.user as Record<string, unknown>)?.id as string | undefined
 
+  let insertEmail = ""
   try {
     const body = await request.json()
 
@@ -48,12 +49,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result)
     }
 
-    const { name, email, role, departmentId } = body
+    const { name, email, role, departmentId } = body as { name?: string; email?: string; role?: string; departmentId?: string }
     if (!name || !email) {
       return NextResponse.json({ error: "Name and email are required" }, { status: 400 })
     }
     if (!role) {
       return NextResponse.json({ error: "At least one role is required" }, { status: 400 })
+    }
+
+    insertEmail = email.trim()
+
+    const existing = await userRepository.findByEmail(email.trim())
+    if (existing) {
+      console.warn(`[POST /api/admin/users] Duplicate email "${email}" — returning existing user`)
+      return NextResponse.json({ user: existing }, { status: 200 })
     }
 
     const user = await userRepository.create({ name, email, role, departmentId })
@@ -64,6 +73,12 @@ export async function POST(request: NextRequest) {
     })
     return NextResponse.json({ user }, { status: 201 })
   } catch (err) {
+    const code = (err as { code?: string })?.code
+    if (code === "23505" && insertEmail) {
+      console.warn(`[POST /api/admin/users] Race condition — duplicate email "${insertEmail}" hit DB constraint`)
+      const existing = await userRepository.findByEmail(insertEmail)
+      if (existing) return NextResponse.json({ user: existing }, { status: 200 })
+    }
     console.error("[POST /api/admin/users]", err)
     return NextResponse.json({ error: extractErrorMessage(err) }, { status: 400 })
   }
