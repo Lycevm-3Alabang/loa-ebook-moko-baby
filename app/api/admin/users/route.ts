@@ -53,7 +53,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (Array.isArray(body.users)) {
+      console.log(`[POST /api/admin/users] Bulk import: ${body.users.length} rows received`)
       const result = await bulkUpsertUsers(body.users)
+      console.log(`[POST /api/admin/users] Bulk result: created=${result.created} updated=${result.updated} failed=${result.failed}`)
       await logAuditEvent({
         userId: currentUserId,
         action: "BULK_IMPORT_USERS",

@@ -195,10 +195,15 @@ export async function bulkPreviewUsers(
 export async function bulkUpsertUsers(
   rows: BulkUserRow[],
 ): Promise<BulkUpsertResponse> {
+  console.log(`[bulkUpsertUsers] Starting with ${rows.length} rows`)
   const deptMap = await fetchDepartmentMap()
+  console.log(`[bulkUpsertUsers] deptMap loaded: ${deptMap.size} entries`)
   const courseMap = await fetchCourseMap()
+  console.log(`[bulkUpsertUsers] courseMap loaded: ${courseMap.size} entries`)
   const emails = rows.map((r) => r.email.toLowerCase().trim())
+  console.log(`[bulkUpsertUsers] Unique emails: ${new Set(emails).size}`)
   const existingUsers = await userRepository.findManyByEmail(emails)
+  console.log(`[bulkUpsertUsers] findManyByEmail returned: ${existingUsers.size} existing users`)
 
   const failures: BulkFailureRow[] = []
   let created = 0
@@ -292,11 +297,15 @@ export async function bulkUpsertUsers(
     }
   }
 
+  console.log(`[bulkUpsertUsers] Validation done: ${toCreate.length} to create, ${toUpdate.length} to update, ${failures.length} validation failures`)
+
   let createdUsers: Map<string, UserData> = new Map()
   let createFailures: string[] = []
 
   if (toCreate.length > 0) {
+    console.log(`[bulkUpsertUsers] Calling createMany with ${toCreate.length} users...`)
     const result = await userRepository.createMany(toCreate)
+    console.log(`[bulkUpsertUsers] createMany returned: ${result.created.size} created, ${result.failures.length} failures`)
     createdUsers = result.created
     createFailures = result.failures
   }

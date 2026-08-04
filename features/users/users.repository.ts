@@ -30,19 +30,38 @@ export const userRepository: IUserRepository = {
 
   async findManyByEmail(emails) {
     const unique = [...new Set(emails.map((e) => e.toLowerCase().trim()))]
+    console.log(`[findManyByEmail] Querying ${unique.length} unique emails...`)
+
+    const CHUNK_SIZE = 200
+    const allRows: DbRecord[] = []
+
     try {
-      const { data, error } = await supabase.from("users").select(USER_SELECT).in("email", unique)
-      if (error) throw error
+      for (let i = 0; i < unique.length; i += CHUNK_SIZE) {
+        const chunk = unique.slice(i, i + CHUNK_SIZE)
+        console.log(`[findManyByEmail] Querying chunk ${Math.floor(i / CHUNK_SIZE) + 1} (${chunk.length} emails)...`)
+        const { data, error } = await supabase.from("users").select(USER_SELECT).in("email", chunk)
+        if (error) {
+          console.error(`[findManyByEmail] Supabase error on chunk ${Math.floor(i / CHUNK_SIZE) + 1}:`, JSON.stringify(error))
+          throw error
+        }
+        allRows.push(...(data || []) as DbRecord[])
+      }
+      console.log(`[findManyByEmail] Supabase returned ${allRows.length} total rows across ${Math.ceil(unique.length / CHUNK_SIZE)} chunks`)
       const result = new Map<string, UserData>()
-      for (const row of (data || []) as DbRecord[]) {
+      for (const row of allRows) {
         result.set((row.email as string).toLowerCase(), toUserWithRole(row))
       }
       return result
     } catch (err) {
       if (isMissingUserrole(err as QueryError)) {
-        const { data } = await supabase.from("users").select(USER_COLUMNS_NO_PASSWORD).in("email", unique)
+        const fallbackRows: DbRecord[] = []
+        for (let i = 0; i < unique.length; i += CHUNK_SIZE) {
+          const chunk = unique.slice(i, i + CHUNK_SIZE)
+          const { data } = await supabase.from("users").select(USER_COLUMNS_NO_PASSWORD).in("email", chunk)
+          fallbackRows.push(...(data || []) as DbRecord[])
+        }
         const result = new Map<string, UserData>()
-        for (const row of (data || []) as DbRecord[]) {
+        for (const row of fallbackRows) {
           result.set((row.email as string).toLowerCase(), { ...row, role: "GUEST" } as unknown as UserData)
         }
         return result
@@ -86,33 +105,55 @@ export const userRepository: IUserRepository = {
 
   async createMany(inputs) {
     if (inputs.length === 0) return { created: new Map(), failures: [] }
-    const userFields = inputs.map(({ role: _role, ...fields }) => ({
-      ...fields,
-      email: fields.email.toLowerCase().trim(),
-    }))
-    const { data: users, error: userErr } = await supabase.from("users").insert(userFields).select("id, email")
-    if (userErr) {
-      console.error("[createMany] Bulk insert failed:", JSON.stringify(userErr, null, 2))
-      return { created: new Map(), failures: inputs.map((i) => i.email.toLowerCase().trim()) }
+
+    const CHUNK_SIZE = 200
+    const allInserted: DbRecord[] = []
+    const allFailures: string[] = []
+
+    for (let i = 0; i < inputs.length; i += CHUNK_SIZE) {
+      const chunk = inputs.slice(i, i + CHUNK_SIZE)
+      const userFields = chunk.map(({ role: _role, ...fields }) => ({
+        ...fields,
+        email: fields.email.toLowerCase().trim(),
+      }))
+      console.log(`[createMany] Inserting chunk ${Math.floor(i / CHUNK_SIZE) + 1} (${userFields.length} users)...`)
+      const { data: users, error: userErr } = await supabase.from("users").insert(userFields).select("id, email")
+      if (userErr) {
+        console.error(`[createMany] Chunk ${Math.floor(i / CHUNK_SIZE) + 1} insert failed:`, JSON.stringify(userErr, null, 2))
+        allFailures.push(...chunk.map((i) => i.email.toLowerCase().trim()))
+        continue
+      }
+      console.log(`[createMany] Chunk ${Math.floor(i / CHUNK_SIZE) + 1} succeeded: ${(users || []).length} rows`)
+      allInserted.push(...(users as DbRecord[]))
     }
 
-    const roleInserts = (users as DbRecord[]).flatMap((row) => {
+    const allInsertedIds = allInserted.map((u) => u.id)
+    const roleInserts = allInserted.flatMap((row) => {
       const input = inputs.find((i) => i.email.toLowerCase().trim() === (row.email as string).toLowerCase())
       if (!input?.role) return []
       return input.role.split("|").map((roleName: string) => ({ userId: row.id, roleName }))
     })
     if (roleInserts.length > 0) {
-      const { error: roleErr } = await supabase.from("userrole").insert(roleInserts)
-      if (roleErr) console.warn("[createMany] Role insert failed:", roleErr.message)
+      for (let i = 0; i < roleInserts.length; i += CHUNK_SIZE) {
+        const chunk = roleInserts.slice(i, i + CHUNK_SIZE)
+        const { error: roleErr } = await supabase.from("userrole").insert(chunk)
+        if (roleErr) console.warn(`[createMany] Role insert chunk failed:`, roleErr.message)
+      }
     }
 
-    const { data: withRoles } = await supabase.from("users").select(USER_SELECT).in("id", (users as DbRecord[]).map((u) => u.id))
+    const withRolesRows: DbRecord[] = []
+    for (let i = 0; i < allInsertedIds.length; i += CHUNK_SIZE) {
+      const chunk = allInsertedIds.slice(i, i + CHUNK_SIZE)
+      const { data: withRoles } = await supabase.from("users").select(USER_SELECT).in("id", chunk)
+      withRolesRows.push(...(withRoles || []) as DbRecord[])
+    }
+
     const result = new Map<string, UserData>()
-    for (const row of (withRoles || []) as DbRecord[]) {
+    for (const row of withRolesRows) {
       result.set((row.email as string).toLowerCase(), toUserWithRole(row))
     }
-    await logUserAction("system", "BULK_CREATE_USERS", `Created ${inputs.length} users via ETL`)
-    return { created: result, failures: [] }
+    await logUserAction("system", "BULK_CREATE_USERS", `Created ${allInserted.length} users via ETL`)
+    return { created: result, failures: allFailures }
   },
 
   async listByRole(role, options) {
@@ -167,22 +208,45 @@ export const userRepository: IUserRepository = {
     }
   },
   async listAll(options) {
+    const BATCH = 1000
     try {
-      let query = supabase.from("users").select(USER_SELECT).order("createdAt", { ascending: false })
-      if (!options?.includeDeleted) {
-        query = query.is("deletedAt", null)
-      }
-      const { data, error } = await query
-      if (error) throw error
-      return toUsersWithRoles(data)
-    } catch (err) {
-      if (isMissingUserrole(err as QueryError)) {
-        let query = supabase.from("users").select(USER_COLUMNS_NO_PASSWORD).order("createdAt", { ascending: false })
+      const allData: DbRecord[] = []
+      let offset = 0
+      while (true) {
+        let query = supabase
+          .from("users")
+          .select(USER_SELECT)
+          .order("createdAt", { ascending: false })
+          .range(offset, offset + BATCH - 1)
         if (!options?.includeDeleted) {
           query = query.is("deletedAt", null)
         }
-        const { data } = await query
-        return (data || []).map((u: DbRecord) => ({ ...u, role: "GUEST" })) as unknown as UserData[]
+        const { data, error } = await query
+        if (error) throw error
+        allData.push(...(data || []) as DbRecord[])
+        if (!data || data.length < BATCH) break
+        offset += BATCH
+      }
+      return toUsersWithRoles(allData)
+    } catch (err) {
+      if (isMissingUserrole(err as QueryError)) {
+        const allData: DbRecord[] = []
+        let offset = 0
+        while (true) {
+          let query = supabase
+            .from("users")
+            .select(USER_COLUMNS_NO_PASSWORD)
+            .order("createdAt", { ascending: false })
+            .range(offset, offset + BATCH - 1)
+          if (!options?.includeDeleted) {
+            query = query.is("deletedAt", null)
+          }
+          const { data } = await query
+          allData.push(...(data || []) as DbRecord[])
+          if (!data || data.length < BATCH) break
+          offset += BATCH
+        }
+        return allData.map((u: DbRecord) => ({ ...u, role: "GUEST" })) as unknown as UserData[]
       }
       throw err
     }

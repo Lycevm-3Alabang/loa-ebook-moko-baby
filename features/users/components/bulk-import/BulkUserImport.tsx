@@ -401,6 +401,7 @@ export default function BulkUserImport({
 
   const handleReset = () => {
     setImportResult(null)
+    setRemovedRows([])
     setPreviewRows(null)
     setPreviewPage(0)
     setPreviewError("")
@@ -737,7 +738,7 @@ export default function BulkUserImport({
           </div>
 
           <button type="button" onClick={handleReset} className="w-full text-sm font-semibold px-4 py-3 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors">
-            Import Another File
+            Clear
           </button>
         </div>
       )}
