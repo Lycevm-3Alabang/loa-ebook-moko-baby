@@ -82,12 +82,20 @@ export async function exportAndClearConsultations(): Promise<ConsultationExportD
 }
 
 export async function exportAndDeleteStudents(): Promise<StudentExportDto> {
-  const { data: studentRoles } = await supabase
-    .from("userrole")
-    .select("userId")
-    .eq("roleName", "STUDENT")
-
-  const studentIds = (studentRoles || []).map((r: DbRecord) => r.userId as string)
+  const studentIds: string[] = []
+  let offset = 0
+  const BATCH = 1000
+  while (true) {
+    const { data: studentRoles } = await supabase
+      .from("userrole")
+      .select("userId")
+      .eq("roleName", "STUDENT")
+      .range(offset, offset + BATCH - 1)
+    const batch = (studentRoles || []).map((r: DbRecord) => r.userId as string)
+    studentIds.push(...batch)
+    if (!studentRoles || studentRoles.length < BATCH) break
+    offset += BATCH
+  }
 
   if (studentIds.length === 0) {
     return { exportedAt: new Date().toISOString(), students: [], orphanedAppointmentIds: [] }
