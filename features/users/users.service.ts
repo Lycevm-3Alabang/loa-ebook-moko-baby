@@ -112,13 +112,16 @@ interface CourseMapEntry {
   courseName: string
 }
 
-async function fetchCourseMap(): Promise<Map<string, CourseMapEntry>> {
+async function fetchCourseMap(): Promise<Map<string, CourseMapEntry[]>> {
   const courses = await departmentCourseRepository.findAll()
-  const map = new Map<string, CourseMapEntry>()
+  const map = new Map<string, CourseMapEntry[]>()
   for (const c of courses) {
     const code = c.code.toUpperCase()
+    const entry = { code: c.code, departmentId: c.departmentId, courseName: c.name }
     if (!map.has(code)) {
-      map.set(code, { code: c.code, departmentId: c.departmentId, courseName: c.name })
+      map.set(code, [entry])
+    } else {
+      map.get(code)!.push(entry)
     }
   }
   return map
@@ -138,7 +141,9 @@ export async function bulkPreviewUsers(
     const deptCode = r.department?.trim().toUpperCase()
     const deptId = deptCode ? deptMap.get(deptCode) ?? null : null
     const progCode = r.program?.trim().toUpperCase()
-    const course = progCode ? courseMap.get(progCode) ?? null : null
+    const courses = progCode ? courseMap.get(progCode) ?? [] : []
+    // Find course matching the department
+    const course = deptId ? courses.find((c) => c.departmentId === deptId) ?? null : courses[0] ?? null
     const isStudent = r.role?.toUpperCase().includes("STUDENT")
     const errors: string[] = []
 
@@ -234,7 +239,8 @@ export async function bulkUpsertUsers(
     const deptCode = r.department?.trim().toUpperCase()
     const deptId = deptCode ? deptMap.get(deptCode) ?? undefined : undefined
     const progCode = r.program?.trim().toUpperCase()
-    const course = progCode ? courseMap.get(progCode) ?? undefined : undefined
+    const courses = progCode ? courseMap.get(progCode) ?? [] : []
+    const course = deptId ? courses.find((c) => c.departmentId === deptId) ?? undefined : courses[0]
     const isStudent = r.role?.toUpperCase().includes("STUDENT")
     const errors: string[] = []
 

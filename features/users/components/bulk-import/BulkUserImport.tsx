@@ -198,9 +198,13 @@ export default function BulkUserImport({
     const withFlags: PreviewRow[] = rows.map((r) => {
       const deptId = deptMap.get(r.departmentCode.trim().toUpperCase())
       const progCode = r.programCode.trim().toUpperCase()
-      const course = deptCourses.find((dc) => dc.code.toUpperCase() === progCode)
       const isStudent = r.role.toUpperCase().includes("STUDENT")
       const email = r.email.toLowerCase().trim()
+
+      // Find course matching BOTH program code AND department
+      const course = deptId && progCode
+        ? deptCourses.find((dc) => dc.code.toUpperCase() === progCode && dc.departmentId === deptId)
+        : deptCourses.find((dc) => dc.code.toUpperCase() === progCode)
 
       let invalidDept = !deptId
       let invalidProgram = false
@@ -236,7 +240,10 @@ export default function BulkUserImport({
       updated.invalidDept = !deptId
       if (isStudent && updated.programCode.trim()) {
         const progCode = updated.programCode.trim().toUpperCase()
-        const course = deptCourses.find((dc) => dc.code.toUpperCase() === progCode)
+        // Find course matching BOTH program code AND department
+        const course = deptId
+          ? deptCourses.find((dc) => dc.code.toUpperCase() === progCode && dc.departmentId === deptId)
+          : deptCourses.find((dc) => dc.code.toUpperCase() === progCode)
         if (course && deptId && course.departmentId !== deptId) {
           updated.invalidDept = true
           updated.invalidProgram = true
@@ -252,8 +259,11 @@ export default function BulkUserImport({
       const isStudent = updated.role.toUpperCase().includes("STUDENT")
       if (isStudent) {
         const progCode = value.trim().toUpperCase()
-        const course = deptCourses.find((dc) => dc.code.toUpperCase() === progCode)
         const deptId = deptMap.get(updated.departmentCode.trim().toUpperCase())
+        // Find course matching BOTH program code AND department
+        const course = deptId
+          ? deptCourses.find((dc) => dc.code.toUpperCase() === progCode && dc.departmentId === deptId)
+          : deptCourses.find((dc) => dc.code.toUpperCase() === progCode)
         if (course && deptId && course.departmentId !== deptId) {
           updated.invalidDept = true
           updated.invalidProgram = true
@@ -270,8 +280,11 @@ export default function BulkUserImport({
       const isStudent = value.toUpperCase().includes("STUDENT")
       if (isStudent) {
         const progCode = updated.programCode.trim().toUpperCase()
-        const course = deptCourses.find((dc) => dc.code.toUpperCase() === progCode)
         const deptId = deptMap.get(updated.departmentCode.trim().toUpperCase())
+        // Find course matching BOTH program code AND department
+        const course = deptId
+          ? deptCourses.find((dc) => dc.code.toUpperCase() === progCode && dc.departmentId === deptId)
+          : deptCourses.find((dc) => dc.code.toUpperCase() === progCode)
         if (course && deptId && course.departmentId !== deptId) {
           updated.invalidDept = true
           updated.invalidProgram = true
