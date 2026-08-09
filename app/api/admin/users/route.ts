@@ -9,9 +9,22 @@ function extractErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message
   if (typeof err === "string") return err
   if (err && typeof err === "object" && "message" in err) {
-    return String((err as { message: unknown }).message)
+    const msg = String((err as { message: unknown }).message)
+    return msg || "Unknown error"
   }
   return "Unknown error"
+}
+
+function extractErrorDetails(err: unknown): { message: string; code?: string; details?: string; hint?: string } {
+  if (err && typeof err === "object") {
+    return {
+      message: extractErrorMessage(err),
+      code: (err as { code?: string }).code,
+      details: (err as { details?: string }).details,
+      hint: (err as { hint?: string }).hint,
+    }
+  }
+  return { message: extractErrorMessage(err) }
 }
 
 export async function GET(
@@ -40,7 +53,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (Array.isArray(body.users)) {
+      console.log(`[POST /api/admin/users] Bulk import: ${body.users.length} rows received`)
       const result = await bulkUpsertUsers(body.users)
+      console.log(`[POST /api/admin/users] Bulk result: created=${result.created} updated=${result.updated} failed=${result.failed}`)
       await logAuditEvent({
         userId: currentUserId,
         action: "BULK_IMPORT_USERS",
@@ -80,7 +95,7 @@ export async function POST(request: NextRequest) {
       if (existing) return NextResponse.json({ user: existing }, { status: 200 })
     }
     console.error("[POST /api/admin/users]", err)
-    return NextResponse.json({ error: extractErrorMessage(err) }, { status: 400 })
+    return NextResponse.json({ error: extractErrorDetails(err) }, { status: 400 })
   }
 }
 

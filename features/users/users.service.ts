@@ -195,14 +195,20 @@ export async function bulkPreviewUsers(
 export async function bulkUpsertUsers(
   rows: BulkUserRow[],
 ): Promise<BulkUpsertResponse> {
+  console.log(`[bulkUpsertUsers] Starting with ${rows.length} rows`)
   const deptMap = await fetchDepartmentMap()
+  console.log(`[bulkUpsertUsers] deptMap loaded: ${deptMap.size} entries`)
   const courseMap = await fetchCourseMap()
+  console.log(`[bulkUpsertUsers] courseMap loaded: ${courseMap.size} entries`)
   const emails = rows.map((r) => r.email.toLowerCase().trim())
+  console.log(`[bulkUpsertUsers] Unique emails: ${new Set(emails).size}`)
   const existingUsers = await userRepository.findManyByEmail(emails)
+  console.log(`[bulkUpsertUsers] findManyByEmail returned: ${existingUsers.size} existing users`)
 
   const failures: BulkFailureRow[] = []
   let created = 0
   let updated = 0
+  const seenEmails = new Set<string>()
 
   const toCreate: {
     email: string
@@ -260,6 +266,20 @@ export async function bulkUpsertUsers(
       continue
     }
 
+    if (seenEmails.has(email)) {
+      failures.push({
+        name: r.name,
+        email,
+        role: r.role,
+        department: r.department || "",
+        program: r.program || "",
+        employeeNo: r.employeeNo || "",
+        remark: `Duplicate email in import file: ${email}`,
+      })
+      continue
+    }
+    seenEmails.add(email)
+
     const existing = existingUsers.get(email)
     const base = {
       email,
@@ -277,26 +297,46 @@ export async function bulkUpsertUsers(
     }
   }
 
+console.log(`[bulkUpsertUsers] Validation done: ${toCreate.length} to create, ${toUpdate.length} to update, ${failures.length} validation failures`)
+
+  let createdUsers: Map<string, UserData> = new Map()
+
   if (toCreate.length > 0) {
-    const createdUsers = await userRepository.createMany(toCreate)
-    created = createdUsers.size
+    console.log(`[bulkUpsertUsers] Calling createMany with ${toCreate.length} users...`)
+    createdUsers = await userRepository.createMany(toCreate)
+    console.log(`[bulkUpsertUsers] createMany returned: ${createdUsers.size} created`)
   }
+  created = createdUsers.size
 
   for (const u of toUpdate) {
-    await userRepository.update(u.existingId, {
-      name: u.name,
-      role: u.role,
-      departmentId: u.departmentId,
-      course: u.course,
-      employeeNo: u.employeeNo,
-    })
-    updated++
+    try {
+      await userRepository.update(u.existingId, {
+        name: u.name,
+        role: u.role,
+        departmentId: u.departmentId,
+        course: u.course,
+        employeeNo: u.employeeNo,
+      })
+      updated++
+    } catch (_err) {
+      failures.push({
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        department: u.departmentId || "",
+        program: u.course || "",
+        employeeNo: u.employeeNo || "",
+        remark: "Failed to update user",
+      })
+    }
   }
+
+  const createdEmails = new Set(createdUsers.keys())
 
   const csvCell = (v: string) => `"${v.replace(/"/g, '""')}"`
   const successRows: { email: string; action: string }[] = []
-  for (const u of toCreate) {
-    successRows.push({ email: u.email, action: "created" })
+  for (const email of createdEmails) {
+    successRows.push({ email, action: "created" })
   }
   for (const u of toUpdate) {
     successRows.push({ email: u.email, action: "updated" })

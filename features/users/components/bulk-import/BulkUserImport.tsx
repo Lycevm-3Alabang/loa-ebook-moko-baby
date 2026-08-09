@@ -17,6 +17,7 @@ interface PreviewRow extends UserCsvRow {
   isNewUser: boolean
   invalidDept: boolean
   invalidProgram: boolean
+  duplicateEmail: boolean
 }
 
 interface ImportResult {
@@ -37,6 +38,19 @@ interface DeptCourse {
 
 const TEMPLATE_HEADERS = "name,email,role,department_code,program_code,employee_no"
 const TEMPLATE_SAMPLE = "Alice Student,alice.student@itmlyceumalabang.onmicrosoft.com,STUDENT,CCS,BSIT,\nBob Faculty,bob.faculty@lyceumalabang.edu.ph,FACULTY,CCS,,EMP001"
+
+function decodeCsvText(buffer: ArrayBuffer): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buffer)
+  } catch {
+    const bytes = new Uint8Array(buffer)
+    let result = ""
+    for (let i = 0; i < bytes.length; i++) {
+      result += String.fromCharCode(bytes[i])
+    }
+    return result
+  }
+}
 
 function downloadBlob(csv: string, filename: string) {
   const blob = new Blob([csv], { type: "text/csv" })
@@ -82,6 +96,14 @@ function parseClientCsv(text: string): { rows: UserCsvRow[]; error?: string } {
   return { rows }
 }
 
+function dispatchToast(message: string, type?: "success" | "error") {
+  window.dispatchEvent(
+    new CustomEvent("app:toast", {
+      detail: { message, path: "", method: type === "error" ? "POST" : "POST" },
+    })
+  )
+}
+
 const PREVIEW_PAGE_SIZE = 50
 
 export default function BulkUserImport({
@@ -95,11 +117,10 @@ export default function BulkUserImport({
   const [previewRows, setPreviewRows] = useState<PreviewRow[] | null>(null)
   const [previewPage, setPreviewPage] = useState(0)
   const [previewError, setPreviewError] = useState("")
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
-  const [importing, setImporting] = useState(false)
   const [removedRows, setRemovedRows] = useState<UserCsvRow[]>([])
+  const [uploading, setUploading] = useState(false)
 
   const [existingEmails, setExistingEmails] = useState<Set<string>>(new Set())
   const [deptMap, setDeptMap] = useState<Map<string, string>>(new Map())
@@ -136,14 +157,25 @@ export default function BulkUserImport({
 
   useEffect(() => { Promise.resolve().then(() => fetchReferenceData()) }, [fetchReferenceData])
 
+  const [filterIssue, setFilterIssue] = useState<"all" | "duplicate" | "invalid">("all")
+
   const blockedRows = useMemo(() => {
     if (!previewRows) return []
-    return previewRows.filter((r) => r.invalidDept || r.invalidProgram)
+    return previewRows.filter((r) => r.invalidDept || r.invalidProgram || r.duplicateEmail)
   }, [previewRows])
 
-  const visibleRows = previewRows ?? []
+  const filteredRows = useMemo(() => {
+    if (!previewRows) return []
+    if (filterIssue === "duplicate") return previewRows.filter((r) => r.duplicateEmail)
+    if (filterIssue === "invalid") return previewRows.filter((r) => r.invalidDept || r.invalidProgram)
+    return previewRows
+  }, [previewRows, filterIssue])
+
+  const visibleRows = filteredRows
   const paginatedRows = visibleRows.slice(previewPage * PREVIEW_PAGE_SIZE, (previewPage + 1) * PREVIEW_PAGE_SIZE)
   const totalPreviewPages = Math.ceil(visibleRows.length / PREVIEW_PAGE_SIZE)
+
+  useEffect(() => { Promise.resolve().then(() => setPreviewPage(0)) }, [filterIssue])
 
   const isFaculty = (role: string) => role.toUpperCase().includes("FACULTY")
 
@@ -152,16 +184,23 @@ export default function BulkUserImport({
     setError("")
     const file = fileRef.current?.files?.[0]
     if (!file) { setPreviewError("Please select a CSV file"); return }
-    const text = await file.text()
+    const text = decodeCsvText(await file.arrayBuffer())
     const { rows, error: parseError } = parseClientCsv(text)
     if (parseError) { setPreviewError(parseError); return }
     if (rows.length === 0) { setPreviewError("No valid rows found in CSV"); return }
+
+    const emailCounts = new Map<string, number>()
+    for (const r of rows) {
+      const email = r.email.toLowerCase().trim()
+      emailCounts.set(email, (emailCounts.get(email) ?? 0) + 1)
+    }
 
     const withFlags: PreviewRow[] = rows.map((r) => {
       const deptId = deptMap.get(r.departmentCode.trim().toUpperCase())
       const progCode = r.programCode.trim().toUpperCase()
       const course = deptCourses.find((dc) => dc.code.toUpperCase() === progCode)
       const isStudent = r.role.toUpperCase().includes("STUDENT")
+      const email = r.email.toLowerCase().trim()
 
       let invalidDept = !deptId
       let invalidProgram = false
@@ -173,9 +212,10 @@ export default function BulkUserImport({
 
       return {
         ...r,
-        isNewUser: !existingEmails.has(r.email.toLowerCase().trim()),
+        isNewUser: !existingEmails.has(email),
         invalidDept,
         invalidProgram,
+        duplicateEmail: (emailCounts.get(email) ?? 0) > 1,
       }
     })
     setPreviewRows(withFlags)
@@ -268,21 +308,18 @@ export default function BulkUserImport({
       },
     ])
     const next = previewRows.filter((_, i) => i !== index)
+    setPreviewRows(next)
     if (next.length === 0) {
       setRemovedRows([])
-    } else {
-      setPreviewRows(next)
-      if (Math.ceil(next.length / PREVIEW_PAGE_SIZE) <= previewPage) {
-        setPreviewPage(Math.max(0, previewPage - 1))
-      }
+    } else if (Math.ceil(next.length / PREVIEW_PAGE_SIZE) <= previewPage) {
+      setPreviewPage(Math.max(0, previewPage - 1))
     }
   }
 
   const handleConfirm = async () => {
-    if (!previewRows || loading) return
+    if (!previewRows || uploading) return
     setError("")
-    setImporting(true)
-    setLoading(true)
+    setUploading(true)
 
     const submittedRows = previewRows.map((r) => ({
       name: r.name,
@@ -303,21 +340,45 @@ export default function BulkUserImport({
       try {
         data = await res.json()
       } catch {
-        const text = await res.text().catch(() => "")
-        setError(`Server returned an invalid response (${res.status}). ${text.slice(0, 200) || "No details available."}`)
-        setImporting(false)
+        const msg = `Upload failed — server returned an invalid response (${res.status})`
+        setError(msg)
+        dispatchToast(msg, "error")
+        setUploading(false)
         return
       }
-      if (!res.ok) { setError(String(data.error) || "Import failed"); setImporting(false); return }
-      setImportResult(data as unknown as ImportResult)
+      if (!res.ok) {
+        const errObj = data.error
+        let serverMsg = ""
+        if (typeof errObj === "string") {
+          serverMsg = errObj
+        } else if (errObj && typeof errObj === "object" && "message" in errObj) {
+          const msg = String((errObj as { message: unknown }).message)
+          const code = (errObj as { code?: string }).code
+          const details = (errObj as { details?: string }).details
+          const hint = (errObj as { hint?: string }).hint
+          const parts = [msg]
+          if (code) parts.push(`[${code}]`)
+          if (details) parts.push(details)
+          if (hint) parts.push(`Hint: ${hint}`)
+          serverMsg = parts.join(" ")
+        }
+        setError(serverMsg || `Upload failed (HTTP ${res.status})`)
+        dispatchToast(serverMsg || `Upload failed (HTTP ${res.status})`, "error")
+        setUploading(false)
+        return
+      }
+      const result = data as unknown as ImportResult
+      setImportResult(result)
       setPreviewRows(null)
+      dispatchToast(`Import complete — ${result.created} created, ${result.updated} updated, ${result.failed} failed`, "success")
       fetchReferenceData()
       onImportComplete?.()
     } catch {
-      setError("Could not reach the server. Please check your connection and try again.")
+      const msg = "Could not reach the server. Please check your connection and try again."
+      setError(msg)
+      dispatchToast(msg, "error")
     } finally {
-      setLoading(false)
-      setImporting(false)
+      setUploading(false)
     }
   }
 
@@ -340,6 +401,7 @@ export default function BulkUserImport({
 
   const handleReset = () => {
     setImportResult(null)
+    setRemovedRows([])
     setPreviewRows(null)
     setPreviewPage(0)
     setPreviewError("")
@@ -354,7 +416,7 @@ export default function BulkUserImport({
 
   return (
     <>
-      {importing && (
+      {uploading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="bg-white dark:bg-surface-dim rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl">
             <div className="w-10 h-10 border-4 border-gold-600 border-t-transparent rounded-full animate-spin" />
@@ -417,13 +479,39 @@ export default function BulkUserImport({
               <span className="text-[11px] text-tertiary">{TEMPLATE_HEADERS}</span>
             </div>
 
-            <p className="text-[11px] text-tertiary/70 italic">
-              <span className="badge-red not-italic">Red</span> must fix — remove those rows.
-              <span className="badge-amber not-italic ml-1">Amber</span> new account will be created.
-              <span className="badge-emerald not-italic ml-1">Green</span> existing user — will update.
-            </p>
+             <p className="text-[11px] text-tertiary/70 italic">
+               <span className="badge-red not-italic">Red</span> must fix — remove those rows.
+               <span className="badge-amber not-italic ml-1">Amber</span> new account will be created.
+               <span className="badge-emerald not-italic ml-1">Green</span> existing user — will update.
+             </p>
 
-            {error && <p className="text-xs font-medium text-red-600">{error}</p>}
+             {previewRows.length > 0 && (
+             <div className="flex gap-2">
+               <button
+                 type="button"
+                 onClick={() => setFilterIssue("all")}
+                 className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition-colors ${filterIssue === "all" ? "bg-gold-600 text-white border-gold-600" : "bg-surface-dim text-secondary border-default hover:bg-surface-dim/70"}`}
+               >
+                 All ({previewRows.length})
+               </button>
+               <button
+                 type="button"
+                 onClick={() => setFilterIssue("duplicate")}
+                 className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition-colors ${filterIssue === "duplicate" ? "bg-red-600 text-white border-red-600" : "bg-surface-dim text-secondary border-default hover:bg-surface-dim/70"}`}
+               >
+                 Duplicates ({previewRows.filter((r) => r.duplicateEmail).length})
+               </button>
+               <button
+                 type="button"
+                 onClick={() => setFilterIssue("invalid")}
+                 className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition-colors ${filterIssue === "invalid" ? "bg-red-600 text-white border-red-600" : "bg-surface-dim text-secondary border-default hover:bg-surface-dim/70"}`}
+               >
+                 Issues ({previewRows.filter((r) => r.invalidDept || r.invalidProgram).length})
+               </button>
+             </div>
+             )}
+
+             {error && <p className="text-xs font-medium text-red-600">{error}</p>}
 
             <div className="max-h-72 overflow-y-auto tbl-container tbl">
               <table>
@@ -441,56 +529,57 @@ export default function BulkUserImport({
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedRows.map((r, i) => {
-                    const absIdx = previewPage * PREVIEW_PAGE_SIZE + i
-                    const showEmpNo = isFaculty(r.role)
-                    return (
-                      <tr key={`${previewPage}-${i}`}>
-                        <td className="text-tertiary">{r.row}</td>
-                        <td>
-                          <input
-                            value={r.name}
-                            onChange={(e) => handleFieldChange(absIdx, "name", e.target.value)}
-                            className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px]"
-                          />
-                        </td>
-                        <td className="text-secondary text-[13px]">{r.email}</td>
-                        <td>
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-[12px] font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">{r.role}</span>
-                        </td>
-                        <td>
-                          <input
-                            value={r.departmentCode}
-                            onChange={(e) => handleFieldChange(absIdx, "departmentCode", e.target.value)}
-                            className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px]"
-                          />
-                        </td>
-                        <td>
-                          {r.role.toUpperCase().includes("STUDENT") ? (
-                            <input
-                              value={r.programCode}
-                              onChange={(e) => handleFieldChange(absIdx, "programCode", e.target.value)}
-                              className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px]"
-                            />
-                          ) : (
-                            <span className="text-secondary text-[13px]">{r.programCode || "—"}</span>
-                          )}
-                        </td>
-                        <td>
-                          {showEmpNo ? (
-                            <input
-                              value={r.employeeNo}
-                              onChange={(e) => handleFieldChange(absIdx, "employeeNo", e.target.value)}
-                              className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px]"
-                            />
-                          ) : (
-                            <span className="text-tertiary text-[11px]">—</span>
-                          )}
-                        </td>
+                   {paginatedRows.map((r) => {
+                     const rowIdx = previewRows.indexOf(r)
+                     const showEmpNo = isFaculty(r.role)
+                     return (
+                       <tr key={`${previewPage}-${r.row}`}>
+                         <td className="text-tertiary">{r.row}</td>
+                         <td>
+                           <input
+                             value={r.name}
+                             onChange={(e) => handleFieldChange(rowIdx, "name", e.target.value)}
+                             className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px]"
+                           />
+                         </td>
+                         <td className="text-secondary text-[13px]">{r.email}</td>
+                         <td>
+                           <span className="inline-flex items-center px-2 py-1 rounded-full text-[12px] font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">{r.role}</span>
+                         </td>
+                         <td>
+                           <input
+                             value={r.departmentCode}
+                             onChange={(e) => handleFieldChange(rowIdx, "departmentCode", e.target.value)}
+                             className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px]"
+                           />
+                         </td>
+                         <td>
+                           {r.role.toUpperCase().includes("STUDENT") ? (
+                             <input
+                               value={r.programCode}
+                               onChange={(e) => handleFieldChange(rowIdx, "programCode", e.target.value)}
+                               className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px]"
+                             />
+                           ) : (
+                             <span className="text-secondary text-[13px]">{r.programCode || "—"}</span>
+                           )}
+                         </td>
+                         <td>
+                           {showEmpNo ? (
+                             <input
+                               value={r.employeeNo}
+                               onChange={(e) => handleFieldChange(rowIdx, "employeeNo", e.target.value)}
+                               className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px]"
+                             />
+                           ) : (
+                             <span className="text-tertiary text-[11px]">—</span>
+                           )}
+                         </td>
                         <td>
                           <div className="flex flex-wrap gap-1">
-                            {r.invalidDept && <span className="badge-red text-[10px]">Incorrect Department Code</span>}
-                            {r.invalidProgram && <span className="badge-red text-[10px]">Incorrect Program</span>}
+                          {r.invalidDept && <span className="badge-red text-[10px]">Incorrect Department Code</span>}
+                          {r.invalidProgram && <span className="badge-red text-[10px]">Incorrect Program</span>}
+                          {r.duplicateEmail && <span className="badge-red text-[10px]">Duplicate Email</span>}
                             {!r.invalidDept && !r.invalidProgram && r.isNewUser && (
                               <span className="badge-amber text-[10px]">New User</span>
                             )}
@@ -502,7 +591,7 @@ export default function BulkUserImport({
                         <td className="text-center">
                           <button
                             type="button"
-                            onClick={() => handleRemoveRow(absIdx)}
+                            onClick={() => handleRemoveRow(rowIdx)}
                             className="w-7 h-7 flex items-center justify-center rounded-full bg-red-50 dark:bg-red-900/20 text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors"
                             title="Remove row"
                           >
@@ -556,7 +645,7 @@ export default function BulkUserImport({
             {!previewOnly && (
               <button
                 type="button"
-                disabled={loading || previewRows.length === 0 || blockedRows.length > 0}
+                disabled={uploading || previewRows.length === 0 || blockedRows.length > 0}
                 onClick={handleConfirm}
                 className={`flex-1 text-sm font-semibold px-4 py-3 rounded-xl transition-colors ${
                   blockedRows.length > 0
@@ -564,8 +653,8 @@ export default function BulkUserImport({
                     : "bg-gold-600 text-white hover:bg-gold-700 disabled:opacity-40"
                 }`}
               >
-                {loading
-                  ? "Importing..."
+                {uploading
+                  ? "Uploading..."
                   : blockedRows.length > 0
                     ? `${blockedRows.length} Error${blockedRows.length !== 1 ? "s" : ""} — Fix to import`
                     : `Import ${previewRows.length} Row${previewRows.length !== 1 ? "s" : ""}`}
@@ -649,7 +738,7 @@ export default function BulkUserImport({
           </div>
 
           <button type="button" onClick={handleReset} className="w-full text-sm font-semibold px-4 py-3 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors">
-            Import Another File
+            Clear
           </button>
         </div>
       )}
