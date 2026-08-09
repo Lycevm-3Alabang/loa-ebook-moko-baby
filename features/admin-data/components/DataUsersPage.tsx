@@ -11,7 +11,7 @@ import { hasRole } from "@/lib/utils/roles"
 import BulkUserImport from "@/features/users/components/bulk-import/BulkUserImport"
 import type { UserData, DepartmentData } from "@/lib/types"
 
-const PAGE_SIZES = [10, 25, 50]
+const PAGE_SIZES = [10, 25, 50, 100, 300]
 
 const USER_TYPES = ["STUDENT", "FACULTY"]
 const GRANTS = ["ADMIN", "DEAN"]
