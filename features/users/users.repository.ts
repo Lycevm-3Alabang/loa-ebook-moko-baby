@@ -104,11 +104,10 @@ export const userRepository: IUserRepository = {
   },
 
   async createMany(inputs) {
-    if (inputs.length === 0) return { created: new Map(), failures: [] }
+    if (inputs.length === 0) return new Map()
 
     const CHUNK_SIZE = 200
     const allInserted: DbRecord[] = []
-    const allFailures: string[] = []
 
     for (let i = 0; i < inputs.length; i += CHUNK_SIZE) {
       const chunk = inputs.slice(i, i + CHUNK_SIZE)
@@ -116,14 +115,8 @@ export const userRepository: IUserRepository = {
         ...fields,
         email: fields.email.toLowerCase().trim(),
       }))
-      console.log(`[createMany] Inserting chunk ${Math.floor(i / CHUNK_SIZE) + 1} (${userFields.length} users)...`)
       const { data: users, error: userErr } = await supabase.from("users").insert(userFields).select("id, email")
-      if (userErr) {
-        console.error(`[createMany] Chunk ${Math.floor(i / CHUNK_SIZE) + 1} insert failed:`, JSON.stringify(userErr, null, 2))
-        allFailures.push(...chunk.map((i) => i.email.toLowerCase().trim()))
-        continue
-      }
-      console.log(`[createMany] Chunk ${Math.floor(i / CHUNK_SIZE) + 1} succeeded: ${(users || []).length} rows`)
+      if (userErr) throw userErr
       allInserted.push(...(users as DbRecord[]))
     }
 
@@ -137,7 +130,7 @@ export const userRepository: IUserRepository = {
       for (let i = 0; i < roleInserts.length; i += CHUNK_SIZE) {
         const chunk = roleInserts.slice(i, i + CHUNK_SIZE)
         const { error: roleErr } = await supabase.from("userrole").insert(chunk)
-        if (roleErr) console.warn(`[createMany] Role insert chunk failed:`, roleErr.message)
+        if (roleErr) throw roleErr
       }
     }
 
@@ -153,7 +146,7 @@ export const userRepository: IUserRepository = {
       result.set((row.email as string).toLowerCase(), toUserWithRole(row))
     }
     await logUserAction("system", "BULK_CREATE_USERS", `Created ${allInserted.length} users via ETL`)
-    return { created: result, failures: allFailures }
+    return result
   },
 
   async listByRole(role, options) {

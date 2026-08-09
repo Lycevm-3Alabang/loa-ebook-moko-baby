@@ -297,35 +297,18 @@ export async function bulkUpsertUsers(
     }
   }
 
-  console.log(`[bulkUpsertUsers] Validation done: ${toCreate.length} to create, ${toUpdate.length} to update, ${failures.length} validation failures`)
+console.log(`[bulkUpsertUsers] Validation done: ${toCreate.length} to create, ${toUpdate.length} to update, ${failures.length} validation failures`)
 
   let createdUsers: Map<string, UserData> = new Map()
-  let createFailures: string[] = []
 
   if (toCreate.length > 0) {
     console.log(`[bulkUpsertUsers] Calling createMany with ${toCreate.length} users...`)
-    const result = await userRepository.createMany(toCreate)
-    console.log(`[bulkUpsertUsers] createMany returned: ${result.created.size} created, ${result.failures.length} failures`)
-    createdUsers = result.created
-    createFailures = result.failures
+    createdUsers = await userRepository.createMany(toCreate)
+    console.log(`[bulkUpsertUsers] createMany returned: ${createdUsers.size} created`)
   }
   created = createdUsers.size
-  for (const email of createFailures) {
-      const input = toCreate.find((i) => i.email.toLowerCase().trim() === email.toLowerCase().trim())
-      if (input) {
-        failures.push({
-          name: input.name,
-          email: input.email,
-          role: input.role,
-          department: input.departmentId || "",
-          program: input.course || "",
-          employeeNo: input.employeeNo || "",
-          remark: "Failed to create user",
-         })
-       }
-   }
 
-   for (const u of toUpdate) {
+  for (const u of toUpdate) {
     try {
       await userRepository.update(u.existingId, {
         name: u.name,
