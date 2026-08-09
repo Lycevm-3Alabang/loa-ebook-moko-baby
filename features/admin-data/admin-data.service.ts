@@ -2,6 +2,34 @@ import { supabase } from "@/lib/db"
 
 type DbRecord = Record<string, unknown>
 
+const CHUNK_SIZE = 200
+
+async function chunkedDelete(table: string, column: string, ids: string[]) {
+  for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+    const chunk = ids.slice(i, i + CHUNK_SIZE)
+    const { error } = await supabase.from(table).delete().in(column, chunk)
+    if (error) throw error
+  }
+}
+
+async function chunkedUpdate(table: string, column: string, ids: string[], update: Record<string, unknown>) {
+  for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+    const chunk = ids.slice(i, i + CHUNK_SIZE)
+    const { error } = await supabase.from(table).update(update).in(column, chunk)
+    if (error) throw error
+  }
+}
+
+async function chunkedSelect(table: string, select: string, column: string, ids: string[]): Promise<DbRecord[]> {
+  const allData: DbRecord[] = []
+  for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+    const chunk = ids.slice(i, i + CHUNK_SIZE)
+    const { data } = await supabase.from(table).select(select).in(column, chunk)
+    allData.push(...(data || []) as unknown as DbRecord[])
+  }
+  return allData
+}
+
 export interface ConsultationExportDto {
   exportedAt: string
   appointments: DbRecord[]
@@ -30,23 +58,9 @@ export async function exportAndClearConsultations(): Promise<ConsultationExportD
   let timeSlots: DbRecord[] = []
 
   if (appointmentIds.length > 0) {
-    const { data: f } = await supabase
-      .from("appointment_files")
-      .select("id, appointmentId, fileName, fileType, fileSize, createdAt")
-      .in("appointmentId", appointmentIds)
-    files = f || []
-
-    const { data: att } = await supabase
-      .from("appointment_attendees")
-      .select("*")
-      .in("appointmentId", appointmentIds)
-    attendees = att || []
-
-    const { data: ts } = await supabase
-      .from("appointment_time_slots")
-      .select("*")
-      .in("appointmentId", appointmentIds)
-    timeSlots = ts || []
+    files = await chunkedSelect("appointment_files", "id, appointmentId, fileName, fileType, fileSize, createdAt", "appointmentId", appointmentIds)
+    attendees = await chunkedSelect("appointment_attendees", "*", "appointmentId", appointmentIds)
+    timeSlots = await chunkedSelect("appointment_time_slots", "*", "appointmentId", appointmentIds)
   }
 
   const exportData: ConsultationExportDto = {
@@ -58,94 +72,51 @@ export async function exportAndClearConsultations(): Promise<ConsultationExportD
   }
 
   if (appointmentIds.length > 0) {
-    const { error: err1 } = await supabase
-      .from("appointment_files")
-      .delete()
-      .in("appointmentId", appointmentIds)
-    if (err1) throw err1
-
-    const { error: err2 } = await supabase
-      .from("appointment_attendees")
-      .delete()
-      .in("appointmentId", appointmentIds)
-    if (err2) throw err2
-
-    const { error: err3 } = await supabase
-      .from("appointment_time_slots")
-      .delete()
-      .in("appointmentId", appointmentIds)
-    if (err3) throw err3
-
-    const { error: err4 } = await supabase
-      .from("appointments")
-      .delete()
-      .in("id", appointmentIds)
-    if (err4) throw err4
+    await chunkedDelete("appointment_files", "appointmentId", appointmentIds)
+    await chunkedDelete("appointment_attendees", "appointmentId", appointmentIds)
+    await chunkedDelete("appointment_time_slots", "appointmentId", appointmentIds)
+    await chunkedDelete("appointments", "id", appointmentIds)
   }
 
   return exportData
 }
 
 export async function exportAndDeleteStudents(): Promise<StudentExportDto> {
-  // 1. Query all students (via userrole join)
-  const { data: studentRoles } = await supabase
-    .from("userrole")
-    .select("userId")
-    .eq("roleName", "STUDENT")
-
-  const studentIds = (studentRoles || []).map((r: DbRecord) => r.userId as string)
+  const studentIds: string[] = []
+  let offset = 0
+  const BATCH = 1000
+  while (true) {
+    const { data: studentRoles } = await supabase
+      .from("userrole")
+      .select("userId")
+      .eq("roleName", "STUDENT")
+      .range(offset, offset + BATCH - 1)
+    const batch = (studentRoles || []).map((r: DbRecord) => r.userId as string)
+    studentIds.push(...batch)
+    if (!studentRoles || studentRoles.length < BATCH) break
+    offset += BATCH
+  }
 
   if (studentIds.length === 0) {
     return { exportedAt: new Date().toISOString(), students: [], orphanedAppointmentIds: [] }
   }
 
-  // 2. Get student user records
-  const { data: students } = await supabase
-    .from("users")
-    .select("id, name, email, course, createdAt, isDisabled, hasLoggedInBefore")
-    .in("id", studentIds)
+  const students = await chunkedSelect("users", "id, name, email, course, createdAt, isDisabled, hasLoggedInBefore", "id", studentIds)
 
-  // 3. Find their appointments
-  const { data: studentAppointments } = await supabase
-    .from("appointments")
-    .select("id")
-    .in("studentId", studentIds)
+  const studentAppointments = await chunkedSelect("appointments", "id", "studentId", studentIds)
+  const orphanedAppointmentIds = studentAppointments.map((a: DbRecord) => a.id as string)
 
-  const orphanedAppointmentIds = (studentAppointments || []).map((a: DbRecord) => a.id as string)
-
-  // 4. Nullify studentId on their appointments
   if (orphanedAppointmentIds.length > 0) {
-    const { error: err1 } = await supabase
-      .from("appointments")
-      .update({ studentId: null })
-      .in("id", orphanedAppointmentIds)
-    if (err1) throw err1
-
-    // 5. Delete attendee records for these orphaned appointments
-    const { error: err2 } = await supabase
-      .from("appointment_attendees")
-      .delete()
-      .in("appointmentId", orphanedAppointmentIds)
-    if (err2) throw err2
+    await chunkedUpdate("appointments", "id", orphanedAppointmentIds, { studentId: null })
+    await chunkedDelete("appointment_attendees", "appointmentId", orphanedAppointmentIds)
   }
 
-  // 6. Delete student userrole entries
-  const { error: err3 } = await supabase
-    .from("userrole")
-    .delete()
-    .in("userId", studentIds)
-  if (err3) throw err3
-
-  // 7. Delete student users (cascades to any remaining appointment_attendees entries)
-  const { error: err4 } = await supabase
-    .from("users")
-    .delete()
-    .in("id", studentIds)
-  if (err4) throw err4
+  await chunkedDelete("userrole", "userId", studentIds)
+  await chunkedDelete("users", "id", studentIds)
 
   return {
     exportedAt: new Date().toISOString(),
-    students: students || [],
+    students,
     orphanedAppointmentIds,
   }
 }

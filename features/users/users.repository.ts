@@ -147,18 +147,29 @@ export const userRepository: IUserRepository = {
     }
   },
   async listByIds(ids, options) {
+    const CHUNK = 200
+    const allRows: DbRecord[] = []
     try {
-      let query = supabase.from("users").select(USER_SELECT).in("id", ids)
-      if (!options?.includeDeleted) {
-        query = query.is("deletedAt", null)
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const chunk = ids.slice(i, i + CHUNK)
+        let query = supabase.from("users").select(USER_SELECT).in("id", chunk)
+        if (!options?.includeDeleted) {
+          query = query.is("deletedAt", null)
+        }
+        const { data, error } = await query
+        if (error) throw error
+        allRows.push(...(data || []) as DbRecord[])
       }
-      const { data, error } = await query
-      if (error) throw error
-      return toUsersWithRoles(data)
+      return toUsersWithRoles(allRows)
     } catch (err) {
       if (isMissingUserrole(err as QueryError)) {
-        const { data } = await supabase.from("users").select(USER_COLUMNS_NO_PASSWORD).in("id", ids)
-        return (data || []).map((u: DbRecord) => ({ ...u, role: "GUEST" })) as unknown as UserData[]
+        const fallbackRows: DbRecord[] = []
+        for (let i = 0; i < ids.length; i += CHUNK) {
+          const chunk = ids.slice(i, i + CHUNK)
+          const { data } = await supabase.from("users").select(USER_COLUMNS_NO_PASSWORD).in("id", chunk)
+          fallbackRows.push(...(data || []) as DbRecord[])
+        }
+        return fallbackRows.map((u: DbRecord) => ({ ...u, role: "GUEST" })) as unknown as UserData[]
       }
       throw err
     }
@@ -216,13 +227,17 @@ export const userRepository: IUserRepository = {
   },
   async bulkSoftDelete(ids) {
     if (ids.length === 0) return
-    const { data: users } = await supabase.from("users").select("id, email, name").in("id", ids)
-    const { error } = await supabase.from("users").update({ deletedAt: new Date().toISOString() }).in("id", ids)
-    if (error) throw error
-    if (users) {
-      for (const u of users as { email: string; name: string }[]) {
-        await logUserAction(u.email, "DISABLE_USER", `Soft-deleted user: ${u.name}`)
-      }
+    const CHUNK = 200
+    const allUsers: { email: string; name: string }[] = []
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const chunk = ids.slice(i, i + CHUNK)
+      const { data: users } = await supabase.from("users").select("id, email, name").in("id", chunk)
+      const { error } = await supabase.from("users").update({ deletedAt: new Date().toISOString() }).in("id", chunk)
+      if (error) throw error
+      if (users) allUsers.push(...(users as { email: string; name: string }[]))
+    }
+    for (const u of allUsers) {
+      await logUserAction(u.email, "DISABLE_USER", `Soft-deleted user: ${u.name}`)
     }
   },
   async restore(id) {
