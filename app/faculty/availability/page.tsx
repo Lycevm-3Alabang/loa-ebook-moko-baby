@@ -1,7 +1,7 @@
 "use client"
 
 import { useSession } from "next-auth/react"
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useMemo } from "react"
 import { redirect } from "next/navigation"
 import { useApiGet } from "@/lib/api/client"
 
@@ -22,6 +22,14 @@ interface Rule {
   endDate: string | null
 }
 
+interface FacultyUser {
+  id: string
+  name: string
+  email: string
+  role: string
+  departmentId: string | null
+}
+
 function todayStr() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
@@ -37,9 +45,51 @@ export default function AvailabilityPage() {
   const [lockedEndpoint, setLockedEndpoint] = useState("")
   const [errorMessage, setErrorMessage] = useState("")
 
-  const { data: rulesData, isLoading, error: rulesError } = useApiGet<{ rules: Rule[] }>(
-    status === "authenticated" ? "/api/availability-rules" : null
+  const userRole = (session?.user as Record<string, unknown>)?.role as string | undefined
+  const isAdmin = userRole?.split("|").includes("ADMIN") ?? false
+
+  const [selectedFacultyId, setSelectedFacultyId] = useState("")
+  const [facultySearch, setFacultySearch] = useState("")
+  const [facultyDropdownOpen, setFacultyDropdownOpen] = useState(false)
+  const facultyDropdownRef = useRef<HTMLDivElement>(null)
+
+  const { data: allUsers } = useApiGet<{ users: FacultyUser[] }>(
+    isAdmin ? "/api/admin/users" : null
   )
+
+  const faculties = useMemo(
+    () => (allUsers?.users ?? []).filter((u) => u.role.includes("FACULTY") || u.role.includes("DEAN")),
+    [allUsers]
+  )
+
+  const filteredFaculties = useMemo(() => {
+    if (!facultySearch) return faculties
+    const q = facultySearch.toLowerCase()
+    return faculties.filter((f) => f.name.toLowerCase().includes(q) || f.email.toLowerCase().includes(q))
+  }, [faculties, facultySearch])
+
+  const selectedFacultyName = selectedFacultyId
+    ? faculties.find((f) => f.id === selectedFacultyId)?.name ?? ""
+    : ""
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (facultyDropdownRef.current && !facultyDropdownRef.current.contains(e.target as Node)) {
+        setFacultyDropdownOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
+
+  const availabilityApiUrl = useMemo(() => {
+    if (status !== "authenticated") return null
+    if (isAdmin && selectedFacultyId) return `/api/availability-rules?facultyId=${selectedFacultyId}`
+    if (isAdmin && !selectedFacultyId) return null
+    return "/api/availability-rules"
+  }, [status, isAdmin, selectedFacultyId])
+
+  const { data: rulesData, isLoading, error: rulesError } = useApiGet<{ rules: Rule[] }>(availabilityApiUrl)
 
   useEffect(() => {
     Promise.resolve().then(() => {
@@ -57,6 +107,15 @@ export default function AvailabilityPage() {
   useEffect(() => {
     if (status === "unauthenticated") redirect("/login")
   }, [status, session])
+
+  useEffect(() => {
+    Promise.resolve().then(() => {
+      if (isAdmin && selectedFacultyId) {
+        setRules([])
+        setPendingChanges(new Map())
+      }
+    })
+  }, [isAdmin, selectedFacultyId])
 
   const activeRules = rules.filter((r) => {
     if (r.startDate > startDate) return false
@@ -159,12 +218,14 @@ export default function AvailabilityPage() {
             endTime: rule.endTime,
             startDate,
             endDate: endDate || null,
+            ...(isAdmin && selectedFacultyId ? { facultyId: selectedFacultyId } : {}),
           }),
         })
 
         if (res.status === 403) { setLockedEndpoint("/api/availability-rules"); return }
       }
-      const res = await fetch("/api/availability-rules")
+      const fetchUrl = availabilityApiUrl ?? "/api/availability-rules"
+      const res = await fetch(fetchUrl)
       if (res.status === 403) { setLockedEndpoint("/api/availability-rules"); return }
       const data = await res.json()
 
@@ -204,10 +265,71 @@ export default function AvailabilityPage() {
       <div>
         <h1 className="text-2xl font-bold text-primary font-display">Availability Settings</h1>
         <p className="text-sm text-tertiary mt-1">
-          Configure when students can book consultations with you. Weekend blocking is enabled by default.
+          {isAdmin
+            ? selectedFacultyName
+              ? `Managing availability for ${selectedFacultyName}.`
+              : "Select a faculty member to manage their availability."
+            : "Configure when students can book consultations with you. Weekend blocking is enabled by default."
+          }
         </p>
       </div>
 
+      {isAdmin && (
+        <div className="card p-5 bg-surface">
+          <label className="block text-xs font-bold text-tertiary uppercase tracking-wider mb-2">
+            Select Faculty
+          </label>
+          <div className="relative" ref={facultyDropdownRef}>
+            <input
+              type="text"
+              value={facultyDropdownOpen ? facultySearch : selectedFacultyName}
+              onChange={(e) => {
+                setFacultySearch(e.target.value)
+                setFacultyDropdownOpen(true)
+              }}
+              onFocus={() => {
+                setFacultySearch("")
+                setFacultyDropdownOpen(true)
+              }}
+              placeholder="Search faculty by name or email..."
+              className="input w-full"
+            />
+            {facultyDropdownOpen && (
+              <div className="absolute z-50 mt-1 w-full bg-surface border border-default rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                {filteredFaculties.length === 0 && (
+                  <div className="px-4 py-3 text-sm text-tertiary">No faculty found</div>
+                )}
+                {filteredFaculties.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedFacultyId(f.id)
+                      setFacultyDropdownOpen(false)
+                      setFacultySearch("")
+                    }}
+                    className={`w-full text-left px-4 py-3 text-sm hover:bg-gold-50 transition-colors border-b border-default last:border-0 ${
+                      f.id === selectedFacultyId ? "bg-gold-50 font-semibold" : ""
+                    }`}
+                  >
+                    <div className="text-primary">{f.name}</div>
+                    <div className="text-[11px] text-tertiary">{f.email}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {isAdmin && !selectedFacultyId && (
+        <div className="card p-8 bg-surface text-center">
+          <p className="text-sm text-tertiary">Select a faculty member above to view and edit their availability rules.</p>
+        </div>
+      )}
+
+      {(!isAdmin || selectedFacultyId) && (
+        <>
       {/* Date Range Picker */}
       <div className="card p-5 bg-surface">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -341,6 +463,8 @@ export default function AvailabilityPage() {
           {isSavingAll ? "Saving..." : "Save Changes"}
         </button>
       </div>
+        </>
+      )}
     </div>
     </ErrorBoundary>
   )

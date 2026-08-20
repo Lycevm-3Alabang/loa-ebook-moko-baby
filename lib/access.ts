@@ -50,7 +50,7 @@ export async function loadAccessConfig(): Promise<Record<string, GroupAccessEntr
     const { data, error } = await supabase.from("group_access").select("*")
     if (error) throw error
 
-    const ALWAYS_SAFE = new Set(["/", "/admin", "/admin/system/access-config", "/admin/system/user-permissions", "/admin/system/reported-bugs"])
+    const ALWAYS_SAFE = new Set(["/", "/admin", "/admin/system/access-config", "/admin/system/user-permissions", "/admin/system/reported-bugs", "/faculty/availability"])
 
     const map: Record<string, GroupAccessEntry> = { ...DEFAULT_CONFIG }
     for (const row of data || []) {
