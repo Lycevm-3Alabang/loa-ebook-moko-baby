@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-import { useSession } from "next-auth/react"
+import { useJwt } from "@/lib/jwt-context"
 import { useEffect, useState, useCallback, useMemo } from "react"
 
 const LABELS: Record<string, string> = {
@@ -36,7 +36,7 @@ function isUuid(s: string) {
 
 export default function NavigationBar(_props: { title?: string }) {
   const pathname = usePathname()
-  const { data: session } = useSession()
+  const { session } = useJwt()
   const [mounted, setMounted] = useState(false)
   const [dark, setDark] = useState(false)
   const role = (session?.user as Record<string, unknown> | undefined)?.role as string | undefined

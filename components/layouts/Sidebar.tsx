@@ -1,6 +1,6 @@
 "use client"
 
-import { useSession, signOut } from "next-auth/react"
+import { useJwt } from "@/lib/jwt-context"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useState, useCallback, useMemo, useEffect, useRef } from "react"
@@ -85,7 +85,7 @@ const hiddenHrefs = new Set(['/admin/consultations/reports', '/admin/evaluations
 const VALID_DASHBOARD_ROLES = ["ADMIN", "DEAN", "FACULTY", "STUDENT"] as const
 
 export default function Sidebar() {
-  const { data: session, status } = useSession()
+  const { session, status, logout } = useJwt()
   const pathname = usePathname()
   const { collapsed, toggle } = useSidebar()
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set())
@@ -471,7 +471,7 @@ export default function Sidebar() {
 
             <button
               type="button"
-              onClick={() => { localStorage.removeItem("eval_rubric_cache"); signOut({ callbackUrl: "/login" }) }}
+              onClick={() => { localStorage.removeItem("eval_rubric_cache"); logout() }}
               className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-900/20 hover:text-red-300 transition-colors"
             >
               <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1070,7 +1070,7 @@ export default function Sidebar() {
             {!collapsed && "Collapse"}
           </button>
           <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
+            onClick={() => logout()}
             className={`flex items-center min-h-[44px] rounded-lg text-xs font-medium text-tertiary hover:text-white hover:bg-slate-800/50 transition-colors border border-slate-800 ${
               collapsed ? "justify-center w-full p-0" : "justify-center gap-2 px-3 w-full"
             }`}

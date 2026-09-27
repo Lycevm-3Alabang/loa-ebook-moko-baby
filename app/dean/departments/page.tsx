@@ -2,7 +2,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from "react"
-import { useSession } from "next-auth/react"
+import { useJwt } from "@/lib/jwt-context"
 import IosButton from "@/components/ui/IosButton"
 import { useApiGet, invalidate } from "@/lib/api/client"
 import LockedTab from "@/components/ui/LockedTab"
@@ -12,7 +12,7 @@ import type { DepartmentData } from "@/lib/types"
 import type { DepartmentCourse } from "@/features/admin-data/components/types"
 
 export default function DeanDepartmentsPage() {
-  const { data: session } = useSession();
+  const { session } = useJwt();
   const [error, setError] = useState("")
   const [newName, setNewName] = useState("")
   const [newCode, setNewCode] = useState("")

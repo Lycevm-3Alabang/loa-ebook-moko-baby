@@ -324,7 +324,7 @@ console.log(`[bulkUpsertUsers] Validation done: ${toCreate.length} to create, ${
         employeeNo: u.employeeNo,
       })
       updated++
-    } catch (_err) {
+    } catch {
       failures.push({
         name: u.name,
         email: u.email,

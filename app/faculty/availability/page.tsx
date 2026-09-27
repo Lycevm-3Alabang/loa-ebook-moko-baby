@@ -1,6 +1,6 @@
 "use client"
 
-import { useSession } from "next-auth/react"
+import { useJwt } from "@/lib/jwt-context"
 import { useEffect, useState, useRef, useMemo } from "react"
 import { redirect } from "next/navigation"
 import { useApiGet } from "@/lib/api/client"
@@ -36,7 +36,7 @@ function todayStr() {
 }
 
 export default function AvailabilityPage() {
-  const { data: session, status } = useSession();
+  const { session, status } = useJwt();
   const [rules, setRules] = useState<Rule[]>([])
   const [isSavingAll, setIsSavingAll] = useState(false)
   const [startDate, setStartDate] = useState(todayStr())

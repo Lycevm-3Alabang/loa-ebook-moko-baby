@@ -1,10 +1,10 @@
 "use client"
 
-import { useSession } from "next-auth/react"
+import { useJwt } from "@/lib/jwt-context"
 import Link from "next/link"
 
 export function Navbar() {
-  const { data: session, status } = useSession()
+  const { session, status } = useJwt()
 
   if (status === "loading" || session) {
     return null
