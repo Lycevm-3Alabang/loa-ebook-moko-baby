@@ -16,6 +16,16 @@ export function setUserRole(role: string | null) {
   currentRole = role
 }
 
+let authToken: string | null = null
+
+export function setAuthToken(token: string | null) {
+  authToken = token
+}
+
+export function getAuthToken(): string | null {
+  return authToken
+}
+
 const origFetch = typeof window !== "undefined" ? window.fetch.bind(window) : undefined
 
 const recentToasts = new Set<string>()
@@ -23,7 +33,12 @@ const recentToasts = new Set<string>()
 async function patchedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const method = init?.method || (typeof input === "object" && "method" in input && (input as Request).method) || "GET"
   const url = typeof input === "string" ? input : input instanceof URL ? input.pathname : input.url
-  const res = await origFetch!(input, init)
+  // T1-b: attach the in-memory JWT where present (same-origin legacy calls
+  // ignore it; direct Laravel calls require it). Never persisted anywhere.
+  const withAuth = authToken && typeof input === "string"
+    ? { ...init, headers: { ...((init?.headers as Record<string, string> | undefined) ?? {}), Authorization: `Bearer ${authToken}` } }
+    : init
+  const res = await origFetch!(input, withAuth)
   if (res.status === 403) {
     const key = `${method}:${url}`
     if (!recentToasts.has(key)) {

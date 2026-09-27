@@ -39,14 +39,15 @@ export async function proxy(request: NextRequest) {
 
   if (pathname.includes(".")) return NextResponse.next()
 
+  // T1-b: the client guard owns auth (JWT lives in memory, invisible
+  // server-side). Legacy next-auth sessions still run the checks below
+  // until T4; everyone else passes through to the client guard + backend
+  // 403s. Revert: restore the /login redirect to return to legacy gating.
   const secret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET
   const token = await getToken({ req: request, secret })
 
   if (!token) {
-    if (pathname === "/") return NextResponse.next()
-    const url = new URL("/login", request.url)
-    url.searchParams.set("callbackUrl", pathname)
-    return NextResponse.redirect(url)
+    return NextResponse.next()
   }
 
   const rawRole = (token as Record<string, unknown>).role as string | undefined

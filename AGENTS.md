@@ -181,4 +181,38 @@ Renaming DB columns cascade through the full TypeScript stack:
 - **Proposal format** — for changes >20 lines: Understanding, Questions, Recommendation, Files Affected, Risks, then await approval.
 - **Implementation checklist** — TypeScript passes, build passes, lint passes, no unused imports, no `console.log`, no `any`, no `ts-ignore`, error handling present.
 
+## Working with Specs (living template — amend by agreement)
+
+> Specs are the source of truth for behavior. Code matches the spec — never the reverse. This section is a starting template and may change as the team learns.
+
+- **Lifecycle:** discuss → write spec → user approves spec as **Final** → implement exactly the spec. No code, migration, or dependency change lands on a Draft spec.
+- **Where specs live:** feature specs in `specs/` (see `specs/README.md`); endpoint behavior owned by the Consult backend specs (below) — reference by ID, never duplicate.
+- **Draft vs Final:** Draft = under discussion, code forbidden. Final = user-approved, code gates open. Promotion (Draft → Final) needs an explicit user yes with no normative change, or a revised Draft first.
+- **One change rule applies:** finish the approved spec step, report, stop. Ask before the next phase, even if it seems obvious.
+- **Discoveries:** implementation defect → fix code; test defect → fix test; spec gap → refine the spec first, then code. Never silently choose behavior.
+
+## Spec Authoring Guideline
+
+Every normative spec is its own file and MUST follow this shape (no normative change via reformat/polish alone):
+
+1. **Metadata table** — ID / Title / Status (Draft v0.x or Final vX.Y) / Owner / Version / Scope / Non-goals.
+2. **RFC 2119 terminology** — MUST/MUST NOT/SHOULD/MAY per RFC 2119.
+3. **Context** — what exists today (with verified file paths), why the spec exists.
+4. **Constraints** — numbered `CON-*` (MUST/MUST NOT): paths, shapes, auth, filters, pagination, what must not break.
+5. **Goal** — decisions `DEC-*` (chosen behavior) + acceptance `ACC-*`, split into:
+   - **Objective** — deterministic, machine-checkable (statuses, shapes, counts, guards 401/403/404/422, idempotency).
+   - **Subjective** — human-judged steps stated as observable reviewer actions (e.g. "reviewer confirms the login flow completes with no error toast").
+6. **Deliverables** — numbered `D-*` (files/routes/tests to create, in order).
+7. **Glossary + References** — terms defined; specs referenced by ID, never pasted.
+
+Tests (Vitest, `lib/__tests__/`) cover both halves: unit/integration cases for logic (one behavior per test, mocked repositories), plus user-run manual checks (browser SSO, role matrices) for paths tests cannot prove. No behavior without a `CON-*` + `ACC-*` + `D-*`.
+
+## Consult Backend Awareness (reference only — this project does not depend on its repo)
+
+- **Backend:** Laravel 12 API at `D:\loa\loa-apache-server-apps\assemblies\loa-consult-platform\` (own repo, own lifecycle). This frontend consumes it at cutover; the backend never adapts to the frontend.
+- **Known Final contracts:** `api-endpoints.md` v2.1 (flat 104+5, bare shapes `{data}`/`{error}` — no envelope), `endpoints-reports.md` v1.0 (7 report families), `frontend-transition.md` v1.0 (T0→T5 cutover order — the plan this repo executes).
+- **Auth model:** Auth-issued JWT (in-memory only, never localStorage) + httpOnly refresh cookie; tenant `loa-consultation`; groups come from the JWT `groups` claim (`aces-admin`/`aces-dean`/`aces-faculty`/`aces-user`) — never local roles. Pipe-delimited `user.role` strings are legacy display vocabulary only.
+- **Topology:** Vercel host, Option B direct cross-origin + CORS (cert-actual strategy); cookie flags verified at T1 E2E.
+- **Rule:** cite backend specs by ID when a frontend change depends on endpoint behavior; file backend discrepancies as spec gaps there, do not work around them here.
+
 

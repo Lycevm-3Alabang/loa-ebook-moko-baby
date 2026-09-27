@@ -1,25 +1,28 @@
 "use client"
 
 import SubmitButton from "@/components/ui/SubmitButton"
-import { Suspense } from "react"
-import { signIn } from "next-auth/react"
-import { useSearchParams } from "next/navigation"
-import { useState, FormEvent } from "react"
+import { Suspense, useEffect, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
+import { ssoLoginUrl, useJwt } from "@/lib/jwt-context"
 
+// T1-b: password form replaced by Auth SSO. The button leaves to the Auth
+// portal; the portal returns to /auth/callback#payload=<blob>.
 function LoginForm() {
   const searchParams = useSearchParams()
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
+  const router = useRouter()
+  const { status } = useJwt()
   const [loading, setLoading] = useState(false)
   const error = searchParams.get("error")
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault()
+  useEffect(() => {
+    if (status === "authenticated") router.replace("/")
+  }, [status, router])
+
+  const handleSso = () => {
     if (loading) return
     setLoading(true)
-    const callbackUrl = searchParams.get("callbackUrl") || "/"
-    await signIn("credentials", { email, password, callbackUrl })
+    window.location.href = ssoLoginUrl()
   }
 
   return (
@@ -48,45 +51,13 @@ function LoginForm() {
               <svg className="w-4 h-4 shrink-0 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              Invalid email or password
+              Your session expired. Please sign in again.
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="mt-8">
-            <div className="ios-table-section">
-              <div className="ios-table-row !min-h-[48px] !p-0">
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  autoComplete="email"
-                  placeholder="Email Address"
-                  inputMode="email"
-                  enterKeyHint="next"
-                  className="w-full h-full px-4 py-3 text-[16px] text-primary bg-transparent placeholder-tertiary outline-none border-none"
-                />
-              </div>
-              <div className="ios-table-row !min-h-[48px] !p-0">
-                <input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  autoComplete="current-password"
-                  placeholder="Password"
-                  enterKeyHint="done"
-                  className="w-full h-full px-4 py-3 text-[16px] text-primary bg-transparent placeholder-tertiary outline-none border-none"
-                />
-              </div>
-            </div>
-
-            <SubmitButton type="submit" loading={loading} variant="ios-primary" className="w-full py-3 mt-6 text-base font-semibold">
-              {loading ? "Signing in..." : "Sign In"}
-            </SubmitButton>
-          </form>
+          <SubmitButton type="button" onClick={handleSso} loading={loading} variant="ios-primary" className="w-full py-3 mt-6 text-base font-semibold">
+            {loading ? "Redirecting..." : "Sign in with LOA"}
+          </SubmitButton>
 
           <div className="text-center mt-6 space-y-4">
             <Link href="/forgot-password" className="btn-ios-plain text-sm font-semibold">
