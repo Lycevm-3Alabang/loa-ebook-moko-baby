@@ -1,12 +1,12 @@
 # Services
 
-Infrastructure specs for this frontend. Mirrors the e-cert `specs/services/` trio on consult names, hosts, cookie, and tenant — adapted to the Consult API's 104+5 surface, its `aces-*` group vocabulary, and the `loa_connect_refresh` cookie.
+Infrastructure specs for this frontend, patterned on the e-cert `specs/services/` trio. They adopt e-cert's **mechanism** (CSR, same-origin BFF passthrough, claims-for-display) and reference e-cert's **contract** — the Consult specs by ID, never restated. Hostnames, ports, cookie attributes, endpoint shapes, group names, and claim structure are cited, not copied; see the Reference discipline note in each spec.
 
 | Spec | ID | Status | Answers |
 |------|----|--------|---------|
-| [api-client.md](api-client.md) | `EC-API-001` | Draft v0.1 | How does the app call the Consult API for every data operation, replacing Supabase and Server Components? |
-| [auth.md](auth.md) | `EC-AUTH-001` | Draft v0.1 | How does the app authenticate via Auth SSO and hold a session without owning identity? |
-| [platform.md](platform.md) | `EC-PLAT-001` | Draft v0.1 | How is the app configured, deployed, and where do data and security live? |
+| [api-client.md](api-client.md) | `EC-API-001` | **Final v1.0** | How does the app call the Consult API for every data operation, replacing Supabase and Server Components? |
+| [auth.md](auth.md) | `EC-AUTH-001` | **Final v1.0** | How does the app authenticate via Auth SSO and hold a session without owning identity? |
+| [platform.md](platform.md) | `EC-PLAT-001` | **Final v1.0** | How is the app configured, deployed, and where do data and security live? |
 
 ## Scope boundary
 
@@ -14,7 +14,7 @@ These three cover plumbing only — transport, identity holding, configuration. 
 
 ## Status
 
-All three are **Draft v0.1** (written 2026-09-30 as `EC-CUTOVER-001` D-2). Per `AGENTS.md` Working-with-Specs, no code lands against a Draft. Their promotion is the gate for the BFF handler, which does not exist yet.
+All three reached **Final v1.0** on 2026-09-30 (written that day as `EC-CUTOVER-001` D-2 Draft v0.1, promoted with no normative change beyond settling the recorded `EC-PLAT-001` DEC-6). The code gate is therefore open for `EC-API-001` D-1 — the BFF handler — which is the prerequisite for every T2 area.
 
 ## Relationship to the headline spec
 

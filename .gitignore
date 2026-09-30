@@ -35,8 +35,12 @@ dev-server-err.log
 tsc-output.txt
 *.log
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files — real secrets, never committed
+.env
+.env.local
+.env.*.local
+# the template IS committed (placeholders only) so a new dev has something to copy
+!.env.example
 
 # vercel
 .vercel

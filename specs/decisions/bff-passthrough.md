@@ -16,28 +16,31 @@ The e-cert frontend already resolved this, and the mechanism is easy to misread.
 
 ## Decision
 
-The browser talks same-origin only. A catch-all Route Handler `app/api/v1/[...path]/route.ts` forwards browser traffic **server-side** to `CONSULT_API_URL` (the Consult API) or `AUTH_API_URL` (the Auth API), choosing the target from the path. `vercel.json` stays `{}` and `next.config.ts` gains no `rewrites()`. No CORS allowance is configured on the Laravel host, and the refresh cookie is same-origin with `Path=/api/v1/auth`, `SameSite=Lax`.
+The browser talks same-origin only. A catch-all Route Handler `app/api/v1/[...path]/route.ts` forwards browser traffic **server-side** to `CONSULT_API_URL` (the Consult API). `vercel.json` stays `{}` and `next.config.ts` gains no `rewrites()`. No CORS allowance is configured on the Consult host, and the refresh cookie crosses same-origin, so the attributes the Consult API sets are unchanged.
 
-Target selection mirrors the reference implementation: `auth/callback`, `auth/refresh`, and `auth/logout` go to the Consult API (they are Consult endpoints that proxy onward themselves); any other `auth/*` goes to the Auth API; everything else goes to the Consult API.
+Target selection: **the Consult API is the only upstream.** `api-endpoints.md` v2.1 defines the Consult surface as the domain endpoints plus the SSO trio, and §2.2 assigns user and group writes to the Auth Platform — so nothing in the browser's traffic needs a second host. (e-cert's handler splits non-trio `auth/*` to the Auth host because cert's own surface requires it; consult's does not. See `../services/api-client.md` DEC-2a for the open question of whether the consult admin UI will need one.)
 
 Forwarding contract, carried from the e-cert handler:
 
 | Aspect | Rule |
 |---|---|
-| Method, path, query | Forwarded verbatim; target is `{BASE}/api/v1/{path}` plus the original query string |
+| Method, path, query | Forwarded verbatim; target is the Consult API's base + `/api/v1/` + the path, plus the original query string |
 | Body | Streamed for non-`GET`/`HEAD`; empty body sent as none |
 | Headers | `authorization`, `content-type`, `accept`, `x-requested-with`, `x-forwarded-for`, `user-agent` |
-| Cookies | Forwarded **only** for `auth/refresh` and `auth/logout` |
+| Cookies | Forwarded **only** on the refresh and logout paths (`auth-integration.md` v1.6 §3) |
 | Response | Upstream `content-type`, `content-disposition`, `content-length`, and every `set-cookie` passed through; body streamed; `redirect: "manual"` |
 | Empty path | `400` |
 | Upstream unreachable | `502` |
+
+The header and cookie lists above describe what e-cert's handler happens to forward; consult adopts them as a deliberate choice, not as a contract, and is free to narrow them. The cookie-scoping rule is the one with a security reason and is kept.
 
 The handler MUST NOT transform, validate, enrich, or inject auth. If a payload is wrong, that is a Consult API defect and is filed against the backend spec; the proxy is never the place to paper over it (`../cutover-headline.md` CON-9).
 
 ## Consequences
 
-- No CORS configuration on the Laravel host, and no `SameSite=None` cookie.
-- The Consult and Auth API hostnames never reach the browser bundle. That is the privacy property, and it is why the targets are server-only env vars (`../services/platform.md` CON-4).
+- No CORS configuration on the Consult host, and no relaxation of the cookie attributes the Consult API sets (`auth-integration.md` v1.6 §3).
+- The Consult API hostname never reaches the browser bundle. That is the privacy property, and it is why the target is a server-only env var (`../services/platform.md` CON-2).
 - The browser's Network tab shows one origin, which makes the T1 E2E cookie check (`EC-CUTOVER-001` ACC-2) observable rather than inferred.
-- A 502 here means the upstream platform is unreachable, not that the app is broken; the two must be told apart in any error surface built on top.
-- The typed client talks to same-origin `/api/v1/*` and never learns the upstream host. If the BFF is ever replaced by a `vercel.json` rewrite, the client is unaffected — which is precisely why the rewrite option remains a documented fallback.
+- A 502 here means the Consult API is unreachable, not that the app is broken; the two must be told apart in any error surface built on top.
+- The typed client talks to same-origin `/api/v1/*` and never learns the upstream host. If the BFF is ever replaced by a `vercel.json` rewrite, the client is unaffected — which is why the rewrite option remains a documented fallback.
+- **Reference discipline:** this record adopts e-cert's *mechanism*, not its *contract*. Where cert's handler and the Consult specs disagree, the Consult specs win. One example already fixed: an earlier draft of `../services/api-client.md` asserted a non-trio `auth/*` → Auth-host route that the Consult API does not have.
