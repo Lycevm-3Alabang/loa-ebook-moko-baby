@@ -213,7 +213,16 @@ Tests (Vitest, `lib/__tests__/`) cover both halves: unit/integration cases for l
 - **Known Final contracts:** `api-endpoints.md` v2.1 (flat 104+5, bare shapes `{data}`/`{error}` — no envelope), `endpoints-reports.md` v1.0 (7 report families), `frontend-transition.md` v1.1 (T0→T5 cutover order — the plan this repo executes).
 - **Auth model:** Auth-issued JWT (in-memory only, never localStorage) + httpOnly refresh cookie; tenant `loa-consultation`; groups come from the JWT `groups` claim (`aces-admin`/`aces-dean`/`aces-faculty`/`aces-user`) — never local roles. Pipe-delimited `user.role` strings are legacy display vocabulary only.
 - **Topology:** Vercel host, **Option B = same-origin BFF passthrough** — a catch-all Route Handler forwards browser traffic server-side to `CONSULT_API_URL`/`AUTH_API_URL`; no `vercel.json`/`next.config.ts` rewrites and **no CORS**, so the refresh cookie stays same-origin `SameSite=Lax` (mechanism corrected 2026-09-30 after reading the e-cert handler; see `specs/decisions/bff-passthrough.md`). Cookie flags verified at T1 E2E.
-- **Local specs:** `specs/services/{api-client,auth,platform}.md` (`EC-API-001`/`EC-AUTH-001`/`EC-PLAT-001`, Draft v0.1) + `specs/decisions/{csr-spa,bff-passthrough,jwt-display-only}.md` (`EC-D1`/`EC-D2`/`EC-D3`).
+- **Local specs:** `specs/services/{api-client,auth,platform}.md` (`EC-API-001` v1.1 / `EC-AUTH-001` v1.1 / `EC-PLAT-001` v1.0, all Final) + `specs/decisions/{csr-spa,bff-passthrough,jwt-display-only}.md` (`EC-D1`/`EC-D2`/`EC-D3`) + `cutover-headline.md` (`EC-CUTOVER-001` v1.3) and `appointments-flow.md` (`EC-APPT-001` v1.0).
+- **Reference discipline:** backend behavior is cited by ID, never restated. See the Reference discipline section in each service spec. Where a citation and a local spec disagree, the citation wins and the local spec is a bug.
 - **Rule:** cite backend specs by ID when a frontend change depends on endpoint behavior; file backend discrepancies as spec gaps there, do not work around them here.
+
+## Cutover state (as of 2026-09-30)
+
+- **T0 + T1-a + T1-b done** (2026-09-26): SSO seam, fragment callback, in-memory token, login button.
+- **BFF handler built, awaiting gates** (`EC-API-001` D-1): `app/api/v1/[...path]/route.ts`. Gates are `npm run lint`, `npx tsc --noEmit`, and the two vitest files — the agent does not run them.
+- **`proxy.ts` still live** and still holds a legacy next-auth server gate; it is retired at T3 (`EC-CUTOVER-001` DEC-6). Until then `/api/v1` is explicitly exempt from it (`EC-API-001` CON-12) — a leftover legacy session on a non-admin account would otherwise 403 every BFF call.
+- **Still direct-Supabase:** all 112 `app/api/**/route.ts` handlers, `features/*/`, `lib/repositories/factory.ts`, `lib/auth.ts`, `lib/access.ts`. Those go per T2 area and at T4.
+- **Do not reintroduce:** a public API-URL variable, a cross-origin browser call, or a raw `fetch()` in new code.
 
 
