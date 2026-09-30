@@ -210,9 +210,10 @@ Tests (Vitest, `lib/__tests__/`) cover both halves: unit/integration cases for l
 ## Consult Backend Awareness (reference only — this project does not depend on its repo)
 
 - **Backend:** Laravel 12 API at `D:\loa\loa-apache-server-apps\assemblies\loa-consult-platform\` (own repo, own lifecycle). This frontend consumes it at cutover; the backend never adapts to the frontend.
-- **Known Final contracts:** `api-endpoints.md` v2.1 (flat 104+5, bare shapes `{data}`/`{error}` — no envelope), `endpoints-reports.md` v1.0 (7 report families), `frontend-transition.md` v1.0 (T0→T5 cutover order — the plan this repo executes).
+- **Known Final contracts:** `api-endpoints.md` v2.1 (flat 104+5, bare shapes `{data}`/`{error}` — no envelope), `endpoints-reports.md` v1.0 (7 report families), `frontend-transition.md` v1.1 (T0→T5 cutover order — the plan this repo executes).
 - **Auth model:** Auth-issued JWT (in-memory only, never localStorage) + httpOnly refresh cookie; tenant `loa-consultation`; groups come from the JWT `groups` claim (`aces-admin`/`aces-dean`/`aces-faculty`/`aces-user`) — never local roles. Pipe-delimited `user.role` strings are legacy display vocabulary only.
-- **Topology:** Vercel host, Option B direct cross-origin + CORS (cert-actual strategy); cookie flags verified at T1 E2E.
+- **Topology:** Vercel host, **Option B = same-origin BFF passthrough** — a catch-all Route Handler forwards browser traffic server-side to `CONSULT_API_URL`/`AUTH_API_URL`; no `vercel.json`/`next.config.ts` rewrites and **no CORS**, so the refresh cookie stays same-origin `SameSite=Lax` (mechanism corrected 2026-09-30 after reading the e-cert handler; see `specs/decisions/bff-passthrough.md`). Cookie flags verified at T1 E2E.
+- **Local specs:** `specs/services/{api-client,auth,platform}.md` (`EC-API-001`/`EC-AUTH-001`/`EC-PLAT-001`, Draft v0.1) + `specs/decisions/{csr-spa,bff-passthrough,jwt-display-only}.md` (`EC-D1`/`EC-D2`/`EC-D3`).
 - **Rule:** cite backend specs by ID when a frontend change depends on endpoint behavior; file backend discrepancies as spec gaps there, do not work around them here.
 
 
