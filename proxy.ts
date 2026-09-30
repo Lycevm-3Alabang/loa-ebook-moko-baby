@@ -8,7 +8,12 @@ const PUBLIC_PATHS = new Set([
   "/setup-password", "/faq",
 ])
 
-const PUBLIC_PREFIXES = ["/_next", "/api/auth", "/api/audit", "/api/bug-reports", "/api/semesters/count-active", "/api/health"]
+// `/api/v1` is the BFF passthrough (EC-API-001 D-1). It MUST stay public to
+// this gate: its security is the Consult API's own `jwt.auth`/`jwt.endpoint`,
+// applied upstream. Without it, a leftover legacy next-auth session (retired
+// at T4) 403s every BFF call for non-admins via closed-by-default below —
+// which silently breaks sign-in. EC-CUTOVER-001 DEC-6 deletes this gate at T3.
+const PUBLIC_PREFIXES = ["/_next", "/api/auth", "/api/audit", "/api/bug-reports", "/api/v1", "/api/semesters/count-active", "/api/health"]
 
 const SEMESTER_LOCKED_PATH = "/admin/data/academic-infrastructure"
 

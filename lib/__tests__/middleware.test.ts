@@ -110,4 +110,21 @@ describe("proxy middleware", () => {
     const res = await proxy(mockRequest("/student"))
     expect(res.status).toBe(200)
   })
+
+  // EC-API-001 ACC-4b / CON-12: the BFF path is exempt from this gate.
+  // Without the exemption, a leftover legacy session on a non-admin account
+  // hits closed-by-default below and 403s every sign-in call — the BFF's
+  // security is the Consult API's own middleware, applied upstream.
+  it("exempts the BFF path from closed-by-default for non-admins with a legacy session", async () => {
+    mockGetToken.mockResolvedValue({ role: "FACULTY", id: "user-1" })
+    const res = await proxy(mockRequest("/api/v1/appointments"))
+    expect(isForbidden(res)).toBe(false)
+    expect(res.status).toBe(200)
+  })
+
+  it("exempts the BFF callback path from closed-by-default", async () => {
+    mockGetToken.mockResolvedValue({ role: "STUDENT", id: "user-1" })
+    const res = await proxy(mockRequest("/api/v1/auth/callback"))
+    expect(isForbidden(res)).toBe(false)
+  })
 })

@@ -8,6 +8,8 @@ import { useJwt } from "@/lib/jwt-context"
 // SSO landing: Auth redirects here as origin#payload=<blob>.
 // Extract the fragment (never sent to any server as a URL) and exchange it
 // once via POST /api/v1/auth/callback, then enter the app.
+// EC-AUTH-001 DEC-1: replaceState (not `location.hash = ""`) so the payload
+// leaves no history entry for the back button to replay.
 function CallbackRunner() {
   const router = useRouter()
   const { login, status } = useJwt()
@@ -16,9 +18,8 @@ function CallbackRunner() {
   useEffect(() => {
     let cancelled = false
     Promise.resolve().then(async () => {
-      const hash = window.location.hash
-      const match = hash.match(/#payload=([^&]+)/)
-      window.location.hash = ""
+      const match = window.location.hash.match(/#payload=([^&]+)/)
+      window.history.replaceState(null, "", window.location.pathname + window.location.search)
       if (!match) {
         if (!cancelled) setError("Missing SSO payload. Please sign in again.")
         return
@@ -26,8 +27,11 @@ function CallbackRunner() {
       try {
         await login(decodeURIComponent(match[1]))
         if (!cancelled) router.replace("/")
-      } catch {
-        if (!cancelled) setError("Sign-in failed. Please try again.")
+      } catch (e) {
+        // Surface the Consult API's own reason (stale payload, tampered,
+        // tenant mismatch) — a generic message sends people to retry blindly.
+        const reason = e instanceof Error ? e.message : ""
+        if (!cancelled) setError(reason || "Sign-in failed. Please try again.")
       }
     })
     return () => { cancelled = true }

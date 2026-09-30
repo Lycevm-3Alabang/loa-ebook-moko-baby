@@ -4,11 +4,14 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useRouter } from "next/navigation"
 import { setAuthToken } from "@/lib/api/client"
 
-// T1-b: Auth SSO source (frontend-transition.md DEC-3, cert FRONTEND-INTEGRATION
-// §§1-6 pattern). Token lives in memory only; refresh rides the httpOnly
-// `loa_connect_refresh` cookie (Option B direct + CORS → credentials:include).
-// Groups come from the JWT `groups` claim (Auth group names like aces-admin);
+// T1-b + EC-AUTH-001: Auth SSO source (frontend-transition.md DEC-3, cert
+// FRONTEND-INTEGRATION pattern). Token lives in memory only; refresh rides the
+// httpOnly refresh cookie the Consult API mints, forwarded same-origin through
+// the BFF (EC-D2). Groups come from the JWT `groups` claim (Auth group names);
 // UI labels map to legacy role names for display until T3 re-maps gating.
+//
+// EC-AUTH-001 CON-2: the cookie's name/attributes are the Consult API's
+// (`auth-integration.md` v1.6 §3) — this module never sees them.
 
 export interface JwtUser {
   id: string
@@ -61,8 +64,13 @@ function decodeGroups(token: string): string[] {
 
 const JwtContext = createContext<JwtContextValue | null>(null)
 
-const API_BASE = process.env.NEXT_PUBLIC_CONSULT_API_URL ?? ""
 const REFRESH_SKEW_MS = 60_000
+
+// EC-API-001 DEC-1: the browser base is same-origin, so it is a constant
+// rather than a configurable variable. `NEXT_PUBLIC_CONSULT_API_URL` was
+// removed (EC-PLAT-001 DEC-6) — a public variable holding the API host is
+// exactly what the BFF exists to prevent.
+const API_BASE = "/api/v1"
 
 interface CallbackData {
   access_token: string
@@ -70,14 +78,35 @@ interface CallbackData {
   user: { id: string; email: string; name: string }
 }
 
+// The Consult API reports auth failures as `{ message }` (AuthCallbackController
+// / AuthRefreshController), so surface that rather than a bare status.
+class AuthError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message)
+    this.name = "AuthError"
+  }
+}
+
 async function postAuth(path: string, body?: unknown): Promise<CallbackData> {
-  const res = await fetch(`${API_BASE}/api/v1/auth/${path}`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
-  })
-  if (!res.ok) throw new Error(`Auth ${path} failed (${res.status})`)
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}/auth/${path}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  } catch {
+    throw new AuthError(0, `Auth ${path} unreachable`)
+  }
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null)
+    const message =
+      (detail as { message?: string } | null)?.message ?? `Auth ${path} failed (${res.status})`
+    throw new AuthError(res.status, message)
+  }
+  // logout answers 204 with no body; nothing to parse.
+  if (res.status === 204) return { access_token: "", expires_in: 0, user: { id: "", email: "", name: "" } }
   const json = (await res.json()) as { status: string; data: CallbackData }
   return json.data
 }
@@ -89,6 +118,7 @@ export function JwtProvider({ children }: { children: React.ReactNode }) {
   const [expiresAt, setExpiresAt] = useState<number | null>(null)
   const [booted, setBooted] = useState(false)
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const refreshing = useRef<Promise<boolean> | null>(null)
 
   const applySession = useCallback((data: CallbackData) => {
     const groups = decodeGroups(data.access_token)
@@ -111,14 +141,24 @@ export function JwtProvider({ children }: { children: React.ReactNode }) {
   }, [applySession])
 
   const silentRefresh = useCallback(async (): Promise<boolean> => {
-    try {
-      const data = await postAuth("refresh")
-      applySession(data)
-      return true
-    } catch {
-      clearSession()
-      return false
-    }
+    // EC-AUTH-001 CON-6: one in-flight attempt only. The boot effect and the
+    // proactive timer can both reach for a refresh; a second concurrent call
+    // would rotate the cookie twice and can bounce the session out.
+    if (refreshing.current) return refreshing.current
+    const attempt = (async () => {
+      try {
+        const data = await postAuth("refresh")
+        applySession(data)
+        return true
+      } catch {
+        clearSession()
+        return false
+      } finally {
+        refreshing.current = null
+      }
+    })()
+    refreshing.current = attempt
+    return attempt
   }, [applySession, clearSession])
 
   const logout = useCallback(async () => {
@@ -138,13 +178,11 @@ export function JwtProvider({ children }: { children: React.ReactNode }) {
   }, [token])
 
   // Silent refresh on load (deferred per React 19 set-state-in-effect rule).
+  // EC-AUTH-001 DEC-5: no configuration state in which this is skipped — the
+  // base is same-origin, so there is nothing to bypass on.
   useEffect(() => {
     let cancelled = false
     Promise.resolve().then(async () => {
-      if (!API_BASE) {
-        if (!cancelled) setBooted(true)
-        return
-      }
       await silentRefresh()
       if (!cancelled) setBooted(true)
     })

@@ -6,9 +6,9 @@
 |-------|-------|
 | ID | `EC-API-001` |
 | Title | Typed API client and BFF transport for the Consult API |
-| Status | Final v1.0 (user-approved 2026-09-30; surfaces, no normative change from Draft v0.1) |
+| Status | Final v1.1 (user-approved 2026-09-30; `EC-D2` forwarding rows corrected + CON-12 legacy-gate exemption added) |
 | Owner | TBD (awaiting user confirmation) |
-| Version | 1.0 Final |
+| Version | 1.1 Final |
 | Scope | Transport for every data operation: same-origin BFF Route Handler, typed per-resource modules, auth header injection, error normalization, 403-lock telemetry, pagination |
 | Non-goals | Endpoint behavior (owned by the Consult API, cited by ID) · token lifecycle (`EC-AUTH-001`) · env/deploy topology (`EC-PLAT-001`) · feature flows (`EC-APPT-001` and siblings) · report computation (Phase E) · CSV/PDF export bytes |
 | Layer | `services` (data plumbing) |
@@ -43,6 +43,7 @@ Proven reference: e-cert `src/app/api/v1/[...path]/route.ts` and `src/lib/api/cl
 - **CON-9** — Internal `app/api/**/route.ts` handlers MUST stay live until their own area's parity gate passes, then be thinned per `EC-CUTOVER-001` DEC-4. T2 area order: appointments/availability → academic/semesters → evaluations/periods/rubrics/results → admin-import link-reads → reports last. The two §2.2 exceptions (`app/api/bug-reports/**` and `POST /api/audit/forbidden`) stay local permanently.
 - **CON-10** — The global `window.fetch` patch MUST be removed as each area moves to the typed client. While it remains, it MUST NOT attach a Bearer header to a same-origin legacy `/api/*` call that the Consult API does not serve, and MUST NOT swallow response bodies.
 - **CON-11** — Backend discrepancies MUST be filed as backend spec gaps, never worked around in this client. The Consult API never adapts to this frontend.
+- **CON-12** — The `/api/v1` path MUST be exempt from the legacy `proxy.ts` server gate (`EC-CUTOVER-001` DEC-6 retires that gate at T3, but it is live until then). Its matcher covers `/api/*`, and its closed-by-default branch answers a JSON `403` to any non-admin holding a legacy next-auth session — which would silently break sign-in for exactly the users mid-migration. The BFF's security is the Consult API's own `jwt.auth`/`jwt.endpoint` applied upstream, so the legacy gate has nothing to add on this path.
 
 ## Goal
 
@@ -61,9 +62,11 @@ Proven reference: e-cert `src/app/api/v1/[...path]/route.ts` and `src/lib/api/cl
 ### Acceptance — Objective (deterministic, machine-checkable)
 
 - **ACC-1** — BFF routing: every `/api/v1/*` path the Consult API defines forwards to the Consult host — asserted per area against a mocked `fetch` by target URL, including the SSO trio (`auth/callback`, `auth/refresh`, `auth/logout`) and at least one path per `api-endpoints.md` §5 area. No other target is asserted, because none is specified (DEC-2a).
-- **ACC-2** — BFF forwarding: `Authorization` and `content-type` reach the upstream call; query string is preserved verbatim; a non-`GET` body is forwarded; `content-type`/`content-disposition`/`content-length`/`set-cookie` from upstream are present on the response.
+- **ACC-2** — BFF forwarding: `Authorization` and `content-type` reach the upstream call; query string is preserved verbatim; a non-`GET` body is forwarded; `content-type`/`content-disposition` and every upstream `set-cookie` are present on the response; `content-length` is **absent** from the response headers.
 - **ACC-3** — BFF cookie scoping: cookies are forwarded for the SSO refresh and logout paths and **not** forwarded for ordinary domain calls or for the callback.
 - **ACC-4** — BFF failure modes: empty path array → `400` with a JSON error; upstream `fetch` throwing → `502` with a JSON error; upstream `3xx` is not followed (`redirect: "manual"`).
+- **ACC-4a** — Bodyless statuses: an upstream `204` yields a `204` with a null body **and** the upstream `set-cookie` still present on the response — the logout path clears the refresh cookie this way, and a body-carrying `NextResponse` on a `204` would throw at runtime.
+- **ACC-4b** — Legacy-gate exemption: with a non-admin legacy next-auth session present, a request to `/api/v1/appointments` passes `proxy.ts` and is answered by the BFF (or by the Consult API's own 401/403), never by the legacy gate's closed-by-default JSON `403`.
 - **ACC-5** — Client auth ladder: a `401` triggers exactly one refresh and one replay of the original request; a second `401` surfaces unauthenticated without a third call; a `403` triggers neither refresh nor replay.
 - **ACC-6** — Token storage: no reference to `localStorage`/`sessionStorage` in the auth path; the token is absent from the module's serialized state.
 - **ACC-7** — Shape pass-through: a response is returned to the caller with its keys and casing exactly as the Consult API produced them — no renaming, no flattening, no envelope added or removed.
@@ -79,10 +82,10 @@ Proven reference: e-cert `src/app/api/v1/[...path]/route.ts` and `src/lib/api/cl
 
 ### Deliverables
 
-- **D-1** — `app/api/v1/[...path]/route.ts`: the BFF Route Handler per CON-2, DEC-2, DEC-4 (all seven verbs over one `proxyRequest`; single Consult target, no Auth target — DEC-2a).
+- **D-1** — `app/api/v1/[...path]/route.ts`: the BFF Route Handler per CON-2, CON-12, DEC-2, DEC-4 (all seven verbs over one `proxyRequest`; single Consult target, no Auth target — DEC-2a; `content-length` not forwarded and bodyless statuses handled per `../decisions/bff-passthrough.md`).
 - **D-2** — `lib/api/client.ts`: typed `apiFetch` with Bearer injection and the 401-refresh-retry-once ladder (DEC-3, DEC-5, DEC-7); token sourced from the JWT context; `window.fetch` patch reduced to the legacy bridge and eventually deleted (CON-10).
 - **D-3** — Resource modules re-pointed to `/api/v1`: `appointments.ts` and `availability.ts` first (both exist and wrap legacy `/api/*` today), then the remaining `api-endpoints.md` §5 areas in the T2 order; reports last and blocked on the Consult Phase E endpoints existing.
-- **D-4** — `lib/__tests__/`: BFF routing tests (ACC-1–ACC-4), client ladder tests (ACC-5), token-storage test (ACC-6), shape pass-through (ACC-7), 403 telemetry (ACC-8) — one behavior per test, `fetch` mocked, `vi.resetAllMocks()` per `AGENTS.md` Lessons Learned §5.
+- **D-4** — `lib/__tests__/`: BFF routing tests (ACC-1–ACC-4), legacy-gate exemption test (ACC-4b, in the existing `middleware.test.ts` harness), client ladder tests (ACC-5), token-storage test (ACC-6), shape pass-through (ACC-7), 403 telemetry (ACC-8) — one behavior per test, `fetch` mocked, `vi.resetAllMocks()` per `AGENTS.md` Lessons Learned §5.
 - **D-5** — User-run manual checks: ACC-S1–ACC-S3, recorded in this repo's `TODO.md` when complete.
 
 ### Glossary
@@ -114,8 +117,12 @@ The failure this prevents is concrete and already happened once: an earlier draf
 
 ## Document Control
 
-- **Status:** Final v1.0 — user-approved 2026-09-30. No normative change from Draft v0.1.
-- **Created:** 2026-09-30 as Draft v0.1, `EC-CUTOVER-001` D-2 (`specs/services/api-client.md` e-cert mirror on consult names/hosts/cookie).
-- **Supersedes:** nothing. Complements `EC-APPT-001` (area flow), `EC-AUTH-001` (session), `EC-PLAT-001` (env/deploy), and `EC-CUTOVER-001` (order).
-- **Known current drift (recorded, not yet fixed — both are D-2 work):** `lib/api/client.ts` still holds a module-level `authToken` duplicating the JWT context (DEC-7), and its `window.fetch` patch still attaches Bearer to same-origin legacy `/api/*` calls (CON-10). `lib/api/appointments.ts` + `availability.ts` still wrap legacy `/api/*` (D-3).
-- **Next:** D-1 (the BFF handler) is unblocked and is the first code step. D-2, D-3, D-4 follow in order.
+- **Status:** Final v1.1 — user-approved 2026-09-30.
+- **Created:** 2026-09-30 as Draft v0.1, `EC-CUTOVER-001` D-2. Promoted to Final v1.0 the same day, no normative change. **v1.1: three amendments found by implementing and testing D-1.**
+- **v1.1 changes:**
+  - **ACC-2** — `content-length` removed from the expected response headers. `EC-D2`'s response row said to forward it, which is wrong: `fetch` decompresses the body, so the upstream length describes bytes the client never receives. The decision record is amended to match.
+  - **ACC-4a added** — bodyless statuses (`204`/`205`/`304`) return a null body with `set-cookie` still passed through. The Consult logout clears the refresh cookie on a `204`, and a body-carrying `NextResponse` there throws at runtime. This was unspecified and the test that covered it was dropped mid-draft; it is now both specified and covered.
+  - **CON-12 + ACC-4b added** — the `/api/v1` path MUST be exempt from the legacy `proxy.ts` gate. Its matcher covers `/api/*` and its closed-by-default branch 403s any non-admin with a legacy next-auth session, which silently breaks sign-in. This code change was made to fix a real blocker before this constraint existed.
+- **No other clause changed** — the D-2 target decision, the transport contract, and every deliverable scope are untouched.
+- **Known current drift (recorded, not yet fixed — D-2 work):** `lib/api/client.ts` still holds a module-level `authToken` duplicating the JWT context (DEC-7), and its `window.fetch` patch still attaches Bearer to same-origin legacy `/api/*` calls (CON-10). `lib/api/appointments.ts` + `availability.ts` still wrap legacy `/api/*` (D-3). The `EC-AUTH-001` tests (ACC-1–ACC-9) are not written yet.
+- **Next:** D-1 is landed and awaiting the user's lint/typecheck/vitest paste. D-2 through D-4 follow.

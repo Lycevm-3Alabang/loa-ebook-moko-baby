@@ -6,9 +6,9 @@
 |-------|-------|
 | ID | `EC-AUTH-001` |
 | Title | Auth SSO session handling for the Consult API |
-| Status | Final v1.0 (user-approved 2026-09-30; surfaces, no normative change from Draft v0.1) |
+| Status | Final v1.1 (user-approved 2026-09-30; DEC-1a added — auth failure surfaces the API's own `message`) |
 | Owner | TBD (awaiting user confirmation) |
-| Version | 1.0 Final |
+| Version | 1.1 Final |
 | Scope | SSO fragment handling, in-memory access token, claim-based role/tenant display, client route guard, silent and proactive refresh, logout |
 | Non-goals | Token issuance or signing (Auth Platform) · payload decryption and cookie minting (Consult API) · login/register/password UI · user and role management (Auth Platform) · endpoint behavior (cited by ID) |
 | Layer | `services` (identity plumbing — owns no identity) |
@@ -54,6 +54,7 @@ Proven reference: e-cert `specs/services/auth.md` §3-§5 and `specs/services/au
 ### Decisions
 
 - **DEC-1** — The flow is the Consult API trio, same-origin: fragment `#payload` → `history.replaceState` to clear it → `POST /api/v1/auth/callback {payload}` → access token into memory → httpOnly cookie already set by the API → route to the intended destination.
+- **DEC-1a** — A failed auth call MUST surface the Consult API's own `message` in the UI, not a generic "try again". The API distinguishes `Missing payload` / `Invalid or tampered payload` / `Stale payload` / `Missing access_token in payload` / `Missing refresh_token in payload` (400), `Invalid access token` (401), and `{message: Forbidden, reason: tenant_mismatch}` (403) — per `auth-integration.md` v1.6 §3. A generic message sends a user with a stale payload or a tenant mismatch into a blind retry loop. The generic string remains only as the fallback when the response carries no `message`.
 - **DEC-2** — `lib/jwt-context.tsx` remains the single session owner and the single source of the Bearer header for the client (`EC-API-001` DEC-7). It is not split into a separate token-store module; e-cert's split is a cert-side structure, not a requirement, and a second store is a second chance to persist a token.
 - **DEC-3** — The `session` object with the pipe-delimited `role` is retained **only** as a display shim so un-migrated components keep rendering during T1→T3. It is derived from the claims `api-endpoints.md` v2.1 §4.0 defines, never stored, and is deleted when T3 lands the groups-claim gating.
 - **DEC-4** — Proactive rotation stays: schedule a refresh 60s before `expires_at`. On load, attempt refresh before deciding `authenticated` vs `unauthenticated`.
@@ -66,7 +67,7 @@ Proven reference: e-cert `specs/services/auth.md` §3-§5 and `specs/services/au
 
 - **ACC-1** — Fragment handling: given a URL with `#payload=<blob>`, the callback page calls `login(payload)` exactly once and clears the fragment via `history.replaceState`.
 - **ACC-2** — Callback success: a `200` response yields a token in memory, `user` populated from `data.user`, and `status === "authenticated"`. The token is not written to any storage API.
-- **ACC-3** — Callback failure: a `400`/`401`/`403` response leaves `token === null`, `status === "unauthenticated"`, and triggers no further callback attempts (no loop).
+- **ACC-3** — Callback failure: a `400`/`401`/`403` response leaves `token === null`, `status === "unauthenticated"`, and triggers no further callback attempts (no loop). The API's `message` is what the UI shows (DEC-1a) — `Stale payload` and `tenant_mismatch` are distinguishable in the rendered output.
 - **ACC-4** — Silent refresh on load: with no token but a valid cookie, one `POST /api/v1/auth/refresh` is issued and the session becomes authenticated. With neither, the session is unauthenticated and no further refresh is attempted.
 - **ACC-5** — Proactive rotation: with a token expiring in under 60s, a refresh is scheduled; the interval equals `expires_at - now - 60_000`, floored at zero.
 - **ACC-6** — Logout: one `POST /api/v1/auth/logout`; on success `token === null` and the user is routed away from protected pages. A logout network failure still clears local state.
@@ -117,7 +118,9 @@ Concretely, this spec does not state the cookie's name or flags, does not enumer
 
 ## Document Control
 
-- **Status:** Final v1.0 — user-approved 2026-09-30. No normative change from Draft v0.1.
-- **Created:** 2026-09-30 as Draft v0.1, `EC-CUTOVER-001` D-2 (`specs/services/auth.md` e-cert mirror on consult names/hosts/cookie).
-- **Note:** T1-a/T1-b already landed a working version of most of this. This spec records the target and the two defects the landed code carries (direct cross-origin auth calls; the `API_BASE`-empty refresh bypass), so the drift is visible rather than implicit.
-- **Next:** D-1 depends on `EC-API-001` D-1 (the BFF) landing first, because the same-origin requirement cannot be satisfied before the handler exists. D-2 through D-4 follow. D-5 is the T3/T4 retirement checklist — checkable, not executed in this phase.
+- **Status:** Final v1.1 — user-approved 2026-09-30.
+- **Created:** 2026-09-30 as Draft v0.1, `EC-CUTOVER-001` D-2. Promoted to Final v1.0 the same day. **v1.1: DEC-1a + ACC-3 amended.**
+- **v1.1 change:** the callback page was changed to show the Consult API's `message` rather than a generic failure string before this behavior had a constraint. DEC-1a now states it and ACC-3 asserts the two cases that matter (`Stale payload`, `tenant_mismatch`) are distinguishable. **No other clause changed.**
+- **Note:** T1-a/T1-b already landed a working version of most of this. This spec records the target and the two defects the landed code carried (direct cross-origin auth calls; the `API_BASE`-empty refresh bypass) — both fixed in the same pass as v1.1.
+- **Known current drift (recorded, not yet fixed):** the `EC-AUTH-001` tests (ACC-1–ACC-9) are not written — D-4 is still open.
+- **Next:** D-1 depends on `EC-API-001` D-1 (the BFF), which is landed and awaiting the user's gates. D-2 through D-4 follow. D-5 is the T3/T4 retirement checklist — checkable, not executed in this phase.

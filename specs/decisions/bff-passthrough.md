@@ -1,9 +1,9 @@
 # D2 — Same-origin BFF pass-through
 
 **ID:** `EC-D2`
-**Status:** Accepted
+**Status:** Accepted (amended 2026-09-30 — response-forwarding rows corrected; see Consequences)
 **Date:** 2026-09-30
-**Spec:** `../cutover-headline.md` (`EC-CUTOVER-001`) CON-8, DEC-1, DEC-4; `../services/api-client.md` CON-2; `../services/platform.md` CON-3; `../services/auth.md` CON-3
+**Spec:** `../cutover-headline.md` (`EC-CUTOVER-001`) CON-8, DEC-1, DEC-4; `../services/api-client.md` CON-2, CON-12; `../services/platform.md` CON-3; `../services/auth.md` CON-3
 
 ## Context
 
@@ -28,11 +28,20 @@ Forwarding contract, carried from the e-cert handler:
 | Body | Streamed for non-`GET`/`HEAD`; empty body sent as none |
 | Headers | `authorization`, `content-type`, `accept`, `x-requested-with`, `x-forwarded-for`, `user-agent` |
 | Cookies | Forwarded **only** on the refresh and logout paths (`auth-integration.md` v1.6 §3) |
-| Response | Upstream `content-type`, `content-disposition`, `content-length`, and every `set-cookie` passed through; body streamed; `redirect: "manual"` |
+| Response | Upstream `content-type`, `content-disposition`, and every `set-cookie` passed through; body streamed; `redirect: "manual"` |
+| `content-length` | **Not forwarded.** `fetch` decompresses the upstream body, so the upstream length describes bytes the client never receives; letting the runtime frame the response avoids a length mismatch |
+| Bodyless statuses | `204`/`205`/`304` return a null body, and `set-cookie` is **still** passed through — the Consult logout clears the refresh cookie with a `204` |
 | Empty path | `400` |
 | Upstream unreachable | `502` |
 
 The header and cookie lists above describe what e-cert's handler happens to forward; consult adopts them as a deliberate choice, not as a contract, and is free to narrow them. The cookie-scoping rule is the one with a security reason and is kept.
+
+**Amendment 2026-09-30.** Two rows in the original table were wrong, found by implementing D-1 and testing it:
+
+- **`content-length` must not be forwarded.** The original row listed it with `content-type` and `content-disposition`. But `fetch` decompresses the upstream body, so the upstream length describes bytes the client never receives; forwarding it produces a length mismatch. This was a defect in the record, inherited from e-cert's handler, which does forward it.
+- **Bodyless statuses need explicit handling.** The Consult logout answers `204` and clears the refresh cookie in the same response. A naive body passthrough constructs a `NextResponse` with a body on a `204`, which the runtime rejects — so the logout path would throw. `set-cookie` must survive on a `204`.
+
+Both are now in the table above, and `../services/api-client.md` carries the matching acceptance. Neither changes the architecture; both correct the record to what the runtime and the Consult contract actually require.
 
 The handler MUST NOT transform, validate, enrich, or inject auth. If a payload is wrong, that is a Consult API defect and is filed against the backend spec; the proxy is never the place to paper over it (`../cutover-headline.md` CON-9).
 
