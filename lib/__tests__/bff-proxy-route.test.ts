@@ -9,8 +9,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 
 const mockFetch = vi.hoisted(() => vi.fn())
 
+// EC-PLAT-001 ACC-2 requires the target asserted in BOTH directions, and
+// route.ts captures it in a module-level const — so the value must be in place
+// before the module below is imported. `beforeEach` runs long after import
+// evaluation and cannot influence a frozen const, which is why the unset case
+// has to re-import the module rather than mutate the env mid-file.
+const { ORIGINAL_CONSULT_API_URL } = vi.hoisted(() => {
+  const original = process.env.CONSULT_API_URL
+  process.env.CONSULT_API_URL = "http://localhost:9002"
+  return { ORIGINAL_CONSULT_API_URL: original }
+})
+
 vi.stubGlobal("fetch", mockFetch)
 
+import { NextRequest } from "next/server"
 import {
   GET,
   POST,
@@ -20,8 +32,6 @@ import {
   HEAD,
   OPTIONS,
 } from "@/app/api/v1/[...path]/route"
-
-const ORIGINAL_CONSULT_API_URL = process.env.CONSULT_API_URL
 
 function upstream(overrides: Partial<Response> = {}): Response {
   return {
@@ -35,15 +45,13 @@ function upstream(overrides: Partial<Response> = {}): Response {
 function request(
   path: string,
   init: { method?: string; headers?: Record<string, string>; body?: string } = {}
-): Request {
-  const url = new URL(`https://app.test/api/v1/${path}`)
-  return {
-    method: init.method ?? "GET",
-    nextUrl: url,
-    url: url.href,
+): NextRequest {
+  const method = init.method ?? "GET"
+  return new NextRequest(`https://app.test/api/v1/${path}`, {
+    method,
     headers: new Headers(init.headers ?? {}),
-    arrayBuffer: async () => new TextEncoder().encode(init.body ?? "").buffer,
-  } as unknown as Request
+    ...(init.body !== undefined ? { body: init.body } : {}),
+  })
 }
 
 async function call(
@@ -93,11 +101,9 @@ describe("BFF passthrough — EC-API-001", () => {
   })
 
   it("preserves the query string on the target URL", async () => {
-    const url = new URL("https://app.test/api/v1/appointments?status=pending&page=2")
-    const res = await GET(
-      { method: "GET", nextUrl: url, url: url.href, headers: new Headers(), arrayBuffer: async () => new ArrayBuffer(0) } as unknown as Request,
-      { params: Promise.resolve({ path: ["appointments"] }) }
-    )
+    const res = await GET(request("appointments?status=pending&page=2"), {
+      params: Promise.resolve({ path: ["appointments"] }),
+    })
     expect(res.status).toBe(200)
     expect(lastCall()[0]).toBe("http://localhost:9002/api/v1/appointments?status=pending&page=2")
   })
@@ -255,11 +261,31 @@ describe("BFF passthrough — EC-API-001", () => {
     expect(cookies[0]).toContain("loa_connect_refresh")
   })
 
-  // --- env fallback (DEC-3, CON-6) ---------------------------------------
+  // --- ACC-2 / EC-PLAT-001 ACC-2: target resolution, both directions -------
+  //
+  // route.ts resolves the target into a module-level const, which is correct at
+  // runtime (Next loads .env before modules evaluate) but means the value is
+  // frozen per module instance. Each direction therefore needs its own instance,
+  // which is what the resetModules + re-import below is for. Without this the
+  // unset assertion passed for the wrong reason: the const had already captured
+  // a set value, so the test could not fail.
+
+  it("resolves the target from CONSULT_API_URL when it is set", async () => {
+    vi.resetModules()
+    const route = await import("@/app/api/v1/[...path]/route")
+    await route.GET(request("appointments"), {
+      params: Promise.resolve({ path: ["appointments"] }),
+    })
+    expect(lastCall()[0]).toBe("http://localhost:9002/api/v1/appointments")
+  })
 
   it("falls back to the production host when CONSULT_API_URL is unset", async () => {
     delete process.env.CONSULT_API_URL
-    await call(GET, ["appointments"])
+    vi.resetModules()
+    const route = await import("@/app/api/v1/[...path]/route")
+    await route.GET(request("appointments"), {
+      params: Promise.resolve({ path: ["appointments"] }),
+    })
     expect(lastCall()[0]).toBe("https://aces-api.lyceumalabang.edu.ph/api/v1/appointments")
   })
 

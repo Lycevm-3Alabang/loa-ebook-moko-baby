@@ -1,5 +1,52 @@
 # AGENTS.md — LOA Connect Hub
 
+## The Core Loop
+
+Three rules. They govern every task in this repo and are not advisory. They refine the Behavioral Rules below rather than competing with them.
+
+### 1. Frame first, code later — the five fields
+
+Before writing **any** spec, and before implementing anything whose problem statement is not already on record, ask the user for these five. They are the user's to supply, not yours to draft:
+
+| Field | The question it answers |
+|-------|-------------------------|
+| **Problem** | What is actually broken or missing, and for whom? |
+| **Constraints** | What must not change — backward compatibility, the bare-shape contract, the cutover order, the BFF topology? |
+| **Non-goals** | What is deliberately out of scope, so it does not creep back in? |
+| **Success criteria** | What is observably true when this is finished? |
+| **What "done" means** | Which gate proves it — a pasted `npx vitest run`, a browser/SSO check, a user yes? |
+
+- **Never invent these five.** In a cutover repo the most expensive guess is a *boundary* guess — re-pointing the wrong area, or re-pointing an area the backend cannot serve.
+- **Hard rules for spec creation specifically.** This repo's whole spec program depends on it: a spec missing any of the five is a Draft with a hole in it. Write the spec anyway if asked, but put `TBD — user input required` in the metadata table rather than a plausible guess.
+- **If the user has already framed it,** do not block. Reflect their framing back as the five fields and ask only for what is missing — a confirmation, not an interrogation.
+- **Reconcile with the spec lifecycle below:** authoring a spec is always honored. Ask for the framing first, then write. A missing field is never grounds to refuse.
+
+### 2. Solution hierarchy — always top-down
+
+```text
+Problem  →  Options & trade-offs  →  Architecture  →  Contracts / interfaces  →  Implementation  →  Tests
+```
+
+- **Only work the layers below the user's current layer.** If they are deciding *what* to re-point, you propose options and trade-offs. Once they have decided, you design. Implementation starts only after Architecture and Contracts are settled with them.
+- **The stop line is the boundary, not the code.** Never start re-pointing an area while the real issue is ambiguous requirements or wrong scope boundaries. A re-point against an endpoint the backend 403s or has not built converts a backend defect into a user-visible failure and makes rollback ambiguous.
+- **Trade-offs are mandatory.** Always name what is given up: the rejected alternative and its cost, what is deferred, what breaks later. A recommendation with no stated cost is not a recommendation.
+- **A discovery that invalidates a layer sends you back up.** If implementation reveals the requirement was wrong, that is Classification C — return to the spec, then re-approach. Do not patch downstream and keep moving.
+- **Check the other side before proposing a layer change.** This repo consumes a backend with its own lifecycle. Before designing against an endpoint, confirm it is spec'd *and* served there, and cite it by ID (`EC-CUTOVER-001` CON-2). Never restate backend behavior, and never work around a backend gap here.
+
+### 3. Who holds what
+
+**The user holds the "why" and the "what."** That is judgment under ambiguity — what to build, what to cut, what will break in production, whether a boundary is right. It is not typing speed and not syntax recall, and it is measured by neither.
+
+**You hold the "how."** You are a tireless junior: fast, no context, no stakes. Concrete consequences:
+
+- **Never ask the user for something you should own.** File locations, component structure, TypeScript types, command syntax, which of two implementations is idiomatic. Asking them to recall syntax offloads your job and wastes the only thing they are actually good at.
+- **Do bring them the things only they can judge.** Which re-point order is survivable. What a rollback costs. Whether a legacy route can be deleted yet. Whether a parity sample is convincing. Whether a deferral is honest.
+- **Do not pad with restatement.** Do not summarize what the user just said back to them; go to the next layer.
+- **Fast is not the goal.** A large volume of plausible work against an unconfirmed target is a failure mode, not productivity.
+- **You have no stake and they do.** Flag the risk and the thing that will fail in production. Do not soft-pedal a problem you found, and do not withhold one because the work is nearly finished.
+
+> Every turn also ends with a **Next action** block — see the end of this file.
+
 ## Stack
 
 - **Framework:** Next.js 16 (App Router), TypeScript, React 19
@@ -100,7 +147,8 @@ lib/                    # Global utilities & infrastructure
 ## Testing
 
 - Vitest with jsdom environment (config: `vitest.config.ts`)
-- All tests in `lib/__tests__/` (9 test files)
+- All tests in `lib/__tests__/` — 18 `*.test.ts` files + `vitest.setup.ts` (the "9 test files" figure in older notes is stale)
+- Only `bff-proxy-route.test.ts` currently carries a spec ID in its header (`EC-API-001` D-4); the other 17 have no spec citation. There is **no** `test-suite.md` equivalent for this frontend — the test contract is distributed across `EC-API-001` / `EC-AUTH-001` acceptance lists, which is a known gap
 - Repositories mocked via `lib/repositories/factory.ts` module mock
 - CI runs `npx vitest run` on push/PR to `main`
 
@@ -172,6 +220,8 @@ Renaming DB columns cascade through the full TypeScript stack:
 
 ## Behavioral Rules (from deleted `app/AGENT.md`)
 
+> These operationalize the Core Loop at the top. "Ask before assuming" is Core Loop 1; "Explain before implementing" and "Proposal format" are Core Loop 2's Options layer; "No autopilot" is what keeps the Core Loop from becoming autopilot.
+
 - **Default mode: advisory** — analyze, explain, review, recommend, ask. Do not generate code unless explicitly asked.
 - **Ask before assuming** — if uncertain, ambiguous, or requirements are incomplete, ask. Never guess or infer.
 - **Explain before implementing** — what, why, where, risks, alternatives. Wait for approval.
@@ -211,9 +261,10 @@ Tests (Vitest, `lib/__tests__/`) cover both halves: unit/integration cases for l
 
 - **Backend:** Laravel 12 API at `D:\loa\loa-apache-server-apps\assemblies\loa-consult-platform\` (own repo, own lifecycle). This frontend consumes it at cutover; the backend never adapts to the frontend.
 - **Known Final contracts:** `api-endpoints.md` v2.1 (flat 104+5, bare shapes `{data}`/`{error}` — no envelope), `endpoints-reports.md` v1.0 (7 report families), `frontend-transition.md` v1.1 (T0→T5 cutover order — the plan this repo executes).
+- **⚠ Gating T2 — `frontend-integration-gate.md` `CONSULT-FIG-001` (backend, **Draft v0.2**, own repo).** This is the endpoint-correctness gate ahead of all T2 work, and it is currently **not Final**, so T2 area re-pointing is not authorized. Its root finding: 22 authorization gates in the backend's `AppointmentController` / `EvaluationController` / `AvailabilityRuleController` compare pre-tenant literals (`STUDENT`/`FACULTY`/`DEAN`/`ADMIN`) against a claim normalized to `ACES-*`, so `POST /appointments`, `POST /evaluations` and the availability rules **403 for every real caller**, and `GET /appointments` **fails open** to internal staff meetings; 6 backend test files encode the same wrong literals, so its 120-green proved nothing. Cite by ID; do not restate, and do not work around it here (DEC-13/DEC-14 leave two restrictions as Auth provisioning requirements, not code).
 - **Auth model:** Auth-issued JWT (in-memory only, never localStorage) + httpOnly refresh cookie; tenant `loa-consultation`; groups come from the JWT `groups` claim (`aces-admin`/`aces-dean`/`aces-faculty`/`aces-user`) — never local roles. Pipe-delimited `user.role` strings are legacy display vocabulary only.
 - **Topology:** Vercel host, **Option B = same-origin BFF passthrough** — a catch-all Route Handler forwards browser traffic server-side to `CONSULT_API_URL`/`AUTH_API_URL`; no `vercel.json`/`next.config.ts` rewrites and **no CORS**, so the refresh cookie stays same-origin `SameSite=Lax` (mechanism corrected 2026-09-30 after reading the e-cert handler; see `specs/decisions/bff-passthrough.md`). Cookie flags verified at T1 E2E.
-- **Local specs:** `specs/services/{api-client,auth,platform}.md` (`EC-API-001` v1.1 / `EC-AUTH-001` v1.1 / `EC-PLAT-001` v1.0, all Final) + `specs/decisions/{csr-spa,bff-passthrough,jwt-display-only}.md` (`EC-D1`/`EC-D2`/`EC-D3`) + `cutover-headline.md` (`EC-CUTOVER-001` v1.3) and `appointments-flow.md` (`EC-APPT-001` v1.0).
+- **Local specs:** `specs/services/{api-client,auth,platform}.md` (`EC-API-001` v1.1 / `EC-AUTH-001` v1.1 / `EC-PLAT-001` v1.0, all Final) + `specs/decisions/{csr-spa,bff-passthrough,jwt-display-only}.md` (`EC-D1`/`EC-D2`/`EC-D3`) + `cutover-headline.md` (`EC-CUTOVER-001` v1.4) and `appointments-flow.md` (`EC-APPT-001` v1.0).
 - **Reference discipline:** backend behavior is cited by ID, never restated. See the Reference discipline section in each service spec. Where a citation and a local spec disagree, the citation wins and the local spec is a bug.
 - **Rule:** cite backend specs by ID when a frontend change depends on endpoint behavior; file backend discrepancies as spec gaps there, do not work around them here.
 
@@ -222,7 +273,42 @@ Tests (Vitest, `lib/__tests__/`) cover both halves: unit/integration cases for l
 - **T0 + T1-a + T1-b done** (2026-09-26): SSO seam, fragment callback, in-memory token, login button.
 - **BFF handler built, awaiting gates** (`EC-API-001` D-1): `app/api/v1/[...path]/route.ts`. Gates are `npm run lint`, `npx tsc --noEmit`, and the two vitest files — the agent does not run them.
 - **`proxy.ts` still live** and still holds a legacy next-auth server gate; it is retired at T3 (`EC-CUTOVER-001` DEC-6). Until then `/api/v1` is explicitly exempt from it (`EC-API-001` CON-12) — a leftover legacy session on a non-admin account would otherwise 403 every BFF call.
-- **Still direct-Supabase:** all 112 `app/api/**/route.ts` handlers, `features/*/`, `lib/repositories/factory.ts`, `lib/auth.ts`, `lib/access.ts`. Those go per T2 area and at T4.
+- **Still direct-Supabase:** 112 legacy `app/api/**/route.ts` handlers (plus the BFF catch-all = 113 `route.ts` total), `features/*/`, `lib/repositories/factory.ts`, `lib/auth.ts`, `lib/access.ts`. Those go per T2 area and at T4 — and T2 is gated on `CONSULT-FIG-001` going Final and green.
 - **Do not reintroduce:** a public API-URL variable, a cross-origin browser call, or a raw `fetch()` in new code.
+
+## ⏭ Always End With The Next Action
+
+**Never end a turn on a summary, a findings list, or an open question alone.** The user must never have to ask "what now?". Every substantive turn ends with a **Next action** block built from the state on disk — not from memory, not invented.
+
+**Read the state before proposing anything, in this order:**
+
+| # | Source | What it tells you |
+|---|--------|-------------------|
+| 1 | `TODO.md` → `## Next (in order — one change + yes per step)` | this repo's open items, already ordered, each with its own gate |
+| 2 | `specs/README.md` | which specs are **Final** (code gates open) vs **Draft** (code forbidden) vs Superseded |
+| 3 | `specs/cutover-headline.md` → `Document Control` → `Next:` | where T0→T5 stands and what T2 waits on |
+| 4 | The owning spec's `Document Control` → `Next:` | the next deliverable inside that spec, by `D-*` id |
+| 5 | `## Cutover state` above | what is landed vs still direct-Supabase |
+
+**The block MUST contain, in this order:**
+
+1. **Action** — one imperative sentence. The single smallest next thing.
+2. **Where** — `file:line`, or spec ID + the `DEC-*` / `D-*` / `ACC-*` that authorizes it.
+3. **Who runs it** — **you or the USER.** Gates in this repo (`npm run lint`, `npx tsc --noEmit`, `npx vitest run`, browser/SSO checks) are the **USER's to run**; you write the code and give the exact command. Never run them yourself.
+4. **Why now** — the gate it unblocks, or the gate currently blocking it.
+5. **Blocked by** — upstream dependency by ID, or `nothing`. Cross-repo blockers are named here and repeated in line 1.
+6. **Then** — the action after this one, so the user can see the shape of what remains.
+
+**Hard rules for the block:**
+
+- **One action, not a menu.** Alternatives belong *inside* a decision you route to the user; the block still names one recommended action.
+- **Never vague.** Not "fix the types" — "`npx tsc --noEmit` in this repo; USER pastes the output; 2 pre-existing `lib/__tests__` errors are expected and are filed separately".
+- **Never autopilot.** The block is a *proposal*. It authorizes nothing — the one-change rule and the no-autopilot rule above still gate execution.
+- **An unpasted gate is the next action.** If the user owes a lint, typecheck, vitest, or browser result, that sits at the top of the block — ahead of any new feature or refactor.
+- **Cross-repo blockers lead.** The backend's `CONSULT-FIG-001` gates all of T2. Until it is **Final and green**, T2 area re-pointing is blocked, and saying so in line 1 is more useful than any local suggestion.
+- **Deferred ≠ forgotten.** Do not re-propose work the user deferred (reports, `/audit-logs`); say it is deferred and name what it waits on.
+- **Never propose a refactor of a route that still has no working backend.** Re-pointing a `app/api/**` handler onto an endpoint the backend 403s or has not built moves a backend defect into a user-visible failure. Check the backend's served-route state before suggesting a T2 area.
+- **If nothing is open,** say so plainly and name the next unstarted `D-*` rather than inventing work.
+- **Verify before you name it.** A "next action" that is already done, Draft-blocked, or already covered by an unrun gate is worse than none.
 
 
