@@ -61,6 +61,7 @@ pending: slice-1
 | slice-16b | Slice 16 applied with aligned backoff → abortable 750ms rest, 120s per-attempt deadline on sub-controller, error-hint enrichment at both call sites, maxDuration on both routes (attempts revised by slice-17) | applied; tsc clean, npm test 211/211 green, lint fully clean |
 | slice-17 | Slice 17 retry-exhausted rows → failed downloads (see Decisions extension below) | applied; tsc clean, npm test 211/211 green, lint fully clean |
 | rebrand | Rename LOA Connect Hub → ACES / Academic Consultation & Evaluation System (17 files: UI marks, layout, emails, iCal+test, package+lock, docs) | applied; zero stragglers, npm test 211/211 green, lint clean |
+| spec-access | specs/student-access-activation.md — imported-user states, activate/forgot/change-password contract, domain rules, 2026-1 access counts (3,212 students + 147 faculty activatable), email-delivery gate, runbook, drift notes | written, uncommitted |
 
 ## Pending
 
