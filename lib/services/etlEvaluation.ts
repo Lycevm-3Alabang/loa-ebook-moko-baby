@@ -35,6 +35,7 @@ export const FACULTY_CSV_HEADERS = ["faculty email", "name", "section", "subject
 export interface FacultySubjectImportResult {
   matched: number
   errors: { row: number; email?: string; message: string }[]
+  skipped: { row: number; email?: string; message: string }[]
   createdSubjects: number
   createdSections: number
 }
@@ -78,16 +79,21 @@ export function parseFacultySubjectCsv(text: string): {
     // Department still comes from the row for section creation; the dummy user
     // itself stays dept-agnostic (created with undefined departmentId below).
     const email = rawEmail.length === 0 ? DUMMY_FACULTY_EMAIL : rawEmail
+    const isUnassignedDummy = email === DUMMY_FACULTY_EMAIL
     const sectionRaw = cleanCell(cols[2])
     const subjectCode = cleanSubjectCode(cols[3])
     const subjectName = cleanCell(cols[4])
     const departmentCode = cleanCell(cols[5]).toUpperCase()
     const { program, name: sectionName } = parseSectionIdentifier(sectionRaw.trim())
+    // Seed parity: Excel-error NAME on an unassigned row becomes the placeholder
+    // name instead of erroring. All other Excel-error cells stay invalid.
+    const effectiveDisplayName =
+      isUnassignedDummy && isExcelErrorCell(displayName) ? "Unassigned Faculty" : displayName
 
     const excelOffender =
       [
         ["faculty email", email],
-        ["name", displayName],
+        ...(!isUnassignedDummy ? [["name", displayName] as [string, string]] : []),
         ["section", sectionRaw],
         ["subject code", subjectCode],
         ["subject name", subjectName],
@@ -118,7 +124,7 @@ export function parseFacultySubjectCsv(text: string): {
       continue
     }
 
-    rows.push({ email, name: displayName, subjectCode, subjectName, sectionName, sectionProgram: program, departmentCode })
+    rows.push({ email, name: effectiveDisplayName, subjectCode, subjectName, sectionName, sectionProgram: program, departmentCode })
   }
 
   return { rows, errors }
@@ -131,6 +137,7 @@ export async function importFacultySubjects(
   const result: FacultySubjectImportResult = {
     matched: 0,
     errors: [],
+    skipped: [],
     createdSubjects: 0,
     createdSections: 0,
   }
@@ -140,20 +147,26 @@ export async function importFacultySubjects(
   // Slice 1a: chunked JSON path bypasses parseFacultySubjectCsv, so normalize
   // blanks here too. Dummy stays dept-agnostic; department still comes from
   // each row for section creation.
-  const effectiveRows = rows.map((r) =>
+  const withEmails = rows.map((r) =>
     (r.email || "").trim().length === 0
       ? { ...r, email: DUMMY_FACULTY_EMAIL, name: r.name?.trim() || "Unassigned Faculty", subjectCode: cleanSubjectCode(r.subjectCode || "") }
       : { ...r, email: r.email.toLowerCase().trim(), subjectCode: cleanSubjectCode(r.subjectCode || "") },
+  )
+  const effectiveRows = withEmails.map((r) =>
+    r.email === DUMMY_FACULTY_EMAIL && isExcelErrorCell((r.name || "").trim())
+      ? { ...r, name: "Unassigned Faculty" }
+      : r,
   )
 
   // Defense in depth: chunked JSON bypasses parse, so reject Excel-error cells
   // here before any subject/section/user side-creates.
   const cleanRows: typeof effectiveRows = []
   effectiveRows.forEach((r, idx) => {
+    const isDummyRow = r.email === DUMMY_FACULTY_EMAIL
     const offender =
       [
         ["faculty email", r.email],
-        ["name", r.name],
+        ...(!isDummyRow ? [["name", r.name] as [string, string]] : []),
         ["section", `${r.sectionProgram}-${r.sectionName}`],
         ["subject code", r.subjectCode],
         ["subject name", r.subjectName],
@@ -306,7 +319,11 @@ export async function importFacultySubjects(
         item.semesterId ?? null,
       )
       if (!existing) continue
-      if (existing.faculty_id === item.faculty_id) continue
+      if (existing.faculty_id === item.faculty_id) {
+        result.skipped.push({ row: item.rowNum, email: item.email, message: "Already loaded — skipped" })
+        result.matched--
+        continue
+      }
       if (existing.faculty_id === dummyId && item.faculty_id !== dummyId) {
         await facultySubjectRepository.update(existing.id, { faculty_id: item.faculty_id })
         continue
