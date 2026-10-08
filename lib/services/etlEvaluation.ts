@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase"
 import { userRepository, sectionRepository, subjectRepository, facultySubjectRepository, studentEnrollmentRepository } from "@/lib/repositories/factory"
-import { cleanCell, isExcelErrorCell } from "@/lib/csv-utils"
+import { cleanCell, cleanSubjectCode, isExcelErrorCell } from "@/lib/csv-utils"
 
 function parseSectionIdentifier(raw: string): { name: string; program: string } {
   const dashIdx = raw.indexOf("-")
@@ -79,7 +79,7 @@ export function parseFacultySubjectCsv(text: string): {
     // itself stays dept-agnostic (created with undefined departmentId below).
     const email = rawEmail.length === 0 ? DUMMY_FACULTY_EMAIL : rawEmail
     const sectionRaw = cleanCell(cols[2])
-    const subjectCode = cleanCell(cols[3])
+    const subjectCode = cleanSubjectCode(cols[3])
     const subjectName = cleanCell(cols[4])
     const departmentCode = cleanCell(cols[5]).toUpperCase()
     const { program, name: sectionName } = parseSectionIdentifier(sectionRaw.trim())
@@ -142,8 +142,8 @@ export async function importFacultySubjects(
   // each row for section creation.
   const effectiveRows = rows.map((r) =>
     (r.email || "").trim().length === 0
-      ? { ...r, email: DUMMY_FACULTY_EMAIL, name: r.name?.trim() || "Unassigned Faculty" }
-      : { ...r, email: r.email.toLowerCase().trim() },
+      ? { ...r, email: DUMMY_FACULTY_EMAIL, name: r.name?.trim() || "Unassigned Faculty", subjectCode: cleanSubjectCode(r.subjectCode || "") }
+      : { ...r, email: r.email.toLowerCase().trim(), subjectCode: cleanSubjectCode(r.subjectCode || "") },
   )
 
   // Defense in depth: chunked JSON bypasses parse, so reject Excel-error cells

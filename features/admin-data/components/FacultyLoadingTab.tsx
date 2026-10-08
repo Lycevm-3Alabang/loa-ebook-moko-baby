@@ -57,6 +57,9 @@ function FacultyTab() {
 
   // ── CSV Import state ──────────────────────────────────────
   const csvFileRef = useRef<HTMLInputElement>(null)
+  // Synchronous double-click guard: disabled={csvImporting} only applies after
+  // re-render, so rapid clicks in the same tick could double-fire the run.
+  const csvImportGuardRef = useRef(false)
   const [csvRows, setCsvRows] = useState<CsvRowWithFlags[] | null>(null)
   const [csvImporting, setCsvImporting] = useState(false)
   const [csvImportResult, setCsvImportResult] = useState<{
@@ -314,6 +317,8 @@ function FacultyTab() {
 
   const handleCsvImport = async () => {
     if (!csvRows || csvRows.length === 0) return
+    if (csvImportGuardRef.current) return
+    csvImportGuardRef.current = true
     setCsvImporting(true); setCsvImportResult(null); setCsvError(""); setWrongCsv(""); setRemovedRows([])
     setLastImportTotal(csvRows.length); setLastImportChunks(Math.ceil(csvRows.length / FACULTY_CHUNK_SIZE))
     try {
@@ -400,7 +405,7 @@ function FacultyTab() {
       } else {
         setCsvError((err as Error).message)
       }
-    } finally { setCsvImporting(false) }
+    } finally { csvImportGuardRef.current = false; setCsvImporting(false) }
   }
 
   const handleCsvFieldChange = (index: number, field: "name" | "subjectCode" | "subjectName" | "section" | "departmentCode", value: string) => {

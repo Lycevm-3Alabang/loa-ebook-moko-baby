@@ -63,6 +63,27 @@ export function parseCsvRows(text: string): string[][] {
 }
 
 /**
+ * Normalize a subject-code cell: trims whitespace, strips surrounding
+ * single/double quotes and one or more layers of surrounding parentheses.
+ * `(1810-IE003)`, `'(1810-IE003)'`, and `"(1810-IE003)"` all become
+ * `1810-IE003`. Only a balanced outer pair is stripped, so unbalanced
+ * content is left untouched.
+ */
+export function cleanSubjectCode(cell: string): string {
+  let v = cleanCell(cell || "")
+  for (let i = 0; i < 3; i++) {
+    const len = v.length
+    v = v.replace(/^['"]+|['"]+$/g, "").trim()
+    if (v.length >= 2 && v.startsWith("(") && v.endsWith(")")) {
+      v = v.slice(1, -1).trim()
+    }
+    v = v.replace(/^['"]+|['"]+$/g, "").trim()
+    if (v.length === len) break
+  }
+  return v
+}
+
+/**
  * Excel formula-error tokens exported as literal cell text (e.g. a VLOOKUP
  * failure saves as `#VALUE!`). Such cells are never valid names, emails,
  * codes, or sections — callers must flag the row as invalid/blocked.

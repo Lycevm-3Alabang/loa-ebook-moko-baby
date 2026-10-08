@@ -1,4 +1,4 @@
-import { isExcelErrorCell } from "@/lib/csv-utils"
+import { cleanSubjectCode, isExcelErrorCell } from "@/lib/csv-utils"
 import type { FacultyMapping } from "./types"
 
 export type CsvRow = { email: string; name: string; subjectCode: string; subjectName: string; section: string; departmentCode: string }
@@ -37,7 +37,7 @@ export function deriveCsvFlags(rows: CsvRow[], ctx: CsvFlagContext): CsvRowWithF
   return rows.map((r) => {
     const tEmail = (r.email || "").trim()
     const tName = (r.name || "").trim()
-    const tSubjectCode = (r.subjectCode || "").trim()
+    const tSubjectCode = cleanSubjectCode(r.subjectCode || "")
     const tSubjectName = (r.subjectName || "").trim()
     const tSection = (r.section || "").trim()
     const tDept = (r.departmentCode || "").trim().toUpperCase()
@@ -50,12 +50,15 @@ export function deriveCsvFlags(rows: CsvRow[], ctx: CsvFlagContext): CsvRowWithF
     const isEmptyEmail = loweredEmail.length === 0
     const isDummyEmail = loweredEmail === DUMMY_FACULTY_EMAIL_CLIENT
     const isUnassigned = isEmptyEmail || isDummyEmail
-    const isInvalidValue = [tEmail, tName, tSubjectCode, tSubjectName, tSection, tDept].some((c) =>
+    // Narrow translation (seed parity): an Excel-error NAME on an unassigned row
+    // becomes "Unassigned Faculty" via the dummy — not blocked. All other
+    // Excel-error cells (including email itself) stay invalid.
+    const isInvalidValue = [tEmail, tSubjectCode, tSubjectName, tSection, tDept].some((c) =>
       isExcelErrorCell(c || ""),
-    )
+    ) || (!isUnassigned && isExcelErrorCell(tName || ""))
     return {
       email: tEmail,
-      name: tName,
+      name: isUnassigned && isExcelErrorCell(tName || "") ? "Unassigned Faculty" : tName,
       subjectCode: tSubjectCode,
       subjectName: tSubjectName,
       section: tSection,
