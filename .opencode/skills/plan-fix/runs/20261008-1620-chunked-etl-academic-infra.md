@@ -46,6 +46,16 @@ pending: slice-1
 | slice-11 | Slice 11 faculty wrong-uploads CSV → built at aggregation from global-row errors joined with preview rows + download button; student side already via import-failures.csv | applied; tsc clean, npm test 211/211 green, lint 0 errors |
 | commit-2 | Commit only relevant (slice-11 on top of 0ab15e8) | de5622c — FacultyLoadingTab only; seed/SQL artifacts left untracked |
 | commit-3 | Commit specs/md only, no py/sql | 7a22649 — specs/seed-2026-1-etl.md only; generator, SQL dumps, zip, .opencode scratch left untracked |
+| followup-leave | Refresh/leave guard during import (progress exists but nothing blocks accidental unload; state is in-memory) | slice-12: beforeunload guard + do-not-leave hint in both importers |
+| slice-12 | Slice 12 leave-guard → beforeunload while importing + stay-on-page hint in faculty + student progress UI | proposed |
+
+| slice-12 | Slice 12 leave-guard → beforeunload while importing + stay-on-page hint in faculty + student progress UI | applied; tsc clean, npm test 211/211 green, lint 0 errors |
+
+| lint-warn | Pre-existing `_err` warning in untouched users.service.ts (caught-errors not covered by args `_` exemption) | applied optional `catch`; lint fully clean, tests green |
+
+## Pending
+
+- done (uncommitted: slice-12 UI files + lint-warn one-liner; remaining: live 2026-1 upload)
 
 ## Pending
 

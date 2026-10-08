@@ -132,6 +132,15 @@ function FacultyTab() {
 
   useEffect(() => { Promise.resolve().then(() => fetchData()) }, [fetchData])
 
+  useEffect(() => {
+    if (!csvImporting) return
+    const guard = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+    }
+    window.addEventListener("beforeunload", guard)
+    return () => window.removeEventListener("beforeunload", guard)
+  }, [csvImporting])
+
   const { data: semestersData } = useApiGet<{ data: SemesterData[] }>("/api/semesters")
   const activeSemesterId = useMemo(() => semestersData?.data?.find((s) => s.isActive)?.id ?? "", [semestersData])
 
@@ -543,6 +552,7 @@ function FacultyTab() {
                         <button type="button" onClick={() => cancelChunks()} className="text-[11px] font-semibold text-red-600 hover:underline">Cancel</button>
                       )}
                     </div>
+                    <p className="text-[10px] text-tertiary/70 text-center">Stay on this page until the run finishes — completed chunks resume safely on re-upload.</p>
                   </div>
                 )}
                 <div className="flex-1 space-y-3 overflow-hidden">

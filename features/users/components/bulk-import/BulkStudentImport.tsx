@@ -136,6 +136,15 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
   useEffect(() => { Promise.resolve().then(() => fetchReferenceData()) }, [fetchReferenceData])
 
+  useEffect(() => {
+    if (!importing) return
+    const guard = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+    }
+    window.addEventListener("beforeunload", guard)
+    return () => window.removeEventListener("beforeunload", guard)
+  }, [importing])
+
   const blockedRows = useMemo(() => {
     if (!previewRows) return []
     return previewRows.filter((r) => r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned || r.isInvalidDepartment)
@@ -349,6 +358,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                 ? `${chunkProgress.doneRows}/${chunkProgress.totalRows} rows (${chunkProgress.doneChunks}/${chunkProgress.totalChunks} chunks)`
                 : "Please wait while we process your data."}
             </p>
+            <p className="text-[11px] text-tertiary/70">Stay on this page until done — completed chunks resume safely on re-upload.</p>
             {chunkRunning && (
               <button type="button" onClick={() => cancelChunks()} className="text-xs font-semibold text-red-600 hover:underline">Cancel</button>
             )}
