@@ -65,7 +65,7 @@ function FacultyTab() {
   const [csvImportResult, setCsvImportResult] = useState<{
     matched: number
     errors: { row: number; email?: string; message: string }[]
-    skipped: { row: number; email?: string; message: string }[]
+    skipped: { row: number; email?: string; message: string }[] | undefined
     createdSubjects: number
     createdSections: number
     parseErrors?: { row: number; message: string }[]
@@ -399,7 +399,7 @@ function FacultyTab() {
         skipped: results.flatMap((r, ci) => offsetRows(r.skipped ?? [], ci)),
         parseErrors: results.flatMap((r, ci) => offsetRows(r.parseErrors ?? [], ci)),
       }
-      setCsvImportResult(aggregated)
+      setCsvImportResult({ ...aggregated, skipped: aggregated.skipped ?? [] })
       const escapeWrongCell = (v: string) => (v.includes(",") || v.includes('"') || v.includes("\n") ? `"${v.replace(/"/g, '""')}"` : v)
       const wrongHead = ["row", "name", "email", "subject code", "subject name", "section", "department code", "reason"]
       const wrongLines = aggregated.errors.map((e) => {
