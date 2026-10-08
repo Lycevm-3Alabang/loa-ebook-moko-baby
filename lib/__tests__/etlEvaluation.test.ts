@@ -5,7 +5,7 @@ vi.mock("@/lib/repositories/factory", () => ({
   subjectRepository: { upsertMany: vi.fn() },
   sectionRepository: { upsertMany: vi.fn() },
   userRepository: { findManyByEmail: vi.fn(), createMany: vi.fn() },
-  facultySubjectRepository: { replaceBySection: vi.fn(), create: vi.fn() },
+  facultySubjectRepository: { replaceBySection: vi.fn(), create: vi.fn(), list: vi.fn().mockResolvedValue([]), update: vi.fn() },
   studentEnrollmentRepository: { replaceBySection: vi.fn() },
 }))
 
@@ -283,6 +283,7 @@ ana@lyceumalabang.edu.ph, Ana, BSIT-32A3`
 describe("importFacultySubjects", () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    ;(factory.facultySubjectRepository.list as ReturnType<typeof vi.fn>).mockResolvedValue([])
   })
 
   it("imports faculty subjects successfully", async () => {

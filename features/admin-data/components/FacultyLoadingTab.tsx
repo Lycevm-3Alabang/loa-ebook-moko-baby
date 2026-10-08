@@ -90,7 +90,7 @@ function FacultyTab() {
     createdSections: number
     parseErrors?: { row: number; message: string }[]
   }
-  const FACULTY_CHUNK_SIZE = 500
+  const FACULTY_CHUNK_SIZE = 100
   const { isRunning: chunkRunning, progress: chunkProgress, history: chunkHistory, run: runChunks, cancel: cancelChunks } =
     useChunkedImport<CsvRow, FacultyChunkResult>()
   // Eased intra-chunk motion (option A): the transport only reports per chunk,
@@ -354,7 +354,7 @@ function FacultyTab() {
     if (csvImportGuardRef.current) return
     csvImportGuardRef.current = true
     setCsvImporting(true); setEasedRows(0); setCsvImportResult(null); setCsvError(""); setWrongCsv(""); setSkippedCsv(""); setRemovedRows([])
-    setLastImportTotal(csvRows.length); setLastImportChunks(Math.ceil(csvRows.length / FACULTY_CHUNK_SIZE))
+    setLastImportTotal(csvRows.length); setLastImportChunks(Math.ceil(csvRows.length / 100))
     try {
       const postChunk = async (chunk: CsvRow[], meta: ChunkMeta, signal: AbortSignal) => {
         const res = await fetch("/api/import/faculties", {
@@ -377,7 +377,10 @@ function FacultyTab() {
         return (await res.json()) as FacultyChunkResult
       }
       const { results, cancelled, failedChunks, stoppedEarly } = await runChunks(csvRows, {
+        // Small batches so the bar and row/chunk counters tick visibly
+        // (500-row chunks hid progress for ~1.8%/chunk on a 28k-row file).
         chunkSize: FACULTY_CHUNK_SIZE,
+        restMs: 150,
         postChunk,
         summarizeResult: (r) => ({ saved: r.matched ?? 0, skipped: r.skipped?.length ?? 0, issues: (r.errors?.length ?? 0) + (r.parseErrors?.length ?? 0) }),
       })
@@ -616,7 +619,7 @@ function FacultyTab() {
                     <li><strong>Department code</strong> must match an existing department (e.g., <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">CCS</code>).</li>
                     <li><strong>Faculty email</strong> must end with <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">...@lyceumalabang.edu.ph</code> — foreign-domain rows are excluded and listed under Wrong Uploads. Blank emails are assigned to <strong>Unassigned Faculty</strong> (placeholder).</li>
                     <li>Re-importing the same <strong>subject code + section</strong> with a real faculty email <strong>replaces the placeholder</strong> automatically. Re-importing over a real teacher does not replace — it reports <strong>Already loaded</strong>.</li>
-                    <li>Large files upload in <strong>500-row chunks</strong> with progress — stay on this page until done.</li>
+                    <li>Large files upload in <strong>100-row chunks</strong> with progress — stay on this page until done.</li>
                     <li>Re-uploading the same file maps <strong>0 new rows</strong> (idempotent).</li>
                   </ul>
                 </div>

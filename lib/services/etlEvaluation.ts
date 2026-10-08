@@ -288,6 +288,17 @@ export async function importFacultySubjects(
   // same owner → no-op; real-owned + different incoming (or dummy over real) →
   // error, never overwrite.
   const dummyId = userMap.get(DUMMY_FACULTY_EMAIL)?.id
+  // One batch fetch of existing slots for this semester instead of a per-row
+  // findBySubjectSectionSemester lookup on every 23505 (that made chunk
+  // requests time out on mostly-already-loaded files).
+  const existingSlots = semesterId
+    ? await facultySubjectRepository.list({ semesterId })
+    : await facultySubjectRepository.list()
+  const existingByCombo = new Map<string, { id: string; faculty_id: string }>()
+  for (const e of existingSlots) {
+    if (!semesterId && e.semesterId) continue
+    existingByCombo.set(`${e.subject_id}|${e.section_id}|${e.semesterId ?? ""}`, { id: e.id, faculty_id: e.faculty_id })
+  }
   const comboMap = new Map<string, { faculty_id: string; subject_id: string; section_id: string; semesterId?: string | null; rowNum: number; email: string }>()
   for (const item of fsItems) {
     const key = `${item.subject_id}|${item.section_id}|${item.semesterId ?? ""}`
@@ -310,14 +321,7 @@ export async function importFacultySubjects(
       })
     } catch (err) {
       if ((err as { code?: string })?.code !== "23505") throw err
-      const lookup = facultySubjectRepository.findBySubjectSectionSemester
-      if (typeof lookup !== "function" || !dummyId) continue
-      const existing = await lookup.call(
-        facultySubjectRepository,
-        item.subject_id,
-        item.section_id,
-        item.semesterId ?? null,
-      )
+      const existing = existingByCombo.get(`${item.subject_id}|${item.section_id}|${item.semesterId ?? ""}`)
       if (!existing) continue
       if (existing.faculty_id === item.faculty_id) {
         result.skipped.push({ row: item.rowNum, email: item.email, message: "Already loaded — skipped" })
@@ -326,6 +330,7 @@ export async function importFacultySubjects(
       }
       if (existing.faculty_id === dummyId && item.faculty_id !== dummyId) {
         await facultySubjectRepository.update(existing.id, { faculty_id: item.faculty_id })
+        existingByCombo.set(`${item.subject_id}|${item.section_id}|${item.semesterId ?? ""}`, { id: existing.id, faculty_id: item.faculty_id })
         continue
       }
       result.errors.push({
