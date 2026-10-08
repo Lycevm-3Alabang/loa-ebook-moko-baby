@@ -413,7 +413,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                       {chunkHistory.map((h) => (
                         <p key={h.chunkIndex} className="text-[11px] text-tertiary">
                           {h.ok
-                            ? `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → saved ${h.saved}, skipped ${h.skipped}, issues ${h.issues}`
+                            ? `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → saved ${h.saved}, skipped ${h.skipped} (already persisted or duplicate), issues ${h.issues}`
                             : `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → failed — ${h.error ?? "error"}`}
                         </p>
                       ))}
