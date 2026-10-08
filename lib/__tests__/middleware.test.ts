@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import type { NextRequest } from "next/server"
 
 const mockGetToken = vi.hoisted(() => vi.fn())
 const mockGetUserAccess = vi.hoisted(() => vi.fn())
@@ -13,14 +14,14 @@ vi.mock("@/lib/access", () => ({
 
 import { proxy } from "@/proxy"
 
-function mockRequest(pathname: string, extra: Record<string, unknown> = {}): Request {
+function mockRequest(pathname: string, extra: Record<string, unknown> = {}): NextRequest {
   const url = new URL(`https://app.test${pathname}`)
   return {
     url: url.href,
     nextUrl: url,
     headers: new Headers(),
     ...extra,
-  } as unknown as Request
+  } as unknown as NextRequest
 }
 
 function isRedirect(res: Response): boolean {

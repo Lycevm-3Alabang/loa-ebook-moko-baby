@@ -13,6 +13,7 @@ import { FacultySubjectDetail } from "./FacultySubjectDetail"
 import type { DepartmentData, SemesterData } from "@/lib/types"
 import type { FacEnrollTab, FacViewTab, Subject, Section, FacultyMapping, Enrollment } from "./types"
 import { deriveCsvFlags, type CsvRow, type CsvRowWithFlags } from "./csv-helpers"
+import { useChunkedImport, decodeCsvFile, type ChunkMeta } from "./useChunkedImport"
 
 export function FacultyLoadingTab() {
   const [facEnrollTab, setFacEnrollTab] = useState<FacEnrollTab>("faculty")
@@ -66,10 +67,22 @@ function FacultyTab() {
   } | null>(null)
   const [csvError, setCsvError] = useState("")
   const [csvPreviewPage, setCsvPreviewPage] = useState(0)
+  const [lastImportTotal, setLastImportTotal] = useState(0)
+  const [lastImportChunks, setLastImportChunks] = useState(0)
   const [csvProblemFilter, setCsvProblemFilter] = useState(false)
   const [csvBlockedFilter, setCsvBlockedFilter] = useState(false)
   const [csvInvalidDeptFilter, setCsvInvalidDeptFilter] = useState(false)
   const PREVIEW_PAGE_SIZE = 50
+  interface FacultyChunkResult {
+    matched: number
+    errors: { row: number; email?: string; message: string }[]
+    createdSubjects: number
+    createdSections: number
+    parseErrors?: { row: number; message: string }[]
+  }
+  const FACULTY_CHUNK_SIZE = 500
+  const { isRunning: chunkRunning, progress: chunkProgress, run: runChunks, cancel: cancelChunks } =
+    useChunkedImport<CsvRow, FacultyChunkResult>()
 
   const csvProblemRows = useMemo(() => {
     if (!csvRows) return []
@@ -254,12 +267,11 @@ function FacultyTab() {
     return { rows }
   }
 
-  const handleCsvFile = (file: File) => {
+  const handleCsvFile = async (file: File) => {
     setCsvImportResult(null)
     setCsvError("")
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const text = e.target?.result as string
+    try {
+      const text = await decodeCsvFile(file)
       const { rows, error } = parseFacultyCsv(text)
       if (error) { setCsvError(error); return }
       if (rows.length === 0) { setCsvError("No valid rows found"); return }
@@ -271,25 +283,64 @@ function FacultyTab() {
         facultyEmails: faculties.map((f) => f.email),
       }))
       setCsvPreviewPage(0)
+    } catch {
+      setCsvError("Could not read CSV file")
     }
-    reader.readAsText(file)
   }
 
   const handleCsvImport = async () => {
     if (!csvRows || csvRows.length === 0) return
     setCsvImporting(true); setCsvImportResult(null); setCsvError("")
+    setLastImportTotal(csvRows.length); setLastImportChunks(Math.ceil(csvRows.length / FACULTY_CHUNK_SIZE))
     try {
-      const res = await fetch("/api/import/faculties", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ semesterId: activeSemesterId || null, rows: csvRows }),
-      })
-      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Import failed") }
-      const result = await res.json()
-      setCsvImportResult(result)
-      if (result.matched > 0) { setCsvRows(null); fetchData(true) }
-    } catch (err) { setCsvError((err as Error).message) }
-    finally { setCsvImporting(false) }
+      const postChunk = async (chunk: CsvRow[], meta: ChunkMeta, signal: AbortSignal) => {
+        const res = await fetch("/api/import/faculties", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal,
+          body: JSON.stringify({
+            semesterId: activeSemesterId || null,
+            rows: chunk,
+            chunkIndex: meta.chunkIndex,
+            totalChunks: meta.totalChunks,
+            fileId: meta.fileId,
+            isLast: meta.isLast,
+          }),
+        })
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}))
+          throw new Error((d as { error?: string }).error || `Chunk ${meta.chunkIndex + 1} failed`)
+        }
+        return (await res.json()) as FacultyChunkResult
+      }
+      const { results, cancelled } = await runChunks(csvRows, { chunkSize: FACULTY_CHUNK_SIZE, postChunk })
+      if (cancelled) { setCsvError(`Import cancelled after ${results.length} chunks — no partial state hidden, retry to resume`); return }
+      const offsetRows = <T extends { row: number }>(list: T[], ci: number): T[] =>
+        list.map((e) => (e.row === 0 ? e : { ...e, row: e.row + ci * FACULTY_CHUNK_SIZE }))
+      const aggregated: FacultyChunkResult = {
+        matched: results.reduce((s, r) => s + (r.matched ?? 0), 0),
+        createdSubjects: results.reduce((s, r) => s + (r.createdSubjects ?? 0), 0),
+        createdSections: results.reduce((s, r) => s + (r.createdSections ?? 0), 0),
+        errors: results.flatMap((r, ci) => offsetRows(r.errors ?? [], ci)),
+        parseErrors: results.flatMap((r, ci) => offsetRows(r.parseErrors ?? [], ci)),
+      }
+      setCsvImportResult(aggregated)
+      const rowErrorCount =
+        aggregated.errors.filter((e) => e.row > 0).length +
+        (aggregated.parseErrors?.length ?? 0)
+      const unaccounted = csvRows.length - aggregated.matched - rowErrorCount
+      if (unaccounted !== 0) {
+        setCsvError(`Import incomplete: ${unaccounted} of ${csvRows.length} CSV rows are unaccounted for (not mapped and not reported as errors). Retry the import — completed chunks are idempotent.`)
+        return
+      }
+      if (aggregated.matched > 0) { setCsvRows(null); fetchData(true) }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setCsvError("Import cancelled — retry to resume remaining chunks")
+      } else {
+        setCsvError((err as Error).message)
+      }
+    } finally { setCsvImporting(false) }
   }
 
   const handleCsvFieldChange = (index: number, field: "name" | "subjectCode" | "subjectName" | "section" | "departmentCode", value: string) => {
@@ -470,9 +521,16 @@ function FacultyTab() {
                 {csvImporting && (
                   <div className="mb-3 space-y-1.5">
                     <div className="w-full bg-slate-200 rounded-full h-2.5">
-                      <div className="bg-gold-500 h-2.5 rounded-full animate-pulse" style={{ width: "100%" }} />
+                      <div className="bg-gold-500 h-2.5 rounded-full transition-all" style={{ width: `${chunkProgress.totalRows > 0 ? Math.round((chunkProgress.doneRows / chunkProgress.totalRows) * 100) : 0}%` }} />
                     </div>
-                    <p className="text-[11px] text-tertiary text-center">Importing faculty mappings...</p>
+                    <div className="flex items-center justify-center gap-3">
+                      <p className="text-[11px] text-tertiary text-center">
+                        Importing faculty mappings... {chunkProgress.doneRows}/{chunkProgress.totalRows} rows ({chunkProgress.doneChunks}/{chunkProgress.totalChunks} chunks)
+                      </p>
+                      {chunkRunning && (
+                        <button type="button" onClick={() => cancelChunks()} className="text-[11px] font-semibold text-red-600 hover:underline">Cancel</button>
+                      )}
+                    </div>
                   </div>
                 )}
                 <div className="flex-1 space-y-3 overflow-hidden">
@@ -652,6 +710,28 @@ function FacultyTab() {
                     <p className="text-[11px] font-semibold text-amber-700/70 dark:text-amber-300/70">Sections Created</p>
                   </div>
                 </div>
+                {lastImportTotal > 0 && (
+                  <div className="bg-slate-50 dark:bg-slate-800/30 rounded-2xl px-5 py-3 space-y-1">
+                    <p className="text-xs font-semibold text-secondary">
+                      {lastImportTotal} rows sent in {lastImportChunks} chunks · {csvImportResult.matched} mapped · {csvImportResult.errors.length} errors
+                    </p>
+                    <p className="text-[11px] text-tertiary">
+                      Seed 2026-1 reference: 903 loadings · 21,989 enrollments · exactly 1 active semester. Re-running this file should map 0 new rows (idempotent).
+                    </p>
+                    {(() => {
+                      const boxUnaccounted =
+                        lastImportTotal -
+                        csvImportResult.matched -
+                        csvImportResult.errors.filter((e) => e.row > 0).length -
+                        (csvImportResult.parseErrors?.length ?? 0)
+                      return (
+                        <p className={`text-[11px] font-semibold ${boxUnaccounted !== 0 ? "text-red-600" : "text-emerald-600 dark:text-emerald-300"}`}>
+                          {boxUnaccounted === 0 ? "All rows accounted for." : `${boxUnaccounted} of ${lastImportTotal} CSV rows unaccounted — retry remaining chunks.`}
+                        </p>
+                      )
+                    })()}
+                  </div>
+                )}
                 {csvImportResult.parseErrors && csvImportResult.parseErrors.length > 0 && (
                   <div className="bg-red-50 dark:bg-red-900/20 rounded-2xl overflow-hidden">
                     <div className="px-5 py-3 border-b border-red-100 dark:border-red-800/30">

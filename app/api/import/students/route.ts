@@ -25,6 +25,10 @@ export async function POST(request: NextRequest) {
   let parseErrors: { row: number; message: string }[] = []
   let departmentId: string | null = null
   let semesterId: string | null = null
+  let chunkIndex = 0
+  let totalChunks = 1
+  let fileId: string | undefined = undefined
+  let isLast = true
 
   const contentType = request.headers.get("content-type") || ""
 
@@ -32,6 +36,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { departmentId: bodyDeptId = null, semesterId: bodySemesterId = null } = body
     semesterId = bodySemesterId
+    chunkIndex = typeof body.chunkIndex === "number" ? body.chunkIndex : 0
+    totalChunks = typeof body.totalChunks === "number" ? body.totalChunks : 1
+    fileId = typeof body.fileId === "string" ? body.fileId : undefined
+    isLast = body.isLast !== false
     const rawRows = body.rows as { email: string; name?: string; subjectCode: string; section: string; facultyEmail?: string; departmentId?: string }[] | undefined
     if (!rawRows || !Array.isArray(rawRows) || rawRows.length === 0) {
       return NextResponse.json({ error: "Rows array is required" }, { status: 400 })
@@ -81,11 +89,15 @@ export async function POST(request: NextRequest) {
   const result = await importStudents(importRows, departmentId, semesterId)
   result.parseErrors = parseErrors
 
-  await logAuditEvent({
-    userId: (session!.user as Record<string, unknown>).id as string,
-    action: "IMPORT_STUDENTS",
-    details: `Imported ${result.enrolled} enrollments (${result.failed.length} failed, ${result.parseErrors.length} parse errors)`,
-  })
+  if (isLast) {
+    await logAuditEvent({
+      userId: (session!.user as Record<string, unknown>).id as string,
+      action: "IMPORT_STUDENTS",
+      details: fileId
+        ? `Imported chunk ${chunkIndex + 1}/${totalChunks} (file ${fileId}): ${result.enrolled} enrollments (${result.failed.length} failed, ${result.parseErrors.length} parse errors)`
+        : `Imported ${result.enrolled} enrollments (${result.failed.length} failed, ${result.parseErrors.length} parse errors)`,
+    })
+  }
 
-  return NextResponse.json(result)
+  return NextResponse.json({ ...result, chunkIndex, totalChunks, fileId, isLast })
 }

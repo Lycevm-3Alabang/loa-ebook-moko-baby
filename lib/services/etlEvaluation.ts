@@ -72,7 +72,7 @@ export function parseFacultySubjectCsv(text: string): {
       continue
     }
 
-    let email = cleanCell(cols[0]).toLowerCase().trim()
+    const email = cleanCell(cols[0]).toLowerCase().trim()
     const displayName = cleanCell(cols[1])
     const sectionRaw = cleanCell(cols[2])
     const subjectCode = cleanCell(cols[3])
@@ -81,7 +81,13 @@ export function parseFacultySubjectCsv(text: string): {
     const { program, name: sectionName } = parseSectionIdentifier(sectionRaw.trim())
 
     if (email.length === 0) {
-      email = DUMMY_FACULTY_EMAIL
+      errors.push({ row: i + 1, message: "Faculty email is required" })
+      continue
+    }
+
+    if (!email.endsWith("@lyceumalabang.edu.ph")) {
+      errors.push({ row: i + 1, message: `Email domain not allowed: ${email}` })
+      continue
     }
 
     if (subjectCode.length === 0) {
@@ -164,14 +170,15 @@ export async function importFacultySubjects(
   const { data: sections, created: createdSections } = await sectionRepository.upsertMany(sectionItems)
   result.createdSections = createdSections
 
-  // ── Resolve users (batch lookup + batch create) ──
-  const uniqueEmails = [...new Set(validRows.map((r) => r.email.toLowerCase().trim()))]
+  // ── Resolve users (batch lookup + batch create; wrong uploads never become users) ──
+  const mappableRows = validRows.filter((r) => r.email.length > 0 && r.email.endsWith("@lyceumalabang.edu.ph"))
+  const uniqueEmails = [...new Set(mappableRows.map((r) => r.email.toLowerCase().trim()))]
   const userMap = await userRepository.findManyByEmail(uniqueEmails)
   const missingEmails = uniqueEmails.filter((e) => !userMap.has(e))
   if (missingEmails.length > 0) {
     const createdUsers = await userRepository.createMany(
       missingEmails.map((email) => {
-        const row = validRows.find((r) => r.email.toLowerCase().trim() === email)
+        const row = mappableRows.find((r) => r.email.toLowerCase().trim() === email)
         const deptId = row ? deptCodeToId.get(row.departmentCode) ?? undefined : undefined
         const isPlaceholder = email === DUMMY_FACULTY_EMAIL
         return {
@@ -192,6 +199,9 @@ export async function importFacultySubjects(
   for (let i = 0; i < validRows.length; i++) {
     const row = validRows[i]
     const rowNum = i + 1
+
+    if (row.email.length === 0) { result.errors.push({ row: rowNum, email: row.email, message: "Faculty email is required" }); continue }
+    if (!row.email.endsWith("@lyceumalabang.edu.ph")) { result.errors.push({ row: rowNum, email: row.email, message: "Email domain not allowed" }); continue }
 
     const user = userMap.get(row.email.toLowerCase().trim())
     if (!user) {
@@ -216,21 +226,29 @@ export async function importFacultySubjects(
     result.matched++
   }
 
-  // ── Group by section and replace ──
-  const bySection = new Map<string, { faculty_id: string; subject_id: string; semesterId?: string | null }[]>()
-  for (const item of fsItems) {
-    if (!bySection.has(item.section_id)) bySection.set(item.section_id, [])
-    bySection.get(item.section_id)!.push({ faculty_id: item.faculty_id, subject_id: item.subject_id, semesterId: item.semesterId })
-  }
+  // ── Additive insert per chunk (chunk-safe: never deletes prior chunks) ──
+  // Dedup within this chunk, then insert ignoring UNIQUE(subject, section, semester)
+  // violations so re-runs and cross-chunk repeats are no-ops (mirrors seed SQL).
+  const seenCombos = new Set<string>()
+  const uniqueItems = fsItems.filter((item) => {
+    const key = `${item.subject_id}|${item.section_id}|${item.semesterId ?? ""}`
+    if (seenCombos.has(key)) return false
+    seenCombos.add(key)
+    return true
+  })
 
-  for (const [section_id, items] of bySection) {
-    const seen = new Set<string>()
-    const unique = items.filter((item) => {
-      if (seen.has(item.subject_id)) return false
-      seen.add(item.subject_id)
-      return true
-    })
-    await facultySubjectRepository.replaceBySection(section_id, unique)
+  for (const item of uniqueItems) {
+    try {
+      await facultySubjectRepository.create({
+        faculty_id: item.faculty_id,
+        subject_id: item.subject_id,
+        section_id: item.section_id,
+        semesterId: item.semesterId ?? null,
+      })
+    } catch (err) {
+      if ((err as { code?: string })?.code === "23505") continue
+      throw err
+    }
   }
 
   return result
@@ -319,7 +337,7 @@ export function parseStudentEnrollmentCsv(text: string): {
 
 export async function importStudentEnrollments(
   rows: StudentEnrollmentCsvRow[],
-  semesterId: string | null,
+  semesterId?: string | null,
 ): Promise<StudentEnrollmentImportResult> {
   const result: StudentEnrollmentImportResult = {
     matched: 0,

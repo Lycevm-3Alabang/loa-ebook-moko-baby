@@ -105,7 +105,7 @@ export async function importStudents(
     return { created, enrolled, skipped, failed, parseErrors: [], successCsv: "", failureCsv: "", totalRows: 0 }
   }
 
-  const uniqueEmails = [...new Set(rows.map((r) => r.email.toLowerCase().trim()))]
+  const uniqueEmails = [...new Set(rows.map((r) => r.email.toLowerCase().trim()))].filter((e) => e.length > 0)
   const userMap = await userRepository.findManyByEmail(uniqueEmails)
   const missingEmails = uniqueEmails.filter((e) => !userMap.has(e))
   if (missingEmails.length > 0) {
@@ -159,6 +159,10 @@ export async function importStudents(
     const r = rows[i]
     const rowNum = i + 1
     const sectionLabel = `${r.sectionProgram}-${r.sectionName}`
+
+    if (!r.email) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Email is required" }); continue }
+    if (!r.facultyEmail) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Faculty email is required" }); continue }
+    if (!ALLOWED_DOMAINS.some((d) => r.email.endsWith(d))) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Email domain not allowed" }); continue }
 
     const user = userMap.get(r.email.toLowerCase().trim())
     if (!user) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Student not found" }); continue }

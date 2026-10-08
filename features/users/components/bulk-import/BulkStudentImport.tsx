@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { cleanCell, parseCsvRows } from "@/lib/csv-utils"
+import { useChunkedImport, decodeCsvFile, type ChunkMeta } from "@/features/admin-data/components/useChunkedImport"
 
 interface StudentCsvRow {
   row: number
@@ -26,6 +27,7 @@ interface PreviewRow extends StudentCsvRow {
 interface ImportResult {
   created: { name: string; email: string; role: string }[]
   enrolled: number
+  skipped: number
   failed: { row: number; email: string; subjectCode: string; section: string; remark: string }[]
   parseErrors: { row: number; message: string }[]
   successCsv: string
@@ -81,6 +83,15 @@ function parseClientCsv(text: string): { rows: StudentCsvRow[]; error?: string }
 
 const PREVIEW_PAGE_SIZE = 50
 
+const STUDENT_CHUNK_SIZE = 500
+
+function concatCsvBodies(first: string, next: string): string {
+  if (!first) return next
+  if (!next) return first
+  const nextLines = next.split("\n")
+  return `${first}\n${nextLines.slice(1).join("\n")}`
+}
+
 export default function BulkStudentImport({ departmentId: _departmentId, semesterId, previewOnly }: { departmentId?: string | null; semesterId?: string | null; previewOnly?: boolean }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [previewRows, setPreviewRows] = useState<PreviewRow[] | null>(null)
@@ -92,6 +103,8 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const [importing, setImporting] = useState(false)
   const [problemFilter, setProblemFilter] = useState(false)
   const [removedRows, setRemovedRows] = useState<StudentCsvRow[]>([])
+  const { isRunning: chunkRunning, progress: chunkProgress, run: runChunks, cancel: cancelChunks } =
+    useChunkedImport<PreviewRow, ImportResult>()
 
   const [existingSubjects, setExistingSubjects] = useState<{ code: string; id: string }[]>([])
   const [existingSections, setExistingSections] = useState<{ name: string; departmentCourseId: string; id: string }[]>([])
@@ -161,7 +174,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     setError("")
     const file = fileRef.current?.files?.[0]
     if (!file) { setPreviewError("Please select a CSV file"); return }
-    const text = await file.text()
+    const text = await decodeCsvFile(file)
     const { rows, error: parseError } = parseClientCsv(text)
     if (parseError) { setPreviewError(parseError); return }
     if (rows.length === 0) { setPreviewError("No valid rows found in CSV"); return }
@@ -238,32 +251,70 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     setImporting(true)
     setLoading(true)
     try {
-      const res = await fetch("/api/import/students", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          semesterId,
-          rows: previewRows.map((r) => ({
-            email: r.email,
-            name: r.name,
-            subjectCode: r.subjectCode,
-            section: r.section,
-            facultyEmail: r.facultyEmail || undefined,
-            departmentId: r.resolvedDepartmentId || undefined,
-          })),
-        }),
+      const payload = previewRows.map((r) => ({
+        email: r.email,
+        name: r.name,
+        subjectCode: r.subjectCode,
+        section: r.section,
+        facultyEmail: r.facultyEmail || undefined,
+        departmentId: r.resolvedDepartmentId || undefined,
+        _originRow: r.row,
+      }))
+      const postChunk = async (chunk: typeof payload, meta: ChunkMeta, signal: AbortSignal) => {
+        const res = await fetch("/api/import/students", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal,
+          body: JSON.stringify({
+            semesterId,
+            rows: chunk,
+            chunkIndex: meta.chunkIndex,
+            totalChunks: meta.totalChunks,
+            fileId: meta.fileId,
+            isLast: meta.isLast,
+          }),
+        })
+        let data: Record<string, unknown>
+        try {
+          data = await res.json()
+        } catch {
+          const text = await res.text().catch(() => "")
+          throw new Error(`Chunk ${meta.chunkIndex + 1} failed (${res.status}). ${text.slice(0, 200) || "No details available."}`)
+        }
+        if (!res.ok) throw new Error(String(data.error) || `Chunk ${meta.chunkIndex + 1} failed`)
+        return data as unknown as ImportResult
+      }
+      const { results, cancelled } = await runChunks(previewRows, {
+        chunkSize: STUDENT_CHUNK_SIZE,
+        postChunk: (chunk, meta, signal) =>
+          postChunk(payload.slice(meta.rowOffset, meta.rowOffset + chunk.length), meta, signal),
       })
-      let data: Record<string, unknown>
-      try {
-        data = await res.json()
-      } catch {
-        const text = await res.text().catch(() => "")
-        setError(`Server returned an invalid response (${res.status}). ${text.slice(0, 200) || "No details available."}`)
-        setImporting(false)
+      if (cancelled) { setError(`Import cancelled after ${results.length} chunks — retry to resume`); return }
+      const aggregated: ImportResult = {
+        created: results.flatMap((r) => r.created ?? []),
+        enrolled: results.reduce((s, r) => s + (r.enrolled ?? 0), 0),
+        skipped: results.reduce((s, r) => s + (r.skipped ?? 0), 0),
+        failed: results.flatMap((r, ci) => (r.failed ?? []).map((f) => {
+          const previewIdx = ci * STUDENT_CHUNK_SIZE + (f.row - 1)
+          const originRow = payload[previewIdx]?._originRow ?? ci * STUDENT_CHUNK_SIZE + f.row
+          return { ...f, row: originRow }
+        })),
+        parseErrors: results.flatMap((r) => r.parseErrors ?? []),
+        successCsv: results.map((r) => r.successCsv).filter(Boolean).reduce(concatCsvBodies, ""),
+        failureCsv: results.map((r) => r.failureCsv).filter(Boolean).reduce(concatCsvBodies, ""),
+        totalRows: previewRows.length,
+      }
+      setImportResult(aggregated)
+      const unaccounted =
+        previewRows.length -
+        aggregated.enrolled -
+        aggregated.skipped -
+        aggregated.failed.length -
+        aggregated.parseErrors.length
+      if (unaccounted !== 0) {
+        setError(`Import incomplete: ${unaccounted} of ${previewRows.length} CSV rows are unaccounted for (not enrolled, skipped, or reported). Retry — completed chunks are idempotent.`)
         return
       }
-      if (!res.ok) { setError(String(data.error) || "Import failed"); setImporting(false); return }
-      setImportResult(data as unknown as ImportResult)
       setPreviewRows(null)
     } catch {
       setError("Could not reach the server. Please check your connection and try again.")
@@ -293,7 +344,14 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
           <div className="bg-white dark:bg-surface-dim rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl">
             <div className="w-10 h-10 border-4 border-gold-600 border-t-transparent rounded-full animate-spin" />
             <p className="text-sm font-semibold text-secondary">Importing student enrollments...</p>
-            <p className="text-xs text-tertiary">Please wait while we process your data.</p>
+            <p className="text-xs text-tertiary">
+              {chunkProgress.totalRows > 0
+                ? `${chunkProgress.doneRows}/${chunkProgress.totalRows} rows (${chunkProgress.doneChunks}/${chunkProgress.totalChunks} chunks)`
+                : "Please wait while we process your data."}
+            </p>
+            {chunkRunning && (
+              <button type="button" onClick={() => cancelChunks()} className="text-xs font-semibold text-red-600 hover:underline">Cancel</button>
+            )}
           </div>
         </div>
       )}
@@ -533,6 +591,28 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
               <p className="text-2xl font-bold text-blue-600">{importResult.enrolled}</p>
               <p className="text-[11px] font-semibold text-blue-700/70 dark:text-blue-300/70">Enrollments</p>
             </div>
+          </div>
+
+          <div className="bg-slate-50 dark:bg-slate-800/30 rounded-2xl px-5 py-3 space-y-1">
+            <p className="text-xs font-semibold text-secondary">
+              {importResult.totalRows} rows sent · {importResult.enrolled} enrolled · {importResult.skipped} skipped (already enrolled) · {importResult.failed.length} failed
+            </p>
+            <p className="text-[11px] text-tertiary">
+              Seed 2026-1 reference: 3,302 students · 21,989 enrollments. Re-running this file should enroll 0 and skip all (idempotent).
+            </p>
+            {(() => {
+              const boxUnaccounted =
+                importResult.totalRows -
+                importResult.enrolled -
+                importResult.skipped -
+                importResult.failed.length -
+                importResult.parseErrors.length
+              return (
+                <p className={`text-[11px] font-semibold ${boxUnaccounted !== 0 ? "text-red-600" : "text-emerald-600 dark:text-emerald-300"}`}>
+                  {boxUnaccounted === 0 ? "All rows accounted for." : `${boxUnaccounted} of ${importResult.totalRows} CSV rows unaccounted — retry the import.`}
+                </p>
+              )
+            })()}
           </div>
 
           {importResult.parseErrors.length > 0 && (
