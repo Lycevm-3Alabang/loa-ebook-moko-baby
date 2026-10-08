@@ -52,10 +52,12 @@ pending: slice-1
 | slice-12 | Slice 12 leave-guard → beforeunload while importing + stay-on-page hint in faculty + student progress UI | applied; tsc clean, npm test 211/211 green, lint 0 errors |
 
 | lint-warn | Pre-existing `_err` warning in untouched users.service.ts (caught-errors not covered by args `_` exemption) | applied optional `catch`; lint fully clean, tests green |
+| slice-13 | Slice 13 bulk-remove blocked rows + refresh CSV hints (chunking, email-domain rules, no-placeholder, idempotent re-upload) in faculty + student previews | applied; tsc clean, npm test 211/211 green, lint fully clean |
+| slice-14 | Slice 14 auto-download removed-rows CSV on import completion (faculty: track removals + build; student: reuse removed list; manual buttons stay as fallback) | applied; tsc clean, npm test 211/211 green, lint fully clean |
 
 ## Pending
 
-- done (uncommitted: slice-12 UI files + lint-warn one-liner; remaining: live 2026-1 upload)
+- done (uncommitted: slice-12, lint-warn, slice-13, slice-14; remaining: live 2026-1 upload)
 
 ## Pending
 

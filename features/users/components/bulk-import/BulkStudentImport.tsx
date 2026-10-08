@@ -147,7 +147,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
   const blockedRows = useMemo(() => {
     if (!previewRows) return []
-    return previewRows.filter((r) => r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned || r.isInvalidDepartment)
+    return previewRows.filter(isBlockedPreviewRow)
   }, [previewRows])
 
   const problemRows = useMemo(() => {
@@ -181,6 +181,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const handlePreview = async () => {
     setPreviewError("")
     setError("")
+    setRemovedRows([])
     const file = fileRef.current?.files?.[0]
     if (!file) { setPreviewError("Please select a CSV file"); return }
     const text = await decodeCsvFile(file)
@@ -254,6 +255,18 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     }
   }
 
+  const isBlockedPreviewRow = (r: PreviewRow) =>
+    r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned || r.isInvalidDepartment
+
+  const handleRemoveBlocked = () => {
+    if (!previewRows) return
+    const blocked = previewRows.filter(isBlockedPreviewRow)
+    setRemovedRows((prev) => [...prev, ...blocked.map((removed) => ({ row: removed.row, email: removed.email, name: removed.name, subjectCode: removed.subjectCode, section: removed.section, facultyEmail: removed.facultyEmail, departmentCode: removed.departmentCode }))])
+    setPreviewRows(previewRows.filter((r) => !isBlockedPreviewRow(r)))
+    setProblemFilter(false)
+    setPreviewPage(0)
+  }
+
   const handleConfirm = async () => {
     if (!previewRows || loading) return
     setError("")
@@ -314,6 +327,11 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         totalRows: previewRows.length,
       }
       setImportResult(aggregated)
+      if (removedRows.length > 0) {
+        const removedHeaders = ["name", "email", "subject code", "section", "faculty email", "department code"]
+        const removedCsv = [removedHeaders.join(","), ...removedRows.map((r) => [r.name, r.email, r.subjectCode, r.section, r.facultyEmail, r.departmentCode].map((v) => `"${v}"`).join(","))].join("\n")
+        downloadBlob(removedCsv, "removed-rows.csv")
+      }
       const unaccounted =
         previewRows.length -
         aggregated.enrolled -
@@ -375,6 +393,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
               <li><strong>Subject code</strong> must match an existing subject — unknown codes will block the row.</li>
               <li><strong>Faculty email</strong> must be an existing faculty/dean user assigned to that subject+section.</li>
               <li><strong>Department code</strong> must match an existing department (e.g., <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">CCS</code>).</li>
+              <li><strong>Student email</strong> must end with <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">...@lyceumalabang.edu.ph</code> or <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">...@itmlyceumalabang.onmicrosoft.com</code> — blank or foreign-domain rows are excluded into Failures.</li>
+              <li>Large files upload in <strong>500-row chunks</strong> with progress — stay on this page until done.</li>
+              <li>Re-uploading the same file enrolls <strong>0 new rows</strong> (already-enrolled rows are skipped).</li>
             </ul>
           </div>
 
@@ -441,6 +462,15 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                     }`}
                   >
                     {problemFilter ? "Show all rows" : `Show ${blockedRows.length} blocked only`}
+                  </button>
+                )}
+                {blockedRows.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleRemoveBlocked}
+                    className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
+                  >
+                    {`Remove ${blockedRows.length} blocked`}
                   </button>
                 )}
               </div>

@@ -70,6 +70,7 @@ function FacultyTab() {
   const [lastImportTotal, setLastImportTotal] = useState(0)
   const [lastImportChunks, setLastImportChunks] = useState(0)
   const [wrongCsv, setWrongCsv] = useState("")
+  const [removedRows, setRemovedRows] = useState<CsvRow[]>([])
   const [csvProblemFilter, setCsvProblemFilter] = useState(false)
   const [csvBlockedFilter, setCsvBlockedFilter] = useState(false)
   const [csvInvalidDeptFilter, setCsvInvalidDeptFilter] = useState(false)
@@ -98,6 +99,11 @@ function FacultyTab() {
   const invalidDeptRows = useMemo(() => {
     if (!csvRows) return []
     return csvRows.filter((r) => r.isInvalidDept)
+  }, [csvRows])
+
+  const unimportableCsvRows = useMemo(() => {
+    if (!csvRows) return []
+    return csvRows.filter((r) => r.isExistingMapping || r.isInvalidDept)
   }, [csvRows])
 
   const csvVisibleRows = csvRows
@@ -300,7 +306,7 @@ function FacultyTab() {
 
   const handleCsvImport = async () => {
     if (!csvRows || csvRows.length === 0) return
-    setCsvImporting(true); setCsvImportResult(null); setCsvError(""); setWrongCsv("")
+    setCsvImporting(true); setCsvImportResult(null); setCsvError(""); setWrongCsv(""); setRemovedRows([])
     setLastImportTotal(csvRows.length); setLastImportChunks(Math.ceil(csvRows.length / FACULTY_CHUNK_SIZE))
     try {
       const postChunk = async (chunk: CsvRow[], meta: ChunkMeta, signal: AbortSignal) => {
@@ -345,6 +351,11 @@ function FacultyTab() {
         wrongLines.push([String(pe.row), "", "", "", "", "", "", pe.message].map(escapeWrongCell).join(","))
       }
       setWrongCsv([wrongHead.map(escapeWrongCell).join(","), ...wrongLines].join("\n"))
+      if (removedRows.length > 0) {
+        const removedHead = ["faculty email", "name", "section", "subject code", "subject name", "department code"]
+        const removedLines = removedRows.map((r) => [r.email, r.name, r.section, r.subjectCode, r.subjectName, r.departmentCode].map(escapeWrongCell).join(","))
+        downloadBlob([removedHead.map(escapeWrongCell).join(","), ...removedLines].join("\n"), "faculty-removed-rows.csv")
+      }
       const rowErrorCount =
         aggregated.errors.filter((e) => e.row > 0).length +
         (aggregated.parseErrors?.length ?? 0)
@@ -392,6 +403,7 @@ function FacultyTab() {
 
   const handleCsvRowRemove = (index: number) => {
     if (!csvRows) return
+    setRemovedRows((prev) => [...prev, csvRows[index]])
     const next = csvRows.filter((_, i) => i !== index)
     if (next.length === 0) {
       handleCsvReset()
@@ -403,10 +415,24 @@ function FacultyTab() {
     }
   }
 
+  const handleCsvRemoveBlocked = () => {
+    if (!csvRows) return
+    setRemovedRows((prev) => [...prev, ...csvRows.filter((r) => r.isExistingMapping || r.isInvalidDept)])
+    const next = csvRows.filter((r) => !r.isExistingMapping && !r.isInvalidDept)
+    if (next.length === 0) {
+      handleCsvReset()
+    } else {
+      setCsvRows(next)
+      setCsvBlockedFilter(false)
+      setCsvInvalidDeptFilter(false)
+      setCsvPreviewPage(0)
+    }
+  }
+
   const handleCsvReset = () => {
     setCsvRows(null)
     setCsvImportResult(null)
-    setWrongCsv(""); setLastImportTotal(0); setLastImportChunks(0)
+    setWrongCsv(""); setLastImportTotal(0); setLastImportChunks(0); setRemovedRows([])
     setCsvPreviewPage(0)
     setCsvProblemFilter(false)
     setCsvBlockedFilter(false)
@@ -513,6 +539,9 @@ function FacultyTab() {
                     <li><strong>Section</strong> column must use format: <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">PROGRAM-SECTION</code> or <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">PROGRAM SECTION</code> (e.g., <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">BSIT-32A3</code> or <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">BSIT 32A3</code>)</li>
                     <li><strong>Subject code</strong> must match an existing subject or a new one will be created.</li>
                     <li><strong>Department code</strong> must match an existing department (e.g., <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">CCS</code>).</li>
+                    <li><strong>Faculty email</strong> must end with <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">...@lyceumalabang.edu.ph</code> — blank or foreign-domain rows are excluded and listed under Wrong Uploads.</li>
+                    <li>Large files upload in <strong>500-row chunks</strong> with progress — stay on this page until done.</li>
+                    <li>Re-uploading the same file maps <strong>0 new rows</strong> (idempotent).</li>
                   </ul>
                 </div>
                 <div
@@ -580,6 +609,15 @@ function FacultyTab() {
                           }`}
                         >
                           {csvBlockedFilter ? "Show all rows" : `Show ${blockedCsvRows.length} blocked only`}
+                        </button>
+                      )}
+                      {unimportableCsvRows.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleCsvRemoveBlocked}
+                          className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
+                        >
+                          {`Remove ${unimportableCsvRows.length} blocked`}
                         </button>
                       )}
                       {csvProblemRows.length > 0 && (
