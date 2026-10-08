@@ -533,7 +533,7 @@ export default function Sidebar() {
           </div>
           {!collapsed && (
             <div className="flex-1 min-w-0">
-              <span className="text-sm font-bold text-white tracking-tight">LOA Connect Hub</span>
+              <span className="text-sm font-bold text-white tracking-tight">ACES</span>
               <p className="text-[10px] text-tertiary font-medium">Connect. Collaborate. Succeed.</p>
             </div>
           )}

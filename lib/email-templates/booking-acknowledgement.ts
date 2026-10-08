@@ -26,7 +26,7 @@ export function bookingAcknowledgementHtml(data: BookingAcknowledgementData): st
   const cardText = isRequest ? "#92400e" : "#166534"
   const footerText = isRequest
     ? "This is a confirmation that your consultation request was sent. You will be notified when the faculty responds."
-    : "This is a confirmation that your meeting invitation was sent. You can view the meeting details and manage attendees through the LOA Connect Hub system."
+    : "This is a confirmation that your meeting invitation was sent. You can view the meeting details and manage attendees through the ACES system."
 
   return `<!DOCTYPE html>
 <html>

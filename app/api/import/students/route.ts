@@ -5,6 +5,10 @@ import { parseStudentCsv, importStudents, getStudentCsvTemplate } from "@/lib/se
 import { logAuditEvent } from "@/lib/services/audit"
 import { departmentRepository } from "@/lib/repositories/factory"
 
+// Chunked ETL: chunks insert hundreds of rows per request; allow a long
+// execution window on platforms that cap serverless run time.
+export const maxDuration = 60
+
 export async function GET() {
   const csv = getStudentCsvTemplate()
   return new NextResponse(csv, {

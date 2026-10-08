@@ -19,8 +19,8 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 })
 
 export const metadata: Metadata = {
-  title: "LOA Connect Hub",
-  description: "Academic LOA Connect Hub booking system",
+  title: "ACES",
+  description: "Academic Consultation & Evaluation System",
   other: {
     "apple-mobile-web-app-capable": "yes",
     "apple-mobile-web-app-status-bar-style": "black-translucent",

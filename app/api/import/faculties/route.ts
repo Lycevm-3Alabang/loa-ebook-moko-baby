@@ -4,6 +4,10 @@ import { requireAdmin } from "@/lib/route-guard"
 import { parseFacultySubjectCsv, importFacultySubjects } from "@/lib/services/etlEvaluation"
 import { logAuditEvent } from "@/lib/services/audit"
 
+// Chunked ETL: chunks insert hundreds of rows per request; allow a long
+// execution window on platforms that cap serverless run time.
+export const maxDuration = 60
+
 function parseSectionIdentifier(raw: string): { name: string; program: string } {
   const dashIdx = raw.indexOf("-")
   const spaceIdx = raw.indexOf(" ")

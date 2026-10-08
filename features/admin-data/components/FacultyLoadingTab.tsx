@@ -13,7 +13,7 @@ import { FacultySubjectDetail } from "./FacultySubjectDetail"
 import type { DepartmentData, SemesterData } from "@/lib/types"
 import type { FacEnrollTab, FacViewTab, Subject, Section, FacultyMapping, Enrollment } from "./types"
 import { deriveCsvFlags, type CsvRow, type CsvRowWithFlags } from "./csv-helpers"
-import { useChunkedImport, decodeCsvFile, type ChunkMeta } from "./useChunkedImport"
+import { useChunkedImport, decodeCsvFile, withRetryHints, type ChunkMeta } from "./useChunkedImport"
 
 export function FacultyLoadingTab() {
   const [facEnrollTab, setFacEnrollTab] = useState<FacEnrollTab>("faculty")
@@ -83,7 +83,7 @@ function FacultyTab() {
     parseErrors?: { row: number; message: string }[]
   }
   const FACULTY_CHUNK_SIZE = 500
-  const { isRunning: chunkRunning, progress: chunkProgress, run: runChunks, cancel: cancelChunks } =
+  const { isRunning: chunkRunning, progress: chunkProgress, history: chunkHistory, run: runChunks, cancel: cancelChunks } =
     useChunkedImport<CsvRow, FacultyChunkResult>()
 
   const csvProblemRows = useMemo(() => {
@@ -325,19 +325,30 @@ function FacultyTab() {
         })
         if (!res.ok) {
           const d = await res.json().catch(() => ({}))
-          throw new Error((d as { error?: string }).error || `Chunk ${meta.chunkIndex + 1} failed`)
+          throw withRetryHints(new Error((d as { error?: string }).error || `Chunk ${meta.chunkIndex + 1} failed`), res)
         }
         return (await res.json()) as FacultyChunkResult
       }
-      const { results, cancelled } = await runChunks(csvRows, { chunkSize: FACULTY_CHUNK_SIZE, postChunk })
+      const { results, cancelled, failedChunks, stoppedEarly } = await runChunks(csvRows, {
+        chunkSize: FACULTY_CHUNK_SIZE,
+        postChunk,
+        summarizeResult: (r) => ({ saved: r.matched ?? 0, issues: (r.errors?.length ?? 0) + (r.parseErrors?.length ?? 0) }),
+      })
       if (cancelled) { setCsvError(`Import cancelled after ${results.length} chunks — no partial state hidden, retry to resume`); return }
       const offsetRows = <T extends { row: number }>(list: T[], ci: number): T[] =>
         list.map((e) => (e.row === 0 ? e : { ...e, row: e.row + ci * FACULTY_CHUNK_SIZE }))
+      const deadChunkEntries = failedChunks.flatMap((fc) =>
+        csvRows.slice(fc.meta.rowOffset, fc.meta.rowOffset + FACULTY_CHUNK_SIZE).map((r, j) => ({
+          row: fc.meta.rowOffset + j + 1,
+          email: r.email,
+          message: `Chunk ${fc.meta.chunkIndex + 1} failed after ${fc.attempts} attempts: ${fc.error}`,
+        })),
+      )
       const aggregated: FacultyChunkResult = {
         matched: results.reduce((s, r) => s + (r.matched ?? 0), 0),
         createdSubjects: results.reduce((s, r) => s + (r.createdSubjects ?? 0), 0),
         createdSections: results.reduce((s, r) => s + (r.createdSections ?? 0), 0),
-        errors: results.flatMap((r, ci) => offsetRows(r.errors ?? [], ci)),
+        errors: [...results.flatMap((r, ci) => offsetRows(r.errors ?? [], ci)), ...deadChunkEntries],
         parseErrors: results.flatMap((r, ci) => offsetRows(r.parseErrors ?? [], ci)),
       }
       setCsvImportResult(aggregated)
@@ -360,6 +371,16 @@ function FacultyTab() {
         aggregated.errors.filter((e) => e.row > 0).length +
         (aggregated.parseErrors?.length ?? 0)
       const unaccounted = csvRows.length - aggregated.matched - rowErrorCount
+      if (stoppedEarly) {
+        setCsvError("Stopped early after 3 consecutive chunk failures — completed chunks persisted. Retry the rest by pressing Import again.")
+        if (aggregated.matched > 0) fetchData(true)
+        return
+      }
+      if (failedChunks.length > 0) {
+        setCsvError(`${deadChunkEntries.length} rows from failed chunks recorded as errors — press Import again to retry (completed chunks are idempotent).`)
+        if (aggregated.matched > 0) fetchData(true)
+        return
+      }
       if (unaccounted !== 0) {
         setCsvError(`Import incomplete: ${unaccounted} of ${csvRows.length} CSV rows are unaccounted for (not mapped and not reported as errors). Retry the import — completed chunks are idempotent.`)
         return
@@ -582,6 +603,26 @@ function FacultyTab() {
                       )}
                     </div>
                     <p className="text-[10px] text-tertiary/70 text-center">Stay on this page until the run finishes — completed chunks resume safely on re-upload.</p>
+                    {chunkHistory.length > 0 && (
+                      <div className="max-h-28 overflow-y-auto rounded-lg border border-default px-3 py-2 space-y-0.5 text-left">
+                        {(() => {
+                          const persisted = chunkHistory.reduce((s, h) => s + h.saved + h.skipped, 0)
+                          const pct = chunkProgress.totalRows > 0 ? Math.round((persisted / chunkProgress.totalRows) * 100) : 0
+                          return (
+                            <>
+                              <p className="text-[11px] font-semibold text-secondary">Persisted {persisted}/{chunkProgress.totalRows} ({pct}%)</p>
+                              {chunkHistory.map((h) => (
+                                <p key={h.chunkIndex} className="text-[11px] text-tertiary">
+                                  {h.ok
+                                    ? `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → saved ${h.saved}, issues ${h.issues}`
+                                    : `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → failed — ${h.error ?? "error"}`}
+                                </p>
+                              ))}
+                            </>
+                          )
+                        })()}
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="flex-1 space-y-3 overflow-hidden">

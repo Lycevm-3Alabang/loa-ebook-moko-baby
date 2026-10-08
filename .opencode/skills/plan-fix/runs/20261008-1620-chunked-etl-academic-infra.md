@@ -54,25 +54,21 @@ pending: slice-1
 | lint-warn | Pre-existing `_err` warning in untouched users.service.ts (caught-errors not covered by args `_` exemption) | applied optional `catch`; lint fully clean, tests green |
 | slice-13 | Slice 13 bulk-remove blocked rows + refresh CSV hints (chunking, email-domain rules, no-placeholder, idempotent re-upload) in faculty + student previews | applied; tsc clean, npm test 211/211 green, lint fully clean |
 | slice-14 | Slice 14 auto-download removed-rows CSV on import completion (faculty: track removals + build; student: reuse removed list; manual buttons stay as fallback) | applied; tsc clean, npm test 211/211 green, lint fully clean |
+| slice-15 | Slice 15 per-chunk persistence ledger → hook history (rows/saved/skipped/issues per chunk incl. failures) + ledger UI with persisted % in both importers | applied; tsc clean, npm test 211/211 green, lint fully clean |
+| keepalive | Keep-alive so chunks never time out + rest period vs rate limits — vectors: (A) serverless cap/chunk, (B) hung request, (C) rate limits between chunks | slice-16: abortable rest + per-chunk deadline w/ sub-controller + retry w/ backoff + maxDuration |
+| slice-16 | Slice 16 keep-alive → hook restMs/deadline/retry/backoff, routes maxDuration=60; call sites unchanged (hook defaults); server concurrency deferred | proposed |
+| backoff-align | Supabase-aligned retry: honor Retry-After/X-RateLimit-Reset, exp base 1s ×2 cap 30s + jitter, retryable = 429/408/425/5xx/network (never 4xx/Abort) | verified vs docs + SDK conventions |
+| slice-16b | Slice 16 applied with aligned backoff → abortable 750ms rest, 120s per-attempt deadline on sub-controller, error-hint enrichment at both call sites, maxDuration on both routes (attempts revised by slice-17) | applied; tsc clean, npm test 211/211 green, lint fully clean |
+| slice-17 | Slice 17 retry-exhausted rows → failed downloads (see Decisions extension below) | applied; tsc clean, npm test 211/211 green, lint fully clean |
+| rebrand | Rename LOA Connect Hub → ACES / Academic Consultation & Evaluation System (17 files: UI marks, layout, emails, iCal+test, package+lock, docs) | applied; zero stragglers, npm test 211/211 green, lint clean |
 
 ## Pending
 
-- done (uncommitted: slice-12, lint-warn, slice-13, slice-14; remaining: live 2026-1 upload)
-
-## Pending
-
-- done (all 11 slices applied; remaining: live 2026-1 upload)
+- done (uncommitted: slices 12–17 + lint-warn; remaining: live 2026-1 upload; server concurrency batches deferred)
 
 ## Decisions
 
 - tsc-drift root causes: (1) email-templates line 126 — template gained required `variant`, sibling tests pass it per-call but the attendee-join test was never updated (fixture predates the field); (2) etlEvaluation 6× arity — `importStudentEnrollments` has zero prod callers and its tests predate the required `semesterId` param; sibling `importFacultySubjects` uses optional `semesterId?`, so optional matches file convention (also avoids breaking the exact-match `seRepo` assertion, which treats missing≈undefined but not null); (3) middleware 10× — `proxy(request: NextRequest)` but the test double is cast to `Request`; the double already carries `nextUrl`/`headers` and tests only assert status codes, so re-targeting the cast is behavior-preserving.
-
-## Pending
-
-- slice-11 (proposed, awaiting Apply/Stop)
-
-## Decisions
-
 - repository.md read: Layering = Route Handler → Controller → Service → Repository → Supabase; tracker = user text only (using request text); proof command = npm test
 - Calibration reused from 20261008-1559 run per answer A (compact card, bullets, 3-5 bullets max, workflow D, quiet implement, teach-only-when-load-bearing reframed for UI work)
 - Gold paths read-first: features/admin-data/components/AcademicInfrastructurePage.tsx, FacultyLoadingTab.tsx, csv-helpers.ts, lib/services/etlEvaluation.ts + studentImport.ts, app/api/import/faculties|students|preview route.ts

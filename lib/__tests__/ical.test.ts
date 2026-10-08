@@ -59,7 +59,7 @@ describe("generateICal", () => {
     expect(result).toContain("BEGIN:VEVENT")
     expect(result).toContain("END:VEVENT")
     expect(result).toContain("VERSION:2.0")
-    expect(result).toContain("PRODID:-//LOA Connect Hub//EN")
+    expect(result).toContain("PRODID:-//ACES//EN")
   })
 
   it("includes UID, DTSTART, DTEND", () => {

@@ -303,7 +303,7 @@ export default function StudentDashboard({ studentName, course, appointments, ha
           <div className="w-16 h-16 bg-gold-50 border border-gold-200 rounded-2xl flex items-center justify-center mx-auto mb-5">
             <span className="text-3xl">📚</span>
           </div>
-          <h2 className="text-lg font-bold text-primary mb-2">Get started with LOA Connect Hub</h2>
+          <h2 className="text-lg font-bold text-primary mb-2">Get started with ACES</h2>
           <p className="text-sm text-tertiary max-w-md mx-auto mb-6">
             Book a consultation with a faculty advisor or complete your pending evaluations.
           </p>

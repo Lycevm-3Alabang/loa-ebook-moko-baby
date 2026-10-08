@@ -1,4 +1,4 @@
-# LOA Connect Hub — Specs
+# ACES — Specs
 
 **Version:** 1.0
 **Status:** Draft

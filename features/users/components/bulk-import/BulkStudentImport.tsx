@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { cleanCell, parseCsvRows } from "@/lib/csv-utils"
-import { useChunkedImport, decodeCsvFile, type ChunkMeta } from "@/features/admin-data/components/useChunkedImport"
+import { useChunkedImport, decodeCsvFile, withRetryHints, type ChunkMeta } from "@/features/admin-data/components/useChunkedImport"
 
 interface StudentCsvRow {
   row: number
@@ -103,7 +103,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const [importing, setImporting] = useState(false)
   const [problemFilter, setProblemFilter] = useState(false)
   const [removedRows, setRemovedRows] = useState<StudentCsvRow[]>([])
-  const { isRunning: chunkRunning, progress: chunkProgress, run: runChunks, cancel: cancelChunks } =
+  const { isRunning: chunkRunning, progress: chunkProgress, history: chunkHistory, run: runChunks, cancel: cancelChunks } =
     useChunkedImport<PreviewRow, ImportResult>()
 
   const [existingSubjects, setExistingSubjects] = useState<{ code: string; id: string }[]>([])
@@ -301,26 +301,36 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
           data = await res.json()
         } catch {
           const text = await res.text().catch(() => "")
-          throw new Error(`Chunk ${meta.chunkIndex + 1} failed (${res.status}). ${text.slice(0, 200) || "No details available."}`)
+          throw withRetryHints(new Error(`Chunk ${meta.chunkIndex + 1} failed (${res.status}). ${text.slice(0, 200) || "No details available."}`), res)
         }
-        if (!res.ok) throw new Error(String(data.error) || `Chunk ${meta.chunkIndex + 1} failed`)
+        if (!res.ok) throw withRetryHints(new Error(String(data.error) || `Chunk ${meta.chunkIndex + 1} failed`), res)
         return data as unknown as ImportResult
       }
-      const { results, cancelled } = await runChunks(previewRows, {
+      const { results, cancelled, failedChunks, stoppedEarly } = await runChunks(previewRows, {
         chunkSize: STUDENT_CHUNK_SIZE,
         postChunk: (chunk, meta, signal) =>
           postChunk(payload.slice(meta.rowOffset, meta.rowOffset + chunk.length), meta, signal),
+        summarizeResult: (r) => ({ saved: r.enrolled ?? 0, skipped: r.skipped ?? 0, issues: (r.failed?.length ?? 0) + (r.parseErrors?.length ?? 0) }),
       })
       if (cancelled) { setError(`Import cancelled after ${results.length} chunks — retry to resume`); return }
+      const deadEntries = failedChunks.flatMap((fc) =>
+        payload.slice(fc.meta.rowOffset, fc.meta.rowOffset + STUDENT_CHUNK_SIZE).map((p) => ({
+          row: p._originRow,
+          email: p.email,
+          subjectCode: p.subjectCode,
+          section: p.section,
+          remark: `Chunk ${fc.meta.chunkIndex + 1} failed after ${fc.attempts} attempts: ${fc.error}`,
+        })),
+      )
       const aggregated: ImportResult = {
         created: results.flatMap((r) => r.created ?? []),
         enrolled: results.reduce((s, r) => s + (r.enrolled ?? 0), 0),
         skipped: results.reduce((s, r) => s + (r.skipped ?? 0), 0),
-        failed: results.flatMap((r, ci) => (r.failed ?? []).map((f) => {
+        failed: [...results.flatMap((r, ci) => (r.failed ?? []).map((f) => {
           const previewIdx = ci * STUDENT_CHUNK_SIZE + (f.row - 1)
           const originRow = payload[previewIdx]?._originRow ?? ci * STUDENT_CHUNK_SIZE + f.row
           return { ...f, row: originRow }
-        })),
+        })), ...deadEntries],
         parseErrors: results.flatMap((r) => r.parseErrors ?? []),
         successCsv: results.map((r) => r.successCsv).filter(Boolean).reduce(concatCsvBodies, ""),
         failureCsv: results.map((r) => r.failureCsv).filter(Boolean).reduce(concatCsvBodies, ""),
@@ -338,6 +348,14 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         aggregated.skipped -
         aggregated.failed.length -
         aggregated.parseErrors.length
+      if (stoppedEarly) {
+        setError("Stopped early after 3 consecutive chunk failures — completed chunks persisted. Press Import again to retry the rest.")
+        return
+      }
+      if (failedChunks.length > 0) {
+        setError(`${deadEntries.length} rows from failed chunks recorded as failures — press Import again to retry (completed chunks are idempotent).`)
+        return
+      }
       if (unaccounted !== 0) {
         setError(`Import incomplete: ${unaccounted} of ${previewRows.length} CSV rows are unaccounted for (not enrolled, skipped, or reported). Retry — completed chunks are idempotent.`)
         return
@@ -377,6 +395,26 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                 : "Please wait while we process your data."}
             </p>
             <p className="text-[11px] text-tertiary/70">Stay on this page until done — completed chunks resume safely on re-upload.</p>
+            {chunkHistory.length > 0 && (
+              <div className="w-full max-h-28 overflow-y-auto rounded-lg border border-default px-3 py-2 space-y-0.5 text-left">
+                {(() => {
+                  const persisted = chunkHistory.reduce((s, h) => s + h.saved + h.skipped, 0)
+                  const pct = chunkProgress.totalRows > 0 ? Math.round((persisted / chunkProgress.totalRows) * 100) : 0
+                  return (
+                    <>
+                      <p className="text-[11px] font-semibold text-secondary">Persisted {persisted}/{chunkProgress.totalRows} ({pct}%)</p>
+                      {chunkHistory.map((h) => (
+                        <p key={h.chunkIndex} className="text-[11px] text-tertiary">
+                          {h.ok
+                            ? `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → saved ${h.saved}, skipped ${h.skipped}, issues ${h.issues}`
+                            : `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → failed — ${h.error ?? "error"}`}
+                        </p>
+                      ))}
+                    </>
+                  )
+                })()}
+              </div>
+            )}
             {chunkRunning && (
               <button type="button" onClick={() => cancelChunks()} className="text-xs font-semibold text-red-600 hover:underline">Cancel</button>
             )}

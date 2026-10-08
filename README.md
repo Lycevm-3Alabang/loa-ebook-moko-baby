@@ -1,4 +1,4 @@
-# LOA Connect Hub
+# ACES — Academic Consultation & Evaluation System
 
 Academic consultation management system built with **Next.js 16**, **Supabase**, and **Tailwind CSS 4**.
 
