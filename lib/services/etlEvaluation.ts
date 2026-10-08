@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase"
 import { userRepository, sectionRepository, subjectRepository, facultySubjectRepository, studentEnrollmentRepository } from "@/lib/repositories/factory"
-import { cleanCell } from "@/lib/csv-utils"
+import { cleanCell, isExcelErrorCell } from "@/lib/csv-utils"
 
 function parseSectionIdentifier(raw: string): { name: string; program: string } {
   const dashIdx = raw.indexOf("-")
@@ -72,16 +72,29 @@ export function parseFacultySubjectCsv(text: string): {
       continue
     }
 
-    const email = cleanCell(cols[0]).toLowerCase().trim()
+    const rawEmail = cleanCell(cols[0]).toLowerCase().trim()
     const displayName = cleanCell(cols[1])
+    // Slice 1a: blank faculty email maps to the shared dummy instead of erroring.
+    // Department still comes from the row for section creation; the dummy user
+    // itself stays dept-agnostic (created with undefined departmentId below).
+    const email = rawEmail.length === 0 ? DUMMY_FACULTY_EMAIL : rawEmail
     const sectionRaw = cleanCell(cols[2])
     const subjectCode = cleanCell(cols[3])
     const subjectName = cleanCell(cols[4])
     const departmentCode = cleanCell(cols[5]).toUpperCase()
     const { program, name: sectionName } = parseSectionIdentifier(sectionRaw.trim())
 
-    if (email.length === 0) {
-      errors.push({ row: i + 1, message: "Faculty email is required" })
+    const excelOffender =
+      [
+        ["faculty email", email],
+        ["name", displayName],
+        ["section", sectionRaw],
+        ["subject code", subjectCode],
+        ["subject name", subjectName],
+        ["department code", departmentCode],
+      ].find(([, v]) => isExcelErrorCell(v))?.[0] ?? null
+    if (excelOffender) {
+      errors.push({ row: i + 1, message: `Invalid value in ${excelOffender} (Excel error)` })
       continue
     }
 
@@ -124,8 +137,37 @@ export async function importFacultySubjects(
 
   if (rows.length === 0) return result
 
+  // Slice 1a: chunked JSON path bypasses parseFacultySubjectCsv, so normalize
+  // blanks here too. Dummy stays dept-agnostic; department still comes from
+  // each row for section creation.
+  const effectiveRows = rows.map((r) =>
+    (r.email || "").trim().length === 0
+      ? { ...r, email: DUMMY_FACULTY_EMAIL, name: r.name?.trim() || "Unassigned Faculty" }
+      : { ...r, email: r.email.toLowerCase().trim() },
+  )
+
+  // Defense in depth: chunked JSON bypasses parse, so reject Excel-error cells
+  // here before any subject/section/user side-creates.
+  const cleanRows: typeof effectiveRows = []
+  effectiveRows.forEach((r, idx) => {
+    const offender =
+      [
+        ["faculty email", r.email],
+        ["name", r.name],
+        ["section", `${r.sectionProgram}-${r.sectionName}`],
+        ["subject code", r.subjectCode],
+        ["subject name", r.subjectName],
+        ["department code", r.departmentCode],
+      ].find(([, v]) => isExcelErrorCell((v || "").trim()))?.[0] ?? null
+    if (offender) {
+      result.errors.push({ row: idx + 1, email: r.email, message: `Invalid value in ${offender} (Excel error)` })
+      return
+    }
+    cleanRows.push(r)
+  })
+
   // ── Resolve department codes → ids ──
-  const uniqueDeptCodes = [...new Set(rows.map((r) => r.departmentCode))]
+  const uniqueDeptCodes = [...new Set(cleanRows.map((r) => r.departmentCode))]
   const { data: allDepts } = await supabase.from("departments").select("id, code")
   const deptCodeToId = new Map((allDepts || []).map((d: { id: string; code: string }) => [d.code.toUpperCase(), d.id]))
   const deptCodeErrors = new Set<string>()
@@ -137,7 +179,7 @@ export async function importFacultySubjects(
   }
 
   // ── Filter out rows with invalid department codes ──
-  const validRows = rows.filter((r) => !deptCodeErrors.has(r.departmentCode))
+  const validRows = cleanRows.filter((r) => !deptCodeErrors.has(r.departmentCode))
 
   // ── Upsert subjects ──
   const uniqueSubjectCodes = [...new Set(validRows.map((r) => r.subjectCode))]
@@ -179,8 +221,9 @@ export async function importFacultySubjects(
     const createdUsers = await userRepository.createMany(
       missingEmails.map((email) => {
         const row = mappableRows.find((r) => r.email.toLowerCase().trim() === email)
-        const deptId = row ? deptCodeToId.get(row.departmentCode) ?? undefined : undefined
         const isPlaceholder = email === DUMMY_FACULTY_EMAIL
+        // Dummy stays dept-agnostic (null) so it never inflates one department's filter.
+        const deptId = isPlaceholder ? undefined : (row ? deptCodeToId.get(row.departmentCode) ?? undefined : undefined)
         return {
           email,
           name: isPlaceholder ? "Unassigned Faculty" : (row?.name?.trim() || email.split("@")[0] || email),
@@ -195,12 +238,11 @@ export async function importFacultySubjects(
   }
 
   // ── Build mappings ──
-  const fsItems: { faculty_id: string; subject_id: string; section_id: string; semesterId?: string | null }[] = []
+  const fsItems: { faculty_id: string; subject_id: string; section_id: string; semesterId?: string | null; rowNum: number; email: string }[] = []
   for (let i = 0; i < validRows.length; i++) {
     const row = validRows[i]
     const rowNum = i + 1
 
-    if (row.email.length === 0) { result.errors.push({ row: rowNum, email: row.email, message: "Faculty email is required" }); continue }
     if (!row.email.endsWith("@lyceumalabang.edu.ph")) { result.errors.push({ row: rowNum, email: row.email, message: "Email domain not allowed" }); continue }
 
     const user = userMap.get(row.email.toLowerCase().trim())
@@ -222,20 +264,28 @@ export async function importFacultySubjects(
       continue
     }
 
-    fsItems.push({ faculty_id: user.id, subject_id: subject.id, section_id: section.id, semesterId })
+    fsItems.push({ faculty_id: user.id, subject_id: subject.id, section_id: section.id, semesterId, rowNum, email: row.email })
     result.matched++
   }
 
   // ── Additive insert per chunk (chunk-safe: never deletes prior chunks) ──
-  // Dedup within this chunk, then insert ignoring UNIQUE(subject, section, semester)
-  // violations so re-runs and cross-chunk repeats are no-ops (mirrors seed SQL).
-  const seenCombos = new Set<string>()
-  const uniqueItems = fsItems.filter((item) => {
+  // Dedup within this chunk (real wins over dummy for the same slot), then insert
+  // ignoring UNIQUE(subject, section, semester) repeats so re-runs are no-ops.
+  // On conflict: dummy-owned slot + real incoming → update (auto-overwrite);
+  // same owner → no-op; real-owned + different incoming (or dummy over real) →
+  // error, never overwrite.
+  const dummyId = userMap.get(DUMMY_FACULTY_EMAIL)?.id
+  const comboMap = new Map<string, { faculty_id: string; subject_id: string; section_id: string; semesterId?: string | null; rowNum: number; email: string }>()
+  for (const item of fsItems) {
     const key = `${item.subject_id}|${item.section_id}|${item.semesterId ?? ""}`
-    if (seenCombos.has(key)) return false
-    seenCombos.add(key)
-    return true
-  })
+    const prev = comboMap.get(key)
+    if (!prev) {
+      comboMap.set(key, item)
+    } else if (dummyId && prev.faculty_id === dummyId && item.faculty_id !== dummyId) {
+      comboMap.set(key, item)
+    }
+  }
+  const uniqueItems = [...comboMap.values()]
 
   for (const item of uniqueItems) {
     try {
@@ -246,8 +296,27 @@ export async function importFacultySubjects(
         semesterId: item.semesterId ?? null,
       })
     } catch (err) {
-      if ((err as { code?: string })?.code === "23505") continue
-      throw err
+      if ((err as { code?: string })?.code !== "23505") throw err
+      const lookup = facultySubjectRepository.findBySubjectSectionSemester
+      if (typeof lookup !== "function" || !dummyId) continue
+      const existing = await lookup.call(
+        facultySubjectRepository,
+        item.subject_id,
+        item.section_id,
+        item.semesterId ?? null,
+      )
+      if (!existing) continue
+      if (existing.faculty_id === item.faculty_id) continue
+      if (existing.faculty_id === dummyId && item.faculty_id !== dummyId) {
+        await facultySubjectRepository.update(existing.id, { faculty_id: item.faculty_id })
+        continue
+      }
+      result.errors.push({
+        row: item.rowNum,
+        email: item.email,
+        message: "Already assigned — not overwritten (existing load kept)",
+      })
+      result.matched--
     }
   }
 

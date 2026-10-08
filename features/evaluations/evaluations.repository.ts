@@ -2,6 +2,8 @@ import { supabase } from "@/lib/db"
 import { fetchRatingsWithCategories } from "@/lib/db/common"
 import type { EvaluationData, EvaluationComment, EvaluationCommentWithEvaluation, IEvaluationRepository, EvaluationListItem, EvaluationDetailItem, EvaluationRatingRow, EvaluationCommentLight, EvaluationCommentFull, PendingEvaluationItem } from "@/lib/types"
 
+const DUMMY_FACULTY_EMAIL_EVAL = "placeholder@lyceumalabang.edu.ph"
+
 export const evaluationRepository: IEvaluationRepository = {
   async findPending(evaluatorId, evaluationPeriodId) {
     const { data: enrollments, error: enrollErr } = await supabase
@@ -24,6 +26,14 @@ export const evaluationRepository: IEvaluationRepository = {
       .eq("evaluatorId", evaluatorId)
       .eq("evaluation_period_id", evaluationPeriodId)
     if (evErr) throw evErr
+
+    // Unassigned loads (shared dummy) are never evaluatable — resolve once, filter both branches.
+    const { data: dummyUser } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", DUMMY_FACULTY_EMAIL_EVAL)
+      .maybeSingle()
+    const dummyId = (dummyUser as { id: string } | null)?.id ?? null
 
     const existingByFsId = new Map(existing.filter((r) => r.facultySubjectId).map((r) => [r.facultySubjectId, r]))
     const activeExistingFsIds = new Set(
@@ -63,7 +73,7 @@ export const evaluationRepository: IEvaluationRepository = {
       }
 
       return facultySubjects
-        .filter((fs) => !skipFsIds.has(fs.id))
+        .filter((fs) => !skipFsIds.has(fs.id) && fs.faculty_id !== dummyId)
         .map(
           (fs): PendingEvaluationItem => ({
             evaluateeId: fs.faculty_id,
@@ -102,7 +112,7 @@ export const evaluationRepository: IEvaluationRepository = {
     }
 
     return facultySubjects
-      .filter((fs) => !skipFsIds.has(fs.id))
+      .filter((fs) => !skipFsIds.has(fs.id) && fs.faculty_id !== dummyId)
       .map(
         (fs): PendingEvaluationItem => ({
           evaluateeId: fs.faculty_id,

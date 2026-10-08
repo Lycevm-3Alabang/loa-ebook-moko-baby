@@ -1,3 +1,4 @@
+import { isExcelErrorCell } from "@/lib/csv-utils"
 import type { FacultyMapping } from "./types"
 
 export type CsvRow = { email: string; name: string; subjectCode: string; subjectName: string; section: string; departmentCode: string }
@@ -9,6 +10,7 @@ export interface CsvRowWithFlags extends CsvRow {
   isUnassignedFaculty: boolean
   isInvalidDept: boolean
   isExistingMapping: boolean
+  isInvalidValue: boolean
 }
 
 export interface CsvFlagContext {
@@ -19,30 +21,52 @@ export interface CsvFlagContext {
   facultyEmails: string[]
 }
 
+export const DUMMY_FACULTY_EMAIL_CLIENT = "placeholder@lyceumalabang.edu.ph"
+
 export function deriveCsvFlags(rows: CsvRow[], ctx: CsvFlagContext): CsvRowWithFlags[] {
   const existingKeys = new Set(
-    ctx.existingMappings.map((m) => `${m.faculty.email}|${m.subject.code}|${m.section.program}-${m.section.name}`)
+    ctx.existingMappings.map(
+      (m) => `${(m.faculty.email || "").toLowerCase().trim()}|${(m.subject.code || "").trim()}|${(m.section.program || "").trim()}-${(m.section.name || "").trim()}`,
+    ),
   )
-  const validDeptSet = new Set(ctx.validDeptCodes)
-  const subjectSet = new Set(ctx.subjectCodes)
-  const sectionPairs = ctx.sectionPairs
-  const emailSet = new Set(ctx.facultyEmails)
+  const validDeptSet = new Set(ctx.validDeptCodes.map((c) => (c || "").trim().toUpperCase()))
+  const subjectSet = new Set(ctx.subjectCodes.map((c) => (c || "").trim()))
+  const sectionPairs = ctx.sectionPairs.map((s) => ({ name: (s.name || "").trim(), program: (s.program || "").trim() }))
+  const emailSet = new Set(ctx.facultyEmails.map((e) => (e || "").toLowerCase().trim()))
 
   return rows.map((r) => {
-    const dashIdx = r.section.indexOf("-")
-    const spaceIdx = r.section.indexOf(" ")
+    const tEmail = (r.email || "").trim()
+    const tName = (r.name || "").trim()
+    const tSubjectCode = (r.subjectCode || "").trim()
+    const tSubjectName = (r.subjectName || "").trim()
+    const tSection = (r.section || "").trim()
+    const tDept = (r.departmentCode || "").trim().toUpperCase()
+    const dashIdx = tSection.indexOf("-")
+    const spaceIdx = tSection.indexOf(" ")
     const idx = dashIdx !== -1 ? dashIdx : spaceIdx
-    const sectionProgram = idx === -1 ? "" : r.section.slice(0, idx).trim()
-    const sectionName = idx === -1 ? r.section : r.section.slice(idx + 1).trim()
-    const isEmptyEmail = !r.email
+    const sectionProgram = idx === -1 ? "" : tSection.slice(0, idx).trim()
+    const sectionName = idx === -1 ? tSection : tSection.slice(idx + 1).trim()
+    const loweredEmail = tEmail.toLowerCase()
+    const isEmptyEmail = loweredEmail.length === 0
+    const isDummyEmail = loweredEmail === DUMMY_FACULTY_EMAIL_CLIENT
+    const isUnassigned = isEmptyEmail || isDummyEmail
+    const isInvalidValue = [tEmail, tName, tSubjectCode, tSubjectName, tSection, tDept].some((c) =>
+      isExcelErrorCell(c || ""),
+    )
     return {
-      ...r,
-      isNewSubject: !subjectSet.has(r.subjectCode),
+      email: tEmail,
+      name: tName,
+      subjectCode: tSubjectCode,
+      subjectName: tSubjectName,
+      section: tSection,
+      departmentCode: tDept,
+      isNewSubject: !subjectSet.has(tSubjectCode),
       isNewSection: !sectionPairs.some((s) => s.name === sectionName && s.program === sectionProgram),
-      isNewTeacher: isEmptyEmail ? false : !emailSet.has(r.email),
-      isUnassignedFaculty: isEmptyEmail,
-      isInvalidDept: !validDeptSet.has(r.departmentCode),
-      isExistingMapping: existingKeys.has(`${r.email}|${r.subjectCode}|${r.section}`),
+      isNewTeacher: isUnassigned ? false : !emailSet.has(loweredEmail),
+      isUnassignedFaculty: isUnassigned,
+      isInvalidValue,
+      isInvalidDept: !validDeptSet.has(tDept),
+      isExistingMapping: existingKeys.has(`${loweredEmail}|${tSubjectCode}|${tSection}`),
     }
   })
 }

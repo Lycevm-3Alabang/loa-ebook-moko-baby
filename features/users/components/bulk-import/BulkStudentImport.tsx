@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
-import { cleanCell, parseCsvRows } from "@/lib/csv-utils"
+import { cleanCell, isExcelErrorCell, parseCsvRows } from "@/lib/csv-utils"
 import { useChunkedImport, decodeCsvFile, withRetryHints, type ChunkMeta } from "@/features/admin-data/components/useChunkedImport"
 
 interface StudentCsvRow {
@@ -21,6 +21,7 @@ interface PreviewRow extends StudentCsvRow {
   facultyNotAssigned: boolean
   isNewStudent: boolean
   isInvalidDepartment: boolean
+  isInvalidValue: boolean
   resolvedDepartmentId: string | null
 }
 
@@ -152,7 +153,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
   const problemRows = useMemo(() => {
     if (!previewRows) return []
-    return previewRows.filter((r) => r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned || r.isNewStudent || r.isInvalidDepartment)
+    return previewRows.filter((r) => r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned || r.isNewStudent || r.isInvalidDepartment || r.isInvalidValue)
   }, [previewRows])
 
   const visibleRows = problemFilter ? problemRows : previewRows ?? []
@@ -205,7 +206,10 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
           )
         }
       }
-      return { ...r, isNewSubject, isNewSection, isNewFaculty, facultyNotAssigned, isNewStudent, isInvalidDepartment, resolvedDepartmentId }
+      const isInvalidValue = [r.name, r.email, r.subjectCode, r.section, r.facultyEmail, r.departmentCode].some((c) =>
+        isExcelErrorCell((c || "").trim()),
+      )
+      return { ...r, isNewSubject, isNewSection, isNewFaculty, facultyNotAssigned, isNewStudent, isInvalidDepartment, isInvalidValue, resolvedDepartmentId }
     })
     setPreviewRows(withFlags)
     setPreviewPage(0)
@@ -236,6 +240,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         }
       }
     }
+    updated.isInvalidValue = [updated.name, updated.email, updated.subjectCode, updated.section, updated.facultyEmail, updated.departmentCode].some((c) =>
+      isExcelErrorCell((c || "").trim()),
+    )
     next[index] = updated
     setPreviewRows(next)
   }
@@ -256,7 +263,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   }
 
   const isBlockedPreviewRow = (r: PreviewRow) =>
-    r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned || r.isInvalidDepartment
+    r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned || r.isInvalidDepartment || r.isInvalidValue
 
   const handleRemoveBlocked = () => {
     if (!previewRows) return
@@ -569,15 +576,16 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                         </td>
                         <td>
                           <div className="flex flex-wrap gap-1">
-                            {r.isInvalidDepartment && <span className="badge-red text-[10px]">Dept code</span>}
-                            {!r.isInvalidDepartment && r.isNewSubject && <span className="badge-red text-[10px]">Subject not found</span>}
-                            {!r.isInvalidDepartment && r.isNewSection && <span className="badge-red text-[10px]">Section not found</span>}
-                            {!r.isInvalidDepartment && r.isNewFaculty && <span className="badge-red text-[10px]">Faculty not found</span>}
-                            {!r.isInvalidDepartment && r.facultyNotAssigned && <span className="badge-red text-[10px]">Faculty Loading Mismatch</span>}
-                            {!r.isInvalidDepartment && r.isNewStudent && !r.isNewSubject && !r.isNewSection && !r.isNewFaculty && !r.facultyNotAssigned && (
+                            {r.isInvalidValue && <span className="badge-red text-[10px]">Invalid value</span>}
+                            {!r.isInvalidValue && r.isInvalidDepartment && <span className="badge-red text-[10px]">Dept code</span>}
+                            {!r.isInvalidValue && !r.isInvalidDepartment && r.isNewSubject && <span className="badge-red text-[10px]">Subject not found</span>}
+                            {!r.isInvalidValue && !r.isInvalidDepartment && r.isNewSection && <span className="badge-red text-[10px]">Section not found</span>}
+                            {!r.isInvalidValue && !r.isInvalidDepartment && r.isNewFaculty && <span className="badge-red text-[10px]">Faculty not found</span>}
+                            {!r.isInvalidValue && !r.isInvalidDepartment && r.facultyNotAssigned && <span className="badge-red text-[10px]">Faculty Loading Mismatch</span>}
+                            {!r.isInvalidValue && !r.isInvalidDepartment && r.isNewStudent && !r.isNewSubject && !r.isNewSection && !r.isNewFaculty && !r.facultyNotAssigned && (
                               <span className="badge-amber text-[10px]">New Student</span>
                             )}
-                            {!r.isInvalidDepartment && !r.isNewSubject && !r.isNewSection && !r.isNewFaculty && !r.facultyNotAssigned && !r.isNewStudent && (
+                            {!r.isInvalidValue && !r.isInvalidDepartment && !r.isNewSubject && !r.isNewSection && !r.isNewFaculty && !r.facultyNotAssigned && !r.isNewStudent && (
                               <span className="badge-emerald text-[10px]">Ready</span>
                             )}
                           </div>

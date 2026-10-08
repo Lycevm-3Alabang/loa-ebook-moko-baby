@@ -85,6 +85,19 @@ export const facultySubjectRepository: IFacultySubjectRepository = {
     return data as FacultySubjectData | null
   },
 
+  async findBySubjectSectionSemester(subject_id, section_id, semesterId) {
+    let q = supabase
+      .from("faculty_subjects")
+      .select("*")
+      .eq("subject_id", subject_id)
+      .eq("section_id", section_id)
+    if (semesterId) q = q.eq("semesterId", semesterId) as typeof q
+    else q = q.is("semesterId", null) as typeof q
+    const { data, error } = await q.maybeSingle()
+    if (error) throw error
+    return data as FacultySubjectData | null
+  },
+
   async findByIds(ids) {
     if (ids.length === 0) return []
     const { data, error } = await supabase.from("faculty_subjects").select("*").in("id", ids)

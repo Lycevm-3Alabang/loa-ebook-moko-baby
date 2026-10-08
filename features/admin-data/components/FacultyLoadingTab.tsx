@@ -12,7 +12,8 @@ import { EnrollmentsTab } from "./EnrollmentsTab"
 import { FacultySubjectDetail } from "./FacultySubjectDetail"
 import type { DepartmentData, SemesterData } from "@/lib/types"
 import type { FacEnrollTab, FacViewTab, Subject, Section, FacultyMapping, Enrollment } from "./types"
-import { deriveCsvFlags, type CsvRow, type CsvRowWithFlags } from "./csv-helpers"
+import { deriveCsvFlags, DUMMY_FACULTY_EMAIL_CLIENT, type CsvRow, type CsvRowWithFlags } from "./csv-helpers"
+import { isExcelErrorCell } from "@/lib/csv-utils"
 import { useChunkedImport, decodeCsvFile, withRetryHints, type ChunkMeta } from "./useChunkedImport"
 
 export function FacultyLoadingTab() {
@@ -74,6 +75,7 @@ function FacultyTab() {
   const [csvProblemFilter, setCsvProblemFilter] = useState(false)
   const [csvBlockedFilter, setCsvBlockedFilter] = useState(false)
   const [csvInvalidDeptFilter, setCsvInvalidDeptFilter] = useState(false)
+  const [csvInvalidValueFilter, setCsvInvalidValueFilter] = useState(false)
   const PREVIEW_PAGE_SIZE = 50
   interface FacultyChunkResult {
     matched: number
@@ -88,7 +90,7 @@ function FacultyTab() {
 
   const csvProblemRows = useMemo(() => {
     if (!csvRows) return []
-    return csvRows.filter((r) => r.isNewSubject || r.isNewSection || r.isNewTeacher || r.isInvalidDept)
+    return csvRows.filter((r) => r.isNewSubject || r.isNewSection || r.isNewTeacher || r.isInvalidDept || r.isInvalidValue)
   }, [csvRows])
 
   const blockedCsvRows = useMemo(() => {
@@ -101,16 +103,22 @@ function FacultyTab() {
     return csvRows.filter((r) => r.isInvalidDept)
   }, [csvRows])
 
+  const invalidValueRows = useMemo(() => {
+    if (!csvRows) return []
+    return csvRows.filter((r) => r.isInvalidValue)
+  }, [csvRows])
+
   const unimportableCsvRows = useMemo(() => {
     if (!csvRows) return []
-    return csvRows.filter((r) => r.isExistingMapping || r.isInvalidDept)
+    return csvRows.filter((r) => r.isExistingMapping || r.isInvalidDept || r.isInvalidValue)
   }, [csvRows])
 
   const csvVisibleRows = csvRows
     ? csvRows.filter((r) => {
+        if (csvInvalidValueFilter) return r.isInvalidValue
         if (csvInvalidDeptFilter) return r.isInvalidDept
-        if (csvProblemFilter && csvBlockedFilter) return r.isNewSubject || r.isNewSection || r.isNewTeacher || r.isInvalidDept || r.isExistingMapping
-        if (csvProblemFilter) return r.isNewSubject || r.isNewSection || r.isNewTeacher || r.isInvalidDept
+        if (csvProblemFilter && csvBlockedFilter) return r.isNewSubject || r.isNewSection || r.isNewTeacher || r.isInvalidDept || r.isInvalidValue || r.isExistingMapping
+        if (csvProblemFilter) return r.isNewSubject || r.isNewSection || r.isNewTeacher || r.isInvalidDept || r.isInvalidValue
         if (csvBlockedFilter) return r.isExistingMapping
         return true
       })
@@ -416,6 +424,9 @@ function FacultyTab() {
       const validDeptCodes = new Set(departments.map((d) => d.code))
       updated.isInvalidDept = !validDeptCodes.has(value.toUpperCase().trim())
     }
+    updated.isInvalidValue = [updated.email, updated.name, updated.subjectCode, updated.subjectName, updated.section, updated.departmentCode].some((c) =>
+      isExcelErrorCell((c || "").trim()),
+    )
     const row = updated as CsvRowWithFlags
     updated.isExistingMapping = existingKeys.has(`${row.email}|${row.subjectCode}|${row.section}`)
     next[index] = updated
@@ -438,14 +449,15 @@ function FacultyTab() {
 
   const handleCsvRemoveBlocked = () => {
     if (!csvRows) return
-    setRemovedRows((prev) => [...prev, ...csvRows.filter((r) => r.isExistingMapping || r.isInvalidDept)])
-    const next = csvRows.filter((r) => !r.isExistingMapping && !r.isInvalidDept)
+    setRemovedRows((prev) => [...prev, ...csvRows.filter((r) => r.isExistingMapping || r.isInvalidDept || r.isInvalidValue)])
+    const next = csvRows.filter((r) => !r.isExistingMapping && !r.isInvalidDept && !r.isInvalidValue)
     if (next.length === 0) {
       handleCsvReset()
     } else {
       setCsvRows(next)
       setCsvBlockedFilter(false)
       setCsvInvalidDeptFilter(false)
+      setCsvInvalidValueFilter(false)
       setCsvPreviewPage(0)
     }
   }
@@ -458,14 +470,20 @@ function FacultyTab() {
     setCsvProblemFilter(false)
     setCsvBlockedFilter(false)
     setCsvInvalidDeptFilter(false)
+    setCsvInvalidValueFilter(false)
     setCsvError("")
     if (csvFileRef.current) csvFileRef.current.value = ""
   }
 
   const hasNullSemesterId = data?.some((m) => !m.semesterId) ?? false
 
+  const isDummyMapping = (m: FacultyMapping) =>
+    m.faculty.email.toLowerCase().trim() === DUMMY_FACULTY_EMAIL_CLIENT
+
   const byDept = data?.filter((m) => {
     if (deptFilter === "all") return true
+    if (deptFilter === "unassigned") return isDummyMapping(m)
+    if (isDummyMapping(m)) return false
     return m.faculty.departmentId === deptFilter
   }) ?? []
 
@@ -510,8 +528,11 @@ function FacultyTab() {
   const [selectedFacultyLoad, setSelectedFacultyLoad] = useState<FacultyMapping[] | null>(null)
   const facultyLoadPagination = usePagination(selectedFacultyLoad ?? [], 25)
 
+  const hasUnassigned = data?.some((m) => isDummyMapping(m)) ?? false
+
   const deptPills = [
     { id: "all", label: "All" },
+    ...(hasUnassigned ? [{ id: "unassigned", label: "Unassigned" }] : []),
     ...departments.map((d) => ({ id: d.id, label: d.name })),
   ]
 
@@ -539,28 +560,16 @@ function FacultyTab() {
               </div>
             )}
             <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-secondary">Upload CSV</h3>
-              {!csvRows && !csvImportResult && (
-                <button type="button" onClick={() => downloadBlob(`${TEMPLATE_HEADERS}\n${TEMPLATE_SAMPLE}`, "faculty-import-template.csv")}
-                  className="flex items-center gap-2 text-xs font-semibold px-4 py-2 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
-                >
-                  <svg className="w-4 h-4 text-gold-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  Template
-                </button>
-              )}
-            </div>
             {!csvRows && !csvImportResult && (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 rounded-xl px-4 py-3">
                   <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1">CSV Format Hints</p>
                   <ul className="text-[11px] text-blue-600/80 dark:text-blue-300/70 space-y-0.5">
                     <li><strong>Section</strong> column must use format: <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">PROGRAM-SECTION</code> or <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">PROGRAM SECTION</code> (e.g., <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">BSIT-32A3</code> or <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">BSIT 32A3</code>)</li>
                     <li><strong>Subject code</strong> must match an existing subject or a new one will be created.</li>
                     <li><strong>Department code</strong> must match an existing department (e.g., <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">CCS</code>).</li>
-                    <li><strong>Faculty email</strong> must end with <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">...@lyceumalabang.edu.ph</code> — blank or foreign-domain rows are excluded and listed under Wrong Uploads.</li>
+                    <li><strong>Faculty email</strong> must end with <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">...@lyceumalabang.edu.ph</code> — foreign-domain rows are excluded and listed under Wrong Uploads. Blank emails are assigned to <strong>Unassigned Faculty</strong> (placeholder).</li>
+                    <li>Re-importing the same <strong>subject code + section</strong> with a real faculty email <strong>replaces the placeholder</strong> automatically. Re-importing over a real teacher does not replace — it reports <strong>Already loaded</strong>.</li>
                     <li>Large files upload in <strong>500-row chunks</strong> with progress — stay on this page until done.</li>
                     <li>Re-uploading the same file maps <strong>0 new rows</strong> (idempotent).</li>
                   </ul>
@@ -584,45 +593,66 @@ function FacultyTab() {
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCsvFile(f) }}
                   />
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => downloadBlob(`${TEMPLATE_HEADERS}\n${TEMPLATE_SAMPLE}`, "faculty-import-template.csv")}
+                  className="w-full flex items-center justify-center gap-2 text-xs font-semibold px-4 py-2.5 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
+                >
+                  <svg className="w-4 h-4 text-gold-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download Sample Template (.csv)
+                </button>
+
                 {csvError && <p className="text-xs font-medium text-red-600 text-center">{csvError}</p>}
               </div>
             )}
             {csvRows && csvRows.length > 0 && (
               <div className="flex flex-col h-full min-h-[24rem]">
                 {csvImporting && (
-                  <div className="mb-3 space-y-1.5">
-                    <div className="w-full bg-slate-200 rounded-full h-2.5">
-                      <div className="bg-gold-500 h-2.5 rounded-full transition-all" style={{ width: `${chunkProgress.totalRows > 0 ? Math.round((chunkProgress.doneRows / chunkProgress.totalRows) * 100) : 0}%` }} />
-                    </div>
-                    <div className="flex items-center justify-center gap-3">
-                      <p className="text-[11px] text-tertiary text-center">
-                        Importing faculty mappings... {chunkProgress.doneRows}/{chunkProgress.totalRows} rows ({chunkProgress.doneChunks}/{chunkProgress.totalChunks} chunks)
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                    <div className="bg-white dark:bg-surface-dim rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl max-w-md w-full mx-4">
+                      <div className="w-10 h-10 border-4 border-gold-600 border-t-transparent rounded-full animate-spin" />
+                      <p className="text-sm font-semibold text-secondary">Importing faculty mappings...</p>
+                      <p className="text-xs text-tertiary">
+                        {chunkProgress.totalRows > 0
+                          ? `${chunkProgress.doneRows}/${chunkProgress.totalRows} rows (${chunkProgress.doneChunks}/${chunkProgress.totalChunks} chunks)`
+                          : "Please wait while we process your data."}
                       </p>
+                      {chunkProgress.totalRows > 0 && (
+                        <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5">
+                          <div
+                            className="bg-gold-500 h-2.5 rounded-full transition-all"
+                            style={{ width: `${Math.round((chunkProgress.doneRows / chunkProgress.totalRows) * 100)}%` }}
+                          />
+                        </div>
+                      )}
+                      <p className="text-[11px] text-tertiary/70 text-center">Stay on this page until done — completed chunks resume safely on re-upload.</p>
+                      {chunkHistory.length > 0 && (
+                        <div className="w-full max-h-28 overflow-y-auto rounded-lg border border-default px-3 py-2 space-y-0.5 text-left">
+                          {(() => {
+                            const persisted = chunkHistory.reduce((s, h) => s + h.saved + h.skipped, 0)
+                            const pct = chunkProgress.totalRows > 0 ? Math.round((persisted / chunkProgress.totalRows) * 100) : 0
+                            return (
+                              <>
+                                <p className="text-[11px] font-semibold text-secondary">Persisted {persisted}/{chunkProgress.totalRows} ({pct}%)</p>
+                                {chunkHistory.map((h) => (
+                                  <p key={h.chunkIndex} className="text-[11px] text-tertiary">
+                                    {h.ok
+                                      ? `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → saved ${h.saved}, issues ${h.issues}`
+                                      : `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → failed — ${h.error ?? "error"}`}
+                                  </p>
+                                ))}
+                              </>
+                            )
+                          })()}
+                        </div>
+                      )}
                       {chunkRunning && (
-                        <button type="button" onClick={() => cancelChunks()} className="text-[11px] font-semibold text-red-600 hover:underline">Cancel</button>
+                        <button type="button" onClick={() => cancelChunks()} className="text-xs font-semibold text-red-600 hover:underline">Cancel</button>
                       )}
                     </div>
-                    <p className="text-[10px] text-tertiary/70 text-center">Stay on this page until the run finishes — completed chunks resume safely on re-upload.</p>
-                    {chunkHistory.length > 0 && (
-                      <div className="max-h-28 overflow-y-auto rounded-lg border border-default px-3 py-2 space-y-0.5 text-left">
-                        {(() => {
-                          const persisted = chunkHistory.reduce((s, h) => s + h.saved + h.skipped, 0)
-                          const pct = chunkProgress.totalRows > 0 ? Math.round((persisted / chunkProgress.totalRows) * 100) : 0
-                          return (
-                            <>
-                              <p className="text-[11px] font-semibold text-secondary">Persisted {persisted}/{chunkProgress.totalRows} ({pct}%)</p>
-                              {chunkHistory.map((h) => (
-                                <p key={h.chunkIndex} className="text-[11px] text-tertiary">
-                                  {h.ok
-                                    ? `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → saved ${h.saved}, issues ${h.issues}`
-                                    : `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → failed — ${h.error ?? "error"}`}
-                                </p>
-                              ))}
-                            </>
-                          )
-                        })()}
-                      </div>
-                    )}
                   </div>
                 )}
                 <div className="flex-1 space-y-3 overflow-hidden">
@@ -687,6 +717,19 @@ function FacultyTab() {
                           {csvInvalidDeptFilter ? "Show all rows" : `Show ${invalidDeptRows.length} invalid dept only`}
                         </button>
                       )}
+                      {invalidValueRows.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => { setCsvInvalidValueFilter((p) => !p); setCsvPreviewPage(0) }}
+                          className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition-colors ${
+                            csvInvalidValueFilter
+                              ? "bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-700 dark:text-red-300"
+                              : "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400"
+                          }`}
+                        >
+                          {csvInvalidValueFilter ? "Show all rows" : `Show ${invalidValueRows.length} invalid value only`}
+                        </button>
+                      )}
                     </div>
                   </div>
                   {csvError && <p className="text-xs font-medium text-red-600">{csvError}</p>}
@@ -733,13 +776,14 @@ function FacultyTab() {
                               </td>
                               <td className="whitespace-nowrap">
                                 <div className="flex flex-wrap gap-1">
-                                  {row.isInvalidDept && <span className="badge-red">Dept code</span>}
-                                  {!row.isInvalidDept && row.isNewSubject && <span className="badge-amber">Subject</span>}
-                                  {!row.isInvalidDept && row.isNewSection && <span className="badge-amber">Section</span>}
-                                  {!row.isInvalidDept && row.isNewTeacher && <span className="badge-amber">Teacher</span>}
-                                  {!row.isInvalidDept && row.isUnassignedFaculty && <span className="badge-amber">Unassigned</span>}
-                                  {!row.isNewSubject && !row.isNewSection && !row.isNewTeacher && !row.isUnassignedFaculty && !row.isInvalidDept && row.isExistingMapping && <span className="badge-red">Already loaded</span>}
-                                  {!row.isNewSubject && !row.isNewSection && !row.isNewTeacher && !row.isUnassignedFaculty && !row.isInvalidDept && !row.isExistingMapping && <span className="badge-emerald">Faculty Loading Only</span>}
+                                  {row.isInvalidValue && <span className="badge-red">Invalid value</span>}
+                                  {!row.isInvalidValue && row.isInvalidDept && <span className="badge-red">Dept code</span>}
+                                  {!row.isInvalidValue && !row.isInvalidDept && row.isNewSubject && <span className="badge-amber">Subject</span>}
+                                  {!row.isInvalidValue && !row.isInvalidDept && row.isNewSection && <span className="badge-amber">Section</span>}
+                                  {!row.isInvalidValue && !row.isInvalidDept && row.isNewTeacher && <span className="badge-amber">Teacher</span>}
+                                  {!row.isInvalidValue && !row.isInvalidDept && row.isUnassignedFaculty && <span className="badge-amber">Unassigned</span>}
+                                  {!row.isInvalidValue && !row.isNewSubject && !row.isNewSection && !row.isNewTeacher && !row.isUnassignedFaculty && !row.isInvalidDept && row.isExistingMapping && <span className="badge-red">Already loaded</span>}
+                                  {!row.isInvalidValue && !row.isNewSubject && !row.isNewSection && !row.isNewTeacher && !row.isUnassignedFaculty && !row.isInvalidDept && !row.isExistingMapping && <span className="badge-emerald">Faculty Loading Only</span>}
                                 </div>
                               </td>
                               <td className="text-center">
@@ -789,8 +833,8 @@ function FacultyTab() {
                 </div>
                 <div className="sticky bottom-0 pt-4 pb-1 bg-white dark:bg-surface-dim flex items-center gap-3">
                   <IosButton variant="gray" type="button" disabled={csvImporting} onClick={handleCsvReset} className="flex-1">Cancel</IosButton>
-                  <IosButton variant="primary" type="button" disabled={!activeSemesterId || csvImporting || csvRows.length === 0 || blockedCsvRows.length > 0 || invalidDeptRows.length > 0} onClick={handleCsvImport} className={`flex-1 ${blockedCsvRows.length > 0 || invalidDeptRows.length > 0 ? "!bg-red-400 !text-white" : ""}`}>
-                    {csvImporting ? "Importing..." : blockedCsvRows.length > 0 ? `${blockedCsvRows.length} Already loaded — Remove to import` : invalidDeptRows.length > 0 ? `${invalidDeptRows.length} Invalid dept code — Fix to import` : `Import ${csvRows.length} Row${csvRows.length !== 1 ? "s" : ""}`}
+                  <IosButton variant="primary" type="button" disabled={!activeSemesterId || csvImporting || csvRows.length === 0 || blockedCsvRows.length > 0 || invalidDeptRows.length > 0 || invalidValueRows.length > 0} onClick={handleCsvImport} className={`flex-1 ${blockedCsvRows.length > 0 || invalidDeptRows.length > 0 || invalidValueRows.length > 0 ? "!bg-red-400 !text-white" : ""}`}>
+                    {csvImporting ? "Importing..." : blockedCsvRows.length > 0 ? `${blockedCsvRows.length} Already loaded — Remove to import` : invalidValueRows.length > 0 ? `${invalidValueRows.length} Invalid value — Fix to import` : invalidDeptRows.length > 0 ? `${invalidDeptRows.length} Invalid dept code — Fix to import` : `Import ${csvRows.length} Row${csvRows.length !== 1 ? "s" : ""}`}
                   </IosButton>
                 </div>
               </div>
@@ -971,10 +1015,10 @@ function FacultyTab() {
               <button
                 key={pill.id}
                 onClick={() => {
-                  if (!isAdmin && pill.id !== currentUserDept) return
+                  if (!isAdmin && pill.id !== currentUserDept && pill.id !== "unassigned") return
                   setDeptFilter(pill.id)
                 }}
-                disabled={!isAdmin && pill.id !== currentUserDept}
+                disabled={!isAdmin && pill.id !== currentUserDept && pill.id !== "unassigned"}
                 className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${active
                     ? "bg-amber-500 text-white border-amber-500 shadow-sm"
                     : "bg-surface text-tertiary border-default hover:border-amber-300 hover:text-secondary"

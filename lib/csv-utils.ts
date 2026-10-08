@@ -63,6 +63,34 @@ export function parseCsvRows(text: string): string[][] {
 }
 
 /**
+ * Excel formula-error tokens exported as literal cell text (e.g. a VLOOKUP
+ * failure saves as `#VALUE!`). Such cells are never valid names, emails,
+ * codes, or sections — callers must flag the row as invalid/blocked.
+ */
+const EXCEL_ERROR_EXACT = new Set([
+  "#DIV/0!",
+  "#N/A",
+  "#NAME?",
+  "#NULL!",
+  "#NUM!",
+  "#REF!",
+  "#VALUE!",
+  "#CALC!",
+  "#SPILL!",
+  "#FIELD!",
+  "#BLOCKED!",
+])
+
+const EXCEL_ERROR_PREFIX = /^#(DIV\/0!|N\/A|NAME\?|NULL!|NUM!|REF!|VALUE!|CALC!|SPILL!|FIELD!|BLOCKED!)/i
+
+export function isExcelErrorCell(cell: string): boolean {
+  const v = (cell || "").trim().toUpperCase()
+  if (v.length === 0) return false
+  if (EXCEL_ERROR_EXACT.has(v)) return true
+  return EXCEL_ERROR_PREFIX.test(v)
+}
+
+/**
  * Parse a raw CSV text into headers and data rows.
  * Removes empty lines and returns cleaned cell values.
  */

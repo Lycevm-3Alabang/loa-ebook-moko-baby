@@ -151,13 +151,13 @@ incomplete`
     expect(result.errors[0].message).toContain("6 columns")
   })
 
-  it("rejects missing faculty email as wrong upload", () => {
+  it("maps missing faculty email to the shared dummy", () => {
     const csv = `${validHeaders}
 , Juan, BSIT-32A3, CS101, Intro, CCS`
     const result = parseFacultySubjectCsv(csv)
-    expect(result.rows).toHaveLength(0)
-    expect(result.errors).toHaveLength(1)
-    expect(result.errors[0].message).toContain("Faculty email is required")
+    expect(result.rows).toHaveLength(1)
+    expect(result.rows[0].email).toBe("placeholder@lyceumalabang.edu.ph")
+    expect(result.errors).toHaveLength(0)
   })
 
   it("rejects missing subject code", () => {
