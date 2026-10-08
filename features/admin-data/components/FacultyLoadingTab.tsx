@@ -69,6 +69,7 @@ function FacultyTab() {
   const [csvPreviewPage, setCsvPreviewPage] = useState(0)
   const [lastImportTotal, setLastImportTotal] = useState(0)
   const [lastImportChunks, setLastImportChunks] = useState(0)
+  const [wrongCsv, setWrongCsv] = useState("")
   const [csvProblemFilter, setCsvProblemFilter] = useState(false)
   const [csvBlockedFilter, setCsvBlockedFilter] = useState(false)
   const [csvInvalidDeptFilter, setCsvInvalidDeptFilter] = useState(false)
@@ -290,7 +291,7 @@ function FacultyTab() {
 
   const handleCsvImport = async () => {
     if (!csvRows || csvRows.length === 0) return
-    setCsvImporting(true); setCsvImportResult(null); setCsvError("")
+    setCsvImporting(true); setCsvImportResult(null); setCsvError(""); setWrongCsv("")
     setLastImportTotal(csvRows.length); setLastImportChunks(Math.ceil(csvRows.length / FACULTY_CHUNK_SIZE))
     try {
       const postChunk = async (chunk: CsvRow[], meta: ChunkMeta, signal: AbortSignal) => {
@@ -325,6 +326,16 @@ function FacultyTab() {
         parseErrors: results.flatMap((r, ci) => offsetRows(r.parseErrors ?? [], ci)),
       }
       setCsvImportResult(aggregated)
+      const escapeWrongCell = (v: string) => (v.includes(",") || v.includes('"') || v.includes("\n") ? `"${v.replace(/"/g, '""')}"` : v)
+      const wrongHead = ["row", "name", "email", "subject code", "subject name", "section", "department code", "reason"]
+      const wrongLines = aggregated.errors.map((e) => {
+        const src = e.row > 0 ? csvRows[e.row - 1] : undefined
+        return [e.row > 0 ? String(e.row) : "", src?.name ?? "", e.email ?? src?.email ?? "", src?.subjectCode ?? "", src?.subjectName ?? "", src?.section ?? "", src?.departmentCode ?? "", e.message].map(escapeWrongCell).join(",")
+      })
+      for (const pe of aggregated.parseErrors ?? []) {
+        wrongLines.push([String(pe.row), "", "", "", "", "", "", pe.message].map(escapeWrongCell).join(","))
+      }
+      setWrongCsv([wrongHead.map(escapeWrongCell).join(","), ...wrongLines].join("\n"))
       const rowErrorCount =
         aggregated.errors.filter((e) => e.row > 0).length +
         (aggregated.parseErrors?.length ?? 0)
@@ -386,6 +397,7 @@ function FacultyTab() {
   const handleCsvReset = () => {
     setCsvRows(null)
     setCsvImportResult(null)
+    setWrongCsv(""); setLastImportTotal(0); setLastImportChunks(0)
     setCsvPreviewPage(0)
     setCsvProblemFilter(false)
     setCsvBlockedFilter(false)
@@ -731,6 +743,18 @@ function FacultyTab() {
                       )
                     })()}
                   </div>
+                )}
+                {wrongCsv.split("\n").length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => downloadBlob(wrongCsv, "faculty-wrong-uploads.csv")}
+                    className="w-full flex items-center justify-center gap-2 text-xs font-semibold px-4 py-2.5 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m4 4V4" />
+                    </svg>
+                    Download Wrong Uploads (.csv)
+                  </button>
                 )}
                 {csvImportResult.parseErrors && csvImportResult.parseErrors.length > 0 && (
                   <div className="bg-red-50 dark:bg-red-900/20 rounded-2xl overflow-hidden">
