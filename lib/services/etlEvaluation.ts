@@ -42,6 +42,60 @@ export interface FacultySubjectImportResult {
   createdCourses: number
 }
 
+export interface DepartmentStepInvalid {
+  key: string
+  reason: string
+}
+
+export interface DepartmentStepResult {
+  stepId: "departments"
+  status: "done"
+  inserted: number
+  existing: number
+  invalid: DepartmentStepInvalid[]
+  deptCodeToId: Record<string, string>
+}
+
+export async function importDepartmentsStep(
+  items: string[],
+): Promise<DepartmentStepResult> {
+  const invalid: DepartmentStepInvalid[] = []
+  const deptCodeToId: Record<string, string> = {}
+  let inserted = 0
+  let existing = 0
+
+  const seen = new Set<string>()
+  for (const raw of items) {
+    const code = (raw ?? "").trim().toUpperCase()
+    if (code.length === 0) {
+      invalid.push({ key: raw, reason: "Department code is required" })
+      continue
+    }
+    if (seen.has(code)) continue
+    seen.add(code)
+
+    const found = await departmentRepository.findByCode(code)
+    if (found) {
+      deptCodeToId[code] = found.id
+      existing++
+      continue
+    }
+    try {
+      const created = await departmentRepository.create({ name: code, code })
+      deptCodeToId[code] = created.id
+      inserted++
+    } catch (err) {
+      if ((err as { code?: string })?.code !== "23505") throw err
+      const raced = await departmentRepository.findByCode(code)
+      if (!raced) throw err
+      deptCodeToId[code] = raced.id
+      existing++
+    }
+  }
+
+  return { stepId: "departments", status: "done", inserted, existing, invalid, deptCodeToId }
+}
+
 export function parseFacultySubjectCsv(text: string): {
   rows: FacultySubjectCsvRow[]
   errors: { row: number; message: string }[]
