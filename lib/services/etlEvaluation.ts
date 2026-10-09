@@ -96,6 +96,72 @@ export async function importDepartmentsStep(
   return { stepId: "departments", status: "done", inserted, existing, invalid, deptCodeToId }
 }
 
+// ── Step 3 (courses) ───────────────────────────────────────
+// Resolves every (departmentCode, program) pair to a department_course id,
+// creating missing courses with a visibly synthetic name. Lookup is always by
+// the (departmentId, code) pair — code alone is NOT unique.
+
+export interface CourseStepPair {
+  departmentCode: string
+  program: string
+}
+
+export interface CourseStepResult {
+  stepId: "courses"
+  status: "done"
+  inserted: number
+  existing: number
+  invalid: DepartmentStepInvalid[]
+  programToCourseId: Record<string, string>
+}
+
+export async function importCoursesStep(
+  pairs: CourseStepPair[],
+  deptCodeToId: Record<string, string>,
+): Promise<CourseStepResult> {
+  const invalid: DepartmentStepInvalid[] = []
+  const programToCourseId: Record<string, string> = {}
+  let inserted = 0
+  let existing = 0
+
+  const seen = new Set<string>()
+  for (const raw of pairs) {
+    const departmentCode = (raw.departmentCode ?? "").trim().toUpperCase()
+    const program = (raw.program ?? "").trim()
+    // Blank programs are excluded client-side; never sent. Skip defensively.
+    if (program.length === 0) continue
+    const key = `${departmentCode}|${program}`
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    const departmentId = deptCodeToId[departmentCode]
+    if (!departmentId) {
+      invalid.push({ key: program, reason: `No department for course "${program}"` })
+      continue
+    }
+    const found = await departmentCourseRepository.findByDepartmentAndCode(departmentId, program)
+    if (found) {
+      // First-writer-wins on collision (documented: 2026-1 file is unambiguous).
+      if (programToCourseId[program] === undefined) programToCourseId[program] = found.id
+      existing++
+      continue
+    }
+    try {
+      const created = await departmentCourseRepository.create({ departmentId, code: program, name: `${program} [unmapped]` })
+      if (programToCourseId[program] === undefined) programToCourseId[program] = created.id
+      inserted++
+    } catch (err) {
+      if ((err as { code?: string })?.code !== "23505") throw err
+      const raced = await departmentCourseRepository.findByDepartmentAndCode(departmentId, program)
+      if (!raced) throw err
+      if (programToCourseId[program] === undefined) programToCourseId[program] = raced.id
+      existing++
+    }
+  }
+
+  return { stepId: "courses", status: "done", inserted, existing, invalid, programToCourseId }
+}
+
 export function parseFacultySubjectCsv(text: string): {
   rows: FacultySubjectCsvRow[]
   errors: { row: number; message: string }[]

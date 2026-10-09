@@ -1,6 +1,6 @@
 # ACES — Specs
 
-**Version:** 1.1
+**Version:** 1.2
 **Status:** Draft
 **Last Updated:** 2026-10-09
 
@@ -28,6 +28,18 @@ Specs must be Final before code is written (per loa-apache-server-apps conventio
 | [auth-integration.md](auth-integration.md) | Draft | Contract between e-consultation and loa-auth — SSO flow, JWT claims, shared secrets, what each side owns |
 | [endpoint-catalog.md](endpoint-catalog.md) | Draft | Full endpoint catalog (~130 entries) with required levels — must stay in sync with loa-auth-platform |
 | [migration-checklist.md](migration-checklist.md) | Draft | Step-by-step tasks for each side, verification checklist, timeline |
+
+---
+
+# Implementation Status
+
+Tracks which Draft specs have working code, so the next session knows where to resume.
+Spec `Status` above is unchanged — promotion to Final still needs re-approval per Convention.
+
+| Spec | Build | Notes |
+|------|-------|-------|
+| [faculty-import-stepper/step-02-departments.md](faculty-import-stepper/step-02-departments.md) | Done (2026-10-09) | 4 slices: `importDepartmentsStep` in `lib/services/etlEvaluation.ts`, `step` discriminator in `app/api/import/faculties/route.ts`, Step 2 panel in `FacultyLoadingTab.tsx`, 5 tests. `tsc`/`lint` clean, 230/230 tests green. Run file: `.opencode/skills/plan-fix/runs/20261009-1000-faculty-stepper-step-02.md` |
+| All other specs | Not started | **Next session: Step 3 — courses** ([step-03-courses.md](faculty-import-stepper/step-03-courses.md)) |
 
 ---
 

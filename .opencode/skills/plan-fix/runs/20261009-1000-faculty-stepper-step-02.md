@@ -35,10 +35,12 @@ pending: done slice-4
 | slice-3 | Slice 3/4 client stepper call → FacultyLoadingTab.tsx | applied; tsc clean, lint clean, npm test 225/225 green (18 files) |
 | continue-3 | Continue to slice-4? | continue (typo "conitnue" read as continue) |
 | slice-4 | Slice 4/4 tests → lib/__tests__/etlEvaluation.test.ts | applied; tsc clean, lint clean, npm test 230/230 green (18 files, +5 new) |
+| readme-update | specs/README.md → v1.2: Implementation Status section, step-02 Done, next = step-03-courses | applied (spec Status left Draft; Final needs re-approval) |
+| session-close | Documented build + next step for resume | step-02 complete end-to-end; next session starts plan-fix for step-03-courses |
 
 ## Pending
 
-- done (all 4 slices applied; uncommitted: etlEvaluation.ts, import/faculties route.ts, FacultyLoadingTab.tsx, etlEvaluation.test.ts; remaining: Final spec promotion, live upload verification, steps 3-7)
+- done (all 4 slices applied; tsc/lint clean, 230/230 green; specs/README.md v1.2 records step-02 Done with next = step-03-courses; uncommitted: etlEvaluation.ts, import/faculties route.ts, FacultyLoadingTab.tsx, etlEvaluation.test.ts, specs/README.md)
 
 ## Decisions
 

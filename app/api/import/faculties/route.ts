@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { requireAdmin } from "@/lib/route-guard"
-import { parseFacultySubjectCsv, importFacultySubjects, importDepartmentsStep } from "@/lib/services/etlEvaluation"
+import { parseFacultySubjectCsv, importFacultySubjects, importDepartmentsStep, importCoursesStep } from "@/lib/services/etlEvaluation"
 import { logAuditEvent } from "@/lib/services/audit"
 
 // Chunked ETL: chunks insert hundreds of rows per request; allow a long
@@ -51,6 +51,30 @@ export async function POST(request: NextRequest) {
         details: fileId
           ? `Step departments (file ${fileId}): ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`
           : `Step departments: ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`,
+      })
+      return NextResponse.json({ ...stepResult, fileId })
+    }
+    if (body.step === "courses") {
+      const pairs = body.pairs as unknown
+      if (!Array.isArray(pairs)) {
+        return NextResponse.json({ error: "Pairs array is required" }, { status: 400 })
+      }
+      // deptCodeToId travels client-held: the client sends back the map the
+      // departments step returned. No server session, same model as items.
+      const deptCodeToId = (body.deptCodeToId ?? {}) as Record<string, string>
+      const stepResult = await importCoursesStep(
+        pairs.map((p) => ({
+          departmentCode: String((p as { departmentCode?: unknown })?.departmentCode ?? ""),
+          program: String((p as { program?: unknown })?.program ?? ""),
+        })),
+        deptCodeToId,
+      )
+      await logAuditEvent({
+        userId: (session!.user as Record<string, unknown>).id as string,
+        action: "ETL_FACULTY_SUBJECT",
+        details: fileId
+          ? `Step courses (file ${fileId}): ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`
+          : `Step courses: ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`,
       })
       return NextResponse.json({ ...stepResult, fileId })
     }

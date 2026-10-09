@@ -54,7 +54,7 @@ vi.mock("@/lib/supabase", () => {
   }
 })
 
-import { parseFacultySubjectCsv, parseStudentEnrollmentCsv, importFacultySubjects, importStudentEnrollments, importDepartmentsStep } from "@/lib/services/etlEvaluation"
+import { parseFacultySubjectCsv, parseStudentEnrollmentCsv, importFacultySubjects, importStudentEnrollments, importDepartmentsStep, importCoursesStep } from "@/lib/services/etlEvaluation"
 import * as factory from "@/lib/repositories/factory"
 
 // ── Helpers ───────────────────────────────────────────────
@@ -494,6 +494,118 @@ describe("importDepartmentsStep", () => {
     expect(result.existing).toBe(1)
     expect(result.invalid).toHaveLength(0)
     expect(result.deptCodeToId["RACE"]).toBe("dept-race")
+  })
+
+  it("leaves the composed importFacultySubjects path unchanged", async () => {
+    mockSubjectUpsert(new Map([["CS101", { id: "subj-1" }]]), 0)
+    mockSectionUpsert(new Map([["32A3|BSIT", { id: "sec-1" }]]), 0)
+    mockFindUsers(new Map([["juan@lyceumalabang.edu.ph", { id: "user-1", email: "juan@lyceumalabang.edu.ph", name: "Juan", role: "FACULTY" }]]))
+    const result = await importFacultySubjects([
+      { email: "juan@lyceumalabang.edu.ph", name: "Juan", subjectCode: "CS101", subjectName: "", sectionName: "32A3", sectionProgram: "BSIT", departmentCode: "UNKNOWN" },
+    ])
+    expect(result.matched).toBe(1)
+    expect(result.errors).toHaveLength(0)
+    expect(deptCreate()).toHaveBeenCalledWith({ name: "UNKNOWN", code: "UNKNOWN" })
+  })
+})
+
+ // ── importCoursesStep (stepper step 3) ───────────────────────
+
+describe("importCoursesStep", () => {
+  const deptFind = () => factory.departmentRepository.findByCode as ReturnType<typeof vi.fn>
+  const deptCreate = () => factory.departmentRepository.create as ReturnType<typeof vi.fn>
+  const courseFind = () => factory.departmentCourseRepository.findByDepartmentAndCode as ReturnType<typeof vi.fn>
+  const courseCreate = () => factory.departmentCourseRepository.create as ReturnType<typeof vi.fn>
+
+  const deptMap = { CCS: "dept-ccs", CAS: "dept-cas", COE: "dept-coe", CBA: "dept-cba", CHS: "dept-chs" }
+
+  beforeEach(() => {
+    vi.resetAllMocks()
+    deptFind().mockImplementation(async (code: string) =>
+      code === "CCS" ? { id: "dept-ccs", name: "CCS", code: "CCS" }
+        : code === "CAS" ? { id: "dept-cas", name: "CAS", code: "CAS" }
+          : null,
+    )
+    deptCreate().mockImplementation(async (data: { name: string; code: string }) => ({
+      id: `dept-${data.code.toLowerCase()}`, name: data.name, code: data.code,
+    }))
+    courseFind().mockImplementation(async () => null)
+    courseCreate().mockImplementation(async (data: { departmentId: string; code: string; name: string }) => ({
+      id: `course-${data.code.toLowerCase()}`, departmentId: data.departmentId, name: data.name, code: data.code,
+    }))
+    ;(factory.facultySubjectRepository.list as ReturnType<typeof vi.fn>).mockResolvedValue([])
+  })
+
+  const pairs16 = [
+    { departmentCode: "CCS", program: "BSIT" },
+    { departmentCode: "CCS", program: "BSCS" },
+    { departmentCode: "COE", program: "BSCE" },
+    { departmentCode: "COE", program: "BSEE" },
+    { departmentCode: "COE", program: "BSME" },
+    { departmentCode: "COE", program: "BSIE" },
+    { departmentCode: "CAS", program: "BSPsych" },
+    { departmentCode: "CAS", program: "BSChem" },
+    { departmentCode: "CBA", program: "BSBA" },
+    { departmentCode: "CBA", program: "BSAc" },
+    { departmentCode: "CHS", program: "BSN" },
+    { departmentCode: "CHS", program: "BSMT" },
+    { departmentCode: "CCS", program: "BSIS" },
+    { departmentCode: "COE", program: "BSCpE" },
+    { departmentCode: "CAS", program: "BSBio" },
+    { departmentCode: "CBA", program: "BSHM" },
+  ]
+
+  it("creates missing courses with marked name (trims, uppercases, dedups by pair)", async () => {
+    const result = await importCoursesStep([...pairs16, { departmentCode: "coe", program: " BSIE " }], deptMap)
+    expect(result.stepId).toBe("courses")
+    expect(result.status).toBe("done")
+    expect(result.inserted).toBe(16)
+    expect(result.existing).toBe(0)
+    expect(result.invalid).toHaveLength(0)
+    expect(Object.keys(result.programToCourseId)).toHaveLength(16)
+    expect(result.programToCourseId["BSIE"]).toBe("course-bsie")
+    expect(courseCreate()).toHaveBeenCalledWith({ departmentId: "dept-coe", code: "BSIE", name: "BSIE [unmapped]" })
+  })
+
+  it("reuses existing courses by pair without creating", async () => {
+    courseFind().mockImplementation(async (departmentId: string, code: string) => ({ id: `course-${code.toLowerCase()}`, departmentId, name: code, code }))
+    const result = await importCoursesStep(pairs16, deptMap)
+    expect(result.inserted).toBe(0)
+    expect(result.existing).toBe(16)
+    expect(result.invalid).toHaveLength(0)
+    expect(courseCreate()).not.toHaveBeenCalled()
+    expect(courseFind()).toHaveBeenCalledWith("dept-coe", "BSIE")
+    expect(Object.keys(result.programToCourseId)).toHaveLength(16)
+  })
+
+  it("flags a program without a department without inserting", async () => {
+    courseFind().mockImplementation(async (departmentId: string, code: string) =>
+      code === "BSIT" ? { id: "course-bsit", departmentId, name: code, code } : null,
+    )
+    const result = await importCoursesStep(
+      [...pairs16.slice(0, 1), { departmentCode: "NOPE", program: "BSXX" }],
+      deptMap,
+    )
+    expect(result.existing).toBe(1)
+    expect(result.invalid).toHaveLength(1)
+    expect(result.invalid[0]).toEqual({ key: "BSXX", reason: 'No department for course "BSXX"' })
+    expect(courseCreate()).not.toHaveBeenCalled()
+  })
+
+  it("treats a 23505 race as existing via re-read", async () => {
+    let reads = 0
+    courseFind().mockImplementation(async (departmentId: string, code: string) => {
+      reads++
+      return reads === 1 ? null : { id: "course-race", departmentId, name: code, code }
+    })
+    courseCreate().mockImplementation(async () => {
+      throw { code: "23505" }
+    })
+    const result = await importCoursesStep([{ departmentCode: "CCS", program: "RACE" }], deptMap)
+    expect(result.inserted).toBe(0)
+    expect(result.existing).toBe(1)
+    expect(result.invalid).toHaveLength(0)
+    expect(result.programToCourseId["RACE"]).toBe("course-race")
   })
 
   it("leaves the composed importFacultySubjects path unchanged", async () => {
