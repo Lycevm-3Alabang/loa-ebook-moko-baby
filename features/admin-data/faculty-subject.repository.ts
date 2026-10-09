@@ -53,6 +53,13 @@ export const facultySubjectRepository: IFacultySubjectRepository = {
     return data as FacultySubjectData
   },
 
+  async createMany(items) {
+    if (items.length === 0) return []
+    const { data, error } = await supabase.from("faculty_subjects").insert(items).select("*")
+    if (error) throw error
+    return (data || []) as FacultySubjectData[]
+  },
+
   async update(id, fields) {
     const { data, error } = await supabase.from("faculty_subjects").update(fields).eq("id", id).select("*").single()
     if (error) throw error

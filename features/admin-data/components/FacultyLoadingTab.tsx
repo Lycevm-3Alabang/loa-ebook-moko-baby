@@ -133,6 +133,13 @@ function FacultyTab() {
     existing: number
     invalid: { key: string; reason: string }[]
   } | null>(null)
+  const [step7Progress, setStep7Progress] = useState<{
+    doneChunks: number
+    totalChunks: number
+    doneRows: number
+    totalRows: number
+    history: { chunkIndex: number; rows: number; saved: number; skipped: number; issues: number; ok: boolean }[]
+  } | null>(null)
   const [csvError, setCsvError] = useState("")
   const [csvPreviewPage, setCsvPreviewPage] = useState(0)
   const [lastImportTotal, setLastImportTotal] = useState(0)
@@ -668,30 +675,79 @@ function FacultyTab() {
         seen.add(key)
         items.push({ subjectCode, sectionName: name, sectionProgram: program, facultyEmail: email })
       }
-      const res = await fetch("/api/import/faculties", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          step: "mappings",
-          semesterId: activeSemesterId || null,
-          fileId: `step7-${Date.now().toString(36)}`,
-          items,
-          sectionKeyToId: step4Result.sectionKeyToId,
-          subjectCodeToId: step5Result.subjectCodeToId,
-          facultyUserMap: step6Result.facultyUserMap,
-        }),
-      })
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}))
-        throw new Error((d as { error?: string }).error || "Step 6 failed")
+
+      const CHUNK = 100
+      const chunks: typeof items[] = []
+      for (let i = 0; i < items.length; i += CHUNK) {
+        chunks.push(items.slice(i, i + CHUNK))
       }
-      const json = await res.json()
+
+      const fileId = `step7-${Date.now().toString(36)}`
+      let inserted = 0
+      let existing = 0
+      const invalid: { key: string; reason: string }[] = []
+      const history: { chunkIndex: number; rows: number; saved: number; skipped: number; issues: number; ok: boolean }[] = []
+
+      for (let i = 0; i < chunks.length; i++) {
+        setStep7Progress({
+          doneChunks: i,
+          totalChunks: chunks.length,
+          doneRows: i * CHUNK,
+          totalRows: items.length,
+          history: [...history],
+        })
+        try {
+          const res = await fetch("/api/import/faculties", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              step: "mappings",
+              semesterId: activeSemesterId || null,
+              fileId,
+              chunkIndex: i,
+              totalChunks: chunks.length,
+              items: chunks[i],
+              sectionKeyToId: step4Result.sectionKeyToId,
+              subjectCodeToId: step5Result.subjectCodeToId,
+              facultyUserMap: step6Result.facultyUserMap,
+            }),
+          })
+          if (!res.ok) {
+            const d = await res.json().catch(() => ({}))
+            throw new Error((d as { error?: string }).error || `Chunk ${i + 1} failed`)
+          }
+          const json = await res.json()
+          inserted += json.inserted ?? 0
+          existing += json.existing ?? 0
+          invalid.push(...(json.invalid ?? []))
+          history.push({
+            chunkIndex: i,
+            rows: chunks[i].length,
+            saved: json.inserted ?? 0,
+            skipped: json.existing ?? 0,
+            issues: (json.invalid ?? []).length,
+            ok: true,
+          })
+        } catch (err) {
+          history.push({
+            chunkIndex: i,
+            rows: chunks[i].length,
+            saved: 0,
+            skipped: 0,
+            issues: 0,
+            ok: false,
+          })
+          throw err
+        }
+      }
+
+      setStep7Progress(null)
       setStep7Result({
-        stepId: json.stepId ?? "mappings",
-        status: json.status ?? "done",
-        inserted: json.inserted ?? 0,
-        existing: json.existing ?? 0,
-        invalid: json.invalid ?? [],
+        stepId: "mappings",
+        status: "done",
+        inserted,
+        existing,
+        invalid,
       })
     } catch (err) {
       setCsvError((err as Error).message)
@@ -700,7 +756,7 @@ function FacultyTab() {
     }
   }
 
-  const handleCsvImport = async () => {
+  const handleCsvImport = async () => { // eslint-disable-line @typescript-eslint/no-unused-vars
     if (!csvRows || csvRows.length === 0) return
     if (csvImportGuardRef.current) return
     csvImportGuardRef.current = true
@@ -1061,6 +1117,35 @@ function FacultyTab() {
                     </div>
                   </div>
                 )}
+                {step7Running && step7Progress && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 cursor-wait" role="dialog" aria-modal="true" aria-label="Building faculty loading">
+                    <div className="bg-white dark:bg-surface-dim rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl max-w-md w-full mx-4">
+                      <div className="w-10 h-10 border-4 border-gold-600 border-t-transparent rounded-full animate-spin" />
+                      <p className="text-sm font-semibold text-secondary">Building faculty loading...</p>
+                      <p className="text-xs text-tertiary">
+                        {step7Progress.doneRows}/{step7Progress.totalRows} slots ({step7Progress.doneChunks}/{step7Progress.totalChunks} chunks)
+                      </p>
+                      <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5">
+                        <div
+                          className="bg-gold-500 h-2.5 rounded-full transition-all"
+                          style={{ width: `${Math.min(100, Math.round((step7Progress.doneRows / step7Progress.totalRows) * 100))}%` }}
+                        />
+                      </div>
+                      {step7Progress.history.length > 0 && (
+                        <div className="w-full max-h-28 overflow-y-auto rounded-lg border border-default px-3 py-2 space-y-0.5 text-left">
+                          {step7Progress.history.map((h) => (
+                            <p key={h.chunkIndex} className="text-[11px] text-tertiary">
+                              {h.ok
+                                ? `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → saved ${h.saved}, skipped ${h.skipped}, issues ${h.issues}`
+                                : `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → failed`}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                      <p className="text-[11px] text-tertiary/70 text-center">Stay on this page until done — re-running is safe and reports existing.</p>
+                    </div>
+                  </div>
+                )}
                 <div className="flex-1 space-y-3 overflow-hidden">
                   <div className="flex items-center justify-between">
                     <h4 className="text-sm font-semibold text-secondary">
@@ -1287,7 +1372,7 @@ function FacultyTab() {
                   <StepperTrace
                     steps={IMPORT_STEPS}
                     doneCount={(step2Result ? 1 : 0) + (step3Result ? 1 : 0) + (step4Result ? 1 : 0) + (step5Result ? 1 : 0) + (step6Result ? 1 : 0) + (step7Result ? 1 : 0)}
-                    footnote={`Step ${(step7Result ? 6 : step6Result ? 5 : step5Result ? 4 : step4Result ? 3 : step3Result ? 2 : step2Result ? 1 : 0) + 1} of 6 — legacy Import stays below until the full stepper lands.`}
+                    footnote={`Step ${(step7Result ? 6 : step6Result ? 5 : step5Result ? 4 : step4Result ? 3 : step3Result ? 2 : step2Result ? 1 : 0) + 1} of 6.`}
                   />
                 )}
                 {csvRows && csvRows.length > 0 && (
@@ -1473,11 +1558,8 @@ function FacultyTab() {
                     confirmMessage="Build 903 faculty-loading slots from resolved subjects, sections and faculty. Dummy-held slots are reassigned to the real teacher; slots held by a different real teacher are refused, never overwritten; re-running reports inserted 0."
                   />
                 )}
-                <div className="sticky bottom-0 pt-4 pb-1 bg-white dark:bg-surface-dim flex items-center gap-3">
-                  <IosButton variant="gray" type="button" disabled={csvImporting} onClick={handleCsvReset} className="flex-1">Cancel</IosButton>
-                  <IosButton variant="primary" type="button" disabled={!activeSemesterId || csvImporting || csvRows.length === 0} onClick={handleCsvImport} className="flex-1">
-                    {csvImporting ? "Importing..." : `Import ${csvRows.length} Row${csvRows.length !== 1 ? "s" : ""}`}
-                  </IosButton>
+                <div className="sticky bottom-0 pt-2 pb-1 bg-white dark:bg-surface-dim flex justify-center">
+                  <IosButton variant="plain" size="sm" type="button" disabled={csvImporting} onClick={handleCsvReset}>Cancel</IosButton>
                 </div>
               </div>
             )}

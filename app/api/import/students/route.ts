@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth"
 import { requireRole } from "@/lib/route-guard"
 import { parseStudentCsv, importStudents, getStudentCsvTemplate } from "@/lib/services/studentImport"
 import { logAuditEvent } from "@/lib/services/audit"
-import { departmentRepository } from "@/lib/repositories/factory"
+import { departmentRepository, semesterRepository } from "@/lib/repositories/factory"
 
 // Chunked ETL: chunks insert hundreds of rows per request; allow a long
 // execution window on platforms that cap serverless run time.
@@ -23,12 +23,28 @@ export async function POST(request: NextRequest) {
   const authErr = await requireRole(request, ["ADMIN", "DEAN", "FACULTY"])
   if (authErr) return authErr
 
+  // semesterId is load-bearing: findExisting matches it exactly, so a null or stale
+  // value produces rows the evaluation gate rejects. Derive it server-side.
+  const activeSemesters = await semesterRepository.list({ isActive: true })
+  if (activeSemesters.length === 0) {
+    return NextResponse.json(
+      { error: "No active semester. Set one as active before importing." },
+      { status: 400 },
+    )
+  }
+  if (activeSemesters.length > 1) {
+    return NextResponse.json(
+      { error: "More than one semester is active. Deactivate all but one before importing." },
+      { status: 400 },
+    )
+  }
+  const semesterId = activeSemesters[0].id
+
   const session = await auth()
 
   let importRows: { email: string; name: string; subjectCode: string; sectionName: string; sectionProgram: string; facultyEmail?: string }[]
   let parseErrors: { row: number; message: string }[] = []
   let departmentId: string | null = null
-  let semesterId: string | null = null
   let chunkIndex = 0
   let totalChunks = 1
   let fileId: string | undefined = undefined
@@ -38,8 +54,7 @@ export async function POST(request: NextRequest) {
 
   if (contentType.includes("application/json")) {
     const body = await request.json()
-    const { departmentId: bodyDeptId = null, semesterId: bodySemesterId = null } = body
-    semesterId = bodySemesterId
+    const { departmentId: bodyDeptId = null } = body
     chunkIndex = typeof body.chunkIndex === "number" ? body.chunkIndex : 0
     totalChunks = typeof body.totalChunks === "number" ? body.totalChunks : 1
     fileId = typeof body.fileId === "string" ? body.fileId : undefined

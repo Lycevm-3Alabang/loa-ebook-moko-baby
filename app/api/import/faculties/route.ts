@@ -168,9 +168,13 @@ export async function POST(request: NextRequest) {
       await logAuditEvent({
         userId: (session!.user as Record<string, unknown>).id as string,
         action: "ETL_FACULTY_SUBJECT",
-        details: fileId
-          ? `Step mappings (file ${fileId}): ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`
-          : `Step mappings: ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`,
+        details: (() => {
+          const chunk = typeof body.chunkIndex === "number" && typeof body.totalChunks === "number"
+            ? ` (chunk ${body.chunkIndex + 1}/${body.totalChunks})`
+            : ""
+          const base = `Step mappings${chunk}: ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`
+          return fileId ? `${base} (file ${fileId})` : base
+        })(),
       })
       return NextResponse.json({ ...stepResult, fileId })
     }
