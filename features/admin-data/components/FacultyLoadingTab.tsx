@@ -1483,8 +1483,8 @@ function FacultyTab() {
                     confirmMessage="Build 903 faculty-loading slots from resolved subjects, sections and faculty. Dummy-held slots are reassigned to the real teacher; slots held by a different real teacher are refused, never overwritten; re-running reports inserted 0."
                   />
                 )}
-                <div className="sticky bottom-0 pt-4 pb-1 bg-white dark:bg-surface-dim flex items-center gap-3">
-                  <IosButton variant="gray" type="button" disabled={csvImporting} onClick={handleCsvReset} className="flex-1">Cancel</IosButton>
+                <div className="sticky bottom-0 pt-2 pb-1 bg-white dark:bg-surface-dim flex justify-center">
+                  <IosButton variant="plain" size="sm" type="button" disabled={csvImporting} onClick={handleCsvReset}>Cancel</IosButton>
                 </div>
               </div>
             )}
