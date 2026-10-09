@@ -368,6 +368,7 @@ function FacultyTab() {
   const handleCsvFile = async (file: File) => {
     setCsvImportResult(null)
     setStep2Result(null)
+    setStep3Result(null)
     setStep4Result(null)
     setCsvError("")
     try {
@@ -692,6 +693,7 @@ function FacultyTab() {
     setCsvRows(null)
     setCsvImportResult(null)
     setStep2Result(null)
+    setStep3Result(null)
     setStep4Result(null)
     setWrongCsv(""); setSkippedCsv(""); setLastImportTotal(0); setLastImportChunks(0); setRemovedRows([])
     setCsvPreviewPage(0)
