@@ -1,4 +1,4 @@
-# AGENTS.md — LOA Connect Hub
+# AGENTS.md — ACES
 
 ## Stack
 

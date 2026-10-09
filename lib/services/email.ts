@@ -32,9 +32,9 @@ export async function sendActivationEmail(email: string, name: string, activatio
   if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
 
   await transporter.sendMail({
-    from: `"LOA Connect Hub" <${process.env.GMAIL_USER}>`,
+    from: `"ACES" <${process.env.GMAIL_USER}>`,
     to: email,
-    subject: "Activate Your LOA Connect Hub Account",
+    subject: "Activate Your ACES Account",
     html: `
       <p>Hello ${name},</p>
       <p>Your account has been created. Click the link below to set your password:</p>
@@ -66,7 +66,7 @@ export async function sendMeetingInviteEmail(
   if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
 
   await transporter.sendMail({
-    from: `"LOA Connect Hub" <${process.env.GMAIL_USER}>`,
+    from: `"ACES" <${process.env.GMAIL_USER}>`,
     to: email,
     subject: `Meeting Invitation: ${meetingTitle}`,
     html: `
@@ -122,7 +122,7 @@ export async function sendConsultationInvite(
   if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
 
   const mail: Mail.Options = {
-    from: `"LOA Connect Hub" <${process.env.GMAIL_USER}>`,
+    from: `"ACES" <${process.env.GMAIL_USER}>`,
     to: recipient.email,
     subject: `${data.studentName} is requesting for Consultation`,
     html,
@@ -174,7 +174,7 @@ export async function sendMeetingInviteWithICS(
   if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
 
   const mail: Mail.Options = {
-    from: `"LOA Connect Hub" <${process.env.GMAIL_USER}>`,
+    from: `"ACES" <${process.env.GMAIL_USER}>`,
     to: recipient.email,
     subject: `Consultation Invitation — ${data.title}`,
     html,
@@ -233,7 +233,7 @@ export async function sendApprovedWithTeamsLink(
   if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
 
   const mail: Mail.Options = {
-    from: `"LOA Connect Hub" <${process.env.GMAIL_USER}>`,
+    from: `"ACES" <${process.env.GMAIL_USER}>`,
     to: recipient.email,
     subject: `Consultation Accepted — Microsoft Teams Link Inside`,
     html,
@@ -261,9 +261,9 @@ export async function sendForgotPasswordEmail(email: string, name: string, reset
   if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
 
   await transporter.sendMail({
-    from: `"LOA Connect Hub" <${process.env.GMAIL_USER}>`,
+    from: `"ACES" <${process.env.GMAIL_USER}>`,
     to: email,
-    subject: "Reset Your LOA Connect Hub Password",
+    subject: "Reset Your ACES Password",
     html: `
       <p>Hello ${name},</p>
       <p>Click the link below to reset your password:</p>
@@ -312,7 +312,7 @@ export async function sendBookingAcknowledgement(
     : `Meeting Created: ${data.meetingTitle}`
 
   await transporter.sendMail({
-    from: `"LOA Connect Hub" <${process.env.GMAIL_USER}>`,
+    from: `"ACES" <${process.env.GMAIL_USER}>`,
     to: to.email,
     subject,
     html,
@@ -368,7 +368,7 @@ export async function sendStatusUpdateEmail(
   }
 
   await transporter.sendMail({
-    from: `"LOA Connect Hub" <${process.env.GMAIL_USER}>`,
+    from: `"ACES" <${process.env.GMAIL_USER}>`,
     to: recipient.email,
     subject: subjectMap[data.variant] || `Status Update: ${data.meetingTitle}`,
     html,
@@ -386,12 +386,12 @@ export async function sendPasswordChangedEmail(email: string, name: string) {
   if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
 
   await transporter.sendMail({
-    from: `"LOA Connect Hub" <${process.env.GMAIL_USER}>`,
+    from: `"ACES" <${process.env.GMAIL_USER}>`,
     to: email,
-    subject: "Your LOA Connect Hub Password Has Been Changed",
+    subject: "Your ACES Password Has Been Changed",
     html: `
       <p>Hello ${name},</p>
-      <p>Your LOA Connect Hub account password was successfully changed.</p>
+      <p>Your ACES account password was successfully changed.</p>
       <p>If you did this, you can ignore this email.</p>
       <p style="color:#dc2626;font-size:14px;margin-top:16px;"><strong>If you did NOT authorize this change, please contact your system administrator immediately to secure your account.</strong></p>
     `,

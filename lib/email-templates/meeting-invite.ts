@@ -65,7 +65,7 @@ export function meetingInviteHtml(data: MeetingInviteData): string {
 
       <!-- Footer -->
       <p style="margin:24px 0 0;font-size:12px;color:#94a3b8;line-height:1.5;">
-        You were invited to this meeting through the LOA Connect Hub system.
+        You were invited to this meeting through the ACES system.
         The attached .ics file can be opened in Outlook, Google Calendar, or Apple Calendar to add this event to your calendar.
       </p>
 

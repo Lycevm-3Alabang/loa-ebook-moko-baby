@@ -41,7 +41,7 @@ function LoginForm() {
           </div>
 
           <h1 className="text-[34px] font-bold text-primary text-center tracking-tight leading-tight">Sign In</h1>
-          <p className="text-base text-tertiary text-center mt-1">LOA Connect Hub</p>
+          <p className="text-base text-tertiary text-center mt-1">Academic Consultation & Evaluation System</p>
 
           {error && (
             <div className="mt-6 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium flex items-center gap-2">

@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
-import { cleanCell, parseCsvRows } from "@/lib/csv-utils"
+import { cleanCell, isExcelErrorCell, parseCsvRows } from "@/lib/csv-utils"
+import { useChunkedImport, decodeCsvFile, withRetryHints, type ChunkMeta } from "@/features/admin-data/components/useChunkedImport"
 
 interface StudentCsvRow {
   row: number
@@ -20,12 +21,14 @@ interface PreviewRow extends StudentCsvRow {
   facultyNotAssigned: boolean
   isNewStudent: boolean
   isInvalidDepartment: boolean
+  isInvalidValue: boolean
   resolvedDepartmentId: string | null
 }
 
 interface ImportResult {
   created: { name: string; email: string; role: string }[]
   enrolled: number
+  skipped: number
   failed: { row: number; email: string; subjectCode: string; section: string; remark: string }[]
   parseErrors: { row: number; message: string }[]
   successCsv: string
@@ -81,6 +84,15 @@ function parseClientCsv(text: string): { rows: StudentCsvRow[]; error?: string }
 
 const PREVIEW_PAGE_SIZE = 50
 
+const STUDENT_CHUNK_SIZE = 500
+
+function concatCsvBodies(first: string, next: string): string {
+  if (!first) return next
+  if (!next) return first
+  const nextLines = next.split("\n")
+  return `${first}\n${nextLines.slice(1).join("\n")}`
+}
+
 export default function BulkStudentImport({ departmentId: _departmentId, semesterId, previewOnly }: { departmentId?: string | null; semesterId?: string | null; previewOnly?: boolean }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [previewRows, setPreviewRows] = useState<PreviewRow[] | null>(null)
@@ -92,6 +104,8 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const [importing, setImporting] = useState(false)
   const [problemFilter, setProblemFilter] = useState(false)
   const [removedRows, setRemovedRows] = useState<StudentCsvRow[]>([])
+  const { isRunning: chunkRunning, progress: chunkProgress, history: chunkHistory, run: runChunks, cancel: cancelChunks } =
+    useChunkedImport<PreviewRow, ImportResult>()
 
   const [existingSubjects, setExistingSubjects] = useState<{ code: string; id: string }[]>([])
   const [existingSections, setExistingSections] = useState<{ name: string; departmentCourseId: string; id: string }[]>([])
@@ -123,14 +137,26 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
   useEffect(() => { Promise.resolve().then(() => fetchReferenceData()) }, [fetchReferenceData])
 
+  useEffect(() => {
+    if (!importing) return
+    const guard = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+    }
+    window.addEventListener("beforeunload", guard)
+    return () => window.removeEventListener("beforeunload", guard)
+  }, [importing])
+
+  const isBlockedPreviewRow = (r: PreviewRow) =>
+    r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned || r.isInvalidDepartment || r.isInvalidValue
+
   const blockedRows = useMemo(() => {
     if (!previewRows) return []
-    return previewRows.filter((r) => r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned || r.isInvalidDepartment)
+    return previewRows.filter(isBlockedPreviewRow)
   }, [previewRows])
 
   const problemRows = useMemo(() => {
     if (!previewRows) return []
-    return previewRows.filter((r) => r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned || r.isNewStudent || r.isInvalidDepartment)
+    return previewRows.filter((r) => r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned || r.isNewStudent || r.isInvalidDepartment || r.isInvalidValue)
   }, [previewRows])
 
   const visibleRows = problemFilter ? problemRows : previewRows ?? []
@@ -159,9 +185,10 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const handlePreview = async () => {
     setPreviewError("")
     setError("")
+    setRemovedRows([])
     const file = fileRef.current?.files?.[0]
     if (!file) { setPreviewError("Please select a CSV file"); return }
-    const text = await file.text()
+    const text = await decodeCsvFile(file)
     const { rows, error: parseError } = parseClientCsv(text)
     if (parseError) { setPreviewError(parseError); return }
     if (rows.length === 0) { setPreviewError("No valid rows found in CSV"); return }
@@ -182,7 +209,10 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
           )
         }
       }
-      return { ...r, isNewSubject, isNewSection, isNewFaculty, facultyNotAssigned, isNewStudent, isInvalidDepartment, resolvedDepartmentId }
+      const isInvalidValue = [r.name, r.email, r.subjectCode, r.section, r.facultyEmail, r.departmentCode].some((c) =>
+        isExcelErrorCell((c || "").trim()),
+      )
+      return { ...r, isNewSubject, isNewSection, isNewFaculty, facultyNotAssigned, isNewStudent, isInvalidDepartment, isInvalidValue, resolvedDepartmentId }
     })
     setPreviewRows(withFlags)
     setPreviewPage(0)
@@ -213,6 +243,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         }
       }
     }
+    updated.isInvalidValue = [updated.name, updated.email, updated.subjectCode, updated.section, updated.facultyEmail, updated.departmentCode].some((c) =>
+      isExcelErrorCell((c || "").trim()),
+    )
     next[index] = updated
     setPreviewRows(next)
   }
@@ -232,38 +265,108 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     }
   }
 
+  const handleRemoveBlocked = () => {
+    if (!previewRows) return
+    const blocked = previewRows.filter(isBlockedPreviewRow)
+    setRemovedRows((prev) => [...prev, ...blocked.map((removed) => ({ row: removed.row, email: removed.email, name: removed.name, subjectCode: removed.subjectCode, section: removed.section, facultyEmail: removed.facultyEmail, departmentCode: removed.departmentCode }))])
+    setPreviewRows(previewRows.filter((r) => !isBlockedPreviewRow(r)))
+    setProblemFilter(false)
+    setPreviewPage(0)
+  }
+
   const handleConfirm = async () => {
     if (!previewRows || loading) return
     setError("")
     setImporting(true)
     setLoading(true)
     try {
-      const res = await fetch("/api/import/students", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          semesterId,
-          rows: previewRows.map((r) => ({
-            email: r.email,
-            name: r.name,
-            subjectCode: r.subjectCode,
-            section: r.section,
-            facultyEmail: r.facultyEmail || undefined,
-            departmentId: r.resolvedDepartmentId || undefined,
-          })),
-        }),
+      const payload = previewRows.map((r) => ({
+        email: r.email,
+        name: r.name,
+        subjectCode: r.subjectCode,
+        section: r.section,
+        facultyEmail: r.facultyEmail || undefined,
+        departmentId: r.resolvedDepartmentId || undefined,
+        _originRow: r.row,
+      }))
+      const postChunk = async (chunk: typeof payload, meta: ChunkMeta, signal: AbortSignal) => {
+        const res = await fetch("/api/import/students", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal,
+          body: JSON.stringify({
+            semesterId,
+            rows: chunk,
+            chunkIndex: meta.chunkIndex,
+            totalChunks: meta.totalChunks,
+            fileId: meta.fileId,
+            isLast: meta.isLast,
+          }),
+        })
+        let data: Record<string, unknown>
+        try {
+          data = await res.json()
+        } catch {
+          const text = await res.text().catch(() => "")
+          throw withRetryHints(new Error(`Chunk ${meta.chunkIndex + 1} failed (${res.status}). ${text.slice(0, 200) || "No details available."}`), res)
+        }
+        if (!res.ok) throw withRetryHints(new Error(String(data.error) || `Chunk ${meta.chunkIndex + 1} failed`), res)
+        return data as unknown as ImportResult
+      }
+      const { results, cancelled, failedChunks, stoppedEarly } = await runChunks(previewRows, {
+        chunkSize: STUDENT_CHUNK_SIZE,
+        postChunk: (chunk, meta, signal) =>
+          postChunk(payload.slice(meta.rowOffset, meta.rowOffset + chunk.length), meta, signal),
+        summarizeResult: (r) => ({ saved: r.enrolled ?? 0, skipped: r.skipped ?? 0, issues: (r.failed?.length ?? 0) + (r.parseErrors?.length ?? 0) }),
       })
-      let data: Record<string, unknown>
-      try {
-        data = await res.json()
-      } catch {
-        const text = await res.text().catch(() => "")
-        setError(`Server returned an invalid response (${res.status}). ${text.slice(0, 200) || "No details available."}`)
-        setImporting(false)
+      if (cancelled) { setError(`Import cancelled after ${results.length} chunks — retry to resume`); return }
+      const deadEntries = failedChunks.flatMap((fc) =>
+        payload.slice(fc.meta.rowOffset, fc.meta.rowOffset + STUDENT_CHUNK_SIZE).map((p) => ({
+          row: p._originRow,
+          email: p.email,
+          subjectCode: p.subjectCode,
+          section: p.section,
+          remark: `Chunk ${fc.meta.chunkIndex + 1} failed after ${fc.attempts} attempts: ${fc.error}`,
+        })),
+      )
+      const aggregated: ImportResult = {
+        created: results.flatMap((r) => r.created ?? []),
+        enrolled: results.reduce((s, r) => s + (r.enrolled ?? 0), 0),
+        skipped: results.reduce((s, r) => s + (r.skipped ?? 0), 0),
+        failed: [...results.flatMap((r, ci) => (r.failed ?? []).map((f) => {
+          const previewIdx = ci * STUDENT_CHUNK_SIZE + (f.row - 1)
+          const originRow = payload[previewIdx]?._originRow ?? ci * STUDENT_CHUNK_SIZE + f.row
+          return { ...f, row: originRow }
+        })), ...deadEntries],
+        parseErrors: results.flatMap((r) => r.parseErrors ?? []),
+        successCsv: results.map((r) => r.successCsv).filter(Boolean).reduce(concatCsvBodies, ""),
+        failureCsv: results.map((r) => r.failureCsv).filter(Boolean).reduce(concatCsvBodies, ""),
+        totalRows: previewRows.length,
+      }
+      setImportResult(aggregated)
+      if (removedRows.length > 0) {
+        const removedHeaders = ["name", "email", "subject code", "section", "faculty email", "department code"]
+        const removedCsv = [removedHeaders.join(","), ...removedRows.map((r) => [r.name, r.email, r.subjectCode, r.section, r.facultyEmail, r.departmentCode].map((v) => `"${v}"`).join(","))].join("\n")
+        downloadBlob(removedCsv, "removed-rows.csv")
+      }
+      const unaccounted =
+        previewRows.length -
+        aggregated.enrolled -
+        aggregated.skipped -
+        aggregated.failed.length -
+        aggregated.parseErrors.length
+      if (stoppedEarly) {
+        setError("Stopped early after 3 consecutive chunk failures — completed chunks persisted. Press Import again to retry the rest.")
         return
       }
-      if (!res.ok) { setError(String(data.error) || "Import failed"); setImporting(false); return }
-      setImportResult(data as unknown as ImportResult)
+      if (failedChunks.length > 0) {
+        setError(`${deadEntries.length} rows from failed chunks recorded as failures — press Import again to retry (completed chunks are idempotent).`)
+        return
+      }
+      if (unaccounted !== 0) {
+        setError(`Import incomplete: ${unaccounted} of ${previewRows.length} CSV rows are unaccounted for (not enrolled, skipped, or reported). Retry — completed chunks are idempotent.`)
+        return
+      }
       setPreviewRows(null)
     } catch {
       setError("Could not reach the server. Please check your connection and try again.")
@@ -293,7 +396,35 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
           <div className="bg-white dark:bg-surface-dim rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl">
             <div className="w-10 h-10 border-4 border-gold-600 border-t-transparent rounded-full animate-spin" />
             <p className="text-sm font-semibold text-secondary">Importing student enrollments...</p>
-            <p className="text-xs text-tertiary">Please wait while we process your data.</p>
+            <p className="text-xs text-tertiary">
+              {chunkProgress.totalRows > 0
+                ? `${chunkProgress.doneRows}/${chunkProgress.totalRows} rows (${chunkProgress.doneChunks}/${chunkProgress.totalChunks} chunks)`
+                : "Please wait while we process your data."}
+            </p>
+            <p className="text-[11px] text-tertiary/70">Stay on this page until done — completed chunks resume safely on re-upload.</p>
+            {chunkHistory.length > 0 && (
+              <div className="w-full max-h-28 overflow-y-auto rounded-lg border border-default px-3 py-2 space-y-0.5 text-left">
+                {(() => {
+                  const persisted = chunkHistory.reduce((s, h) => s + h.saved + h.skipped, 0)
+                  const pct = chunkProgress.totalRows > 0 ? Math.round((persisted / chunkProgress.totalRows) * 100) : 0
+                  return (
+                    <>
+                      <p className="text-[11px] font-semibold text-secondary">Persisted {persisted}/{chunkProgress.totalRows} ({pct}%)</p>
+                      {chunkHistory.map((h) => (
+                        <p key={h.chunkIndex} className="text-[11px] text-tertiary">
+                          {h.ok
+                            ? `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → saved ${h.saved}, skipped ${h.skipped} (already persisted or duplicate), issues ${h.issues}`
+                            : `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → failed — ${h.error ?? "error"}`}
+                        </p>
+                      ))}
+                    </>
+                  )
+                })()}
+              </div>
+            )}
+            {chunkRunning && (
+              <button type="button" onClick={() => cancelChunks()} className="text-xs font-semibold text-red-600 hover:underline">Cancel</button>
+            )}
           </div>
         </div>
       )}
@@ -307,6 +438,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
               <li><strong>Subject code</strong> must match an existing subject — unknown codes will block the row.</li>
               <li><strong>Faculty email</strong> must be an existing faculty/dean user assigned to that subject+section.</li>
               <li><strong>Department code</strong> must match an existing department (e.g., <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">CCS</code>).</li>
+              <li><strong>Student email</strong> must end with <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">...@lyceumalabang.edu.ph</code> or <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">...@itmlyceumalabang.onmicrosoft.com</code> — blank or foreign-domain rows are excluded into Failures.</li>
+              <li>Large files upload in <strong>500-row chunks</strong> with progress — stay on this page until done.</li>
+              <li>Re-uploading the same file enrolls <strong>0 new rows</strong> (already-enrolled rows are skipped).</li>
             </ul>
           </div>
 
@@ -375,6 +509,15 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                     {problemFilter ? "Show all rows" : `Show ${blockedRows.length} blocked only`}
                   </button>
                 )}
+                {blockedRows.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleRemoveBlocked}
+                    className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
+                  >
+                    {`Remove ${blockedRows.length} blocked`}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -433,15 +576,16 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                         </td>
                         <td>
                           <div className="flex flex-wrap gap-1">
-                            {r.isInvalidDepartment && <span className="badge-red text-[10px]">Dept code</span>}
-                            {!r.isInvalidDepartment && r.isNewSubject && <span className="badge-red text-[10px]">Subject not found</span>}
-                            {!r.isInvalidDepartment && r.isNewSection && <span className="badge-red text-[10px]">Section not found</span>}
-                            {!r.isInvalidDepartment && r.isNewFaculty && <span className="badge-red text-[10px]">Faculty not found</span>}
-                            {!r.isInvalidDepartment && r.facultyNotAssigned && <span className="badge-red text-[10px]">Faculty Loading Mismatch</span>}
-                            {!r.isInvalidDepartment && r.isNewStudent && !r.isNewSubject && !r.isNewSection && !r.isNewFaculty && !r.facultyNotAssigned && (
+                            {r.isInvalidValue && <span className="badge-red text-[10px]">Invalid value</span>}
+                            {!r.isInvalidValue && r.isInvalidDepartment && <span className="badge-red text-[10px]">Dept code</span>}
+                            {!r.isInvalidValue && !r.isInvalidDepartment && r.isNewSubject && <span className="badge-red text-[10px]">Subject not found</span>}
+                            {!r.isInvalidValue && !r.isInvalidDepartment && r.isNewSection && <span className="badge-red text-[10px]">Section not found</span>}
+                            {!r.isInvalidValue && !r.isInvalidDepartment && r.isNewFaculty && <span className="badge-red text-[10px]">Faculty not found</span>}
+                            {!r.isInvalidValue && !r.isInvalidDepartment && r.facultyNotAssigned && <span className="badge-red text-[10px]">Faculty Loading Mismatch</span>}
+                            {!r.isInvalidValue && !r.isInvalidDepartment && r.isNewStudent && !r.isNewSubject && !r.isNewSection && !r.isNewFaculty && !r.facultyNotAssigned && (
                               <span className="badge-amber text-[10px]">New Student</span>
                             )}
-                            {!r.isInvalidDepartment && !r.isNewSubject && !r.isNewSection && !r.isNewFaculty && !r.facultyNotAssigned && !r.isNewStudent && (
+                            {!r.isInvalidValue && !r.isInvalidDepartment && !r.isNewSubject && !r.isNewSection && !r.isNewFaculty && !r.facultyNotAssigned && !r.isNewStudent && (
                               <span className="badge-emerald text-[10px]">Ready</span>
                             )}
                           </div>
@@ -533,6 +677,28 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
               <p className="text-2xl font-bold text-blue-600">{importResult.enrolled}</p>
               <p className="text-[11px] font-semibold text-blue-700/70 dark:text-blue-300/70">Enrollments</p>
             </div>
+          </div>
+
+          <div className="bg-slate-50 dark:bg-slate-800/30 rounded-2xl px-5 py-3 space-y-1">
+            <p className="text-xs font-semibold text-secondary">
+              {importResult.totalRows} rows sent · {importResult.enrolled} enrolled · {importResult.skipped} skipped (already enrolled) · {importResult.failed.length} failed
+            </p>
+            <p className="text-[11px] text-tertiary">
+              Seed 2026-1 reference: 3,302 students · 21,989 enrollments. Re-running this file should enroll 0 and skip all (idempotent).
+            </p>
+            {(() => {
+              const boxUnaccounted =
+                importResult.totalRows -
+                importResult.enrolled -
+                importResult.skipped -
+                importResult.failed.length -
+                importResult.parseErrors.length
+              return (
+                <p className={`text-[11px] font-semibold ${boxUnaccounted !== 0 ? "text-red-600" : "text-emerald-600 dark:text-emerald-300"}`}>
+                  {boxUnaccounted === 0 ? "All rows accounted for." : `${boxUnaccounted} of ${importResult.totalRows} CSV rows unaccounted — retry the import.`}
+                </p>
+              )
+            })()}
           </div>
 
           {importResult.parseErrors.length > 0 && (

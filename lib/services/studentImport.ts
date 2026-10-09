@@ -1,4 +1,5 @@
 import { userRepository, sectionRepository, subjectRepository, facultySubjectRepository, studentEnrollmentRepository } from "@/lib/repositories/factory"
+import { isExcelErrorCell } from "@/lib/csv-utils"
 
 function parseSectionIdentifier(raw: string): { name: string; program: string } {
   const idx = raw.indexOf("-")
@@ -75,6 +76,20 @@ export function parseStudentCsv(text: string): {
     const facultyEmail = cols[4]?.toLowerCase().trim() || ""
     const departmentCode = cols[5]?.toUpperCase().trim() || ""
 
+    const excelOffender =
+      [
+        ["name", displayName],
+        ["email", email],
+        ["subject code", subjectCode],
+        ["section", sectionRaw],
+        ["faculty email", facultyEmail],
+        ["department code", departmentCode],
+      ].find(([, v]) => isExcelErrorCell(v))?.[0] ?? null
+    if (excelOffender) {
+      errors.push({ row: i + 1, message: `Invalid value in ${excelOffender} (Excel error)` })
+      continue
+    }
+
     if (!displayName) { errors.push({ row: i + 1, message: "Name is required" }); continue }
     if (!email) { errors.push({ row: i + 1, message: "Email is required" }); continue }
     if (!ALLOWED_DOMAINS.some((d) => email.endsWith(d))) {
@@ -105,7 +120,23 @@ export async function importStudents(
     return { created, enrolled, skipped, failed, parseErrors: [], successCsv: "", failureCsv: "", totalRows: 0 }
   }
 
-  const uniqueEmails = [...new Set(rows.map((r) => r.email.toLowerCase().trim()))]
+  const excelOffenderFor = (r: StudentCsvRow): string | null =>
+    (
+      [
+        ["name", r.name],
+        ["email", r.email],
+        ["subject code", r.subjectCode],
+        ["section", `${r.sectionProgram}-${r.sectionName}`],
+        ["faculty email", r.facultyEmail || ""],
+      ] as [string, string][]
+    ).find(([, v]) => isExcelErrorCell((v || "").trim()))?.[0] ?? null
+
+  const excelInvalidIdx = new Set<number>()
+  rows.forEach((r, idx) => {
+    if (excelOffenderFor(r)) excelInvalidIdx.add(idx)
+  })
+
+  const uniqueEmails = [...new Set(rows.filter((_, idx) => !excelInvalidIdx.has(idx)).map((r) => r.email.toLowerCase().trim()))].filter((e) => e.length > 0)
   const userMap = await userRepository.findManyByEmail(uniqueEmails)
   const missingEmails = uniqueEmails.filter((e) => !userMap.has(e))
   if (missingEmails.length > 0) {
@@ -142,7 +173,7 @@ export async function importStudents(
     if (s) sections.set(key, s)
   }
 
-  const uniqueFacultyEmails = [...new Set(rows.filter((r) => r.facultyEmail).map((r) => r.facultyEmail!.toLowerCase().trim()))]
+  const uniqueFacultyEmails = [...new Set(rows.filter((r, idx) => r.facultyEmail && !excelInvalidIdx.has(idx)).map((r) => r.facultyEmail!.toLowerCase().trim()))]
   const facultyUserMap = new Map<string, { id: string; name: string }>()
   if (uniqueFacultyEmails.length > 0) {
     const facultyUsers = await userRepository.findManyByEmail(uniqueFacultyEmails)
@@ -159,6 +190,13 @@ export async function importStudents(
     const r = rows[i]
     const rowNum = i + 1
     const sectionLabel = `${r.sectionProgram}-${r.sectionName}`
+
+    const excelOffender = excelOffenderFor(r)
+    if (excelOffender) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: `Invalid value in ${excelOffender} (Excel error)` }); continue }
+
+    if (!r.email) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Email is required" }); continue }
+    if (!r.facultyEmail) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Faculty email is required" }); continue }
+    if (!ALLOWED_DOMAINS.some((d) => r.email.endsWith(d))) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Email domain not allowed" }); continue }
 
     const user = userMap.get(r.email.toLowerCase().trim())
     if (!user) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Student not found" }); continue }

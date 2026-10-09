@@ -123,7 +123,7 @@ describe("bookingAcknowledgementHtml", () => {
   })
 
   it("joins attendee names with comma", () => {
-    const html = bookingAcknowledgementHtml({ ...BASE_BOOKING_ACK, attendeeNames: ["Alice", "Bob", "Charlie"] })
+    const html = bookingAcknowledgementHtml({ ...BASE_BOOKING_ACK, variant: "request", attendeeNames: ["Alice", "Bob", "Charlie"] })
     expect(html).toContain("Alice, Bob, Charlie")
   })
 })

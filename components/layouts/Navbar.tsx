@@ -22,7 +22,7 @@ export function Navbar() {
                 <path d="M2 12l10 5 10-5" />
               </svg>
             </div>
-            <span className="text-base font-bold text-primary tracking-tight font-display">LOA Connect Hub</span>
+            <span className="text-base font-bold text-primary tracking-tight font-display">ACES</span>
           </Link>
           <div className="flex items-center gap-3">
             <Link href="/login" className="btn-secondary text-xs px-3.5 py-1.5">

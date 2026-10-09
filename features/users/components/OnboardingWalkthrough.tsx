@@ -13,7 +13,7 @@ const stepsByRole: Record<string, Step[]> = {
   STUDENT: [
     {
       icon: "M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253",
-      title: "Welcome to LOA Connect Hub!",
+      title: "Welcome to ACES!",
       description:
         "This platform lets you book one-on-one consultations with faculty members. We'll walk you through the basics in just a few steps.",
     },
@@ -33,13 +33,13 @@ const stepsByRole: Record<string, Step[]> = {
       icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
       title: "You're All Set!",
       description:
-        "You're ready to book your first consultation. If you need help, contact your department or the admin team. Enjoy using LOA Connect Hub!",
+        "You're ready to book your first consultation. If you need help, contact your department or the admin team. Enjoy using ACES!",
     },
   ],
   FACULTY: [
     {
       icon: "M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253",
-      title: "Welcome to LOA Connect Hub!",
+      title: "Welcome to ACES!",
       description:
         "This platform manages student consultations and internal faculty meetings. Here's a quick tour of what you can do.",
     },

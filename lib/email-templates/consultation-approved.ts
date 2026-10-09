@@ -81,7 +81,7 @@ export function consultationApprovedHtml(data: ConsultationApprovedData): string
 
       <!-- Footer -->
       <p style="margin:24px 0 0;font-size:12px;color:#94a3b8;line-height:1.5;">
-        This consultation was approved through the LOA Connect Hub system.
+        This consultation was approved through the ACES system.
         The attached .ics file can be opened in Outlook, Google Calendar, or Apple Calendar.
         You are receiving this because you are a participant in this consultation.
       </p>

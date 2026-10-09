@@ -81,7 +81,7 @@ export async function POST(request: Request) {
           },
         })
 
-        const subject = `[LOA Connect] Evaluation Dispute: ${userName} reported wrong faculty for ${subjectName || "a subject"}`
+        const subject = `[ACES] Evaluation Dispute: ${userName} reported wrong faculty for ${subjectName || "a subject"}`
         const html = `
           <h2>Evaluation Dispute</h2>
           <p><strong>Student:</strong> ${userName} (${userEmail})</p>
@@ -90,7 +90,7 @@ export async function POST(request: Request) {
           <p><strong>Faculty Subject ID:</strong> ${facultySubjectId}</p>
           <p>The student reported that they are evaluating the wrong faculty for this subject. Please review and update the faculty-subject assignment if needed.</p>
           <hr>
-          <p style="color:#666;font-size:12px;">This is an automated notification from LOA Connect Hub.</p>
+          <p style="color:#666;font-size:12px;">This is an automated notification from ACES.</p>
         `
 
         for (const admin of admins) {

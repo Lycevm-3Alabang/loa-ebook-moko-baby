@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**LOA Connect Hub** is a faculty-student consultation booking system built on Next.js 16 (App Router) + Supabase PostgreSQL. Core features include: appointment booking with time-slot management, availability rules for faculty, faculty evaluation with rubrics and sentiment analysis, department/semester ETL imports, durable email workflows via Vercel, and role-based access control with four roles (ADMIN, DEAN, FACULTY, STUDENT) that can be combined (e.g., `DEAN|FACULTY`).
+**ACES (Academic Consultation & Evaluation System)** is a faculty-student consultation booking system built on Next.js 16 (App Router) + Supabase PostgreSQL. Core features include: appointment booking with time-slot management, availability rules for faculty, faculty evaluation with rubrics and sentiment analysis, department/semester ETL imports, durable email workflows via Vercel, and role-based access control with four roles (ADMIN, DEAN, FACULTY, STUDENT) that can be combined (e.g., `DEAN|FACULTY`).
 
 ## Commands
 

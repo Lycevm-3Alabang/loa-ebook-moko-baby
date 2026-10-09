@@ -67,7 +67,7 @@ export function consultationInviteHtml(data: ConsultationInviteData): string {
 
       <!-- Footer -->
       <p style="margin:24px 0 0;font-size:12px;color:#94a3b8;line-height:1.5;">
-        This consultation was booked through the LOA Connect Hub system.
+        This consultation was booked through the ACES system.
         The attached .ics file can be opened in Outlook, Google Calendar, or Apple Calendar.
       </p>
 
