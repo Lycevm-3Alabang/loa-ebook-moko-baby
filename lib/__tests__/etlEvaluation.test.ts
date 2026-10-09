@@ -5,7 +5,7 @@ vi.mock("@/lib/repositories/factory", () => ({
   subjectRepository: { upsertMany: vi.fn() },
   sectionRepository: { upsertMany: vi.fn() },
   userRepository: { findManyByEmail: vi.fn(), createMany: vi.fn() },
-  facultySubjectRepository: { replaceBySection: vi.fn(), create: vi.fn(), list: vi.fn().mockResolvedValue([]), update: vi.fn() },
+  facultySubjectRepository: { replaceBySection: vi.fn(), create: vi.fn(), list: vi.fn().mockResolvedValue([]), update: vi.fn(), findBySubjectAndSection: vi.fn().mockResolvedValue(null), findBySubjectSectionAndFaculty: vi.fn().mockResolvedValue(null) },
   studentEnrollmentRepository: { replaceBySection: vi.fn() },
   // Precedence insert path: importFacultySubjects resolves departments and
   // department_courses through these repositories rather than direct supabase.
@@ -54,7 +54,7 @@ vi.mock("@/lib/supabase", () => {
   }
 })
 
-import { parseFacultySubjectCsv, parseStudentEnrollmentCsv, importFacultySubjects, importStudentEnrollments, importDepartmentsStep, importCoursesStep, importSectionsStep, importSubjectsStep, importFacultyUsersStep, DUMMY_FACULTY_EMAIL } from "@/lib/services/etlEvaluation"
+import { parseFacultySubjectCsv, parseStudentEnrollmentCsv, importFacultySubjects, importStudentEnrollments, importDepartmentsStep, importCoursesStep, importSectionsStep, importSubjectsStep, importFacultyUsersStep, importMappingsStep, DUMMY_FACULTY_EMAIL } from "@/lib/services/etlEvaluation"
 import * as factory from "@/lib/repositories/factory"
 
 // ── Helpers ───────────────────────────────────────────────
@@ -891,6 +891,135 @@ describe("importFacultyUsersStep", () => {
     expect(result.inserted).toBe(1)
     expect(result.existing).toBe(0)
     expect(Object.keys(result.facultyUserMap)).toHaveLength(1)
+  })
+})
+
+// ── importMappingsStep (UI Step 6 Faculty Loading) ──────────────
+
+describe("importMappingsStep", () => {
+  const maps = {
+    sectionKeyToId: { "32A3|BSIT": "sec-1", "21B|BSCS": "sec-2" },
+    subjectCodeToId: { CS101: "sub-1", MATH201: "sub-2" },
+    facultyUserMap: {
+      "juan.delacruz@lyceumalabang.edu.ph": "user-1",
+      "maria.santos@lyceumalabang.edu.ph": "user-2",
+      [DUMMY_FACULTY_EMAIL]: "user-dummy",
+    },
+  }
+  const fsList = () => factory.facultySubjectRepository.list as ReturnType<typeof vi.fn>
+  const fsCreate = () => factory.facultySubjectRepository.create as ReturnType<typeof vi.fn>
+  const fsUpdate = () => factory.facultySubjectRepository.update as ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    vi.resetAllMocks()
+    fsList().mockResolvedValue([])
+    fsCreate().mockResolvedValue({ id: "fs-new" })
+    fsUpdate().mockResolvedValue({ id: "fs-1" })
+  })
+
+  it("maps slots on a fresh DB", async () => {
+    const result = await importMappingsStep([
+      { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
+      { subjectCode: "MATH201", sectionName: "21B", sectionProgram: "BSCS", facultyEmail: "maria.santos@lyceumalabang.edu.ph" },
+    ], maps, "sem-1")
+    expect(result.stepId).toBe("mappings")
+    expect(result.status).toBe("done")
+    expect(result.inserted).toBe(2)
+    expect(result.existing).toBe(0)
+    expect(result.invalid).toHaveLength(0)
+    expect(fsCreate()).toHaveBeenCalledTimes(2)
+    expect(fsCreate()).toHaveBeenCalledWith(expect.objectContaining({ faculty_id: "user-1", subject_id: "sub-1", section_id: "sec-1", semesterId: "sem-1" }))
+  })
+
+  it("re-run is fully idempotent", async () => {
+    fsList().mockResolvedValue([
+      { id: "fs-1", faculty_id: "user-1", subject_id: "sub-1", section_id: "sec-1", semesterId: "sem-1" },
+      { id: "fs-2", faculty_id: "user-2", subject_id: "sub-2", section_id: "sec-2", semesterId: "sem-1" },
+    ])
+    fsCreate().mockRejectedValue({ code: "23505" })
+    const result = await importMappingsStep([
+      { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
+      { subjectCode: "MATH201", sectionName: "21B", sectionProgram: "BSCS", facultyEmail: "maria.santos@lyceumalabang.edu.ph" },
+    ], maps, "sem-1")
+    expect(result.inserted).toBe(0)
+    expect(result.existing).toBe(2)
+    expect(result.invalid).toHaveLength(0)
+  })
+
+  it("duplicates collapse through comboMap", async () => {
+    const result = await importMappingsStep([
+      { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
+      { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
+      { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
+    ], maps, "sem-1")
+    expect(result.inserted).toBe(1)
+    expect(fsCreate()).toHaveBeenCalledTimes(1)
+  })
+
+  it("real beats dummy", async () => {
+    const result = await importMappingsStep([
+      { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "" },
+      { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
+    ], maps, "sem-1")
+    expect(result.inserted).toBe(1)
+    expect(fsCreate()).toHaveBeenCalledTimes(1)
+    expect(fsCreate()).toHaveBeenCalledWith(expect.objectContaining({ faculty_id: "user-1" }))
+  })
+
+  it("dummy-held slot is updated to the real faculty on conflict", async () => {
+    fsList().mockResolvedValue([
+      { id: "fs-1", faculty_id: "user-dummy", subject_id: "sub-1", section_id: "sec-1", semesterId: "sem-1" },
+    ])
+    fsCreate().mockRejectedValue({ code: "23505" })
+    const result = await importMappingsStep([
+      { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
+    ], maps, "sem-1")
+    expect(fsUpdate()).toHaveBeenCalledWith("fs-1", { faculty_id: "user-1" })
+    expect(result.inserted).toBe(1)
+    expect(result.invalid).toHaveLength(0)
+  })
+
+  it("real vs real is refused and existing is unchanged", async () => {
+    fsList().mockResolvedValue([
+      { id: "fs-1", faculty_id: "user-2", subject_id: "sub-1", section_id: "sec-1", semesterId: "sem-1" },
+    ])
+    fsCreate().mockRejectedValue({ code: "23505" })
+    const result = await importMappingsStep([
+      { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
+    ], maps, "sem-1")
+    expect(fsUpdate()).not.toHaveBeenCalled()
+    expect(result.invalid).toEqual([expect.objectContaining({ reason: "Already assigned — not overwritten (existing load kept)" })])
+  })
+
+  it("blank faculty resolves to the dummy slot", async () => {
+    const result = await importMappingsStep([
+      { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "" },
+    ], maps, "sem-1")
+    expect(result.inserted).toBe(1)
+    expect(fsCreate()).toHaveBeenCalledWith(expect.objectContaining({ faculty_id: "user-dummy" }))
+  })
+
+  it("unresolved subject/section/faculty are flagged invalid", async () => {
+    const result = await importMappingsStep([
+      { subjectCode: "NOPE", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
+      { subjectCode: "CS101", sectionName: "ZZ", sectionProgram: "BSIT", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
+      { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "ghost@lyceumalabang.edu.ph" },
+    ], maps, "sem-1")
+    expect(result.inserted).toBe(0)
+    expect(result.invalid).toHaveLength(3)
+    expect(fsCreate()).not.toHaveBeenCalled()
+  })
+
+  it("leaves the composed importFacultySubjects path unchanged", async () => {
+    mockSubjectUpsert(new Map([["CS101", { id: "sub-1" }]]), 0)
+    mockSectionUpsert(new Map([["32A3|BSIT", { id: "sec-1" }]]), 0)
+    mockFindUsers(new Map([["juan.delacruz@lyceumalabang.edu.ph", { id: "user-1", email: "juan.delacruz@lyceumalabang.edu.ph", name: "Juan", role: "FACULTY" }]]))
+    fsList().mockResolvedValue([])
+    const result = await importFacultySubjects([
+      { email: "juan.delacruz@lyceumalabang.edu.ph", name: "Juan", subjectCode: "CS101", subjectName: "CS", sectionName: "32A3", sectionProgram: "BSIT", departmentCode: "CCS" },
+    ], "sem-1")
+    expect(result.matched).toBe(1)
+    expect(result.errors).toHaveLength(0)
   })
 })
 
