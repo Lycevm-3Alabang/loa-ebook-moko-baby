@@ -1,6 +1,6 @@
 # ACES — Specs
 
-**Version:** 1.3
+**Version:** 1.4
 **Status:** Draft
 **Last Updated:** 2026-10-09
 
@@ -40,7 +40,8 @@ Spec `Status` above is unchanged — promotion to Final still needs re-approval 
 |------|-------|-------|
 | [faculty-import-stepper/step-02-departments.md](faculty-import-stepper/step-02-departments.md) | Done (2026-10-09) | 4 slices: `importDepartmentsStep` in `lib/services/etlEvaluation.ts`, `step` discriminator in `app/api/import/faculties/route.ts`, Step 2 panel in `FacultyLoadingTab.tsx`, 5 tests. `tsc`/`lint` clean, 230/230 tests green. Run file: `.opencode/skills/plan-fix/runs/20261009-1000-faculty-stepper-step-02.md` |
 | [faculty-import-stepper/step-03-courses.md](faculty-import-stepper/step-03-courses.md) | Done (2026-10-09) | 7 slices: `importCoursesStep` in `lib/services/etlEvaluation.ts`, `courses` discriminator in `app/api/import/faculties/route.ts`, new `FacultyImportStepper.tsx` shell (`StepperTrace` + `StepPanel`), Step 2 retrofit (trace, Yes/No confirm, denominators) + Step 3 panel in `FacultyLoadingTab.tsx`, 5 tests. Verification gate (`tsc`/`lint`/`vitest`) with user per standing rule. Run file: `.opencode/skills/plan-fix/runs/20261009-1347-step-03-courses.md` |
-| All other specs | Not started | **Next session: Step 4 — sections** ([step-04-sections.md](faculty-import-stepper/step-04-sections.md)) |
+| [faculty-import-stepper/step-04-sections.md](faculty-import-stepper/step-04-sections.md) | Done (2026-10-09) | 4 slices: `importSectionsStep` in `lib/services/etlEvaluation.ts`, `sections` discriminator in `app/api/import/faculties/route.ts`, Step 4 panel in `FacultyLoadingTab.tsx` (state, handler, trace count, resets), 5 tests. `tsc`/`lint` clean, 240/240 tests green. Run file: `.opencode/skills/plan-fix/runs/20261009-1506-faculty-stepper-step-04.md` |
+| All other specs | Not started | **Next session: Step 5 — subjects** ([step-05-subjects.md](faculty-import-stepper/step-05-subjects.md)) |
 
 ---
 

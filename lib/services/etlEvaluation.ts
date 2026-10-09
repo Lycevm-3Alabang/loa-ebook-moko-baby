@@ -162,6 +162,68 @@ export async function importCoursesStep(
   return { stepId: "courses", status: "done", inserted, existing, invalid, programToCourseId }
 }
 
+// ── Step 4 (sections) ──────────────────────────────────────
+// Resolves every distinct (name, program) pair to a section id,
+// upserting any that do not exist. Sections hang off a course, so a
+// missing course becomes a visible invalid rather than a silent drop
+// (and never reaches the NOT NULL departmentCourseId insert).
+
+export interface SectionStepItem {
+  name: string
+  program: string
+}
+
+export interface SectionStepResult {
+  stepId: "sections"
+  status: "done"
+  inserted: number
+  existing: number
+  invalid: DepartmentStepInvalid[]
+  sectionKeyToId: Record<string, string>
+}
+
+export async function importSectionsStep(
+  items: SectionStepItem[],
+  programToCourseId: Record<string, string>,
+): Promise<SectionStepResult> {
+  const invalid: DepartmentStepInvalid[] = []
+  const sectionKeyToId: Record<string, string> = {}
+
+  const seen = new Set<string>()
+  const sectionItems: { name: string; program: string; departmentCourseId: string }[] = []
+  for (const raw of items) {
+    const name = (raw.name ?? "").trim()
+    const program = (raw.program ?? "").trim()
+    const key = `${name}|${program}`
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    const courseId = programToCourseId[program]
+    if (!courseId) {
+      invalid.push({
+        key: program ? `${program}-${name}` : name,
+        reason: `No department course found for program "${program}"`,
+      })
+      continue
+    }
+    sectionItems.push({ name, program, departmentCourseId: courseId })
+  }
+
+  const { data, created } = await sectionRepository.upsertMany(sectionItems)
+  for (const [key, row] of data) {
+    sectionKeyToId[key] = row.id
+  }
+
+  return {
+    stepId: "sections",
+    status: "done",
+    inserted: created,
+    existing: sectionItems.length - created,
+    invalid,
+    sectionKeyToId,
+  }
+}
+
 export function parseFacultySubjectCsv(text: string): {
   rows: FacultySubjectCsvRow[]
   errors: { row: number; message: string }[]
