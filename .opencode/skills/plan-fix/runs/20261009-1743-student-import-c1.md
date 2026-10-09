@@ -30,6 +30,7 @@ pending: slice-4
 | d9-fix | Apply the D9 fix to `BulkStudentImport.tsx`? | A — Code it by the assistant. `resolveSection` now matches `name` + `program`; `existingSections` carries `program`; `existingDCourses` state + setter deleted. tsc exit 0 · lint 0 errors 0 warnings · vitest 260/18 green. Committed inside `d52afba` |
 | deferred-course-payload | Trim `departmentCourses` from the reference payload? | Deferred — documented in §Deferred. Not harmful; separate cleanup pass |
 | d10-chunk | Apply the 504 mitigation (`STUDENT_CHUNK_SIZE` 500 → 100) to `BulkStudentImport.tsx`? | Applied — `:92` now 100 with the latency rationale in a comment. tsc exit 0 · lint 0 errors 0 warnings · vitest 260/18 green |
+| d2-key | Apply D2 — `semesterId` into the `addEnrollments` key/select + scoped read? | Applied — see the D2 note in the ledger. **Interface widened** (`evaluation.ts:411`) to carry `skippedItems`. New test file, mutation-checked. tsc 0 · lint 0 · vitest 267/19 green |
 
 > **D9 — NEW DEFECT, found live, not in `specs/student-import-stepper.md` §7.**
 >
@@ -94,6 +95,32 @@ filters `isActive`), so deriving it costs the admin nothing.
 | D8 | Two `faculty_subjects` lookups omit semester filter | **OPEN** — `faculty-subject.repository.ts:62-86` |
 | D9 | Student preview resolved section via `departmentCourseId` found by `code` alone | **CLOSED** — see Progress; committed in `d52afba` |
 | D10 | 504 `FUNCTION_INVOCATION_TIMEOUT` on `/api/import/students` | **MITIGATED** — `STUDENT_CHUNK_SIZE` 500→100. Root cause unchanged until D7 lands |
+
+> **D2 — CLOSED this slice** (`student-enrollment.repository.ts:50-88`).
+> Key is now `${student_id}|${faculty_subject_id}|${semesterId ?? ""}` — column-for-column with
+> `student_enrollments_student_id_faculty_subject_id_key` — and the select carries
+> `"semesterId"`. `section_id` is gone from the key; it is not part of the constraint.
+>
+> The read is scoped too, not just re-keyed: `.eq("semesterId", …)` (or `.is(…, null)` when a
+> chunk genuinely carries no semester, mirroring `findExisting`), `.in("student_id", …)`,
+> `.in("faculty_subject_id", …)`. A fresh term now reads ~0 rows where it previously re-read
+> every enrollment in the chunk's sections — the final chunk of a run read the whole table to
+> conclude "nothing to do".
+>
+> **Interface widened** — `lib/types/evaluation.ts:411` now returns
+> `skippedItems: { student_id, faculty_subject_id, section_id }[]` per the D3 precondition in
+> `step-03-enrollments.md:104-108`. This required a change the original plan had marked
+> "no interface change at all"; the sub-spec's explicit contract overrides that note.
+>
+> **Caller unchanged** — `studentImport.ts:232` still destructures only `{ skipped }`. D6
+> (`inserted` discarded) is deliberately still open; surfacing it needs an `ImportResult` field
+> and the client to render it, which is its own slice.
+>
+> **Proof** — new `lib/__tests__/student-enrollment-repository.test.ts`, 7 tests, following the
+> `subject-repository.test.ts` harness. **Mutation-checked:** reverting only the key to the
+> pre-fix form fails 3 of the 7, including "INSERTs when the same file is re-imported for a
+> second semester" — so the suite genuinely bites rather than passing vacuously.
+> Gates: tsc 0 · lint 0 · vitest **267 passed / 19 files** (was 260/18).
 
 > **D10 — 504 timeout, observed on staging 2026-10-09 20:20:12 (62.8s, `maxDuration=60`).**
 > One 500-row chunk awaits ~500 sequential Supabase calls — one per row at
