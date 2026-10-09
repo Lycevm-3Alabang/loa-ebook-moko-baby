@@ -105,6 +105,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const [previewError, setPreviewError] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [referenceError, setReferenceError] = useState("")
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [importing, setImporting] = useState(false)
   const [problemFilter, setProblemFilter] = useState(false)
@@ -113,17 +114,21 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     useChunkedImport<PreviewRow, ImportResult>()
 
   const [existingSubjects, setExistingSubjects] = useState<{ code: string; id: string }[]>([])
-  const [existingSections, setExistingSections] = useState<{ name: string; departmentCourseId: string; id: string }[]>([])
+  const [existingSections, setExistingSections] = useState<{ name: string; program: string; id: string }[]>([])
   const [existingUsers, setExistingUsers] = useState<{ email: string }[]>([])
   const [existingFacultyUsers, setExistingFacultyUsers] = useState<{ email: string; id: string }[]>([])
   const [existingFacultySubjects, setExistingFacultySubjects] = useState<{ subject_id: string; section_id: string; faculty_id: string; id: string }[]>([])
-  const [existingDCourses, setExistingDCourses] = useState<{ code: string; id: string }[]>([])
   const [existingDepartments, setExistingDepartments] = useState<{ code: string; id: string }[]>([])
 
   const fetchReferenceData = useCallback(async () => {
+    setReferenceError("")
     try {
       const res = await fetch("/api/import/students/reference")
-      if (!res.ok) return
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({})) as { error?: string; message?: string }
+        setReferenceError(d.message || d.error || "Could not load import reference data.")
+        return
+      }
       const d = await res.json()
       setExistingSubjects(d.subjects || [])
       setExistingSections(d.sections || [])
@@ -135,9 +140,10 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
           .map((u) => ({ email: u.email, id: u.id })),
       )
       setExistingFacultySubjects(d.facultySubjects || [])
-      setExistingDCourses((d.departmentCourses || []).map((c: { code: string; id: string }) => ({ code: c.code, id: c.id })))
       setExistingDepartments((d.departments || []).map((c: { code: string; id: string }) => ({ code: c.code, id: c.id })))
-    } catch { /* silent */ }
+    } catch {
+      setReferenceError("Could not load import reference data. Row flags may be inaccurate.")
+    }
   }, [])
 
   useEffect(() => { Promise.resolve().then(() => fetchReferenceData()) }, [fetchReferenceData])
@@ -175,14 +181,16 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     const dashIdx = raw.indexOf("-")
     const spaceIdx = raw.indexOf(" ")
     const idx = dashIdx !== -1 ? dashIdx : spaceIdx
-    const courseCode = idx === -1 ? "" : raw.slice(0, idx).trim()
+    const program = idx === -1 ? "" : raw.slice(0, idx).trim()
     const sectionName = idx === -1 ? raw : raw.slice(idx + 1).trim()
-    const dCourse = existingDCourses.find((dc) => dc.code === courseCode)
-    const section = dCourse
-      ? existingSections.find((s) => s.name === sectionName && s.departmentCourseId === dCourse.id)
-      : null
-    return { section: section ?? null, isNewSection: !dCourse || !section }
-  }, [existingDCourses, existingSections])
+    // The student CSV carries no course or department identity — only "BSIE-41M2" —
+    // so a course lookup can never be a join key here. Match on the pair the schema
+    // actually guarantees: sections is UNIQUE(name, program). Resolving the course by
+    // code alone is unsafe because department_courses is UNIQUE("departmentId", code),
+    // so BSIE can exist under two departments and Array.find() picks the wrong one.
+    const section = existingSections.find((s) => s.name === sectionName && s.program === program) ?? null
+    return { section, isNewSection: !section }
+  }, [existingSections])
 
   const resolveDepartment = useCallback((code: string) => {
     if (!code) return { departmentId: null, isInvalid: true }
@@ -363,12 +371,16 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         aggregated.skipped -
         aggregated.failed.length -
         aggregated.parseErrors.length
-      if (stoppedEarly) {
-        setError("Stopped early after 3 consecutive chunk failures — completed chunks persisted. Press Import again to retry the rest.")
-        return
-      }
-      if (failedChunks.length > 0) {
-        setError(`${deadEntries.length} rows from failed chunks recorded as failures — press Import again to retry (completed chunks are idempotent).`)
+      if (stoppedEarly || failedChunks.length > 0) {
+        // Every chunk failing with the SAME message is systematic — a config
+        // problem such as "no active semester". Retrying cannot fix it, so the
+        // server's own message must replace the "try again" advice.
+        const reasons = [...new Set(failedChunks.map((fc) => fc.error))]
+        setError(
+          reasons.length === 1
+            ? `${deadEntries.length} row${deadEntries.length !== 1 ? "s" : ""} not imported — ${reasons[0]}`
+            : `${deadEntries.length} rows from failed chunks recorded as failures — press Import again to retry (completed chunks are idempotent).`
+        )
         return
       }
       if (unaccounted !== 0) {
@@ -376,7 +388,11 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         return
       }
       setPreviewRows(null)
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setError("Import cancelled — completed chunks are persisted. Press Import again to resume.")
+        return
+      }
       setError("Could not reach the server. Please check your connection and try again.")
     } finally {
       setLoading(false)
@@ -390,6 +406,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     setPreviewPage(0)
     setPreviewError("")
     setError("")
+    setReferenceError("")
     if (fileRef.current) fileRef.current.value = ""
   }
 
@@ -484,6 +501,12 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
           </button>
 
           {previewError && <p className="text-sm font-medium text-red-600 text-center">{previewError}</p>}
+          {referenceError && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-xl px-4 py-3">
+              <p className="text-xs font-semibold text-red-700 dark:text-red-300">Reference data unavailable</p>
+              <p className="text-[11px] text-red-600/80 dark:text-red-300/70">{referenceError}</p>
+            </div>
+          )}
         </div>
       )}
 
