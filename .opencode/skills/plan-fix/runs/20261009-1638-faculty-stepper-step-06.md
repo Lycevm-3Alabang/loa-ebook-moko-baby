@@ -5,8 +5,8 @@ repo: D:/loa/e-consultation-worktrees/regie-worktree
 calibration: {1: "C", 2: "E", 3: "B", 4: "A", 5: "A", 6: "A"}
 workflow: "A"
 decision: "option-A rich items + deptCodeToId — approved"
-status: implementing
-pending: slice-4
+status: complete
+pending: none
 ---
 
 # Plan — Faculty stepper Step 6 faculty-users
@@ -31,11 +31,11 @@ pending: slice-4
 | slice-3 | Apply Slice 3 (client stepper call) to features/admin-data/components/FacultyLoadingTab.tsx? | Applied — handleStep6 + state/panel/trace/resets; tsc clean, npm test 245/245 green |
 | continue-4 | Say continue for Slice 4 (tests)? | Continued |
 
+| slice-4 | Apply Slice 4 (tests) to lib/__tests__/etlEvaluation.test.ts? | Applied — 5 step-06 tests; tsc clean, lint clean, npm test 250/250 green |
+
 ## Pending
 
-- id: slice-4
-- prompt: Apply Slice 4 (tests) to lib/__tests__/etlEvaluation.test.ts?
-- options: Apply this slice / Stop / Other.. type your thoughts
+- none: all 4 slices applied (service → route → client → tests); Step 6 complete
 
 ## Decisions
 
