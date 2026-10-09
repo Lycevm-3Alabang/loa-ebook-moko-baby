@@ -1061,6 +1061,16 @@ function FacultyTab() {
                     </div>
                   </div>
                 )}
+                {step7Running && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 cursor-wait" role="dialog" aria-modal="true" aria-label="Building faculty loading">
+                    <div className="bg-white dark:bg-surface-dim rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl max-w-md w-full mx-4">
+                      <div className="w-10 h-10 border-4 border-gold-600 border-t-transparent rounded-full animate-spin" />
+                      <p className="text-sm font-semibold text-secondary">Building faculty loading...</p>
+                      <p className="text-xs text-tertiary">Resolving slots — dummy-held slots are reassigned, occupied slots are kept.</p>
+                      <p className="text-[11px] text-tertiary/70 text-center">Stay on this page until done — re-running is safe and reports existing.</p>
+                    </div>
+                  </div>
+                )}
                 <div className="flex-1 space-y-3 overflow-hidden">
                   <div className="flex items-center justify-between">
                     <h4 className="text-sm font-semibold text-secondary">
@@ -1287,7 +1297,7 @@ function FacultyTab() {
                   <StepperTrace
                     steps={IMPORT_STEPS}
                     doneCount={(step2Result ? 1 : 0) + (step3Result ? 1 : 0) + (step4Result ? 1 : 0) + (step5Result ? 1 : 0) + (step6Result ? 1 : 0) + (step7Result ? 1 : 0)}
-                    footnote={`Step ${(step7Result ? 6 : step6Result ? 5 : step5Result ? 4 : step4Result ? 3 : step3Result ? 2 : step2Result ? 1 : 0) + 1} of 6 — legacy Import stays below until the full stepper lands.`}
+                    footnote={`Step ${(step7Result ? 6 : step6Result ? 5 : step5Result ? 4 : step4Result ? 3 : step3Result ? 2 : step2Result ? 1 : 0) + 1} of 6.`}
                   />
                 )}
                 {csvRows && csvRows.length > 0 && (
@@ -1475,9 +1485,6 @@ function FacultyTab() {
                 )}
                 <div className="sticky bottom-0 pt-4 pb-1 bg-white dark:bg-surface-dim flex items-center gap-3">
                   <IosButton variant="gray" type="button" disabled={csvImporting} onClick={handleCsvReset} className="flex-1">Cancel</IosButton>
-                  <IosButton variant="primary" type="button" disabled={!activeSemesterId || csvImporting || csvRows.length === 0} onClick={handleCsvImport} className="flex-1">
-                    {csvImporting ? "Importing..." : `Import ${csvRows.length} Row${csvRows.length !== 1 ? "s" : ""}`}
-                  </IosButton>
                 </div>
               </div>
             )}
