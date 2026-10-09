@@ -70,6 +70,14 @@ function FacultyTab() {
     createdSections: number
     parseErrors?: { row: number; message: string }[]
   } | null>(null)
+  const [step2Running, setStep2Running] = useState(false)
+  const [step2Result, setStep2Result] = useState<{
+    stepId: string
+    status: string
+    inserted: number
+    existing: number
+    invalid: { key: string; reason: string }[]
+  } | null>(null)
   const [csvError, setCsvError] = useState("")
   const [csvPreviewPage, setCsvPreviewPage] = useState(0)
   const [lastImportTotal, setLastImportTotal] = useState(0)
@@ -330,6 +338,7 @@ function FacultyTab() {
 
   const handleCsvFile = async (file: File) => {
     setCsvImportResult(null)
+    setStep2Result(null)
     setCsvError("")
     try {
       const text = await decodeCsvFile(file)
@@ -346,6 +355,40 @@ function FacultyTab() {
       setCsvPreviewPage(0)
     } catch {
       setCsvError("Could not read CSV file")
+    }
+  }
+
+  const handleStep2Departments = async () => {
+    if (!csvRows || csvRows.length === 0 || step2Running) return
+    setStep2Running(true)
+    try {
+      const items = [...new Set(csvRows.map((r) => (r.departmentCode || "").trim().toUpperCase()))]
+      const res = await fetch("/api/import/faculties", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          step: "departments",
+          semesterId: activeSemesterId || null,
+          fileId: `step2-${Date.now().toString(36)}`,
+          items,
+        }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error((d as { error?: string }).error || "Step 2 failed")
+      }
+      const json = await res.json()
+      setStep2Result({
+        stepId: json.stepId ?? "departments",
+        status: json.status ?? "done",
+        inserted: json.inserted ?? 0,
+        existing: json.existing ?? 0,
+        invalid: json.invalid ?? [],
+      })
+    } catch (err) {
+      setCsvError((err as Error).message)
+    } finally {
+      setStep2Running(false)
     }
   }
 
@@ -514,6 +557,7 @@ function FacultyTab() {
   const handleCsvReset = () => {
     setCsvRows(null)
     setCsvImportResult(null)
+    setStep2Result(null)
     setWrongCsv(""); setSkippedCsv(""); setLastImportTotal(0); setLastImportChunks(0); setRemovedRows([])
     setCsvPreviewPage(0)
     setCsvProblemFilter(false)
@@ -924,6 +968,39 @@ function FacultyTab() {
                     <span><span className="font-semibold text-amber-600">{csvProblemRows.length}</span> to create (incl. {unassignedCsvRows.length} unassigned)</span>
                     <span><span className="font-semibold text-red-600">{blockedCsvRows.length}</span> already loaded</span>
                     <span><span className="font-semibold text-red-600">{invalidCsvRows.length}</span> invalid ({invalidDeptRows.length} dept · {invalidValueRows.length} value)</span>
+                  </div>
+                )}
+                {csvRows && csvRows.length > 0 && (
+                  <div className="rounded-xl border border-default px-4 py-3 space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold text-secondary">Step 2 — Departments</p>
+                      <button
+                        type="button"
+                        disabled={!activeSemesterId || csvImporting || step2Running}
+                        onClick={handleStep2Departments}
+                        className="text-[11px] font-semibold px-3 py-1.5 rounded-full border border-default bg-surface-hover hover:bg-surface-dim transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {step2Running ? "Running Step 2…" : "Run Step 2"}
+                      </button>
+                    </div>
+                    {step2Result && (
+                      <div className="space-y-1">
+                        <p className="text-[11px] text-tertiary">
+                          <span className="font-semibold text-emerald-600">{step2Result.inserted}</span> inserted ·{" "}
+                          <span className="font-semibold text-blue-600">{step2Result.existing}</span> existing ·{" "}
+                          <span className="font-semibold text-red-600">{step2Result.invalid.length}</span> invalid
+                        </p>
+                        {step2Result.invalid.length > 0 && (
+                          <div className="max-h-32 overflow-y-auto space-y-0.5">
+                            {step2Result.invalid.map((e, i) => (
+                              <p key={`step2-${i}`} className="text-[11px] text-red-600 dark:text-red-400">
+                                {e.key || "(blank)"} — {e.reason}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="sticky bottom-0 pt-4 pb-1 bg-white dark:bg-surface-dim flex items-center gap-3">

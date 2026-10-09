@@ -31,10 +31,12 @@ pending:
 | slice-1 | Slice 1/4 service extract → lib/services/etlEvaluation.ts | applied; npm test 225/225 green (18 files) |
 | continue-1 | Continue to slice-2? | continue |
 | slice-2 | Slice 2/4 route discriminator → app/api/import/faculties/route.ts | applied; npm test 225/225 green (18 files) |
+| continue-2 | Continue to slice-3? | continue |
+| slice-3 | Slice 3/4 client stepper call → FacultyLoadingTab.tsx | applied; tsc clean, lint clean, npm test 225/225 green (18 files) |
 
 ## Pending
 
-- awaiting continue to slice-3 (client stepper call) — say continue when ready
+- awaiting continue to slice-4 (tests) — say continue when ready
 
 ## Decisions
 
