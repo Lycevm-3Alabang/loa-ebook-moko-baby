@@ -54,7 +54,7 @@ vi.mock("@/lib/supabase", () => {
   }
 })
 
-import { parseFacultySubjectCsv, parseStudentEnrollmentCsv, importFacultySubjects, importStudentEnrollments, importDepartmentsStep, importCoursesStep, importSectionsStep, importSubjectsStep } from "@/lib/services/etlEvaluation"
+import { parseFacultySubjectCsv, parseStudentEnrollmentCsv, importFacultySubjects, importStudentEnrollments, importDepartmentsStep, importCoursesStep, importSectionsStep, importSubjectsStep, importFacultyUsersStep, DUMMY_FACULTY_EMAIL } from "@/lib/services/etlEvaluation"
 import * as factory from "@/lib/repositories/factory"
 
 // ── Helpers ───────────────────────────────────────────────
@@ -797,6 +797,100 @@ describe("importSubjectsStep", () => {
     ])
     expect(result.matched).toBe(1)
     expect(result.errors).toHaveLength(0)
+  })
+})
+
+// ── importFacultyUsersStep (stepper step 6) ──────────────────────
+
+describe("importFacultyUsersStep", () => {
+  const deptMap = { CCS: "dept-ccs", CAS: "dept-cas" }
+
+  const userEntry = (email: string, id: string) => ({ id, email, name: email.split("@")[0], role: "FACULTY" })
+
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  it("creates missing faculty with role FACULTY and department stamping", async () => {
+    mockFindUsers(new Map())
+    mockCreateUsers(new Map([
+      ["juan.delacruz@lyceumalabang.edu.ph", userEntry("juan.delacruz@lyceumalabang.edu.ph", "user-1")],
+      ["maria.santos@lyceumalabang.edu.ph", userEntry("maria.santos@lyceumalabang.edu.ph", "user-2")],
+    ]))
+    const result = await importFacultyUsersStep([
+      { email: "juan.delacruz@lyceumalabang.edu.ph", name: "Juan Dela Cruz", departmentCode: "CCS" },
+      { email: "maria.santos@lyceumalabang.edu.ph", name: "Maria Santos", departmentCode: "CAS" },
+    ], deptMap)
+    expect(result.stepId).toBe("faculty-users")
+    expect(result.status).toBe("done")
+    expect(result.inserted).toBe(2)
+    expect(result.existing).toBe(0)
+    expect(result.invalid).toHaveLength(0)
+    expect(userCreateRepo()).toHaveBeenCalledTimes(1)
+    expect(userCreateRepo().mock.calls[0][0]).toEqual(expect.arrayContaining([
+      expect.objectContaining({ email: "juan.delacruz@lyceumalabang.edu.ph", role: "FACULTY", departmentId: "dept-ccs" }),
+      expect.objectContaining({ email: "maria.santos@lyceumalabang.edu.ph", role: "FACULTY", departmentId: "dept-cas" }),
+    ]))
+    expect(Object.keys(result.facultyUserMap)).toHaveLength(2)
+  })
+
+  it("reuses existing faculty without calling createMany", async () => {
+    mockFindUsers(new Map([
+      ["juan.delacruz@lyceumalabang.edu.ph", userEntry("juan.delacruz@lyceumalabang.edu.ph", "user-1")],
+    ]))
+    const result = await importFacultyUsersStep([
+      { email: "juan.delacruz@lyceumalabang.edu.ph", name: "Juan Dela Cruz", departmentCode: "CCS" },
+    ], deptMap)
+    expect(result.inserted).toBe(0)
+    expect(result.existing).toBe(1)
+    expect(result.invalid).toHaveLength(0)
+    expect(userCreateRepo()).not.toHaveBeenCalled()
+    expect(result.facultyUserMap["juan.delacruz@lyceumalabang.edu.ph"]).toBe("user-1")
+  })
+
+  it("creates the dummy dept-agnostic", async () => {
+    mockFindUsers(new Map())
+    mockCreateUsers(new Map([
+      [DUMMY_FACULTY_EMAIL, { id: "user-dummy", email: DUMMY_FACULTY_EMAIL, name: "Unassigned Faculty", role: "FACULTY" }],
+    ]))
+    const result = await importFacultyUsersStep([
+      { email: "", name: "", departmentCode: "CCS" },
+    ], deptMap)
+    expect(result.inserted).toBe(1)
+    expect(result.invalid).toHaveLength(0)
+    expect(userCreateRepo().mock.calls[0][0]).toEqual([
+      expect.objectContaining({ email: DUMMY_FACULTY_EMAIL, name: "Unassigned Faculty", departmentId: undefined }),
+    ])
+  })
+
+  it("flags off-domain emails invalid and never creates them", async () => {
+    mockFindUsers(new Map())
+    mockCreateUsers(new Map([
+      ["good@lyceumalabang.edu.ph", userEntry("good@lyceumalabang.edu.ph", "user-1")],
+    ]))
+    const result = await importFacultyUsersStep([
+      { email: "good@lyceumalabang.edu.ph", name: "Good", departmentCode: "CCS" },
+      { email: "stray@gmail.com", name: "Stray", departmentCode: "CCS" },
+    ], deptMap)
+    expect(result.invalid).toEqual([{ key: "stray@gmail.com", reason: "Email domain not allowed: stray@gmail.com" }])
+    expect(result.inserted).toBe(1)
+    expect(result.existing).toBe(0)
+    const sent = userCreateRepo().mock.calls[0][0] as { email: string }[]
+    expect(sent.map((s) => s.email)).toEqual(["good@lyceumalabang.edu.ph"])
+  })
+
+  it("collapses many blank emails onto one dummy user", async () => {
+    mockFindUsers(new Map())
+    mockCreateUsers(new Map([
+      [DUMMY_FACULTY_EMAIL, { id: "user-dummy", email: DUMMY_FACULTY_EMAIL, name: "Unassigned Faculty", role: "FACULTY" }],
+    ]))
+    const blanks = Array.from({ length: 902 }, () => ({ email: "", name: "", departmentCode: "CCS" }))
+    const result = await importFacultyUsersStep(blanks, deptMap)
+    expect(userCreateRepo()).toHaveBeenCalledTimes(1)
+    expect(userCreateRepo().mock.calls[0][0]).toHaveLength(1)
+    expect(result.inserted).toBe(1)
+    expect(result.existing).toBe(0)
+    expect(Object.keys(result.facultyUserMap)).toHaveLength(1)
   })
 })
 

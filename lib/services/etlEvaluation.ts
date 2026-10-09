@@ -276,6 +276,103 @@ export async function importSubjectsStep(
   }
 }
 
+// ── Step 6 (faculty-users) ───────────────────────────────────
+// Creates missing faculty users (role FACULTY) for distinct emails.
+// Departments are LOOKUP-ONLY via client-held deptCodeToId (Step 2 map) —
+// this step never creates departments. Users are semester-agnostic, so no
+// semesterId param (envelope-only, same as Steps 2-5). Off-domain emails
+// never become users (invalid); the synthesised dummy is exempt and stays
+// dept-agnostic (departmentId undefined).
+
+export interface FacultyUserStepItem {
+  email: string
+  name: string
+  departmentCode: string
+}
+
+export interface FacultyUserStepResult {
+  stepId: "faculty-users"
+  status: "done"
+  inserted: number
+  existing: number
+  invalid: DepartmentStepInvalid[]
+  facultyUserMap: Record<string, string>
+}
+
+export async function importFacultyUsersStep(
+  items: FacultyUserStepItem[],
+  deptCodeToId: Record<string, string>,
+): Promise<FacultyUserStepResult> {
+  const invalid: DepartmentStepInvalid[] = []
+  const facultyUserMap: Record<string, string> = {}
+
+  const seen = new Set<string>()
+  const distinct: FacultyUserStepItem[] = []
+  for (const raw of items) {
+    const email = (raw?.email ?? "").toLowerCase().trim()
+    const key = email.length === 0 ? DUMMY_FACULTY_EMAIL : email
+    if (seen.has(key)) continue
+    seen.add(key)
+    distinct.push({
+      email: key,
+      name: key === DUMMY_FACULTY_EMAIL ? "Unassigned Faculty" : (raw?.name ?? ""),
+      departmentCode: (raw?.departmentCode ?? "").trim().toUpperCase(),
+    })
+  }
+
+  const mappable: FacultyUserStepItem[] = []
+  for (const item of distinct) {
+    if (item.email === DUMMY_FACULTY_EMAIL) {
+      mappable.push(item)
+      continue
+    }
+    if (!item.email.endsWith("@lyceumalabang.edu.ph")) {
+      invalid.push({ key: item.email, reason: `Email domain not allowed: ${item.email}` })
+      continue
+    }
+    mappable.push(item)
+  }
+
+  const uniqueEmails = mappable.map((m) => m.email)
+  const userMap = await userRepository.findManyByEmail(uniqueEmails)
+  const missingEmails = uniqueEmails.filter((e) => !userMap.has(e))
+  let inserted = 0
+  if (missingEmails.length > 0) {
+    const createdUsers = await userRepository.createMany(
+      missingEmails.map((email) => {
+        const item = mappable.find((m) => m.email === email)
+        const isPlaceholder = email === DUMMY_FACULTY_EMAIL
+        const deptId = isPlaceholder
+          ? undefined
+          : (item ? deptCodeToId[item.departmentCode] ?? undefined : undefined)
+        return {
+          email,
+          name: isPlaceholder ? "Unassigned Faculty" : (item?.name?.trim() || email.split("@")[0] || email),
+          role: "FACULTY",
+          departmentId: deptId,
+        }
+      }),
+    )
+    inserted = createdUsers.size
+    for (const [email, user] of createdUsers) {
+      userMap.set(email, user)
+    }
+  }
+
+  for (const [email, user] of userMap) {
+    if (uniqueEmails.includes(email)) facultyUserMap[email] = user.id
+  }
+
+  return {
+    stepId: "faculty-users",
+    status: "done",
+    inserted,
+    existing: uniqueEmails.length - inserted,
+    invalid,
+    facultyUserMap,
+  }
+}
+
 export function parseFacultySubjectCsv(text: string): {
   rows: FacultySubjectCsvRow[]
   errors: { row: number; message: string }[]

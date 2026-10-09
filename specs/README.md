@@ -1,6 +1,6 @@
 # ACES — Specs
 
-**Version:** 1.5
+**Version:** 1.6
 **Status:** Draft
 **Last Updated:** 2026-10-09
 
@@ -44,7 +44,8 @@ Spec `Status` above is unchanged — promotion to Final still needs re-approval 
 | [faculty-import-stepper/step-03-courses.md](faculty-import-stepper/step-03-courses.md) | Done (2026-10-09) | 7 slices: `importCoursesStep` in `lib/services/etlEvaluation.ts`, `courses` discriminator in `app/api/import/faculties/route.ts`, new `FacultyImportStepper.tsx` shell (`StepperTrace` + `StepPanel`), Step 2 retrofit (trace, Yes/No confirm, denominators) + Step 3 panel in `FacultyLoadingTab.tsx`, 5 tests. Verification gate (`tsc`/`lint`/`vitest`) with user per standing rule. Run file: `.opencode/skills/plan-fix/runs/20261009-1347-step-03-courses.md` |
 | [faculty-import-stepper/step-04-sections.md](faculty-import-stepper/step-04-sections.md) | Done (2026-10-09) | 4 slices: `importSectionsStep` in `lib/services/etlEvaluation.ts`, `sections` discriminator in `app/api/import/faculties/route.ts`, Step 4 panel in `FacultyLoadingTab.tsx` (state, handler, trace count, resets), 5 tests. `tsc`/`lint` clean, 240/240 tests green. Run file: `.opencode/skills/plan-fix/runs/20261009-1506-faculty-stepper-step-04.md` |
 | [faculty-import-stepper/step-05-subjects.md](faculty-import-stepper/step-05-subjects.md) | Done (2026-10-09) | 4 slices: `importSubjectsStep` in `lib/services/etlEvaluation.ts`, `subjects` discriminator in `app/api/import/faculties/route.ts`, Step 5 panel in `FacultyLoadingTab.tsx` (state, handler, trace count, resets), 5 tests. `tsc`/`lint` clean, 245/245 tests green. Run file: `.opencode/skills/plan-fix/runs/20261009-1605-faculty-stepper-step-05.md` |
-| All other specs | Not started | **Next session: Step 6 — faculty-users** ([step-06-faculty-users.md](faculty-import-stepper/step-06-faculty-users.md)) |
+| [faculty-import-stepper/step-06-faculty-users.md](faculty-import-stepper/step-06-faculty-users.md) | Done (2026-10-09) | 4 slices: `importFacultyUsersStep` in `lib/services/etlEvaluation.ts`, `faculty-users` discriminator in `app/api/import/faculties/route.ts`, Step 6 panel in `FacultyLoadingTab.tsx` (state, handler, trace count, resets), 5 tests. `tsc`/`lint` clean, 250/250 tests green. Run file: `.opencode/skills/plan-fix/runs/20261009-1638-faculty-stepper-step-06.md` |
+| All other specs | Not started | **Next session: Step 7 — mappings** ([step-07-mappings.md](faculty-import-stepper/step-07-mappings.md)) |
 
 ---
 

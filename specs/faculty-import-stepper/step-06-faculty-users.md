@@ -104,3 +104,23 @@ The dummy email itself is exempt — it is synthesised by the importer, not uplo
 # Verification
 
 `npx tsc --noEmit` → `npm run lint` → `npx vitest run`.
+
+---
+
+# Implementation notes (built 2026-10-09)
+
+- **Payload is rich items, not `string[]`.** The Request line above says `items: string[]`,
+  but the server needs `name` + `departmentCode` per email plus Step 2's `deptCodeToId`
+  (same client-held-map model as Step 3 courses). Built as
+  `items: { email, name, departmentCode }[]` + `deptCodeToId`. Slices:
+  `importFacultyUsersStep` (`lib/services/etlEvaluation.ts`), `faculty-users`
+  discriminator (`app/api/import/faculties/route.ts`), Step 6 panel
+  (`FacultyLoadingTab.tsx`), 5 tests. `tsc`/`lint` clean, 250/250 green.
+- **Departments are lookup-only.** This step never creates departments; it reads Step 2's
+  map. A missing map entry signals a stale map / skipped Step 2, not a creation.
+
+> **IMPORTANT — `semesterId` is envelope-only.** `importFacultyUsersStep(items, deptCodeToId)`
+> takes **no** `semesterId`: users are semester-agnostic (no semester column;
+> `departmentId` comes from Step 2). The route still accepts `semesterId` / `fileId` for
+> audit uniformity, same as Steps 2–5. **Only Step 7 mappings scopes by semester** — do not
+> thread `semesterId` into any faculty-user logic.
