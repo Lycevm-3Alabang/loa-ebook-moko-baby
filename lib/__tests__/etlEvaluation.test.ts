@@ -7,6 +7,28 @@ vi.mock("@/lib/repositories/factory", () => ({
   userRepository: { findManyByEmail: vi.fn(), createMany: vi.fn() },
   facultySubjectRepository: { replaceBySection: vi.fn(), create: vi.fn(), list: vi.fn().mockResolvedValue([]), update: vi.fn() },
   studentEnrollmentRepository: { replaceBySection: vi.fn() },
+  // Precedence insert path: importFacultySubjects resolves departments and
+  // department_courses through these repositories rather than direct supabase.
+  departmentRepository: {
+    findByCode: vi.fn(async (code: string) =>
+      code === "CCS" ? { id: "dept-ccs", name: "CCS", code: "CCS" }
+        : code === "CAS" ? { id: "dept-cas", name: "CAS", code: "CAS" }
+          : null,
+    ),
+    create: vi.fn(async (data: { name: string; code: string }) => ({
+      id: `dept-${data.code.toLowerCase()}`, name: data.name, code: data.code,
+    })),
+  },
+  departmentCourseRepository: {
+    findByDepartmentAndCode: vi.fn(async (departmentId: string, code: string) =>
+      code === "BSIT" ? { id: "course-bsit", departmentId, name: "BSIT", code }
+        : code === "BSCS" ? { id: "course-bscs", departmentId, name: "BSCS", code }
+          : null,
+    ),
+    create: vi.fn(async (data: { departmentId: string; code: string; name: string }) => ({
+      id: `course-${data.code.toLowerCase()}`, departmentId: data.departmentId, name: data.name, code: data.code,
+    })),
+  },
 }))
 
 vi.mock("@/lib/supabase", () => {
@@ -353,19 +375,20 @@ describe("importFacultySubjects", () => {
     expect(result.errors[0].message).toContain("could not be created or found")
   })
 
-  it("reports error for unknown department code", async () => {
+  it("creates a missing department instead of dropping the row", async () => {
     mockSubjectUpsert(new Map([["CS101", { id: "subj-1" }]]), 0)
     mockSectionUpsert(new Map([["32A3|BSIT", { id: "sec-1" }]]), 0)
-    mockFindUsers(new Map())
+    mockFindUsers(new Map([["juan@lyceumalabang.edu.ph", { id: "user-1", email: "juan@lyceumalabang.edu.ph", name: "Juan", role: "FACULTY" }]]))
 
     const result = await importFacultySubjects([
       { email: "juan@lyceumalabang.edu.ph", name: "Juan", subjectCode: "CS101", subjectName: "", sectionName: "32A3", sectionProgram: "BSIT", departmentCode: "UNKNOWN" },
     ])
 
-    expect(result.matched).toBe(0)
-    expect(result.errors).toHaveLength(1)
-    expect(result.errors[0].message).toContain("not found")
-    expect(userCreateRepo()).not.toHaveBeenCalled()
+    expect(result.matched).toBe(1)
+    expect(result.errors).toHaveLength(0)
+    // Precedence insert: the department is created with name derived from code,
+    // and the row survives instead of being filtered out.
+    expect(factory.departmentRepository.create).toHaveBeenCalledWith({ name: "UNKNOWN", code: "UNKNOWN" })
   })
 
   it("handles duplicate emails without re-creating users", async () => {

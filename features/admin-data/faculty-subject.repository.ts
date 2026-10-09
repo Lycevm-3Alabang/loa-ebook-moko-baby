@@ -65,7 +65,7 @@ export const facultySubjectRepository: IFacultySubjectRepository = {
       .select("*")
       .eq("subject_id", subject_id)
       .eq("section_id", section_id)
-      .single()
+      .maybeSingle()
     if (error) {
       if (error.code === "PGRST116") return null
       throw error

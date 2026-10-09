@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase"
-import { userRepository, sectionRepository, subjectRepository, facultySubjectRepository, studentEnrollmentRepository } from "@/lib/repositories/factory"
+import { userRepository, sectionRepository, subjectRepository, facultySubjectRepository, studentEnrollmentRepository, departmentRepository, departmentCourseRepository } from "@/lib/repositories/factory"
 import { cleanCell, cleanSubjectCode, isExcelErrorCell } from "@/lib/csv-utils"
 
 function parseSectionIdentifier(raw: string): { name: string; program: string } {
@@ -180,35 +180,63 @@ export async function importFacultySubjects(
   })
 
   // ── Resolve department codes → ids ──
-  const uniqueDeptCodes = [...new Set(cleanRows.map((r) => r.departmentCode))]
-  const { data: allDepts } = await supabase.from("departments").select("id, code")
-  const deptCodeToId = new Map((allDepts || []).map((d: { id: string; code: string }) => [d.code.toUpperCase(), d.id]))
-  const deptCodeErrors = new Set<string>()
-  for (const code of uniqueDeptCodes) {
-    if (!deptCodeToId.has(code)) {
-      deptCodeErrors.add(code)
-      result.errors.push({ row: 0, message: `Department code "${code}" not found` })
+  const blankDeptCount = cleanRows.filter((r) => r.departmentCode.trim().length === 0).length
+  if (blankDeptCount > 0) {
+    result.errors.push({ row: 0, message: "Department code is required" })
+  }
+  const validRows = cleanRows.filter((r) => r.departmentCode.trim().length > 0)
+
+  // Departments root the chain (courses -> sections), so they resolve first. A miss
+  // inserts name = code and the row survives. The chunked JSON path bypasses
+  // parseFacultySubjectCsv, which rejects blank codes, so blanks are caught above
+  // instead of reaching a NOT NULL insert.
+  const deptCodeToId = new Map<string, string>()
+  for (const code of new Set(validRows.map((r) => r.departmentCode.toUpperCase()))) {
+    const existing = await departmentRepository.findByCode(code)
+    if (existing) {
+      deptCodeToId.set(code, existing.id)
+      continue
+    }
+    try {
+      const created = await departmentRepository.create({ name: code, code })
+      deptCodeToId.set(code, created.id)
+    } catch (err) {
+      // 281 chunked calls run concurrently - a sibling chunk may have inserted the
+      // same code between our read and write. Re-read instead of failing the chunk.
+      if ((err as { code?: string })?.code !== "23505") throw err
+      const raced = await departmentRepository.findByCode(code)
+      if (!raced) throw err
+      deptCodeToId.set(code, raced.id)
     }
   }
 
-  // ── Filter out rows with invalid department codes ──
-  const validRows = cleanRows.filter((r) => !deptCodeErrors.has(r.departmentCode))
-
-  // ── Upsert subjects ──
-  const uniqueSubjectCodes = [...new Set(validRows.map((r) => r.subjectCode))]
-  const subjectItems = uniqueSubjectCodes.map((code) => {
-    const row = validRows.find((r) => r.subjectCode === code)
-    return { code, name: row?.subjectName || code }
-  })
-  const { data: subjects, created: createdSubjects } = await subjectRepository.upsertMany(subjectItems)
-  result.createdSubjects = createdSubjects
+  // Courses: UNIQUE("departmentId", code) means the code alone is NOT unique, so
+  // every lookup and insert goes through the pair. A miss creates a visibly
+  // synthetic name so it is easy to find and rename later.
+  const courseCodeToId = new Map<string, string>()
+  for (const program of new Set(validRows.map((r) => r.sectionProgram).filter((p) => p.length > 0))) {
+    const deptCode = validRows.find((r) => r.sectionProgram === program)?.departmentCode.toUpperCase()
+    const departmentId = deptCode ? deptCodeToId.get(deptCode) : undefined
+    if (!departmentId) continue
+    const existing = await departmentCourseRepository.findByDepartmentAndCode(departmentId, program)
+    if (existing) {
+      courseCodeToId.set(program, existing.id)
+      continue
+    }
+    try {
+      const created = await departmentCourseRepository.create({ departmentId, code: program, name: `${program} [unmapped]` })
+      courseCodeToId.set(program, created.id)
+    } catch (err) {
+      if ((err as { code?: string })?.code !== "23505") throw err
+      const raced = await departmentCourseRepository.findByDepartmentAndCode(departmentId, program)
+      if (!raced) throw err
+      courseCodeToId.set(program, raced.id)
+    }
+  }
 
   // ── Upsert sections ──
   const sectionKeys = new Set<string>()
   const sectionItems: { name: string; program: string; departmentCourseId: string }[] = []
-
-  const { data: allCourses } = await supabase.from("department_courses").select("id, code")
-  const courseCodeToId = new Map((allCourses || []).map((c: { code: string; id: string }) => [c.code, c.id]))
 
   for (const r of validRows) {
     const key = `${r.sectionName}|${r.sectionProgram}`
@@ -224,6 +252,16 @@ export async function importFacultySubjects(
   }
   const { data: sections, created: createdSections } = await sectionRepository.upsertMany(sectionItems)
   result.createdSections = createdSections
+
+  // Subjects have no FK dependency, so they upsert safely at this point in the
+  // precedence order.
+  const uniqueSubjectCodes = [...new Set(validRows.map((r) => r.subjectCode))]
+  const subjectItems = uniqueSubjectCodes.map((code) => {
+    const row = validRows.find((r) => r.subjectCode === code)
+    return { code, name: row?.subjectName || code }
+  })
+  const { data: subjects, created: createdSubjects } = await subjectRepository.upsertMany(subjectItems)
+  result.createdSubjects = createdSubjects
 
   // ── Resolve users (batch lookup + batch create; wrong uploads never become users) ──
   const mappableRows = validRows.filter((r) => r.email.length > 0 && r.email.endsWith("@lyceumalabang.edu.ph"))
