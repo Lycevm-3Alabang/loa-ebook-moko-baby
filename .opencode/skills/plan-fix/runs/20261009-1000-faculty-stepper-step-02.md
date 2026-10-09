@@ -6,7 +6,7 @@ calibration: {1: "C", 2: "E", 3: "B", 4: "A", 5: "A", 6: "A"}
 workflow: "A"
 decision: option-1 distinct-set step in existing route — approved
 status: implementing
-pending:
+pending: done slice-4
 ---
 
 # Plan
@@ -33,10 +33,12 @@ pending:
 | slice-2 | Slice 2/4 route discriminator → app/api/import/faculties/route.ts | applied; npm test 225/225 green (18 files) |
 | continue-2 | Continue to slice-3? | continue |
 | slice-3 | Slice 3/4 client stepper call → FacultyLoadingTab.tsx | applied; tsc clean, lint clean, npm test 225/225 green (18 files) |
+| continue-3 | Continue to slice-4? | continue (typo "conitnue" read as continue) |
+| slice-4 | Slice 4/4 tests → lib/__tests__/etlEvaluation.test.ts | applied; tsc clean, lint clean, npm test 230/230 green (18 files, +5 new) |
 
 ## Pending
 
-- awaiting continue to slice-4 (tests) — say continue when ready
+- done (all 4 slices applied; uncommitted: etlEvaluation.ts, import/faculties route.ts, FacultyLoadingTab.tsx, etlEvaluation.test.ts; remaining: Final spec promotion, live upload verification, steps 3-7)
 
 ## Decisions
 

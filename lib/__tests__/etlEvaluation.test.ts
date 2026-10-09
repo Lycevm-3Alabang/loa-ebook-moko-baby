@@ -54,7 +54,7 @@ vi.mock("@/lib/supabase", () => {
   }
 })
 
-import { parseFacultySubjectCsv, parseStudentEnrollmentCsv, importFacultySubjects, importStudentEnrollments } from "@/lib/services/etlEvaluation"
+import { parseFacultySubjectCsv, parseStudentEnrollmentCsv, importFacultySubjects, importStudentEnrollments, importDepartmentsStep } from "@/lib/services/etlEvaluation"
 import * as factory from "@/lib/repositories/factory"
 
 // ── Helpers ───────────────────────────────────────────────
@@ -428,6 +428,84 @@ describe("importFacultySubjects", () => {
     expect(result.matched).toBe(0)
     expect(result.errors).toHaveLength(1)
     expect(result.errors[0].message).toContain("not found")
+  })
+})
+
+// ── importDepartmentsStep (stepper step 2) ───────────────────
+
+describe("importDepartmentsStep", () => {
+  const deptFind = () => factory.departmentRepository.findByCode as ReturnType<typeof vi.fn>
+  const deptCreate = () => factory.departmentRepository.create as ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    vi.resetAllMocks()
+    deptFind().mockImplementation(async (code: string) =>
+      code === "CCS" ? { id: "dept-ccs", name: "CCS", code: "CCS" }
+        : code === "CAS" ? { id: "dept-cas", name: "CAS", code: "CAS" }
+          : null,
+    )
+    deptCreate().mockImplementation(async (data: { name: string; code: string }) => ({
+      id: `dept-${data.code.toLowerCase()}`, name: data.name, code: data.code,
+    }))
+    ;(factory.facultySubjectRepository.list as ReturnType<typeof vi.fn>).mockResolvedValue([])
+  })
+
+  it("creates missing departments with name=code (case-insensitive dedup)", async () => {
+    const result = await importDepartmentsStep(["COE", "coe", "CCS"])
+    expect(result.stepId).toBe("departments")
+    expect(result.status).toBe("done")
+    expect(result.inserted).toBe(1)
+    expect(result.existing).toBe(1)
+    expect(Object.keys(result.deptCodeToId)).toHaveLength(2)
+    expect(result.deptCodeToId["COE"]).toBe("dept-coe")
+    expect(result.deptCodeToId["CCS"]).toBe("dept-ccs")
+    expect(deptCreate()).toHaveBeenCalledTimes(1)
+    expect(deptCreate()).toHaveBeenCalledWith({ name: "COE", code: "COE" })
+  })
+
+  it("reuses existing departments without creating", async () => {
+    const result = await importDepartmentsStep(["CCS", "CAS"])
+    expect(result.inserted).toBe(0)
+    expect(result.existing).toBe(2)
+    expect(result.invalid).toHaveLength(0)
+    expect(deptCreate()).not.toHaveBeenCalled()
+  })
+
+  it("flags blank codes as invalid without inserting", async () => {
+    const result = await importDepartmentsStep(["CCS", "   ", ""])
+    expect(result.inserted).toBe(0)
+    expect(result.existing).toBe(1)
+    expect(result.invalid).toHaveLength(2)
+    expect(result.invalid[0].reason).toBe("Department code is required")
+    expect(deptCreate()).not.toHaveBeenCalled()
+  })
+
+  it("treats a 23505 race as existing via re-read", async () => {
+    let reads = 0
+    deptFind().mockImplementation(async () => {
+      reads++
+      return reads === 1 ? null : { id: "dept-race", name: "RACE", code: "RACE" }
+    })
+    deptCreate().mockImplementation(async () => {
+      throw { code: "23505" }
+    })
+    const result = await importDepartmentsStep(["RACE"])
+    expect(result.inserted).toBe(0)
+    expect(result.existing).toBe(1)
+    expect(result.invalid).toHaveLength(0)
+    expect(result.deptCodeToId["RACE"]).toBe("dept-race")
+  })
+
+  it("leaves the composed importFacultySubjects path unchanged", async () => {
+    mockSubjectUpsert(new Map([["CS101", { id: "subj-1" }]]), 0)
+    mockSectionUpsert(new Map([["32A3|BSIT", { id: "sec-1" }]]), 0)
+    mockFindUsers(new Map([["juan@lyceumalabang.edu.ph", { id: "user-1", email: "juan@lyceumalabang.edu.ph", name: "Juan", role: "FACULTY" }]]))
+    const result = await importFacultySubjects([
+      { email: "juan@lyceumalabang.edu.ph", name: "Juan", subjectCode: "CS101", subjectName: "", sectionName: "32A3", sectionProgram: "BSIT", departmentCode: "UNKNOWN" },
+    ])
+    expect(result.matched).toBe(1)
+    expect(result.errors).toHaveLength(0)
+    expect(deptCreate()).toHaveBeenCalledWith({ name: "UNKNOWN", code: "UNKNOWN" })
   })
 })
 
