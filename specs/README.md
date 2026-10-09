@@ -28,6 +28,8 @@ Specs must be Final before code is written (per loa-apache-server-apps conventio
 | [auth-integration.md](auth-integration.md) | Draft | Contract between e-consultation and loa-auth — SSO flow, JWT claims, shared secrets, what each side owns |
 | [endpoint-catalog.md](endpoint-catalog.md) | Draft | Full endpoint catalog (~130 entries) with required levels — must stay in sync with loa-auth-platform |
 | [migration-checklist.md](migration-checklist.md) | Draft | Step-by-step tasks for each side, verification checklist, timeline |
+| [spike-student-eval-enrollment-gate.md](spike-student-eval-enrollment-gate.md) | Investigation | `POST /api/evaluations` 403 for students with visible pending items — root cause proven to `route.ts:98`; `findPending` Branch A/B read-write drift; trigger blocked on one query |
+| [spike-consultation-enrollment-scope.md](spike-consultation-enrollment-scope.md) | Investigation | Does the enrollment-gate defect reach consultation booking? No — no gate exists; redirects blast radius to the shared writer `replaceBySection` |
 
 ---
 
