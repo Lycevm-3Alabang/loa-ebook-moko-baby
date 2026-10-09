@@ -105,6 +105,33 @@ export const facultySubjectRepository: IFacultySubjectRepository = {
     return data as FacultySubjectData | null
   },
 
+  // All mappings for the given subject/section pairs, in ONE round trip.
+  //
+  // Why this exists: the student importer used to call
+  // findBySubjectSectionAndFaculty once per row — ~22,000 sequential awaited
+  // PostgREST calls for the 2026-1 file. The route is capped at maxDuration=60
+  // and runs in iad1 while admins upload from sin1, so that is ~150ms of
+  // Pacific latency per call. It 504'd at 62.8s.
+  //
+  // Deliberately NOT filtered by semester here: UNIQUE(subject_id, section_id,
+  // "semesterId") means a pair can hold one row per semester, so the caller
+  // must group by (subject_id, section_id, "semesterId") and pick the active
+  // semester — a flat filtered read would hide the legacy null-semester rows
+  // the per-row finders used to return.
+  //
+  // Bound: callers chunk. STUDENT_CHUNK_SIZE=100 means ~100 pairs → ~100-200
+  // rows returned, safely under PostgREST's default 1000-row response cap.
+  async findManyBySubjectSectionIds(subjectIds, sectionIds) {
+    if (subjectIds.length === 0 || sectionIds.length === 0) return []
+    const { data, error } = await supabase
+      .from("faculty_subjects")
+      .select("*")
+      .in("subject_id", subjectIds)
+      .in("section_id", sectionIds)
+    if (error) throw error
+    return (data || []) as FacultySubjectData[]
+  },
+
   async findByIds(ids) {
     if (ids.length === 0) return []
     const { data, error } = await supabase.from("faculty_subjects").select("*").in("id", ids)

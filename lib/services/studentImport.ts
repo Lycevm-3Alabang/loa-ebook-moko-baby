@@ -181,6 +181,35 @@ export async function importStudents(
     }
   }
 
+  // ── Faculty-subject slots: ONE read per chunk, not one per row ──
+  //
+  // This read used to sit inside the row loop as a per-row
+  // findBySubjectSectionAndFaculty, making the loop O(rows) in network latency
+  // rather than in work. See faculty-subject.repository.ts:findManyBySubjectSectionIds.
+  //
+  // Grouping key is (subject_id, section_id, "semesterId") — the columns of
+  // UNIQUE(subject_id, section_id, "semesterId") — so a pair holding one row per
+  // semester still resolves deterministically. Resolution order is the active
+  // semester first, then a legacy null-semester row, matching what the per-row
+  // finders returned; another term's mapping is never substituted.
+  const slotSubjectIds = [...new Set([...subjects.values()].map((s) => s.id))]
+  const slotSectionIds = [...new Set([...sections.values()].map((s) => s.id))]
+  const slotRows = await facultySubjectRepository.findManyBySubjectSectionIds(slotSubjectIds, slotSectionIds)
+  const slotsByPair = new Map<string, { id: string; faculty_id: string; semesterId?: string | null }[]>()
+  for (const row of slotRows) {
+    const key = `${row.subject_id}|${row.section_id}`
+    const bucket = slotsByPair.get(key)
+    if (bucket) bucket.push(row)
+    else slotsByPair.set(key, [row])
+  }
+  const resolveSlot = (subjectId: string, sectionId: string) => {
+    const candidates = slotsByPair.get(`${subjectId}|${sectionId}`)
+    if (!candidates || candidates.length === 0) return null
+    return candidates.find((c) => c.semesterId === semesterId)
+      ?? candidates.find((c) => c.semesterId === null)
+      ?? null
+  }
+
   const toEnroll: { student_id: string; section_id: string; faculty_subject_id?: string | null; semesterId?: string | null }[] = []
 
   for (let i = 0; i < rows.length; i++) {
@@ -211,17 +240,23 @@ export async function importStudents(
         failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: `Faculty "${facEmail}" not found` })
         continue
       }
-      mapping = await facultySubjectRepository.findBySubjectSectionAndFaculty(subject.id, section.id, facUser.id)
+      // One mapping per (subject, section) per semester, so a named faculty row
+      // matches exactly when the slot's owner is that faculty.
+      const slot = resolveSlot(subject.id, section.id)
+      mapping = slot && slot.faculty_id === facUser.id ? { id: slot.id } : null
       if (!mapping) {
         failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: `${facEmail} not assigned to ${r.subjectCode} in ${sectionLabel}` })
         continue
       }
     } else {
-      mapping = await facultySubjectRepository.findBySubjectAndSection(subject.id, section.id)
-      if (!mapping) {
+      // Blank faculty email: fall back to whatever the slot already holds,
+      // including the dummy faculty for an unassigned slot.
+      const slot = resolveSlot(subject.id, section.id)
+      if (!slot) {
         failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: `No faculty assigned to ${r.subjectCode} in ${sectionLabel}` })
         continue
       }
+      mapping = { id: slot.id }
     }
 
     toEnroll.push({ student_id: user.id, section_id: section.id, faculty_subject_id: mapping.id, semesterId })

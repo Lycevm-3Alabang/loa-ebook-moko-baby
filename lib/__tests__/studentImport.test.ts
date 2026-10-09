@@ -18,6 +18,7 @@ vi.mock("@/lib/repositories/factory", () => ({
   facultySubjectRepository: {
     findBySubjectSectionAndFaculty: vi.fn(),
     findBySubjectAndSection: vi.fn(),
+    findManyBySubjectSectionIds: vi.fn(),
   },
   studentEnrollmentRepository: {
     addEnrollments: vi.fn(),
@@ -91,10 +92,15 @@ function arrangeTables(options: {
       })
       return map
     })
-  ;(factory.facultySubjectRepository.findBySubjectSectionAndFaculty as ReturnType<typeof vi.fn>)
-    .mockImplementation(async () => options.namedMapping === undefined ? MAPPING : options.namedMapping)
-  ;(factory.facultySubjectRepository.findBySubjectAndSection as ReturnType<typeof vi.fn>)
-    .mockImplementation(async () => options.slotMapping === undefined ? MAPPING : options.slotMapping)
+  // Both the named-faculty path and the blank-faculty path now resolve from ONE
+  // batched read. Either option set means a slot exists; the row is owned by
+  // FACULTY so the named-faculty assertion still holds.
+  ;(factory.facultySubjectRepository.findManyBySubjectSectionIds as ReturnType<typeof vi.fn>)
+    .mockImplementation(async (subjectIds: string[], sectionIds: string[]) => {
+      if (options.namedMapping == null && options.slotMapping == null) return []
+      if (!subjectIds.includes(SUBJ.id) || !sectionIds.includes(SEC.id)) return []
+      return [{ id: MAPPING.id, subject_id: SUBJ.id, section_id: SEC.id, faculty_id: FACULTY.id, semesterId: null }]
+    })
   ;(factory.studentEnrollmentRepository.addEnrollments as ReturnType<typeof vi.fn>)
     .mockResolvedValue({ inserted: 0, skipped: 0, skippedItems: [] })
 
@@ -122,9 +128,10 @@ describe("importStudents — faculty inserts prerequisites, student looks them u
 
     expect(result.enrolled).toBe(1)
     expect(result.failed).toHaveLength(0)
-    expect(factory.facultySubjectRepository.findBySubjectSectionAndFaculty)
-      .toHaveBeenCalledWith(SUBJ.id, SEC.id, FACULTY.id)
-    expect(factory.facultySubjectRepository.findBySubjectAndSection).not.toHaveBeenCalled()
+    // ONE batched read for the whole chunk, not one await per row.
+    expect(factory.facultySubjectRepository.findManyBySubjectSectionIds).toHaveBeenCalledTimes(1)
+    expect(factory.facultySubjectRepository.findManyBySubjectSectionIds)
+      .toHaveBeenCalledWith([SUBJ.id], [SEC.id])
   })
 
   it("enrols a blank-faculty row via the subject+section mapping — the slice-3 fallback", async () => {
@@ -142,10 +149,8 @@ describe("importStudents — faculty inserts prerequisites, student looks them u
 
     expect(result.enrolled).toBe(1)
     expect(result.failed).toHaveLength(0)
-    // Proof the fallback ran, not the exact-match path.
-    expect(factory.facultySubjectRepository.findBySubjectAndSection)
-      .toHaveBeenCalledWith(SUBJ.id, SEC.id)
-    expect(factory.facultySubjectRepository.findBySubjectSectionAndFaculty).not.toHaveBeenCalled()
+    // The blank-faculty path resolves from the SAME single batched read.
+    expect(factory.facultySubjectRepository.findManyBySubjectSectionIds).toHaveBeenCalledTimes(1)
   })
 
   it("still fails a blank-faculty row when no mapping owns that slot", async () => {
@@ -290,6 +295,83 @@ describe("importStudents — enrollments", () => {
 
     expect(result.enrolled).toBe(0)
     expect(factory.studentEnrollmentRepository.addEnrollments).not.toHaveBeenCalled()
+  })
+})
+
+// ═══ D7: the mapping read is per-chunk, not per-row ═══════════════
+
+describe("importStudents — batched faculty-subject resolution", () => {
+  it("reads the slot map ONCE for many rows sharing it", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
+
+    const rows = Array.from({ length: 20 }, (_, i) =>
+      baseStudentRow({ email: `student${i}@itmlyceumalabang.onmicrosoft.com` }),
+    )
+
+    await importStudents(rows, null, null)
+
+    // The pre-D7 shape awaited one findBySubjectSectionAndFaculty per row, so
+    // this would have been 20 calls — each a PostgREST round trip.
+    expect(factory.facultySubjectRepository.findManyBySubjectSectionIds).toHaveBeenCalledTimes(1)
+    expect(factory.facultySubjectRepository.findBySubjectSectionAndFaculty).not.toHaveBeenCalled()
+    expect(factory.facultySubjectRepository.findBySubjectAndSection).not.toHaveBeenCalled()
+  })
+
+  it("does not call the per-row finders at all", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
+
+    await importStudents([baseStudentRow()], null, null)
+
+    expect(factory.facultySubjectRepository.findBySubjectSectionAndFaculty).not.toHaveBeenCalled()
+    expect(factory.facultySubjectRepository.findBySubjectAndSection).not.toHaveBeenCalled()
+  })
+
+  it("picks the ACTIVE semester's slot, never another term's", async () => {
+    const { supabase: _unused } = { supabase: null }
+    // Two rows for one pair — one per semester, which UNIQUE(subject, section,
+    // "semesterId") permits. Register the active semester's owner.
+    arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
+    ;(factory.facultySubjectRepository.findManyBySubjectSectionIds as ReturnType<typeof vi.fn>)
+      .mockResolvedValue([
+        { id: "fs-2026-1", subject_id: SUBJ.id, section_id: SEC.id, faculty_id: FACULTY.id, semesterId: "sem-2026-1" },
+        { id: "fs-2026-2", subject_id: SUBJ.id, section_id: SEC.id, faculty_id: "other-faculty", semesterId: "sem-2026-2" },
+      ])
+
+    const result = await importStudents([baseStudentRow()], null, "sem-2026-1")
+
+    expect(result.enrolled).toBe(1)
+    expect(factory.studentEnrollmentRepository.addEnrollments).toHaveBeenCalledWith([
+      expect.objectContaining({ faculty_subject_id: "fs-2026-1", semesterId: "sem-2026-1" }),
+    ])
+  })
+
+  it("falls back to a legacy null-semester slot when the active term has none", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
+    ;(factory.facultySubjectRepository.findManyBySubjectSectionIds as ReturnType<typeof vi.fn>)
+      .mockResolvedValue([
+        { id: "fs-legacy", subject_id: SUBJ.id, section_id: SEC.id, faculty_id: FACULTY.id, semesterId: null },
+      ])
+
+    const result = await importStudents([baseStudentRow()], null, "sem-2026-2")
+
+    expect(result.enrolled).toBe(1)
+    expect(factory.studentEnrollmentRepository.addEnrollments).toHaveBeenCalledWith([
+      expect.objectContaining({ faculty_subject_id: "fs-legacy" }),
+    ])
+  })
+
+  it("fails the row when the active term has no slot and no legacy one", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
+    ;(factory.facultySubjectRepository.findManyBySubjectSectionIds as ReturnType<typeof vi.fn>)
+      .mockResolvedValue([
+        { id: "fs-2026-1", subject_id: SUBJ.id, section_id: SEC.id, faculty_id: FACULTY.id, semesterId: "sem-2026-1" },
+      ])
+
+    const result = await importStudents([baseStudentRow()], null, "sem-2026-2")
+
+    expect(result.enrolled).toBe(0)
+    expect(result.failed).toHaveLength(1)
+    expect(result.failed[0].remark).toContain("not assigned to CS101 in BSIE-41M2")
   })
 })
 
