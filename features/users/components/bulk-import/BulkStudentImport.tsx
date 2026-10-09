@@ -89,7 +89,13 @@ function parseClientCsv(text: string): { rows: StudentCsvRow[]; error?: string }
 
 const PREVIEW_PAGE_SIZE = 50
 
-const STUDENT_CHUNK_SIZE = 500
+// Rows per request. The student importer resolves the faculty mapping once per row
+// (studentImport.ts), so a chunk costs ~N sequential Supabase round trips. The
+// function runs in iad1 while admins upload from sin1, so each trip carries
+// ~150ms of Pacific latency — 500 rows overran maxDuration=60 and died on 504
+// (FUNCTION_INVOCATION_TIMEOUT) after 62.8s. 100 keeps one request near ~15s.
+// Trade-off accepted: 5x the requests, each idempotent and independently resumable.
+const STUDENT_CHUNK_SIZE = 100
 
 function concatCsvBodies(first: string, next: string): string {
   if (!first) return next

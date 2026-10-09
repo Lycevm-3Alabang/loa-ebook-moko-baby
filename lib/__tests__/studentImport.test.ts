@@ -96,7 +96,7 @@ function arrangeTables(options: {
   ;(factory.facultySubjectRepository.findBySubjectAndSection as ReturnType<typeof vi.fn>)
     .mockImplementation(async () => options.slotMapping === undefined ? MAPPING : options.slotMapping)
   ;(factory.studentEnrollmentRepository.addEnrollments as ReturnType<typeof vi.fn>)
-    .mockResolvedValue({ inserted: 0, skipped: 0 })
+    .mockResolvedValue({ inserted: 0, skipped: 0, skippedItems: [] })
 
   return { created }
 }

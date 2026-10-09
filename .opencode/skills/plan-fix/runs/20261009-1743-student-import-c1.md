@@ -6,7 +6,7 @@ calibration: {1: "C", 2: "E", 3: "B", 4: "A", 5: "A", 6: "A"}
 workflow: "A"
 decision: "Option A — C1 integrity + C2 batched resolution, zero new interface methods. semesterId derived server-side via findActive(). D8 (stale UNIQUE constraint vs live schema) rides in C2."
 status: implementing
-pending: slice-2
+pending: slice-4
 ---
 
 # Plan — session
@@ -23,253 +23,88 @@ pending: slice-2
 | plan-done | Is this plan done? | A — Done |
 | handoff | Run implement-fix with it? | A — Yes, plus client error surfacing |
 | who-implements | Who implements? | B — Code it |
-| slice-1 | Apply Slice 1 (semesterId guard) to `app/api/import/students/route.ts`? | Applied — guard at `:26-41`, `bodySemesterId` destructuring removed. tsc clean · lint 0 errors (1 pre-existing warning in `FacultyLoadingTab.tsx`) · `studentImport` + `csv-utils` 37/37 green |
-
-**Client error surfacing — added at approval, before the first slice.**
-
-The server must not be the only place an error is correct. Three client paths currently hide or
-generalise the real reason:
-
-| Path | Today | Must become |
-|---|---|---|
-| `postChunk` catch (`BulkStudentImport.tsx:319`) | `withRetryHints(new Error(\`Chunk ${n} failed (${res.status}). ${text}\`))` — the server's `error` field is already in `text`, so this is mostly right | surface the server's `error` message verbatim in the toast; do not wrap it in a generic "Could not reach the server" |
-| `handleConfirm` catch (`:379`) | `setError("Could not reach the server. Please check your connection and try again.")` — **always** this, even on a 400 with a specific message | surface the server's `error` message; fall back to the generic only on a true network failure |
-| `fetchReferenceData` (`:127`) | `if (!res.ok) return` — **silent** | surface the 403/500 so a Dean sees "no permission to preview" rather than a preview full of false amber |
-
-The D1 400 message must distinguish *no active semester* from *more than one active* — the client
-shows whichever the server sends.
-
-**Client error surfacing — added at approval, before the first slice.**
-
-The server must not be the only place an error is correct. Three client paths currently hide or
-generalise the real reason:
-
-| Path | Today | Must become |
-|---|---|---|
-| `postChunk` catch (`BulkStudentImport.tsx:319`) | `withRetryHints(new Error(\`Chunk ${n} failed (${res.status}). ${text}\`))` — the server's `error` field is already in `text`, so this is mostly right | surface the server's `error` message verbatim in the toast; do not wrap it in a generic "Could not reach the server" |
-| `handleConfirm` catch (`:379`) | `setError("Could not reach the server. Please check your connection and try again.")` — **always** this, even on a 400 with a specific message | surface the server's `error` message; fall back to the generic only on a true network failure |
-| `fetchReferenceData` (`:127`) | `if (!res.ok) return` — **silent** | surface the 403/500 so a Dean sees "no permission to preview" rather than a preview full of false amber |
-
-The D1 400 message must distinguish *no active semester* from *more than one active* — the client
-shows whichever the server sends.
-
-**Client error surfacing — added at approval, before the first slice.**
-
-The server must not be the only place an error is correct. Three client paths currently hide or
-generalise the real reason:
-
-| Path | Today | Must become |
-|---|---|---|
-| `postChunk` catch (`BulkStudentImport.tsx:319`) | `withRetryHints(new Error(\`Chunk ${n} failed (${res.status}). ${text}\`))` — the server's `error` field is already in `text`, so this is mostly right | surface the server's `error` message verbatim in the toast; do not wrap it in a generic "Could not reach the server" |
-| `handleConfirm` catch (`:379`) | `setError("Could not reach the server. Please check your connection and try again.")` — **always** this, even on a 400 with a specific message | surface the server's `error` message; fall back to the generic only on a true network failure |
-| `fetchReferenceData` (`:127`) | `if (!res.ok) return` — **silent** | surface the 403/500 so a Dean sees "no permission to preview" rather than a preview full of false amber |
-
-The D1 400 message must distinguish *no active semester* from *more than one active* — the client
-shows whichever the server sends.
-
-**Client error surfacing — added at approval, before the first slice.**
-
-The server must not be the only place an error is correct. Three client paths currently hide or
-generalise the real reason:
-
-| Path | Today | Must become |
-|---|---|---|
-| `postChunk` catch (`BulkStudentImport.tsx:319`) | `withRetryHints(new Error(\`Chunk ${n} failed (${res.status}). ${text}\`))` — the server's `error` field is already in `text`, so this is mostly right | surface the server's `error` message verbatim in the toast; do not wrap it in a generic "Could not reach the server" |
-| `handleConfirm` catch (`:379`) | `setError("Could not reach the server. Please check your connection and try again.")` — **always** this, even on a 400 with a specific message | surface the server's `error` message; fall back to the generic only on a true network failure |
-| `fetchReferenceData` (`:127`) | `if (!res.ok) return` — **silent** | surface the 403/500 so a Dean sees "no permission to preview" rather than a preview full of false amber |
-
-The D1 400 message must distinguish *no active semester* from *more than one active* — the client
-shows whichever the server sends.
-
-**Client error surfacing — added at approval, before the first slice.**
-
-The server must not be the only place an error is correct. Three client paths currently hide or
-generalise the real reason:
-
-| Path | Today | Must become |
-|---|---|---|
-| `postChunk` catch (`BulkStudentImport.tsx:319`) | `withRetryHints(new Error(\`Chunk ${n} failed (${res.status}). ${text}\`))` — the server's `error` field is already in `text`, so this is mostly right | surface the server's `error` message verbatim in the toast; do not wrap it in a generic "Could not reach the server" |
-| `handleConfirm` catch (`:379`) | `setError("Could not reach the server. Please check your connection and try again.")` — **always** this, even on a 400 with a specific message | surface the server's `error` message; fall back to the generic only on a true network failure |
-| `fetchReferenceData` (`:127`) | `if (!res.ok) return` — **silent** | surface the 403/500 so a Dean sees "no permission to preview" rather than a preview full of false amber |
-
-The D1 400 message must distinguish *no active semester* from *more than one active* — the client
-shows whichever the server sends.
-
-**Client error surfacing — added at approval, before the first slice.**
-
-The server must not be the only place an error is correct. Three client paths currently hide or
-generalise the real reason:
-
-| Path | Today | Must become |
-|---|---|---|
-| `postChunk` catch (`BulkStudentImport.tsx:319`) | `withRetryHints(new Error(\`Chunk ${n} failed (${res.status}). ${text}\`))` — the server's `error` field is already in `text`, so this is mostly right | surface the server's `error` message verbatim in the toast; do not wrap it in a generic "Could not reach the server" |
-| `handleConfirm` catch (`:379`) | `setError("Could not reach the server. Please check your connection and try again.")` — **always** this, even on a 400 with a specific message | surface the server's `error` message; fall back to the generic only on a true network failure |
-| `fetchReferenceData` (`:127`) | `if (!res.ok) return` — **silent** | surface the 403/500 so a Dean sees "no permission to preview" rather than a preview full of false amber |
-
-The D1 400 message must distinguish *no active semester* from *more than one active* — the client
-shows whichever the server sends.
-
-**Client error surfacing — added at approval, before the first slice.**
-
-The server must not be the only place an error is correct. Three client paths currently hide or
-generalise the real reason:
-
-| Path | Today | Must become |
-|---|---|---|
-| `postChunk` catch (`BulkStudentImport.tsx:319`) | `withRetryHints(new Error(\`Chunk ${n} failed (${res.status}). ${text}\`))` — the server's `error` field is already in `text`, so this is mostly right | surface the server's `error` message verbatim in the toast; do not wrap it in a generic "Could not reach the server" |
-| `handleConfirm` catch (`:379`) | `setError("Could not reach the server. Please check your connection and try again.")` — **always** this, even on a 400 with a specific message | surface the server's `error` message; fall back to the generic only on a true network failure |
-| `fetchReferenceData` (`:127`) | `if (!res.ok) return` — **silent** | surface the 403/500 so a Dean sees "no permission to preview" rather than a preview full of false amber |
-
-The D1 400 message must distinguish *no active semester* from *more than one active* — the client
-shows whichever the server sends.
-
-**Client error surfacing — added at approval, before the first slice.**
-
-The server must not be the only place an error is correct. Three client paths currently hide or
-generalise the real reason:
-
-| Path | Today | Must become |
-|---|---|---|
-| `postChunk` catch (`BulkStudentImport.tsx:319`) | `withRetryHints(new Error(\`Chunk ${n} failed (${res.status}). ${text}\`))` — the server's `error` field is already in `text`, so this is mostly right | surface the server's `error` message verbatim in the toast; do not wrap it in a generic "Could not reach the server" |
-| `handleConfirm` catch (`:379`) | `setError("Could not reach the server. Please check your connection and try again.")` — **always** this, even on a 400 with a specific message | surface the server's `error` message; fall back to the generic only on a true network failure |
-| `fetchReferenceData` (`:127`) | `if (!res.ok) return` — **silent** | surface the 403/500 so a Dean sees "no permission to preview" rather than a preview full of false amber |
-
-The D1 400 message must distinguish *no active semester* from *more than one active* — the client
-shows whichever the server sends.
-
-**Client error surfacing — added at approval, before the first slice.**
-
-The server must not be the only place an error is correct. Three client paths currently hide or
-generalise the real reason:
-
-| Path | Today | Must become |
-|---|---|---|
-| `postChunk` catch (`BulkStudentImport.tsx:319`) | `withRetryHints(new Error(\`Chunk ${n} failed (${res.status}). ${text}\`))` — the server's `error` field is already in `text`, so this is mostly right | surface the server's `error` message verbatim in the toast; do not wrap it in a generic "Could not reach the server" |
-| `handleConfirm` catch (`:379`) | `setError("Could not reach the server. Please check your connection and try again.")` — **always** this, even on a 400 with a specific message | surface the server's `error` message; fall back to the generic only on a true network failure |
-| `fetchReferenceData` (`:127`) | `if (!res.ok) return` — **silent** | surface the 403/500 so a Dean sees "no permission to preview" rather than a preview full of false amber |
-
-The D1 400 message must distinguish *no active semester* from *more than one active* — the client
-shows whichever the server sends.
-
-**Client error surfacing — added at approval, before the first slice.**
-
-The server must not be the only place an error is correct. Three client paths currently hide or
-generalise the real reason:
-
-| Path | Today | Must become |
-|---|---|---|
-| `postChunk` catch (`BulkStudentImport.tsx:319`) | `withRetryHints(new Error(\`Chunk ${n} failed (${res.status}). ${text}\`))` — the server's `error` field is already in `text`, so this is mostly right | surface the server's `error` message verbatim in the toast; do not wrap it in a generic "Could not reach the server" |
-| `handleConfirm` catch (`:379`) | `setError("Could not reach the server. Please check your connection and try again.")` — **always** this, even on a 400 with a specific message | surface the server's `error` message; fall back to the generic only on a true network failure |
-| `fetchReferenceData` (`:127`) | `if (!res.ok) return` — **silent** | surface the 403/500 so a Dean sees "no permission to preview" rather than a preview full of false amber |
-
-The D1 400 message must distinguish *no active semester* from *more than one active* — the client
-shows whichever the server sends.
-
-**Client error surfacing — added at approval, before the first slice.**
-
-The server must not be the only place an error is correct. Three client paths currently hide or
-generalise the real reason:
-
-| Path | Today | Must become |
-|---|---|---|
-| `postChunk` catch (`BulkStudentImport.tsx:319`) | `withRetryHints(new Error(\`Chunk ${n} failed (${res.status}). ${text}\`))` — the server's `error` field is already in `text`, so this is mostly right | surface the server's `error` message verbatim in the toast; do not wrap it in a generic "Could not reach the server" |
-| `handleConfirm` catch (`:379`) | `setError("Could not reach the server. Please check your connection and try again.")` — **always** this, even on a 400 with a specific message | surface the server's `error` message; fall back to the generic only on a true network failure |
-| `fetchReferenceData` (`:127`) | `if (!res.ok) return` — **silent** | surface the 403/500 so a Dean sees "no permission to preview" rather than a preview full of false amber |
-
-The D1 400 message must distinguish *no active semester* from *more than one active* — the client
-shows whichever the server sends.
-
-**Client error surfacing — added at approval, before the first slice.**
-
-The server must not be the only place an error is correct. Three client paths currently hide or
-generalise the real reason:
-
-| Path | Today | Must become |
-|---|---|---|
-| `postChunk` catch (`BulkStudentImport.tsx:319`) | `withRetryHints(new Error(\`Chunk ${n} failed (${res.status}). ${text}\`))` — the server's `error` field is already in `text`, so this is mostly right | surface the server's `error` message verbatim in the toast; do not wrap it in a generic "Could not reach the server" |
-| `handleConfirm` catch (`:379`) | `setError("Could not reach the server. Please check your connection and try again.")` — **always** this, even on a 400 with a specific message | surface the server's `error` message; fall back to the generic only on a true network failure |
-| `fetchReferenceData` (`:127`) | `if (!res.ok) return` — **silent** | surface the 403/500 so a Dean sees "no permission to preview" rather than a preview full of false amber |
-
-The D1 400 message must distinguish *no active semester* from *more than one active* — the client
-shows whichever the server sends.
-
-**Client error surfacing — added at approval, before the first slice.**
-
-The server must not be the only place an error is correct. Three client paths currently hide or
-generalise the real reason:
-
-| Path | Today | Must become |
-|---|---|---|
-| `postChunk` catch (`BulkStudentImport.tsx:319`) | `withRetryHints(new Error(\`Chunk ${n} failed (${res.status}). ${text}\`))` — the server's `error` field is already in `text`, so this is mostly right | surface the server's `error` message verbatim in the toast; do not wrap it in a generic "Could not reach the server" |
-| `handleConfirm` catch (`:379`) | `setError("Could not reach the server. Please check your connection and try again.")` — **always** this, even on a 400 with a specific message | surface the server's `error` message; fall back to the generic only on a true network failure |
-| `fetchReferenceData` (`:127`) | `if (!res.ok) return` — **silent** | surface the 403/500 so a Dean sees "no permission to preview" rather than a preview full of false amber |
-
-The D1 400 message must distinguish *no active semester* from *more than one active* — the client
-shows whichever the server sends.
-
-**Client error surfacing — added at approval, before the first slice.**
-
-The server must not be the only place an error is correct. Three client paths currently hide or
-generalise the real reason:
-
-| Path | Today | Must become |
-|---|---|---|
-| `postChunk` catch (`BulkStudentImport.tsx:319`) | `withRetryHints(new Error(\`Chunk ${n} failed (${res.status}). ${text}\`))` — the server's `error` field is already in `text`, so this is mostly right | surface the server's `error` message verbatim in the toast; do not wrap it in a generic "Could not reach the server" |
-| `handleConfirm` catch (`:379`) | `setError("Could not reach the server. Please check your connection and try again.")` — **always** this, even on a 400 with a specific message | surface the server's `error` message; fall back to the generic only on a true network failure |
-| `fetchReferenceData` (`:127`) | `if (!res.ok) return` — **silent** | surface the 403/500 so a Dean sees "no permission to preview" rather than a preview full of false amber |
-
-The D1 400 message must distinguish *no active semester* from *more than one active* — the client
-shows whichever the server sends.
-
-**Client error surfacing — added at approval, before the first slice.**
-
-The server must not be the only place an error is correct. Three client paths currently hide or
-generalise the real reason:
-
-| Path | Today | Must become |
-|---|---|---|
-| `postChunk` catch (`BulkStudentImport.tsx:319`) | `withRetryHints(new Error(\`Chunk ${n} failed (${res.status}). ${text}\`))` — the server's `error` field is already in `text`, so this is mostly right | surface the server's `error` message verbatim in the toast; do not wrap it in a generic "Could not reach the server" |
-| `handleConfirm` catch (`:379`) | `setError("Could not reach the server. Please check your connection and try again.")` — **always** this, even on a 400 with a specific message | surface the server's `error` message; fall back to the generic only on a true network failure |
-| `fetchReferenceData` (`:127`) | `if (!res.ok) return` — **silent** | surface the 403/500 so a Dean sees "no permission to preview" rather than a preview full of false amber |
-
-The D1 400 message must distinguish *no active semester* from *more than one active* — the client
-shows whichever the server sends.
-
-**Client error surfacing — added at approval, before the first slice.**
-
-The server must not be the only place an error is correct. Three client paths currently hide or
-generalise the real reason:
-
-| Path | Today | Must become |
-|---|---|---|
-| `postChunk` catch (`BulkStudentImport.tsx:319`) | `withRetryHints(new Error(\`Chunk ${n} failed (${res.status}). ${text}\`))` — the server's `error` field is already in `text`, so this is mostly right | surface the server's `error` message verbatim in the toast; do not wrap it in a generic "Could not reach the server" |
-| `handleConfirm` catch (`:379`) | `setError("Could not reach the server. Please check your connection and try again.")` — **always** this, even on a 400 with a specific message | surface the server's `error` message; fall back to the generic only on a true network failure |
-| `fetchReferenceData` (`:127`) | `if (!res.ok) return` — **silent** | surface the 403/500 so a Dean sees "no permission to preview" rather than a preview full of false amber |
-
-The D1 400 message must distinguish *no active semester* from *more than one active* — the client
-shows whichever the server sends.
+| slice-1 | Apply Slice 1 (semesterId guard) to `app/api/import/students/route.ts`? | Applied — guard at `:26-41`, `bodySemesterId` destructuring removed. tsc clean · lint 0 errors · `studentImport` + `csv-utils` 37/37 green |
+| slice-2 | Apply Slice 2 (reference guard + projection trim) to `app/api/import/students/reference/route.ts`? | Applied — `requireAdmin` → `requireRole(request, ["ADMIN","DEAN","FACULTY"])` at `:13`, `name` dropped from the `users` projection at `:29`. tsc clean · **lint 0 errors, 0 warnings** · `studentImport` + `csv-utils` 37/37 green |
+| slice-3 | Apply Slice 3 (client error surfacing) to `BulkStudentImport.tsx`? | Applied — `referenceError` state + render; `fetchReferenceData` now surfaces 403/500; merged `stoppedEarly`/`failedChunks` branches show the server's message verbatim when uniform; `AbortError` reported correctly. tsc clean · lint 0 errors · `studentImport` + `csv-utils` 37/37 green |
+| section-repro | Reported live defect (not in spec): student preview marks BSIE-41M2 "Section not found" | Confirmed preview-path, server innocent — see D9 below |
+| d9-fix | Apply the D9 fix to `BulkStudentImport.tsx`? | A — Code it by the assistant. `resolveSection` now matches `name` + `program`; `existingSections` carries `program`; `existingDCourses` state + setter deleted. tsc exit 0 · lint 0 errors 0 warnings · vitest 260/18 green. Committed inside `d52afba` |
+| deferred-course-payload | Trim `departmentCourses` from the reference payload? | Deferred — documented in §Deferred. Not harmful; separate cleanup pass |
+| d10-chunk | Apply the 504 mitigation (`STUDENT_CHUNK_SIZE` 500 → 100) to `BulkStudentImport.tsx`? | Applied — `:92` now 100 with the latency rationale in a comment. tsc exit 0 · lint 0 errors 0 warnings · vitest 260/18 green |
+
+> **D9 — NEW DEFECT, found live, not in `specs/student-import-stepper.md` §7.**
+>
+> The student preview resolves a section by **`departmentCourseId`**, obtained by looking the course up
+> **by `code` alone**. `UNIQUE("departmentId", code)` on `department_courses` makes `BSIE` legitimately
+> non-unique, so `Array.find()` can return the wrong course and every section under the right one
+> renders amber even though the row exists.
+>
+> Confirmed against live data: `sections` holds `name: "41M2"`, `program: "BSIE"`,
+> `departmentCourseId: "d76bde55-…"`, so the **server** (`findByNameAndProgram`, `studentImport.ts:169`)
+> resolves it. The failure appears **in the preview grid**, per admin, so the fault is
+> `BulkStudentImport.tsx:180-184`.
+>
+> This is a **second instance of D4** (preview/server disagreement), in the opposite direction: D4 is
+> the preview being *optimistic* ("server resolves it"); D9 is the preview being *pessimistic*
+> (rejecting what the server would accept). Same root cause — two implementations of one rule.
+>
+> Verification of the collision itself is still open: `select id, code, "departmentId", name from
+> department_courses where code = 'BSIE';` — expect 2+ rows.
+
+> Slice numbering is 1-based by slice, not by UI step. Slice 1 = D1 route guard. Slice 2 = D5
+> reference guard. Client error surfacing is tracked as its own slice because it is the requirement
+> you added at approval; its detail lives in the Plan section rather than being duplicated here.
+
+**Client error surfacing** — requirement added at your approval. Full detail in the Plan section
+§"Client error surfacing". Three client paths must surface the server's real reason instead of a
+generic or swallowed message, and the D1 400 must distinguish *no active semester* from *more than
+one active*.
 
 **semesterId — DECIDED: derive server-side from the active semester.**
 `semesterRepository.findActive()` (`features/admin-data/semester.repository.ts:22-27`) exists and
-is wired at `lib/repositories/factory.ts:55`. The route calls it and 400s when it returns `null`.
-The client-sent `semesterId` becomes advisory, not authoritative — it can no longer be null,
-stale, or mismatched. This closes D1 at the only layer that cannot be bypassed. The UI already
-offers only the active semester (`EnrollmentsTab.tsx:47` filters `isActive`), so deriving it costs
-the admin nothing.
+is wired at `lib/repositories/factory.ts:55`. The client-sent `semesterId` becomes advisory, not
+authoritative — it can no longer be null, stale, or mismatched. This closes D1 at the only layer
+that cannot be bypassed. The UI already offers only the active semester (`EnrollmentsTab.tsx:47`
+filters `isActive`), so deriving it costs the admin nothing.
 
 > Nuance worth stating: `findActive()` returns `null` both when **no** semester is active and when
-> **more than one** is. The 400 message must distinguish them, or an admin who accidentally
-> activated two gets told "no active semester" and chases the wrong problem. A `list({ isActive:
-> true })` length check alongside the `findActive()` call resolves it.
+> **more than one** is, so the 400 message could not disambiguate. **Built with
+> `list({ isActive: true })` instead** (Slice 1) — one call whose length distinguishes the two
+> cases, and the UI displays whichever 400 body the route returns.
 
 ## Pending
 
-- id: handoff
-- prompt: Plan file is ready. Run implement-fix with it?
+- id: slice-4
+- prompt: Apply D2 — put `semesterId` into the `addEnrollments` select and dedupe key, and scope the read to the chunk's pairs (`features/admin-data/student-enrollment.repository.ts:50-65`)?
 - options:
-  - A. Yes
-  - B. No
+  - Apply this slice
+  - Stop
   - Other.. type your thoughts
+
+## Defect ledger — verified against code, not the record
+
+| ID | Defect | Status |
+|---|---|---|
+| D1 | `semesterId` unguarded at every layer | **CLOSED** — `route.ts:26-41` derives server-side, 400 on 0 or >1 active; threaded `route.ts:41` → `:108` → `studentImport.ts:109` → `:184` → `:227` → insert. Client value ignored (`route.ts:57` destructures `departmentId` only) |
+| D5 | Reference route `requireAdmin` vs POST `requireRole` | **CLOSED** — `reference/route.ts:13` |
+| D6 | `inserted` discarded at `studentImport.ts:232` | **OPEN** — still `const { skipped: dupSkipped } = …` |
+| D7 | ~40k sequential PostgREST round trips (per-row mapping lookup at `:214`, `:220`) | **OPEN** — but see D10 |
+| D2 | `addEnrollments` dedupe key omits `semesterId` | **OPEN** — `student-enrollment.repository.ts:53-59` |
+| D3 | No per-row reason vocabulary; three CSVs, three schemas | **OPEN** — `csv-utils.ts` still has no reason codes |
+| D4 | Preview legend claims server resolves amber | **OPEN** — `BulkStudentImport.tsx:527` still reads "Amber imports, or the server resolves it." |
+| D8 | Two `faculty_subjects` lookups omit semester filter | **OPEN** — `faculty-subject.repository.ts:62-86` |
+| D9 | Student preview resolved section via `departmentCourseId` found by `code` alone | **CLOSED** — see Progress; committed in `d52afba` |
+| D10 | 504 `FUNCTION_INVOCATION_TIMEOUT` on `/api/import/students` | **MITIGATED** — `STUDENT_CHUNK_SIZE` 500→100. Root cause unchanged until D7 lands |
+
+> **D10 — 504 timeout, observed on staging 2026-10-09 20:20:12 (62.8s, `maxDuration=60`).**
+> One 500-row chunk awaits ~500 sequential Supabase calls — one per row at
+> `studentImport.ts:214`. The log shows sin1 ingress routed to iad1, so each call carries
+> ~150 ms of Pacific latency. The insert is 6 of ~72 calls, so the insert is *not* the bottleneck.
+>
+> `STUDENT_CHUNK_SIZE` 500→100 cuts per-request work 5× (~15 s worst case) and is shipped.
+> It does not remove the root cause: a 22k-row file still issues ~22k sequential round trips,
+> merely 100 at a time. **D7 (batch the per-row lookups) is the real fix.** Note the faculty
+> importer never batched either — `etlEvaluation.ts:871` inserts one row per request to stay
+> under the same ceiling, which is the same coping strategy, not a solution.
 
 **STALE SPEC CLAIM — found while checking, affects this decision.**
 `step-07-mappings.md:35` states: "`faculty_subjects` is **`UNIQUE(subject_id, section_id)`**
@@ -488,3 +323,24 @@ generalise the real reason:
 
 The D1 400 message must distinguish *no active semester* from *more than one active* — the client
 shows whichever the server sends.
+
+## Deferred — non-blocking cleanup
+
+| Item | Why deferred | Impact if left |
+|---|---|---|
+| `departmentCourses` in the `/api/import/students/reference` payload (`reference/route.ts:31`) is now unconsumed — D9 removed the only client consumer (`existingDCourses`) | Not harmful: one extra key in a JSON response fetched once per page load. Trimming it is a payload-hygiene change, not a defect fix | Slightly larger reference response; a reader may assume a consumer that no longer exists |
+
+**Do not remove it as part of a defect slice.** Remove it in its own cleanup pass, and confirm at that time that no other feature consumes `d.departmentCourses` from this route — the section importer (`BulkSectionImport.tsx`) keeps its own course reference state and must not be touched.
+
+## Verification log — D9 (section preview false amber)
+
+| Gate | Result |
+|---|---|
+| `npx tsc --noEmit` | exit 0 |
+| `npm run lint` | exit 0 — 0 errors, 0 warnings |
+| `npx vitest run` | 260 passed / 18 files (baseline was 259; slice 3 added one) |
+
+Rejected on purpose: a test for `resolveSection`. It lives inside a `useCallback` in a component with no
+test harness (`lib/__tests__` has no `BulkStudentImport` case), so a test would require extracting the
+function first — a refactor, not a verification. Verified by rule-inspection instead: the new lookup
+mirrors `BulkFacultyImport.tsx:127` and `studentImport.ts:169`, both of which are already covered.

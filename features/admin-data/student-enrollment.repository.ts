@@ -48,20 +48,58 @@ export const studentEnrollmentRepository: IStudentEnrollmentRepository = {
   },
 
   async addEnrollments(items) {
-    if (items.length === 0) return { inserted: 0, skipped: 0 }
-    const sectionIds = [...new Set(items.map((i) => i.section_id))]
-    const { data: existing, error: fetchErr } = await supabase
+    if (items.length === 0) return { inserted: 0, skipped: 0, skippedItems: [] }
+
+    // The live constraint is UNIQUE(student_id, faculty_subject_id, "semesterId")
+    // (supabase-schema.sql, Migrations 21 + 25) — NOT (student_id, section_id).
+    // The dedupe key must match it column-for-column: keying without semesterId made a
+    // second term's re-import read every row as already-present and write nothing,
+    // silently returning { inserted: 0, skipped: N }.
+
+    // Scope the read as well as the key. Every item in one chunk shares a semester, so
+    // a fresh term reads ~0 rows and a re-run reads only that term. The previous
+    // .in("section_id", …) selected every enrollment in those sections, so the final
+    // chunk of a run read the whole table to conclude "nothing to do".
+    //
+    // If a caller ever mixes semesters in one call, drop the semester filter rather
+    // than read the wrong subset — the key still carries semesterId, so a stale read
+    // cannot cause a wrong skip.
+    const semesterValues = new Set(items.map((i) => i.semesterId ?? null))
+    const filterBySemester = semesterValues.size === 1
+    const onlySemester = filterBySemester ? [...semesterValues][0] : null
+
+    let q = supabase
       .from("student_enrollments")
-      .select("student_id, section_id, faculty_subject_id")
-      .in("section_id", sectionIds)
+      .select("student_id, faculty_subject_id, \"semesterId\"")
+      .in("student_id", [...new Set(items.map((i) => i.student_id))])
+    const facultySubjectIds = [...new Set(items.map((i) => i.faculty_subject_id).filter((id): id is string => !!id))]
+    if (facultySubjectIds.length > 0) q = q.in("faculty_subject_id", facultySubjectIds)
+    if (filterBySemester) {
+      q = onlySemester ? q.eq("semesterId", onlySemester) : q.is("semesterId", null)
+    }
+
+    const { data: existing, error: fetchErr } = await q
     if (fetchErr) throw fetchErr
-    const existingSet = new Set((existing || []).map((r) => `${r.student_id}|${r.section_id}|${r.faculty_subject_id ?? ""}`))
-    const newItems = items.filter((i) => !existingSet.has(`${i.student_id}|${i.section_id}|${i.faculty_subject_id ?? ""}`))
-    const skipped = items.length - newItems.length
-    if (newItems.length === 0) return { inserted: 0, skipped }
+
+    const keyOf = (i: { student_id: string; faculty_subject_id?: string | null; semesterId?: string | null }) =>
+      `${i.student_id}|${i.faculty_subject_id ?? ""}|${i.semesterId ?? ""}`
+    const existingSet = new Set((existing || []).map((r) =>
+      `${r.student_id}|${r.faculty_subject_id ?? ""}|${r.semesterId ?? ""}`))
+
+    const newItems = items.filter((i) => !existingSet.has(keyOf(i)))
+    const skippedItems = items
+      .filter((i) => existingSet.has(keyOf(i)))
+      .map((i) => ({
+        student_id: i.student_id,
+        faculty_subject_id: i.faculty_subject_id ?? null,
+        section_id: i.section_id,
+      }))
+
+    if (newItems.length === 0) return { inserted: 0, skipped: skippedItems.length, skippedItems }
+
     const { error: insErr } = await supabase.from("student_enrollments").insert(newItems)
     if (insErr) throw insErr
-    return { inserted: newItems.length, skipped }
+    return { inserted: newItems.length, skipped: skippedItems.length, skippedItems }
   },
 
   async getFacultySubjectsByStudent(student_id, faculty_id, semesterId) {
