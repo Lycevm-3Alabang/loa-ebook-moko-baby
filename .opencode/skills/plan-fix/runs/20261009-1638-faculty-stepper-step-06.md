@@ -6,7 +6,7 @@ calibration: {1: "C", 2: "E", 3: "B", 4: "A", 5: "A", 6: "A"}
 workflow: "A"
 decision: "option-A rich items + deptCodeToId — approved"
 status: implementing
-pending: slice-2
+pending: slice-4
 ---
 
 # Plan — Faculty stepper Step 6 faculty-users
@@ -25,10 +25,16 @@ pending: slice-2
 | slice-1 | Apply Slice 1 (service extract) to lib/services/etlEvaluation.ts? | Applied — importFacultyUsersStep + FacultyUserStepItem/Result; npm test 245/245 green |
 | continue-2 | Say continue for Slice 2 (route discriminator)? | Continued |
 
+| slice-2 | Apply Slice 2 (route discriminator) to app/api/import/faculties/route.ts? | Applied — faculty-users branch + import; npm test 245/245 green, tsc clean |
+| continue-3 | Say continue for Slice 3 (client stepper call)? | Continued |
+
+| slice-3 | Apply Slice 3 (client stepper call) to features/admin-data/components/FacultyLoadingTab.tsx? | Applied — handleStep6 + state/panel/trace/resets; tsc clean, npm test 245/245 green |
+| continue-4 | Say continue for Slice 4 (tests)? | Continued |
+
 ## Pending
 
-- id: slice-2
-- prompt: Apply Slice 2 (route discriminator) to app/api/import/faculties/route.ts?
+- id: slice-4
+- prompt: Apply Slice 4 (tests) to lib/__tests__/etlEvaluation.test.ts?
 - options: Apply this slice / Stop / Other.. type your thoughts
 
 ## Decisions
