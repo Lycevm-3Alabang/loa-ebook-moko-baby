@@ -54,7 +54,7 @@ vi.mock("@/lib/supabase", () => {
   }
 })
 
-import { parseFacultySubjectCsv, parseStudentEnrollmentCsv, importFacultySubjects, importStudentEnrollments, importDepartmentsStep, importCoursesStep, importSectionsStep } from "@/lib/services/etlEvaluation"
+import { parseFacultySubjectCsv, parseStudentEnrollmentCsv, importFacultySubjects, importStudentEnrollments, importDepartmentsStep, importCoursesStep, importSectionsStep, importSubjectsStep } from "@/lib/services/etlEvaluation"
 import * as factory from "@/lib/repositories/factory"
 
 // ── Helpers ───────────────────────────────────────────────
@@ -718,6 +718,85 @@ describe("importSectionsStep", () => {
     expect(result.matched).toBe(1)
     expect(result.errors).toHaveLength(0)
     expect(deptCreate()).toHaveBeenCalledWith({ name: "UNKNOWN", code: "UNKNOWN" })
+  })
+})
+
+// ── importSubjectsStep (stepper step 5) ──────────────────────
+
+describe("importSubjectsStep", () => {
+  const subjectUpsert = () => factory.subjectRepository.upsertMany as ReturnType<typeof vi.fn>
+  const deptFind = () => factory.departmentRepository.findByCode as ReturnType<typeof vi.fn>
+  const deptCreate = () => factory.departmentRepository.create as ReturnType<typeof vi.fn>
+
+  const codes315 = Array.from({ length: 315 }, (_, i) => `SUBJ${String(i).padStart(3, "0")}`)
+
+  const subjectMapFor = (codes: string[], created: number) => {
+    const map = new Map(codes.map((c, i) => [c, { id: `subj-${i}` }]))
+    mockSubjectUpsert(map, created)
+  }
+
+  beforeEach(() => {
+    vi.resetAllMocks()
+    deptFind().mockImplementation(async (code: string) =>
+      code === "CCS" ? { id: "dept-ccs", name: "CCS", code: "CCS" }
+        : code === "CAS" ? { id: "dept-cas", name: "CAS", code: "CAS" }
+          : null,
+    )
+    deptCreate().mockImplementation(async (data: { name: string; code: string }) => ({
+      id: `dept-${data.code.toLowerCase()}`, name: data.name, code: data.code,
+    }))
+    ;(factory.facultySubjectRepository.list as ReturnType<typeof vi.fn>).mockResolvedValue([])
+  })
+
+  it("upserts all distinct subjects in a single call", async () => {
+    subjectMapFor(codes315, 315)
+    const result = await importSubjectsStep(codes315)
+    expect(result.stepId).toBe("subjects")
+    expect(result.status).toBe("done")
+    expect(subjectUpsert()).toHaveBeenCalledTimes(1)
+    expect(subjectUpsert().mock.calls[0][0]).toHaveLength(315)
+    expect(result.inserted).toBe(315)
+    expect(result.existing).toBe(0)
+    expect(result.invalid).toHaveLength(0)
+    expect(Object.keys(result.subjectCodeToId)).toHaveLength(315)
+  })
+
+  it("falls back to name = code for every item", async () => {
+    subjectMapFor(codes315, 315)
+    await importSubjectsStep(codes315)
+    const sent = subjectUpsert().mock.calls[0][0] as { code: string; name: string }[]
+    expect(sent.every((s) => s.name === s.code)).toBe(true)
+  })
+
+  it("splits created from existing via the repository count", async () => {
+    subjectMapFor(codes315, 30)
+    const result = await importSubjectsStep(codes315)
+    expect(result.inserted).toBe(30)
+    expect(result.existing).toBe(285)
+  })
+
+  it("trims and dedupes without case-folding, skipping blanks", async () => {
+    subjectMapFor(["CS101", "cs101"], 2)
+    const result = await importSubjectsStep(["  CS101 ", "CS101", "cs101", "   ", ""])
+    expect(subjectUpsert()).toHaveBeenCalledTimes(1)
+    expect(subjectUpsert().mock.calls[0][0]).toEqual([
+      { code: "CS101", name: "CS101" },
+      { code: "cs101", name: "cs101" },
+    ])
+    expect(result.inserted).toBe(2)
+    expect(result.existing).toBe(0)
+    expect(result.invalid).toHaveLength(0)
+  })
+
+  it("leaves the composed importFacultySubjects path unchanged", async () => {
+    mockSubjectUpsert(new Map([["CS101", { id: "subj-1" }]]), 0)
+    mockSectionUpsert(new Map([["32A3|BSIT", { id: "sec-1" }]]), 0)
+    mockFindUsers(new Map([["juan@lyceumalabang.edu.ph", { id: "user-1", email: "juan@lyceumalabang.edu.ph", name: "Juan", role: "FACULTY" }]]))
+    const result = await importFacultySubjects([
+      { email: "juan@lyceumalabang.edu.ph", name: "Juan", subjectCode: "CS101", subjectName: "", sectionName: "32A3", sectionProgram: "BSIT", departmentCode: "UNKNOWN" },
+    ])
+    expect(result.matched).toBe(1)
+    expect(result.errors).toHaveLength(0)
   })
 })
 

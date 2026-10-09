@@ -107,6 +107,15 @@ function FacultyTab() {
     invalid: { key: string; reason: string }[]
     sectionKeyToId: Record<string, string>
   } | null>(null)
+  const [step5Running, setStep5Running] = useState(false)
+  const [step5Result, setStep5Result] = useState<{
+    stepId: string
+    status: string
+    inserted: number
+    existing: number
+    invalid: { key: string; reason: string }[]
+    subjectCodeToId: Record<string, string>
+  } | null>(null)
   const [csvError, setCsvError] = useState("")
   const [csvPreviewPage, setCsvPreviewPage] = useState(0)
   const [lastImportTotal, setLastImportTotal] = useState(0)
@@ -370,6 +379,7 @@ function FacultyTab() {
     setStep2Result(null)
     setStep3Result(null)
     setStep4Result(null)
+    setStep5Result(null)
     setCsvError("")
     try {
       const text = await decodeCsvFile(file)
@@ -524,6 +534,42 @@ function FacultyTab() {
       setCsvError((err as Error).message)
     } finally {
       setStep4Running(false)
+    }
+  }
+
+  const handleStep5Subjects = async () => {
+    if (!csvRows || csvRows.length === 0 || step5Running) return
+    if (!step4Result) { setCsvError("Run Step 4 first — subjects follow convention order."); return }
+    setStep5Running(true)
+    try {
+      const items = [...new Set(csvRows.map((r) => (r.subjectCode || "").trim()).filter((c) => c.length > 0))]
+      const res = await fetch("/api/import/faculties", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          step: "subjects",
+          semesterId: activeSemesterId || null,
+          fileId: `step5-${Date.now().toString(36)}`,
+          items,
+        }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error((d as { error?: string }).error || "Step 5 failed")
+      }
+      const json = await res.json()
+      setStep5Result({
+        stepId: json.stepId ?? "subjects",
+        status: json.status ?? "done",
+        inserted: json.inserted ?? 0,
+        existing: json.existing ?? 0,
+        invalid: json.invalid ?? [],
+        subjectCodeToId: json.subjectCodeToId ?? {},
+      })
+    } catch (err) {
+      setCsvError((err as Error).message)
+    } finally {
+      setStep5Running(false)
     }
   }
 
@@ -695,6 +741,7 @@ function FacultyTab() {
     setStep2Result(null)
     setStep3Result(null)
     setStep4Result(null)
+    setStep5Result(null)
     setWrongCsv(""); setSkippedCsv(""); setLastImportTotal(0); setLastImportChunks(0); setRemovedRows([])
     setCsvPreviewPage(0)
     setCsvProblemFilter(false)
@@ -1110,8 +1157,8 @@ function FacultyTab() {
                 {csvRows && csvRows.length > 0 && (
                   <StepperTrace
                     steps={IMPORT_STEPS}
-                    doneCount={(step2Result ? 1 : 0) + (step3Result ? 1 : 0) + (step4Result ? 1 : 0)}
-                    footnote={`Step ${(step4Result ? 3 : step3Result ? 2 : step2Result ? 1 : 0) + 1} of 6 — legacy Import stays below until the full stepper lands.`}
+                    doneCount={(step2Result ? 1 : 0) + (step3Result ? 1 : 0) + (step4Result ? 1 : 0) + (step5Result ? 1 : 0)}
+                    footnote={`Step ${(step5Result ? 4 : step4Result ? 3 : step3Result ? 2 : step2Result ? 1 : 0) + 1} of 6 — legacy Import stays below until the full stepper lands.`}
                   />
                 )}
                 {csvRows && csvRows.length > 0 && (
@@ -1208,6 +1255,35 @@ function FacultyTab() {
                     invalidKeyPrefix="step4-inv"
                     confirmTitle="Run Step 4 — Sections?"
                     confirmMessage="Resolve distinct sections against their courses. Sections whose program has no course are flagged, never inserted; re-running reports inserted 0."
+                  />
+                )}
+                {csvRows && csvRows.length > 0 && (
+                  <StepPanel
+                    title="Step 5 — Subjects"
+                    runLabel="Run Step 5"
+                    runningLabel="Running Step 5…"
+                    running={step5Running}
+                    disabled={!activeSemesterId || csvImporting || !step4Result}
+                    disabledTitle={!step4Result ? "Run Step 4 first" : undefined}
+                    onRun={handleStep5Subjects}
+                    summary={
+                      step5Result ? (
+                        <p className="text-[11px] text-tertiary">
+                          {csvRows.length} rows · {Object.keys(step5Result.subjectCodeToId).length + step5Result.invalid.length} distinct subjects in file ·{" "}
+                          <span className="font-semibold text-emerald-600">{step5Result.inserted}</span> inserted ·{" "}
+                          <span className="font-semibold text-blue-600">{step5Result.existing}</span> existing ·{" "}
+                          <span className="font-semibold text-red-600">{step5Result.invalid.length}</span> invalid
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-tertiary">
+                          {step4Result ? "Ready — run Step 5 to resolve subjects." : "Run Step 4 first — subjects follow convention order."}
+                        </p>
+                      )
+                    }
+                    invalid={step5Result?.invalid ?? []}
+                    invalidKeyPrefix="step5-inv"
+                    confirmTitle="Run Step 5 — Subjects?"
+                    confirmMessage="Resolve distinct subject codes. Missing subjects are created with name = code; re-running reports inserted 0."
                   />
                 )}
                 <div className="sticky bottom-0 pt-4 pb-1 bg-white dark:bg-surface-dim flex items-center gap-3">

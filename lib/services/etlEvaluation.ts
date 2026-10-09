@@ -224,6 +224,58 @@ export async function importSectionsStep(
   }
 }
 
+// ── Step 5 (subjects) ──────────────────────────────────────
+// Resolves every distinct subject code to a subject id, upserting any
+// that do not exist. Subjects carry no FK dependency, so no predecessor
+// map is needed — the code itself (NOT NULL UNIQUE) is the key. Client
+// sends plain string[]; server applies name = code fallback (2026-1 file
+// has blank subjectName on all 28,096 rows, so all 315 fire the fallback).
+
+export interface SubjectStepResult {
+  stepId: "subjects"
+  status: "done"
+  inserted: number
+  existing: number
+  invalid: DepartmentStepInvalid[]
+  subjectCodeToId: Record<string, string>
+}
+
+export async function importSubjectsStep(
+  items: string[],
+): Promise<SubjectStepResult> {
+  const invalid: DepartmentStepInvalid[] = []
+  const subjectCodeToId: Record<string, string> = {}
+
+  const seen = new Set<string>()
+  const distinct: string[] = []
+  for (const raw of items) {
+    const code = (raw ?? "").trim()
+    // Blank codes are filtered client-side per spec (not applicable);
+    // skip defensively without an invalid entry.
+    if (code.length === 0) continue
+    if (seen.has(code)) continue
+    seen.add(code)
+    distinct.push(code)
+  }
+
+  // Must NOT case-fold: cs101 vs CS101 must stay distinct per spec edge case.
+  const subjectItems = distinct.map((code) => ({ code, name: code }))
+
+  const { data, created } = await subjectRepository.upsertMany(subjectItems)
+  for (const [code, row] of data) {
+    subjectCodeToId[code] = row.id
+  }
+
+  return {
+    stepId: "subjects",
+    status: "done",
+    inserted: created,
+    existing: subjectItems.length - created,
+    invalid,
+    subjectCodeToId,
+  }
+}
+
 export function parseFacultySubjectCsv(text: string): {
   rows: FacultySubjectCsvRow[]
   errors: { row: number; message: string }[]

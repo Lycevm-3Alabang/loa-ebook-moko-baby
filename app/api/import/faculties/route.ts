@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { requireAdmin } from "@/lib/route-guard"
-import { parseFacultySubjectCsv, importFacultySubjects, importDepartmentsStep, importCoursesStep, importSectionsStep } from "@/lib/services/etlEvaluation"
+import { parseFacultySubjectCsv, importFacultySubjects, importDepartmentsStep, importCoursesStep, importSectionsStep, importSubjectsStep } from "@/lib/services/etlEvaluation"
 import { logAuditEvent } from "@/lib/services/audit"
 
 // Chunked ETL: chunks insert hundreds of rows per request; allow a long
@@ -99,6 +99,21 @@ export async function POST(request: NextRequest) {
         details: fileId
           ? `Step sections (file ${fileId}): ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`
           : `Step sections: ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`,
+      })
+      return NextResponse.json({ ...stepResult, fileId })
+    }
+    if (body.step === "subjects") {
+      const items = body.items as unknown
+      if (!Array.isArray(items)) {
+        return NextResponse.json({ error: "Items array is required" }, { status: 400 })
+      }
+      const stepResult = await importSubjectsStep(items.map((v) => String(v ?? "")))
+      await logAuditEvent({
+        userId: (session!.user as Record<string, unknown>).id as string,
+        action: "ETL_FACULTY_SUBJECT",
+        details: fileId
+          ? `Step subjects (file ${fileId}): ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`
+          : `Step subjects: ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`,
       })
       return NextResponse.json({ ...stepResult, fileId })
     }
