@@ -36,10 +36,12 @@ pending: slice-1
 | continue-3 | Continue to slice-4? | A — Continue |
 | slice-4 | Slice 4/4 tests → lib/__tests__/etlEvaluation.test.ts | applied; tsc clean, lint clean, npm test 240/240 green (18 files, +5 new) |
 | readme-update | specs/README.md → v1.4: Implementation Status step-04 Done, next = step-05-subjects | applied (spec Status left Draft; Final needs re-approval) |
+| followup-step3-reset | FacultyLoadingTab.tsx: reset step3Result in handleCsvFile + handleCsvReset (was left stale) | applied; tsc clean, lint clean, npm test 240/240 green (18 files) |
+| step5-calibration | Step 5 plan-fix calibration | locked: reuse 1C 2E 3B 4A 5A 6A, skip reuse question |
 
 ## Pending
 
-- done (all 4 slices applied; tsc/lint clean, 240/240 green; specs/README.md v1.4 records step-04 Done with next = step-05-subjects; uncommitted: etlEvaluation.ts, import/faculties route.ts, FacultyLoadingTab.tsx, etlEvaluation.test.ts, specs/README.md)
+- done (all 4 slices + step3-reset follow-up applied; tsc/lint clean, 240/240 green; specs/README.md v1.4 records step-04 Done with next = step-05-subjects; Step 5 calibration locked to reuse; uncommitted: etlEvaluation.ts, import/faculties route.ts, FacultyLoadingTab.tsx, etlEvaluation.test.ts, specs/README.md)
 
 ## Decisions
 
