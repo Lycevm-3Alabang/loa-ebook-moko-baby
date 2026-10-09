@@ -141,6 +141,10 @@ export function useChunkedImport<TRow, TChunkResult>() {
         fileId?: string
         postChunk: PostChunkFn<TRow, TChunkResult>
         onProgress?: (p: ChunkProgress) => void
+        // Fired as each chunk succeeds, before progress advances. Lets a caller
+        // accumulate fields the generic history cannot carry (e.g. how many
+        // departments/courses a chunk inserted) without widening the hook.
+        onChunkResult?: (result: TChunkResult, meta: ChunkMeta) => void
         summarizeResult?: (result: TChunkResult) => { saved: number; skipped?: number; issues: number }
         restMs?: number
         chunkTimeoutMs?: number
@@ -201,6 +205,7 @@ export function useChunkedImport<TRow, TChunkResult>() {
             try {
               const result = await callChunk()
               results.push(result)
+              options.onChunkResult?.(result, meta)
               const summary = options.summarizeResult?.(result) ?? { saved: 0, skipped: 0, issues: 0 }
               setHistory((h) => [...h, { chunkIndex: i, rows: chunks[i].length, ok: true, saved: summary.saved, skipped: summary.skipped ?? 0, issues: summary.issues }])
               consecutiveFailures = 0

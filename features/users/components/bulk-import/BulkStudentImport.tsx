@@ -1,8 +1,13 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
-import { cleanCell, isExcelErrorCell, parseCsvRows } from "@/lib/csv-utils"
+import { cleanCell, isExcelErrorCell, parseCsvRows, isAllowedStudentEmail } from "@/lib/csv-utils"
 import { useChunkedImport, decodeCsvFile, withRetryHints, type ChunkMeta } from "@/features/admin-data/components/useChunkedImport"
+
+// Domain rule is shared with the import service via lib/csv-utils — one list,
+// one predicate, so the preview cannot disagree with the server.
+const isMissingEmail = (v: string) => v.trim().length === 0
+const isOffDomainEmail = (v: string) => v.trim().length > 0 && !isAllowedStudentEmail(v)
 
 interface StudentCsvRow {
   row: number
@@ -146,8 +151,11 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     return () => window.removeEventListener("beforeunload", guard)
   }, [importing])
 
+  // Blocking = rows the server cannot accept under any resolution. Everything else
+  // (unknown subject/section/faculty, dept mismatch) is created, resolved, or reported
+  // per-row by importStudents, so it must NOT gate the whole import.
   const isBlockedPreviewRow = (r: PreviewRow) =>
-    r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned || r.isInvalidDepartment || r.isInvalidValue
+    isMissingEmail(r.email) || isOffDomainEmail(r.email) || r.isInvalidValue
 
   const blockedRows = useMemo(() => {
     if (!previewRows) return []
@@ -492,8 +500,8 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
             <div className="flex items-center gap-3">
               <p className="text-[11px] text-tertiary/70 italic">
-                <span className="badge-red not-italic">Red</span> must fix — remove those rows.
-                <span className="badge-amber not-italic ml-1">Amber</span> student account will be created.
+                <span className="badge-red not-italic">Red</span> cannot import — remove those rows.
+                <span className="badge-amber not-italic ml-1">Amber</span> imports, or the server resolves it.
               </p>
               <div className="ml-auto">
                 {problemRows.length > 0 && (
@@ -520,6 +528,14 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                 )}
               </div>
             </div>
+
+            {previewRows && previewRows.length > 0 && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-[11px] text-tertiary">
+                <span><span className="font-semibold text-secondary">{previewRows.length - blockedRows.length}</span> ready to import</span>
+                <span><span className="font-semibold text-amber-600">{problemRows.length}</span> flagged — resolved or reported server-side</span>
+                <span><span className="font-semibold text-red-600">{blockedRows.length}</span> blocked (missing email, bad domain, Excel error)</span>
+              </div>
+            )}
 
             {error && <p className="text-xs font-medium text-red-600">{error}</p>}
 
@@ -577,15 +593,17 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                         <td>
                           <div className="flex flex-wrap gap-1">
                             {r.isInvalidValue && <span className="badge-red text-[10px]">Invalid value</span>}
-                            {!r.isInvalidValue && r.isInvalidDepartment && <span className="badge-red text-[10px]">Dept code</span>}
-                            {!r.isInvalidValue && !r.isInvalidDepartment && r.isNewSubject && <span className="badge-red text-[10px]">Subject not found</span>}
-                            {!r.isInvalidValue && !r.isInvalidDepartment && r.isNewSection && <span className="badge-red text-[10px]">Section not found</span>}
-                            {!r.isInvalidValue && !r.isInvalidDepartment && r.isNewFaculty && <span className="badge-red text-[10px]">Faculty not found</span>}
-                            {!r.isInvalidValue && !r.isInvalidDepartment && r.facultyNotAssigned && <span className="badge-red text-[10px]">Faculty Loading Mismatch</span>}
-                            {!r.isInvalidValue && !r.isInvalidDepartment && r.isNewStudent && !r.isNewSubject && !r.isNewSection && !r.isNewFaculty && !r.facultyNotAssigned && (
+                            {isMissingEmail(r.email) && <span className="badge-red text-[10px]">Email missing</span>}
+                            {isOffDomainEmail(r.email) && <span className="badge-red text-[10px]">Domain not allowed</span>}
+                            {r.isNewSubject && <span className="badge-amber text-[10px]">Subject not found</span>}
+                            {r.isNewSection && <span className="badge-amber text-[10px]">Section not found</span>}
+                            {r.isNewFaculty && <span className="badge-amber text-[10px]">Faculty not found</span>}
+                            {r.facultyNotAssigned && <span className="badge-amber text-[10px]">Faculty Loading Mismatch</span>}
+                            {r.isInvalidDepartment && <span className="badge-amber text-[10px]">Dept code unknown</span>}
+                            {!r.isInvalidValue && !isMissingEmail(r.email) && !isOffDomainEmail(r.email) && r.isNewStudent && (
                               <span className="badge-amber text-[10px]">New Student</span>
                             )}
-                            {!r.isInvalidValue && !r.isInvalidDepartment && !r.isNewSubject && !r.isNewSection && !r.isNewFaculty && !r.facultyNotAssigned && !r.isNewStudent && (
+                            {!r.isInvalidValue && !isMissingEmail(r.email) && !isOffDomainEmail(r.email) && !r.isNewSubject && !r.isNewSection && !r.isNewFaculty && !r.facultyNotAssigned && !r.isInvalidDepartment && !r.isNewStudent && (
                               <span className="badge-emerald text-[10px]">Ready</span>
                             )}
                           </div>
