@@ -5,7 +5,7 @@ vi.mock("@/lib/repositories/factory", () => ({
   subjectRepository: { upsertMany: vi.fn() },
   sectionRepository: { upsertMany: vi.fn() },
   userRepository: { findManyByEmail: vi.fn(), createMany: vi.fn() },
-  facultySubjectRepository: { replaceBySection: vi.fn(), create: vi.fn(), list: vi.fn().mockResolvedValue([]), update: vi.fn(), findBySubjectAndSection: vi.fn().mockResolvedValue(null), findBySubjectSectionAndFaculty: vi.fn().mockResolvedValue(null) },
+  facultySubjectRepository: { replaceBySection: vi.fn(), create: vi.fn(), createMany: vi.fn().mockResolvedValue([]), list: vi.fn().mockResolvedValue([]), update: vi.fn(), findBySubjectAndSection: vi.fn().mockResolvedValue(null), findBySubjectSectionAndFaculty: vi.fn().mockResolvedValue(null) },
   studentEnrollmentRepository: { replaceBySection: vi.fn() },
   // Precedence insert path: importFacultySubjects resolves departments and
   // department_courses through these repositories rather than direct supabase.
@@ -879,6 +879,27 @@ describe("importFacultyUsersStep", () => {
     expect(sent.map((s) => s.email)).toEqual(["good@lyceumalabang.edu.ph"])
   })
 
+  it("flags unresolved department codes invalid and never creates dept-less faculty", async () => {
+    mockFindUsers(new Map())
+    mockCreateUsers(new Map([
+      ["ok@lyceumalabang.edu.ph", userEntry("ok@lyceumalabang.edu.ph", "user-1")],
+    ]))
+    const result = await importFacultyUsersStep([
+      { email: "ok@lyceumalabang.edu.ph", name: "Ok", departmentCode: "CCS" },
+      { email: "nodep@lyceumalabang.edu.ph", name: "No Dept", departmentCode: "XXXX" },
+      { email: "blankdept@lyceumalabang.edu.ph", name: "Blank Dept", departmentCode: "" },
+    ], deptMap)
+    expect(result.invalid).toEqual([
+      { key: "nodep@lyceumalabang.edu.ph", reason: "Department code XXXX not found" },
+      { key: "blankdept@lyceumalabang.edu.ph", reason: "Department code (blank) not found" },
+    ])
+    expect(result.inserted).toBe(1)
+    expect(result.existing).toBe(0)
+    const sent = userCreateRepo().mock.calls[0][0] as { email: string; departmentId?: string }[]
+    expect(sent.map((s) => s.email)).toEqual(["ok@lyceumalabang.edu.ph"])
+    expect(sent[0].departmentId).toBe("dept-ccs")
+  })
+
   it("collapses many blank emails onto one dummy user", async () => {
     mockFindUsers(new Map())
     mockCreateUsers(new Map([
@@ -908,12 +929,14 @@ describe("importMappingsStep", () => {
   }
   const fsList = () => factory.facultySubjectRepository.list as ReturnType<typeof vi.fn>
   const fsCreate = () => factory.facultySubjectRepository.create as ReturnType<typeof vi.fn>
+  const fsCreateMany = () => factory.facultySubjectRepository.createMany as ReturnType<typeof vi.fn>
   const fsUpdate = () => factory.facultySubjectRepository.update as ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     vi.resetAllMocks()
     fsList().mockResolvedValue([])
     fsCreate().mockResolvedValue({ id: "fs-new" })
+    fsCreateMany().mockResolvedValue([])
     fsUpdate().mockResolvedValue({ id: "fs-1" })
   })
 
@@ -927,8 +950,13 @@ describe("importMappingsStep", () => {
     expect(result.inserted).toBe(2)
     expect(result.existing).toBe(0)
     expect(result.invalid).toHaveLength(0)
-    expect(fsCreate()).toHaveBeenCalledTimes(2)
-    expect(fsCreate()).toHaveBeenCalledWith(expect.objectContaining({ faculty_id: "user-1", subject_id: "sub-1", section_id: "sec-1", semesterId: "sem-1" }))
+    expect(fsCreateMany()).toHaveBeenCalledTimes(1)
+    expect(fsCreateMany().mock.calls[0][0]).toHaveLength(2)
+    expect(fsCreateMany().mock.calls[0][0]).toEqual(expect.arrayContaining([
+      expect.objectContaining({ faculty_id: "user-1", subject_id: "sub-1", section_id: "sec-1", semesterId: "sem-1" }),
+      expect.objectContaining({ faculty_id: "user-2", subject_id: "sub-2", section_id: "sec-2", semesterId: "sem-1" }),
+    ]))
+    expect(fsCreate()).not.toHaveBeenCalled()
   })
 
   it("re-run is fully idempotent", async () => {
@@ -936,7 +964,6 @@ describe("importMappingsStep", () => {
       { id: "fs-1", faculty_id: "user-1", subject_id: "sub-1", section_id: "sec-1", semesterId: "sem-1" },
       { id: "fs-2", faculty_id: "user-2", subject_id: "sub-2", section_id: "sec-2", semesterId: "sem-1" },
     ])
-    fsCreate().mockRejectedValue({ code: "23505" })
     const result = await importMappingsStep([
       { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
       { subjectCode: "MATH201", sectionName: "21B", sectionProgram: "BSCS", facultyEmail: "maria.santos@lyceumalabang.edu.ph" },
@@ -944,6 +971,8 @@ describe("importMappingsStep", () => {
     expect(result.inserted).toBe(0)
     expect(result.existing).toBe(2)
     expect(result.invalid).toHaveLength(0)
+    expect(fsCreateMany()).not.toHaveBeenCalled()
+    expect(fsUpdate()).not.toHaveBeenCalled()
   })
 
   it("duplicates collapse through comboMap", async () => {
@@ -953,7 +982,8 @@ describe("importMappingsStep", () => {
       { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
     ], maps, "sem-1")
     expect(result.inserted).toBe(1)
-    expect(fsCreate()).toHaveBeenCalledTimes(1)
+    expect(fsCreateMany()).toHaveBeenCalledTimes(1)
+    expect(fsCreateMany().mock.calls[0][0]).toHaveLength(1)
   })
 
   it("real beats dummy", async () => {
@@ -962,19 +992,21 @@ describe("importMappingsStep", () => {
       { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
     ], maps, "sem-1")
     expect(result.inserted).toBe(1)
-    expect(fsCreate()).toHaveBeenCalledTimes(1)
-    expect(fsCreate()).toHaveBeenCalledWith(expect.objectContaining({ faculty_id: "user-1" }))
+    expect(fsCreateMany()).toHaveBeenCalledTimes(1)
+    expect(fsCreateMany().mock.calls[0][0]).toEqual([
+      expect.objectContaining({ faculty_id: "user-1" }),
+    ])
   })
 
   it("dummy-held slot is updated to the real faculty on conflict", async () => {
     fsList().mockResolvedValue([
       { id: "fs-1", faculty_id: "user-dummy", subject_id: "sub-1", section_id: "sec-1", semesterId: "sem-1" },
     ])
-    fsCreate().mockRejectedValue({ code: "23505" })
     const result = await importMappingsStep([
       { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
     ], maps, "sem-1")
     expect(fsUpdate()).toHaveBeenCalledWith("fs-1", { faculty_id: "user-1" })
+    expect(fsCreateMany()).not.toHaveBeenCalled()
     expect(result.inserted).toBe(1)
     expect(result.invalid).toHaveLength(0)
   })
@@ -983,11 +1015,11 @@ describe("importMappingsStep", () => {
     fsList().mockResolvedValue([
       { id: "fs-1", faculty_id: "user-2", subject_id: "sub-1", section_id: "sec-1", semesterId: "sem-1" },
     ])
-    fsCreate().mockRejectedValue({ code: "23505" })
     const result = await importMappingsStep([
       { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
     ], maps, "sem-1")
     expect(fsUpdate()).not.toHaveBeenCalled()
+    expect(fsCreateMany()).not.toHaveBeenCalled()
     expect(result.invalid).toEqual([expect.objectContaining({ reason: "Already assigned — not overwritten (existing load kept)" })])
   })
 
@@ -996,7 +1028,8 @@ describe("importMappingsStep", () => {
       { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "" },
     ], maps, "sem-1")
     expect(result.inserted).toBe(1)
-    expect(fsCreate()).toHaveBeenCalledWith(expect.objectContaining({ faculty_id: "user-dummy" }))
+    expect(fsCreateMany()).toHaveBeenCalledTimes(1)
+    expect(fsCreateMany().mock.calls[0][0]).toEqual([expect.objectContaining({ faculty_id: "user-dummy" })])
   })
 
   it("unresolved subject/section/faculty are flagged invalid", async () => {
@@ -1007,7 +1040,7 @@ describe("importMappingsStep", () => {
     ], maps, "sem-1")
     expect(result.inserted).toBe(0)
     expect(result.invalid).toHaveLength(3)
-    expect(fsCreate()).not.toHaveBeenCalled()
+    expect(fsCreateMany()).not.toHaveBeenCalled()
   })
 
   it("leaves the composed importFacultySubjects path unchanged", async () => {

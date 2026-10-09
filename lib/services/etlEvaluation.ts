@@ -330,6 +330,10 @@ export async function importFacultyUsersStep(
       invalid.push({ key: item.email, reason: `Email domain not allowed: ${item.email}` })
       continue
     }
+    if (!deptCodeToId[item.departmentCode]) {
+      invalid.push({ key: item.email, reason: `Department code ${item.departmentCode || "(blank)"} not found` })
+      continue
+    }
     mappable.push(item)
   }
 
@@ -471,34 +475,81 @@ export async function importMappingsStep(
     }
   }
 
+  // In-memory partition — classify before any write attempt
+  const newItems: Candidate[] = []
+  const updates: Candidate[] = [] // dummy → real
   for (const item of [...comboMap.values()]) {
-    try {
-      await facultySubjectRepository.create({
-        faculty_id: item.faculty_id,
-        subject_id: item.subject_id,
-        section_id: item.section_id,
-        semesterId: item.semesterId ?? null,
-      })
-      inserted++
-    } catch (err) {
-      if ((err as { code?: string })?.code !== "23505") throw err
-      const found = existingByCombo.get(`${item.subject_id}|${item.section_id}|${item.semesterId ?? ""}`)
-      if (!found) continue
-      if (found.faculty_id === item.faculty_id) {
-        existing++
-        continue
-      }
-      if (dummyId && found.faculty_id === dummyId && item.faculty_id !== dummyId) {
-        await facultySubjectRepository.update(found.id, { faculty_id: item.faculty_id })
-        existingByCombo.set(`${item.subject_id}|${item.section_id}|${item.semesterId ?? ""}`, { id: found.id, faculty_id: item.faculty_id })
-        inserted++
-        continue
-      }
+    const key = `${item.subject_id}|${item.section_id}|${item.semesterId ?? ""}`
+    const found = existingByCombo.get(key)
+    if (!found) {
+      newItems.push(item)
+    } else if (found.faculty_id === item.faculty_id) {
+      existing++ // same faculty already loaded
+    } else if (dummyId && found.faculty_id === dummyId && item.faculty_id !== dummyId) {
+      updates.push(item) // dummy → real
+    } else {
       invalid.push({
         key: `${item.subject_id}|${item.section_id}`,
         reason: "Already assigned — not overwritten (existing load kept)",
       })
     }
+  }
+
+  // Bulk insert all genuinely-new slots (1 roundtrip instead of N)
+  if (newItems.length > 0) {
+    try {
+      await facultySubjectRepository.createMany(
+        newItems.map((i) => ({
+          faculty_id: i.faculty_id,
+          subject_id: i.subject_id,
+          section_id: i.section_id,
+          semesterId: i.semesterId ?? null,
+        }))
+      )
+      inserted += newItems.length
+    } catch (err) {
+      if ((err as { code?: string })?.code === "23505") {
+        // Race: concurrent writer inserted some slots between list() and createMany()
+        // Re-list, re-partition, and fall back to per-row for this chunk only
+        const fresh = await facultySubjectRepository.list(semesterId ? { semesterId } : {})
+        const freshByCombo = new Map<string, { id: string; faculty_id: string }>()
+        for (const e of fresh) {
+          if (!semesterId && e.semesterId) continue
+          freshByCombo.set(`${e.subject_id}|${e.section_id}|${e.semesterId ?? ""}`, { id: e.id, faculty_id: e.faculty_id })
+        }
+        for (const item of newItems) {
+          const key = `${item.subject_id}|${item.section_id}|${item.semesterId ?? ""}`
+          const found = freshByCombo.get(key)
+          if (!found) continue
+          if (found.faculty_id === item.faculty_id) {
+            existing++
+            continue
+          }
+          if (dummyId && found.faculty_id === dummyId && item.faculty_id !== dummyId) {
+            await facultySubjectRepository.update(found.id, { faculty_id: item.faculty_id })
+            freshByCombo.set(key, { id: found.id, faculty_id: item.faculty_id })
+            inserted++
+            continue
+          }
+          invalid.push({
+            key: `${item.subject_id}|${item.section_id}`,
+            reason: "Already assigned — not overwritten (existing load kept)",
+          })
+        }
+      } else {
+        throw err
+      }
+    }
+  }
+
+  // Dummy → real updates (pre-emptive, no failed insert attempt)
+  for (const item of updates) {
+    const key = `${item.subject_id}|${item.section_id}|${item.semesterId ?? ""}`
+    const found = existingByCombo.get(key)
+    if (!found) continue
+    await facultySubjectRepository.update(found.id, { faculty_id: item.faculty_id })
+    existingByCombo.set(key, { id: found.id, faculty_id: item.faculty_id })
+    inserted++
   }
 
   return { stepId: "mappings", status: "done", inserted, existing, invalid }
