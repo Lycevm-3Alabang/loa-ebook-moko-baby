@@ -1,18 +1,13 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
-import { cleanCell, isExcelErrorCell, parseCsvRows } from "@/lib/csv-utils"
+import { cleanCell, isExcelErrorCell, parseCsvRows, isAllowedStudentEmail } from "@/lib/csv-utils"
 import { useChunkedImport, decodeCsvFile, withRetryHints, type ChunkMeta } from "@/features/admin-data/components/useChunkedImport"
 
-// Mirrors ALLOWED_DOMAINS in lib/services/studentImport.ts. That module is
-// server-only, so the list is duplicated here rather than imported — keep both in sync.
-const STUDENT_ALLOWED_DOMAINS = ["@lyceumalabang.edu.ph", "@itmlyceumalabang.onmicrosoft.com"]
-
+// Domain rule is shared with the import service via lib/csv-utils — one list,
+// one predicate, so the preview cannot disagree with the server.
 const isMissingEmail = (v: string) => v.trim().length === 0
-const isOffDomainEmail = (v: string) => {
-  const email = v.trim().toLowerCase()
-  return email.length > 0 && !STUDENT_ALLOWED_DOMAINS.some((d) => email.endsWith(d))
-}
+const isOffDomainEmail = (v: string) => v.trim().length > 0 && !isAllowedStudentEmail(v)
 
 interface StudentCsvRow {
   row: number

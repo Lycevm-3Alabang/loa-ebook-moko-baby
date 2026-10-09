@@ -38,6 +38,8 @@ export interface FacultySubjectImportResult {
   skipped: { row: number; email?: string; message: string }[]
   createdSubjects: number
   createdSections: number
+  createdDepartments: number
+  createdCourses: number
 }
 
 export function parseFacultySubjectCsv(text: string): {
@@ -140,6 +142,8 @@ export async function importFacultySubjects(
     skipped: [],
     createdSubjects: 0,
     createdSections: 0,
+    createdDepartments: 0,
+    createdCourses: 0,
   }
 
   if (rows.length === 0) return result
@@ -200,6 +204,7 @@ export async function importFacultySubjects(
     try {
       const created = await departmentRepository.create({ name: code, code })
       deptCodeToId.set(code, created.id)
+      result.createdDepartments++
     } catch (err) {
       // 281 chunked calls run concurrently - a sibling chunk may have inserted the
       // same code between our read and write. Re-read instead of failing the chunk.
@@ -226,6 +231,7 @@ export async function importFacultySubjects(
     try {
       const created = await departmentCourseRepository.create({ departmentId, code: program, name: `${program} [unmapped]` })
       courseCodeToId.set(program, created.id)
+      result.createdCourses++
     } catch (err) {
       if ((err as { code?: string })?.code !== "23505") throw err
       const raced = await departmentCourseRepository.findByDepartmentAndCode(departmentId, program)

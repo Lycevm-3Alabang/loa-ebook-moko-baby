@@ -1,4 +1,19 @@
 /**
+ * Domains accepted for student email addresses. Shared by the import service
+ * (server) and the client preview so both enforce exactly one rule — the list
+ * previously lived in both places joined only by a comment, and drifted apart
+ * in meaning (client hard-blocked on a blank email, server rejected it per row).
+ */
+export const STUDENT_ALLOWED_DOMAINS = ["@lyceumalabang.edu.ph", "@itmlyceumalabang.onmicrosoft.com"]
+
+/** True only for a non-empty email ending in an allowed student domain. */
+export function isAllowedStudentEmail(email: string): boolean {
+  const normalized = (email || "").trim().toLowerCase()
+  if (normalized.length === 0) return false
+  return STUDENT_ALLOWED_DOMAINS.some((d) => normalized.endsWith(d))
+}
+
+/**
  * Strip leading/trailing whitespace and escape characters from a CSV cell value.
  * Handles Excel's "'" prefix that prevents auto-formatting (e.g. `'41E1` → `41E1`).
  */

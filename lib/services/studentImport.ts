@@ -1,13 +1,11 @@
 import { userRepository, sectionRepository, subjectRepository, facultySubjectRepository, studentEnrollmentRepository } from "@/lib/repositories/factory"
-import { isExcelErrorCell } from "@/lib/csv-utils"
+import { isExcelErrorCell, isAllowedStudentEmail, STUDENT_ALLOWED_DOMAINS } from "@/lib/csv-utils"
 
 function parseSectionIdentifier(raw: string): { name: string; program: string } {
   const idx = raw.indexOf("-")
   if (idx === -1) return { name: raw, program: "" }
   return { program: raw.slice(0, idx).trim(), name: raw.slice(idx + 1).trim() }
 }
-
-const ALLOWED_DOMAINS = ["@lyceumalabang.edu.ph", "@itmlyceumalabang.onmicrosoft.com"]
 
 export interface StudentCsvRow {
   email: string
@@ -92,12 +90,11 @@ export function parseStudentCsv(text: string): {
 
     if (!displayName) { errors.push({ row: i + 1, message: "Name is required" }); continue }
     if (!email) { errors.push({ row: i + 1, message: "Email is required" }); continue }
-    if (!ALLOWED_DOMAINS.some((d) => email.endsWith(d))) {
-      errors.push({ row: i + 1, message: `Email must end with ${ALLOWED_DOMAINS.join(" or ")}` }); continue
+    if (!isAllowedStudentEmail(email)) {
+      errors.push({ row: i + 1, message: `Email must end with ${STUDENT_ALLOWED_DOMAINS.join(" or ")}` }); continue
     }
     if (!subjectCode) { errors.push({ row: i + 1, message: "Subject code is required" }); continue }
     if (!sectionName) { errors.push({ row: i + 1, message: "Section is required" }); continue }
-    if (!facultyEmail) { errors.push({ row: i + 1, message: "Faculty email is required" }); continue }
     if (!departmentCode) { errors.push({ row: i + 1, message: "Department code is required" }); continue }
 
     rows.push({ email, name: displayName, subjectCode, sectionName, sectionProgram: program, facultyEmail, departmentId: undefined })
@@ -195,7 +192,7 @@ export async function importStudents(
     if (excelOffender) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: `Invalid value in ${excelOffender} (Excel error)` }); continue }
 
     if (!r.email) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Email is required" }); continue }
-    if (!ALLOWED_DOMAINS.some((d) => r.email.endsWith(d))) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Email domain not allowed" }); continue }
+    if (!isAllowedStudentEmail(r.email)) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Email domain not allowed" }); continue }
 
     const user = userMap.get(r.email.toLowerCase().trim())
     if (!user) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Student not found" }); continue }
