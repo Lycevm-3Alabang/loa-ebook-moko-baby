@@ -146,6 +146,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     return () => window.removeEventListener("beforeunload", guard)
   }, [importing])
 
+  const isBlockedPreviewRow = (r: PreviewRow) =>
+    r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned || r.isInvalidDepartment || r.isInvalidValue
+
   const blockedRows = useMemo(() => {
     if (!previewRows) return []
     return previewRows.filter(isBlockedPreviewRow)
@@ -261,9 +264,6 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       }
     }
   }
-
-  const isBlockedPreviewRow = (r: PreviewRow) =>
-    r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned || r.isInvalidDepartment || r.isInvalidValue
 
   const handleRemoveBlocked = () => {
     if (!previewRows) return
