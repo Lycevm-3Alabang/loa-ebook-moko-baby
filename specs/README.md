@@ -1,6 +1,6 @@
 # ACES — Specs
 
-**Version:** 1.4
+**Version:** 1.6
 **Status:** Draft
 **Last Updated:** 2026-10-09
 
@@ -28,6 +28,8 @@ Specs must be Final before code is written (per loa-apache-server-apps conventio
 | [auth-integration.md](auth-integration.md) | Draft | Contract between e-consultation and loa-auth — SSO flow, JWT claims, shared secrets, what each side owns |
 | [endpoint-catalog.md](endpoint-catalog.md) | Draft | Full endpoint catalog (~130 entries) with required levels — must stay in sync with loa-auth-platform |
 | [migration-checklist.md](migration-checklist.md) | Draft | Step-by-step tasks for each side, verification checklist, timeline |
+| [spike-student-eval-enrollment-gate.md](spike-student-eval-enrollment-gate.md) | Investigation | `POST /api/evaluations` 403 for students with visible pending items — root cause proven to `route.ts:98`; `findPending` Branch A/B read-write drift; trigger blocked on one query |
+| [spike-consultation-enrollment-scope.md](spike-consultation-enrollment-scope.md) | Investigation | Does the enrollment-gate defect reach consultation booking? No — no gate exists; redirects blast radius to the shared writer `replaceBySection` |
 
 ---
 
@@ -41,7 +43,9 @@ Spec `Status` above is unchanged — promotion to Final still needs re-approval 
 | [faculty-import-stepper/step-02-departments.md](faculty-import-stepper/step-02-departments.md) | Done (2026-10-09) | 4 slices: `importDepartmentsStep` in `lib/services/etlEvaluation.ts`, `step` discriminator in `app/api/import/faculties/route.ts`, Step 2 panel in `FacultyLoadingTab.tsx`, 5 tests. `tsc`/`lint` clean, 230/230 tests green. Run file: `.opencode/skills/plan-fix/runs/20261009-1000-faculty-stepper-step-02.md` |
 | [faculty-import-stepper/step-03-courses.md](faculty-import-stepper/step-03-courses.md) | Done (2026-10-09) | 7 slices: `importCoursesStep` in `lib/services/etlEvaluation.ts`, `courses` discriminator in `app/api/import/faculties/route.ts`, new `FacultyImportStepper.tsx` shell (`StepperTrace` + `StepPanel`), Step 2 retrofit (trace, Yes/No confirm, denominators) + Step 3 panel in `FacultyLoadingTab.tsx`, 5 tests. Verification gate (`tsc`/`lint`/`vitest`) with user per standing rule. Run file: `.opencode/skills/plan-fix/runs/20261009-1347-step-03-courses.md` |
 | [faculty-import-stepper/step-04-sections.md](faculty-import-stepper/step-04-sections.md) | Done (2026-10-09) | 4 slices: `importSectionsStep` in `lib/services/etlEvaluation.ts`, `sections` discriminator in `app/api/import/faculties/route.ts`, Step 4 panel in `FacultyLoadingTab.tsx` (state, handler, trace count, resets), 5 tests. `tsc`/`lint` clean, 240/240 tests green. Run file: `.opencode/skills/plan-fix/runs/20261009-1506-faculty-stepper-step-04.md` |
-| All other specs | Not started | **Next session: Step 5 — subjects** ([step-05-subjects.md](faculty-import-stepper/step-05-subjects.md)) |
+| [faculty-import-stepper/step-05-subjects.md](faculty-import-stepper/step-05-subjects.md) | Done (2026-10-09) | 4 slices: `importSubjectsStep` in `lib/services/etlEvaluation.ts`, `subjects` discriminator in `app/api/import/faculties/route.ts`, Step 5 panel in `FacultyLoadingTab.tsx` (state, handler, trace count, resets), 5 tests. `tsc`/`lint` clean, 245/245 tests green. Run file: `.opencode/skills/plan-fix/runs/20261009-1605-faculty-stepper-step-05.md` |
+| [faculty-import-stepper/step-06-faculty-users.md](faculty-import-stepper/step-06-faculty-users.md) | Done (2026-10-09) | 4 slices: `importFacultyUsersStep` in `lib/services/etlEvaluation.ts`, `faculty-users` discriminator in `app/api/import/faculties/route.ts`, Step 6 panel in `FacultyLoadingTab.tsx` (state, handler, trace count, resets), 5 tests. `tsc`/`lint` clean, 250/250 tests green. Run file: `.opencode/skills/plan-fix/runs/20261009-1638-faculty-stepper-step-06.md` |
+| All other specs | Not started | **Next session: Step 7 — mappings** ([step-07-mappings.md](faculty-import-stepper/step-07-mappings.md)) |
 
 ---
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { requireAdmin } from "@/lib/route-guard"
-import { parseFacultySubjectCsv, importFacultySubjects, importDepartmentsStep, importCoursesStep, importSectionsStep } from "@/lib/services/etlEvaluation"
+import { parseFacultySubjectCsv, importFacultySubjects, importDepartmentsStep, importCoursesStep, importSectionsStep, importSubjectsStep, importFacultyUsersStep, importMappingsStep } from "@/lib/services/etlEvaluation"
 import { logAuditEvent } from "@/lib/services/audit"
 
 // Chunked ETL: chunks insert hundreds of rows per request; allow a long
@@ -99,6 +99,78 @@ export async function POST(request: NextRequest) {
         details: fileId
           ? `Step sections (file ${fileId}): ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`
           : `Step sections: ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`,
+      })
+      return NextResponse.json({ ...stepResult, fileId })
+    }
+    if (body.step === "subjects") {
+      const items = body.items as unknown
+      if (!Array.isArray(items)) {
+        return NextResponse.json({ error: "Items array is required" }, { status: 400 })
+      }
+      const stepResult = await importSubjectsStep(items.map((v) => String(v ?? "")))
+      await logAuditEvent({
+        userId: (session!.user as Record<string, unknown>).id as string,
+        action: "ETL_FACULTY_SUBJECT",
+        details: fileId
+          ? `Step subjects (file ${fileId}): ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`
+          : `Step subjects: ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`,
+      })
+      return NextResponse.json({ ...stepResult, fileId })
+    }
+    if (body.step === "faculty-users") {
+      const items = body.items as unknown
+      if (!Array.isArray(items)) {
+        return NextResponse.json({ error: "Items array is required" }, { status: 400 })
+      }
+      // deptCodeToId travels client-held: the client sends back the map the
+      // departments step returned. No server session, same model as courses.
+      // semesterId stays envelope-only (users are semester-agnostic); Step 7
+      // mappings is what scopes by semester.
+      const deptCodeToId = (body.deptCodeToId ?? {}) as Record<string, string>
+      const stepResult = await importFacultyUsersStep(
+        items.map((v) => ({
+          email: String((v as { email?: unknown })?.email ?? ""),
+          name: String((v as { name?: unknown })?.name ?? ""),
+          departmentCode: String((v as { departmentCode?: unknown })?.departmentCode ?? ""),
+        })),
+        deptCodeToId,
+      )
+      await logAuditEvent({
+        userId: (session!.user as Record<string, unknown>).id as string,
+        action: "ETL_FACULTY_SUBJECT",
+        details: fileId
+          ? `Step faculty-users (file ${fileId}): ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`
+          : `Step faculty-users: ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`,
+      })
+      return NextResponse.json({ ...stepResult, fileId })
+    }
+    // Mappings travel client-held: sectionKeyToId (Step 3) + subjectCodeToId
+    // (Step 4) + facultyUserMap (Step 5). semesterId is FUNCTIONAL here
+    // (combo key + list + create scope by semester), unlike Steps 1-5.
+    if (body.step === "mappings") {
+      const items = body.items as unknown
+      if (!Array.isArray(items)) {
+        return NextResponse.json({ error: "Items array is required" }, { status: 400 })
+      }
+      const sectionKeyToId = (body.sectionKeyToId ?? {}) as Record<string, string>
+      const subjectCodeToId = (body.subjectCodeToId ?? {}) as Record<string, string>
+      const facultyUserMap = (body.facultyUserMap ?? {}) as Record<string, string>
+      const stepResult = await importMappingsStep(
+        items.map((v) => ({
+          subjectCode: String((v as { subjectCode?: unknown })?.subjectCode ?? ""),
+          sectionName: String((v as { sectionName?: unknown })?.sectionName ?? ""),
+          sectionProgram: String((v as { sectionProgram?: unknown })?.sectionProgram ?? ""),
+          facultyEmail: String((v as { facultyEmail?: unknown })?.facultyEmail ?? ""),
+        })),
+        { sectionKeyToId, subjectCodeToId, facultyUserMap },
+        semesterId,
+      )
+      await logAuditEvent({
+        userId: (session!.user as Record<string, unknown>).id as string,
+        action: "ETL_FACULTY_SUBJECT",
+        details: fileId
+          ? `Step mappings (file ${fileId}): ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`
+          : `Step mappings: ${stepResult.inserted} inserted, ${stepResult.existing} existing (${stepResult.invalid.length} invalid)`,
       })
       return NextResponse.json({ ...stepResult, fileId })
     }

@@ -224,6 +224,286 @@ export async function importSectionsStep(
   }
 }
 
+// ── Step 5 (subjects) ──────────────────────────────────────
+// Resolves every distinct subject code to a subject id, upserting any
+// that do not exist. Subjects carry no FK dependency, so no predecessor
+// map is needed — the code itself (NOT NULL UNIQUE) is the key. Client
+// sends plain string[]; server applies name = code fallback (2026-1 file
+// has blank subjectName on all 28,096 rows, so all 315 fire the fallback).
+
+export interface SubjectStepResult {
+  stepId: "subjects"
+  status: "done"
+  inserted: number
+  existing: number
+  invalid: DepartmentStepInvalid[]
+  subjectCodeToId: Record<string, string>
+}
+
+export async function importSubjectsStep(
+  items: string[],
+): Promise<SubjectStepResult> {
+  const invalid: DepartmentStepInvalid[] = []
+  const subjectCodeToId: Record<string, string> = {}
+
+  const seen = new Set<string>()
+  const distinct: string[] = []
+  for (const raw of items) {
+    const code = (raw ?? "").trim()
+    // Blank codes are filtered client-side per spec (not applicable);
+    // skip defensively without an invalid entry.
+    if (code.length === 0) continue
+    if (seen.has(code)) continue
+    seen.add(code)
+    distinct.push(code)
+  }
+
+  // Must NOT case-fold: cs101 vs CS101 must stay distinct per spec edge case.
+  const subjectItems = distinct.map((code) => ({ code, name: code }))
+
+  const { data, created } = await subjectRepository.upsertMany(subjectItems)
+  for (const [code, row] of data) {
+    subjectCodeToId[code] = row.id
+  }
+
+  return {
+    stepId: "subjects",
+    status: "done",
+    inserted: created,
+    existing: subjectItems.length - created,
+    invalid,
+    subjectCodeToId,
+  }
+}
+
+// ── Step 6 (faculty-users) ───────────────────────────────────
+// Creates missing faculty users (role FACULTY) for distinct emails.
+// Departments are LOOKUP-ONLY via client-held deptCodeToId (Step 2 map) —
+// this step never creates departments. Users are semester-agnostic, so no
+// semesterId param (envelope-only, same as Steps 2-5). Off-domain emails
+// never become users (invalid); the synthesised dummy is exempt and stays
+// dept-agnostic (departmentId undefined).
+
+export interface FacultyUserStepItem {
+  email: string
+  name: string
+  departmentCode: string
+}
+
+export interface FacultyUserStepResult {
+  stepId: "faculty-users"
+  status: "done"
+  inserted: number
+  existing: number
+  invalid: DepartmentStepInvalid[]
+  facultyUserMap: Record<string, string>
+}
+
+export async function importFacultyUsersStep(
+  items: FacultyUserStepItem[],
+  deptCodeToId: Record<string, string>,
+): Promise<FacultyUserStepResult> {
+  const invalid: DepartmentStepInvalid[] = []
+  const facultyUserMap: Record<string, string> = {}
+
+  const seen = new Set<string>()
+  const distinct: FacultyUserStepItem[] = []
+  for (const raw of items) {
+    const email = (raw?.email ?? "").toLowerCase().trim()
+    const key = email.length === 0 ? DUMMY_FACULTY_EMAIL : email
+    if (seen.has(key)) continue
+    seen.add(key)
+    distinct.push({
+      email: key,
+      name: key === DUMMY_FACULTY_EMAIL ? "Unassigned Faculty" : (raw?.name ?? ""),
+      departmentCode: (raw?.departmentCode ?? "").trim().toUpperCase(),
+    })
+  }
+
+  const mappable: FacultyUserStepItem[] = []
+  for (const item of distinct) {
+    if (item.email === DUMMY_FACULTY_EMAIL) {
+      mappable.push(item)
+      continue
+    }
+    if (!item.email.endsWith("@lyceumalabang.edu.ph")) {
+      invalid.push({ key: item.email, reason: `Email domain not allowed: ${item.email}` })
+      continue
+    }
+    mappable.push(item)
+  }
+
+  const uniqueEmails = mappable.map((m) => m.email)
+  const userMap = await userRepository.findManyByEmail(uniqueEmails)
+  const missingEmails = uniqueEmails.filter((e) => !userMap.has(e))
+  let inserted = 0
+  if (missingEmails.length > 0) {
+    const createdUsers = await userRepository.createMany(
+      missingEmails.map((email) => {
+        const item = mappable.find((m) => m.email === email)
+        const isPlaceholder = email === DUMMY_FACULTY_EMAIL
+        const deptId = isPlaceholder
+          ? undefined
+          : (item ? deptCodeToId[item.departmentCode] ?? undefined : undefined)
+        return {
+          email,
+          name: isPlaceholder ? "Unassigned Faculty" : (item?.name?.trim() || email.split("@")[0] || email),
+          role: "FACULTY",
+          departmentId: deptId,
+        }
+      }),
+    )
+    inserted = createdUsers.size
+    for (const [email, user] of createdUsers) {
+      userMap.set(email, user)
+    }
+  }
+
+  for (const [email, user] of userMap) {
+    if (uniqueEmails.includes(email)) facultyUserMap[email] = user.id
+  }
+
+  return {
+    stepId: "faculty-users",
+    status: "done",
+    inserted,
+    existing: uniqueEmails.length - inserted,
+    invalid,
+    facultyUserMap,
+  }
+}
+
+// ── Step 6 Faculty Loading (spec step-07 mappings, terminal) ──
+// LOOKUP-ONLY via three client-held maps (Steps 3+4+5) — never creates
+// sections/subjects/users (miss → invalid). Writes faculty_subjects only.
+// semesterId IS functional here (combo key + list + create), unlike Steps 1-5.
+
+export interface MappingStepItem {
+  subjectCode: string
+  sectionName: string
+  sectionProgram: string
+  facultyEmail: string
+}
+
+export interface MappingStepResult {
+  stepId: "mappings"
+  status: "done"
+  inserted: number
+  existing: number
+  invalid: DepartmentStepInvalid[]
+}
+
+export async function importMappingsStep(
+  items: MappingStepItem[],
+  maps: {
+    sectionKeyToId: Record<string, string>
+    subjectCodeToId: Record<string, string>
+    facultyUserMap: Record<string, string>
+  },
+  semesterId?: string | null,
+): Promise<MappingStepResult> {
+  const invalid: DepartmentStepInvalid[] = []
+  let inserted = 0
+  let existing = 0
+
+  const dummyId = maps.facultyUserMap[DUMMY_FACULTY_EMAIL]
+
+  type Candidate = {
+    faculty_id: string
+    subject_id: string
+    section_id: string
+    semesterId?: string | null
+    rowNum: number
+    email: string
+  }
+  const candidates: Candidate[] = []
+
+  items.forEach((raw, idx) => {
+    const rowNum = idx + 1
+    const subjectCode = (raw?.subjectCode ?? "").trim()
+    const sectionName = (raw?.sectionName ?? "").trim()
+    const sectionProgram = (raw?.sectionProgram ?? "").trim()
+    const emailRaw = (raw?.facultyEmail ?? "").toLowerCase().trim()
+
+    const subject_id = maps.subjectCodeToId[subjectCode]
+    if (!subject_id) {
+      invalid.push({ key: subjectCode, reason: `Subject ${subjectCode} not found` })
+      return
+    }
+    const section_id = maps.sectionKeyToId[`${sectionName}|${sectionProgram}`]
+    if (!section_id) {
+      invalid.push({ key: `${sectionProgram}-${sectionName}`, reason: `Section "${sectionProgram}-${sectionName}" not found` })
+      return
+    }
+    if (emailRaw.length === 0) {
+      if (!dummyId) {
+        invalid.push({ key: `${subjectCode}|${sectionProgram}-${sectionName}`, reason: `No faculty assigned to ${subjectCode} in ${sectionProgram}-${sectionName}` })
+        return
+      }
+      candidates.push({ faculty_id: dummyId, subject_id, section_id, semesterId: semesterId ?? null, rowNum, email: DUMMY_FACULTY_EMAIL })
+      return
+    }
+    const faculty_id = maps.facultyUserMap[emailRaw]
+    if (!faculty_id) {
+      invalid.push({ key: emailRaw, reason: `Faculty ${emailRaw} not found` })
+      return
+    }
+    candidates.push({ faculty_id, subject_id, section_id, semesterId: semesterId ?? null, rowNum, email: emailRaw })
+  })
+
+  const existingSlots = semesterId
+    ? await facultySubjectRepository.list({ semesterId })
+    : await facultySubjectRepository.list()
+  const existingByCombo = new Map<string, { id: string; faculty_id: string }>()
+  for (const e of existingSlots) {
+    if (!semesterId && e.semesterId) continue
+    existingByCombo.set(`${e.subject_id}|${e.section_id}|${e.semesterId ?? ""}`, { id: e.id, faculty_id: e.faculty_id })
+  }
+
+  const comboMap = new Map<string, Candidate>()
+  for (const item of candidates) {
+    const key = `${item.subject_id}|${item.section_id}|${item.semesterId ?? ""}`
+    const prev = comboMap.get(key)
+    if (!prev) {
+      comboMap.set(key, item)
+    } else if (dummyId && prev.faculty_id === dummyId && item.faculty_id !== dummyId) {
+      comboMap.set(key, item)
+    }
+  }
+
+  for (const item of [...comboMap.values()]) {
+    try {
+      await facultySubjectRepository.create({
+        faculty_id: item.faculty_id,
+        subject_id: item.subject_id,
+        section_id: item.section_id,
+        semesterId: item.semesterId ?? null,
+      })
+      inserted++
+    } catch (err) {
+      if ((err as { code?: string })?.code !== "23505") throw err
+      const found = existingByCombo.get(`${item.subject_id}|${item.section_id}|${item.semesterId ?? ""}`)
+      if (!found) continue
+      if (found.faculty_id === item.faculty_id) {
+        existing++
+        continue
+      }
+      if (dummyId && found.faculty_id === dummyId && item.faculty_id !== dummyId) {
+        await facultySubjectRepository.update(found.id, { faculty_id: item.faculty_id })
+        existingByCombo.set(`${item.subject_id}|${item.section_id}|${item.semesterId ?? ""}`, { id: found.id, faculty_id: item.faculty_id })
+        inserted++
+        continue
+      }
+      invalid.push({
+        key: `${item.subject_id}|${item.section_id}`,
+        reason: "Already assigned — not overwritten (existing load kept)",
+      })
+    }
+  }
+
+  return { stepId: "mappings", status: "done", inserted, existing, invalid }
+}
+
 export function parseFacultySubjectCsv(text: string): {
   rows: FacultySubjectCsvRow[]
   errors: { row: number; message: string }[]
