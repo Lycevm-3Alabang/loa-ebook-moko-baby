@@ -6,7 +6,7 @@ calibration: {1: "C", 2: "E", 3: "B", 4: "A", 5: "A", 6: "A"}
 workflow: "A"
 decision: "Option A — C1 integrity + C2 batched resolution, zero new interface methods. semesterId derived server-side via findActive(). D8 (stale UNIQUE constraint vs live schema) rides in C2."
 status: implementing
-pending: slice-1
+pending: slice-2
 ---
 
 # Plan — session
@@ -23,6 +23,7 @@ pending: slice-1
 | plan-done | Is this plan done? | A — Done |
 | handoff | Run implement-fix with it? | A — Yes, plus client error surfacing |
 | who-implements | Who implements? | B — Code it |
+| slice-1 | Apply Slice 1 (semesterId guard) to `app/api/import/students/route.ts`? | Applied — guard at `:26-41`, `bodySemesterId` destructuring removed. tsc clean · lint 0 errors (1 pre-existing warning in `FacultyLoadingTab.tsx`) · `studentImport` + `csv-utils` 37/37 green |
 
 **Client error surfacing — added at approval, before the first slice.**
 

@@ -756,7 +756,7 @@ function FacultyTab() {
     }
   }
 
-  const handleCsvImport = async () => {
+  const handleCsvImport = async () => { // eslint-disable-line @typescript-eslint/no-unused-vars
     if (!csvRows || csvRows.length === 0) return
     if (csvImportGuardRef.current) return
     csvImportGuardRef.current = true
