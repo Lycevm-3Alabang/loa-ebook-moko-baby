@@ -195,7 +195,6 @@ export async function importStudents(
     if (excelOffender) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: `Invalid value in ${excelOffender} (Excel error)` }); continue }
 
     if (!r.email) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Email is required" }); continue }
-    if (!r.facultyEmail) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Faculty email is required" }); continue }
     if (!ALLOWED_DOMAINS.some((d) => r.email.endsWith(d))) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Email domain not allowed" }); continue }
 
     const user = userMap.get(r.email.toLowerCase().trim())
