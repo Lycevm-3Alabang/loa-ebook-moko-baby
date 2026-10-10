@@ -344,15 +344,31 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         }
         return data as unknown as ImportResult
       }
+      // Success metas in results order (onChunkResult fires once per success,
+      // in completion order — parallel to `results`). Merged with failed metas
+      // they give exact per-chunk boundaries at any chunk size: no constant.
+      const resultMetas: ChunkMeta[] = []
       const { results, cancelled, failedChunks, stoppedEarly } = await runChunks(previewRows, {
         chunkSize: STUDENT_CHUNK_SIZE,
         postChunk: (chunk, meta, signal) =>
           postChunk(payload.slice(meta.rowOffset, meta.rowOffset + chunk.length), meta, signal),
+        onChunkResult: (_r, meta) => { resultMetas.push(meta) },
         summarizeResult: (r) => ({ saved: r.enrolled ?? 0, skipped: r.skipped ?? 0, issues: (r.failed?.length ?? 0) + (r.parseErrors?.length ?? 0) }),
       })
       if (cancelled) { setError(`Import cancelled after ${results.length} chunks — retry to resume`); return }
-      const deadEntries = failedChunks.flatMap((fc) =>
-        payload.slice(fc.meta.rowOffset, fc.meta.rowOffset + STUDENT_CHUNK_SIZE).map((p) => ({
+      // Exact row window of a chunk: the next known boundary after its offset
+      // (a later chunk's start of either kind, else the payload end). Sequential
+      // offsets make this exact with no size constant.
+      const endOfChunk = (rowOffset: number) => {
+        const later = [...resultMetas, ...failedChunks.map((fc) => fc.meta)]
+          .map((m) => m.rowOffset)
+          .filter((o) => o > rowOffset)
+        return later.length > 0 ? Math.min(...later) : payload.length
+      }
+      const deadEntries = [...failedChunks]
+        .sort((a, b) => a.meta.rowOffset - b.meta.rowOffset)
+        .flatMap((fc) =>
+          payload.slice(fc.meta.rowOffset, endOfChunk(fc.meta.rowOffset)).map((p) => ({
           row: p._originRow,
           email: p.email,
           subjectCode: p.subjectCode,
@@ -365,7 +381,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         enrolled: results.reduce((s, r) => s + (r.enrolled ?? 0), 0),
         skipped: results.reduce((s, r) => s + (r.skipped ?? 0), 0),
         failed: [...results.flatMap((r, ci) => (r.failed ?? []).map((f) => {
-          const previewIdx = ci * STUDENT_CHUNK_SIZE + (f.row - 1)
+          // results holds successes only, so ci is NOT a chunk index once any
+          // chunk fails — the collected meta gives the exact offset instead.
+          const previewIdx = (resultMetas[ci]?.rowOffset ?? ci * STUDENT_CHUNK_SIZE) + (f.row - 1)
           const originRow = payload[previewIdx]?._originRow ?? ci * STUDENT_CHUNK_SIZE + f.row
           return { ...f, row: originRow }
         })), ...deadEntries],

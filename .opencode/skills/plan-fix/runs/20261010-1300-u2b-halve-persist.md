@@ -20,23 +20,24 @@ pending: gates
 | plan-done | Is this plan done? | A — Done |
 | handoff | Run implement-fix with it? | A — Yes, load implement-fix on this file (no slice starts yet) |
 | who-implements | Who implements U2b Slice 1 (hook loop re-slice)? | B — Code it (agent writes after Apply, one file per turn) |
-| slice-1 | Apply Slice 1 (hook loop re-slice + new run-loop test)? | Applied — `CHUNK_MIN_SIZE = 25` + offset/size-driven loop + `chunk-halve.test.ts` (4 tests). |
-| slice-1-gates | Targeted halve tests + tsc? | RED 3/4 first run — agent's expectation arithmetic wrong (wrote 9 calls, loop correctly made 10). |
-| slice-1-fix | Apply test-expectation correction (10 calls, 8 results)? | Applied — "halves again" now expects `[100, 50, 25×8]` + `results` length 8. Hook untouched. Awaiting user re-run per H1. |
+| slice-1 | Apply Slice 1 (hook loop re-slice + new run-loop test)? | Applied — `CHUNK_MIN_SIZE = 25` + offset/size-driven loop + `chunk-halve.test.ts` (4 tests, expectation corrected to 10 calls/8 results). |
+| slice-1-gates | Targeted halve tests + tsc? | RED 3/4 → expectation corrected; re-run requested but user continued without pasting. Still unconfirmed — debt carried to close-out. |
+| slice-2 | Apply Slice 2 (student exact-boundary windows)? | Applied — `resultMetas` via existing `onChunkResult` + `endOfChunk` boundary merge + sorted `deadEntries` + meta-based aggregation index (old math kept as fallback). Zero hook touch. Grep confirms `STUDENT_CHUNK_SIZE` remains only as const, initial `chunkSize`, and two defensive fallbacks. Awaiting user close-out gates per H1. |
 
 ## Pending
 
-- gates: User re-runs targeted halve tests (+ tsc) and pastes green/red; then continue → Slice 2 (student windows) proposal.
+- gates: User runs close-out gate (tsc → lint → full vitest) and pastes green/red; then close-out (TODO/README) or next (U3 70s).
 
 ## Decisions
 
-- (unchanged: scope = hook loop + its test, then student windows; no U3/U4/faculty; Vercel flake parked; invariants all n/a; proof = npm test + local tsc/lint/vitest gates)
+- (unchanged: student-only slice via existing hook API; no interface/route/DB/auth change; history rejected as stale, FailedChunk widening rejected as shared-interface churn; Vercel flake parked)
+- Proof: npm test; local close-out gate npx tsc --noEmit → npm run lint → npx vitest run (Vercel build parked).
 
 ## Scan
 
-- (unchanged: entry :347-352 halve-safe; loop rewritten offset/size-driven; consumers :354-371 fixed-stride → Slice 2)
+- (unchanged)
 
 ## Plan
 
-Slice 1 — hook loop + new test. STATUS: APPLIED + expectation corrected (awaiting green re-run).
-Slice 2 — student windows (BulkStudentImport.tsx:354-371). STATUS: on continue (after Slice 1 green).
+Slice 1 — hook loop + new test. STATUS: APPLIED (green unconfirmed — debt).
+Slice 2 — student windows via collected metas. STATUS: APPLIED (awaiting close-out gates).
