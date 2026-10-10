@@ -29,6 +29,11 @@ export interface PanelRowLike {
   row: number
   /** §3.2 — THIS ROW's own department, from its `department code`. Null when unresolved. */
   resolvedDepartmentId: string | null
+  /**
+   * The raw CSV cell, kept so "blank" and "unknown code" stay distinguishable
+   * (§3.4). `resolvedDepartmentId` alone has already collapsed that difference.
+   */
+  departmentCode: string
   /** Cannot import under any resolution (mirrors isBlockedPreviewRow). */
   isBlocked: boolean
   /** Imports, but carries a flag. */
@@ -50,6 +55,18 @@ export interface DepartmentPanel<TRow extends PanelRowLike> {
   rows: TRow[]
   blockedCount: number
   problemCount: number
+  /**
+   * Rows whose `department code` is blank or does not resolve (§3.4). Only the
+   * Unassigned panel can carry these — the builder routes every null id there —
+   * so a resolved department's panel always reads 0.
+   */
+  unresolvedCount: number
+  /**
+   * The blank subset of `unresolvedCount`. A blank and a typo are different
+   * admin mistakes with different fixes, and the ledger distinguishes them
+   * (import-ledger.ts:154) — so the panel summary must too.
+   */
+  blankDeptCount: number
 }
 
 export function buildDepartmentPanels<TRow extends PanelRowLike>(
@@ -76,6 +93,8 @@ export function buildDepartmentPanels<TRow extends PanelRowLike>(
       rows: bucket,
       blockedCount: bucket.filter((r) => r.isBlocked).length,
       problemCount: bucket.filter((r) => r.isProblem).length,
+      unresolvedCount: bucket.filter((r) => r.resolvedDepartmentId === null).length,
+      blankDeptCount: bucket.filter((r) => r.departmentCode.trim() === "").length,
     })
   }
   // Deterministic: code ascending, Unassigned last. `departments` arrives in

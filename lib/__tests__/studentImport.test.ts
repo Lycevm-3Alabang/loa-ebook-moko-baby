@@ -273,6 +273,38 @@ describe("importStudents — student accounts", () => {
       expect.objectContaining({ student_id: "stu-1", faculty_subject_id: MAPPING.id }),
     ])
   })
+
+  // §3.4 decision (b): a row whose `department code` does not resolve is NOT
+  // rejected. Department is reporting metadata; the enrollment is the substance,
+  // and losing enrollments over a typo'd code is the worse failure. This is the
+  // only assertion holding that line — tighten the department validation and
+  // every gate still passes while enrollments silently vanish.
+  it("enrols a row with no resolvable department and creates the user with departmentId null", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
+
+    const result = await importStudents([baseStudentRow({ departmentId: undefined })], null, null)
+
+    expect(result.failed).toHaveLength(0)
+    expect(result.enrolled).toBe(1)
+    expect(factory.userRepository.createMany).toHaveBeenCalledWith([
+      expect.objectContaining({ email: STUDENT_EMAIL, departmentId: null }),
+    ])
+    expect(factory.studentEnrollmentRepository.addEnrollments).toHaveBeenCalledTimes(1)
+  })
+
+  // The Unassigned panel must not leak its own department onto rows that carry
+  // none — `r.departmentId ?? departmentId ?? null` means the row wins and the
+  // request default is only a fallback. Inverting it would file every Unassigned
+  // user under whichever panel happened to be running.
+  it("lets a row's own department win over the request-level default", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
+
+    await importStudents([baseStudentRow({ departmentId: "dept-9" })], "dept-fallback", null)
+
+    expect(factory.userRepository.createMany).toHaveBeenCalledWith([
+      expect.objectContaining({ email: STUDENT_EMAIL, departmentId: "dept-9" }),
+    ])
+  })
 })
 
 // ═══ Enrollment write ═════════════════════════════════════════════

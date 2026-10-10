@@ -259,6 +259,10 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     return previewRows.filter(isBlockedPreviewRow)
   }, [previewRows])
 
+  // Drives the §8 roll-up's headline and its per-panel breakdown. Derived — no
+  // state that could drift from `panels`.
+  const blockedPanels = useMemo(() => panels.filter((p) => p.blockedCount > 0), [panels])
+
   const problemRows = useMemo(() => {
     if (!previewRows) return []
     return previewRows.filter(isProblemPreviewRow)
@@ -375,14 +379,41 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     }
   }
 
-  const handleRemoveBlocked = () => {
-    if (!previewRows) return
-    const blocked = previewRows.filter(isBlockedPreviewRow)
-    setRemovedRows((prev) => [...prev, ...blocked.map((removed) => ({ row: removed.row, email: removed.email, name: removed.name, subjectCode: removed.subjectCode, section: removed.section, facultyEmail: removed.facultyEmail, departmentCode: removed.departmentCode, reason: "REMOVED_BLOCKED" as const }))])
-    setPreviewRows(previewRows.filter((r) => !isBlockedPreviewRow(r)))
+  // Removed rows carry their ledger reason, and `removedRows` is what the ledger
+  // counts as "removed". Keyed by SOURCE row number: `panels` holds COPIES of the
+  // preview rows (the memo adds isBlocked/isProblem), so object identity would
+  // match nothing in previewRows.
+  //
+  // Typed `PreviewRow[]`, not `PanelRow[]`: this reads only the CSV columns and
+  // never touches isBlocked/isProblem, so the panel's added fields are noise here.
+  // `PanelRow` is assignable to `PreviewRow`; the reverse is not, and the bulk
+  // caller below has raw preview rows. The narrower type would have been wrong.
+  const removeBlockedRows = (target: PreviewRow[]) => {
+    if (!previewRows || target.length === 0) return
+    const gone = new Set(target.map((r) => r.row))
+    setRemovedRows((prev) => [
+      ...prev,
+      ...target.map((removed) => ({
+        row: removed.row,
+        email: removed.email,
+        name: removed.name,
+        subjectCode: removed.subjectCode,
+        section: removed.section,
+        facultyEmail: removed.facultyEmail,
+        departmentCode: removed.departmentCode,
+        reason: "REMOVED_BLOCKED" as const,
+      })),
+    ])
+    setPreviewRows((prev) => prev?.filter((r) => !gone.has(r.row)) ?? prev)
     setProblemFilter(false)
     setPreviewPage(0)
   }
+
+  const handleRemoveBlockedIn = (panel: DepartmentPanel<PanelRow>) =>
+    removeBlockedRows(panel.rows.filter((r) => r.isBlocked))
+
+  const handleRemoveAllBlocked = () =>
+    removeBlockedRows(previewRows?.filter(isBlockedPreviewRow) ?? [])
 
   // One panel, one run. The chunk offsets stay panel-local, so buildImportLedger's
   // `payload[meta.rowOffset + i]` still resolves against the rows it was sent.
@@ -702,16 +733,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                         : "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400"
                     }`}
                   >
-                    {problemFilter ? "Show all rows" : `Show ${blockedRows.length} blocked only`}
-                  </button>
-                )}
-                {blockedRows.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleRemoveBlocked}
-                    className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
-                  >
-                    {`Remove ${blockedRows.length} blocked`}
+{problemFilter ? "Show all rows" : `Show ${blockedRows.length} blocked only`}
                   </button>
                 )}
               </div>
@@ -722,6 +744,34 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                 <span><span className="font-semibold text-secondary">{previewRows.length - blockedRows.length}</span> ready to import</span>
                 <span><span className="font-semibold text-amber-600">{problemRows.length}</span> flagged &mdash; imports with a flag; an unknown subject, section or faculty fails that row</span>
                 <span><span className="font-semibold text-red-600">{blockedRows.length}</span> blocked (missing email, bad domain, Excel error)</span>
+              </div>
+            )}
+
+            {/* §8 "Invalid-list volume": StepPanel renders invalid[] in a max-h-32 scroll, so
+                per-panel lists alone leave the admin scrolling ten boxes to learn whether
+                their file has blocked rows at all. This says BLOCKED — never "remaining" —
+                so it cannot be confused with the footer's "N of M panels run". */}
+            {blockedRows.length > 0 && (
+              <div className="rounded-xl border border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-900/20 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold text-red-700 dark:text-red-300">
+                      {blockedRows.length} blocked row{blockedRows.length !== 1 ? "s" : ""} across{" "}
+                      {blockedPanels.length} panel{blockedPanels.length !== 1 ? "s" : ""}
+                    </p>
+                    <p className="text-[11px] text-red-600/80 dark:text-red-300/70">
+                      {blockedPanels.map((p) => `${p.label} ${p.blockedCount}`).join(" · ")} — a
+                      blocked row cannot import, whatever the other columns say.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemoveAllBlocked}
+                    className="shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
+                  >
+                    Remove all {blockedRows.length} blocked
+                  </button>
+                </div>
               </div>
             )}
 
@@ -744,7 +794,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                     const disabledTitle = !semesterId
                       ? "Set an active semester before importing."
                       : blocked
-                        ? `${panel.blockedCount} blocked row${panel.blockedCount !== 1 ? "s" : ""} — fix or remove them in the table below.`
+                        ? `${panel.blockedCount} blocked row${panel.blockedCount !== 1 ? "s" : ""} — remove them, or fix the values in the table below.`
                         : undefined
                     return (
                       <StepPanel
@@ -761,6 +811,27 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                             <p className="text-[11px] text-tertiary">
                               {panel.rows.length - panel.blockedCount} ready · {panel.problemCount} flagged · {panel.blockedCount} blocked
                             </p>
+                            {/* Only the Unassigned panel can carry these — the builder
+                                routes every null id there (pinned by
+                                department-panels.test.ts). §3.4 decision (b): these rows
+                                still import; the ledger names the reason, not the UI. */}
+                            {panel.unresolvedCount > 0 && (
+                              <p className="text-[11px] text-amber-600">
+                                {panel.unresolvedCount} unresolved department code
+                                {panel.unresolvedCount !== 1 ? "s" : ""}
+                                {panel.blankDeptCount > 0 && ` · ${panel.blankDeptCount} blank`} —
+                                still imported; the ledger records which.
+                              </p>
+                            )}
+                            {blocked && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveBlockedIn(panel)}
+                                className="text-[11px] font-semibold text-red-600 hover:underline"
+                              >
+                                Remove these {panel.blockedCount}
+                              </button>
+                            )}
                             {result && (
                               <p className="text-[11px] text-secondary">
                                 {result.enrolled} resolved · {result.inserted} written · {result.skipped} skipped ·{" "}

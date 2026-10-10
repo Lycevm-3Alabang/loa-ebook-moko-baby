@@ -4,10 +4,14 @@ import {
   UNASSIGNED_PANEL_ID,
 } from "@/features/users/components/bulk-import/department-panels"
 
-const row = (row: number, dept: string | null, isBlocked = false, isProblem = false) => ({
+// departmentCode defaults to the dept the row resolved to, so a RESOLVED row is
+// never blank and an UNRESOLVED row is blank unless told otherwise. Pass the 5th
+// argument to contradict that deliberately.
+const row = (row: number, dept: string | null, isBlocked = false, isProblem = false, departmentCode = dept ?? "") => ({
   row,
   email: `s${row}@x.edu`,
   resolvedDepartmentId: dept,
+  departmentCode,
   isBlocked,
   isProblem,
 })
@@ -86,5 +90,37 @@ describe("buildDepartmentPanels — rows bucketed by their own department (spec 
 
   it("returns no panels for no rows", () => {
     expect(buildDepartmentPanels([], DEPTS)).toEqual([])
+  })
+
+  it("renders no Unassigned panel when every row resolves", () => {
+    // §3.4's "lazily created" contract, pinned: the panel is not a fixed slot in
+    // the grid — it materialises only because some row demanded one.
+    const panels = buildDepartmentPanels([row(1, "d-ccs"), row(2, "d-cas")], DEPTS)
+    expect(panels.map((p) => p.id)).not.toContain(UNASSIGNED_PANEL_ID)
+  })
+
+  it("tallies unresolved rows, and the blank subset, on the Unassigned panel", () => {
+    const panels = buildDepartmentPanels(
+      [row(1, null, false, false, "ZZZ"), row(2, null, false, false, ""), row(3, "d-ccs")],
+      DEPTS,
+    )
+    const unassigned = panels.find((p) => p.id === UNASSIGNED_PANEL_ID)
+    expect(unassigned?.unresolvedCount).toBe(2)
+    // blank ⊆ unresolved — a blank code can never resolve to a department
+    expect(unassigned?.blankDeptCount).toBe(1)
+  })
+
+  it("counts a whitespace-only code as blank", () => {
+    const panels = buildDepartmentPanels([row(1, null, false, false, "   ")], DEPTS)
+    expect(panels[0].unresolvedCount).toBe(1)
+    expect(panels[0].blankDeptCount).toBe(1)
+  })
+
+  it("reports zero unresolved on a resolved department's panel", () => {
+    // Structural, not defensive: the builder routes every null id to Unassigned,
+    // so a resolved panel cannot carry one even if a fixture tried.
+    const panels = buildDepartmentPanels([row(1, "d-ccs"), row(2, "d-ccs")], DEPTS)
+    expect(panels[0].unresolvedCount).toBe(0)
+    expect(panels[0].blankDeptCount).toBe(0)
   })
 })
