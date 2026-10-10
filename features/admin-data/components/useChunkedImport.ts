@@ -69,6 +69,13 @@ export const CHUNK_RETRY_JITTER_MS = 250
 
 export function isRetryableChunkError(err: unknown): boolean {
   if (err instanceof DOMException && err.name === "AbortError") return false
+  // A database error carrying a Postgres SQLSTATE is deterministic, not a transport
+  // failure: class 23 (integrity constraint violation, e.g. 23505 unique violation)
+  // reproduces exactly on every retry. Such an error has no HTTP status, so without
+  // this branch it fell through to `status === undefined → true` and the doomed chunk
+  // was retried twice — 3x the work, 46s, for the same guaranteed failure.
+  const pgCode = (err as { code?: unknown } | null)?.code
+  if (typeof pgCode === "string" && pgCode.length > 0) return false
   const status = (err as ChunkErrorHints | null)?.status
   if (status === undefined) return true
   return status === 408 || status === 425 || status === 429 || status >= 500

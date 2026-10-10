@@ -39,6 +39,7 @@ interface ImportResult {
   successCsv: string
   failureCsv: string
   totalRows: number
+  termMismatch?: { mappedTerms: string[]; activeTerm: string | null } | null
 }
 
 const TEMPLATE_HEADERS = "name, email, subject code, section, faculty email, department code"
@@ -364,6 +365,8 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         successCsv: results.map((r) => r.successCsv).filter(Boolean).reduce(concatCsvBodies, ""),
         failureCsv: results.map((r) => r.failureCsv).filter(Boolean).reduce(concatCsvBodies, ""),
         totalRows: previewRows.length,
+        // Any chunk reporting a mismatch means the whole run is against the wrong term.
+        termMismatch: results.find((r) => r.termMismatch)?.termMismatch ?? null,
       }
       setImportResult(aggregated)
       if (removedRows.length > 0) {
@@ -529,8 +532,10 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
             <div className="flex items-center gap-3">
               <p className="text-[11px] text-tertiary/70 italic">
-                <span className="badge-red not-italic">Red</span> cannot import — remove those rows.
-                <span className="badge-amber not-italic ml-1">Amber</span> imports, or the server resolves it.
+                <span className="badge-red not-italic">Red</span> cannot import &mdash; remove those rows.
+                <span className="badge-amber not-italic ml-1">Amber</span> fix inline: a new student is
+                created and an unknown department imports as Unassigned, but an unknown subject, section
+                or faculty fails that row.
               </p>
               <div className="ml-auto">
                 {problemRows.length > 0 && (
@@ -561,12 +566,30 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             {previewRows && previewRows.length > 0 && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-[11px] text-tertiary">
                 <span><span className="font-semibold text-secondary">{previewRows.length - blockedRows.length}</span> ready to import</span>
-                <span><span className="font-semibold text-amber-600">{problemRows.length}</span> flagged — resolved or reported server-side</span>
+                <span><span className="font-semibold text-amber-600">{problemRows.length}</span> flagged &mdash; a new student is created and an unknown department imports as Unassigned; an unknown subject, section or faculty fails that row</span>
                 <span><span className="font-semibold text-red-600">{blockedRows.length}</span> blocked (missing email, bad domain, Excel error)</span>
               </div>
             )}
 
             {error && <p className="text-xs font-medium text-red-600">{error}</p>}
+
+            {importResult?.termMismatch && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-xl px-4 py-3 space-y-1">
+                <p className="text-xs font-semibold text-red-700 dark:text-red-300">
+                  Faculty mappings are attached to an inactive semester
+                </p>
+                <p className="text-[11px] text-red-600/80 dark:text-red-300/70">
+                  The subjects and sections in this file have no faculty for the active semester
+                  {importResult.termMismatch.mappedTerms.length > 0 && (
+                    <> &mdash; their mappings sit under {importResult.termMismatch.mappedTerms.length} other
+                    semester{importResult.termMismatch.mappedTerms.length !== 1 ? "s" : ""}</>
+                  )}
+                  . Re-import the faculty CSV while that semester is active, or activate the semester
+                  the mappings belong to. Rows below fail with &ldquo;not assigned&rdquo; because of
+                  this, not because of a typo.
+                </p>
+              </div>
+            )}
 
             <div className="max-h-72 overflow-y-auto tbl-container tbl">
               <table>

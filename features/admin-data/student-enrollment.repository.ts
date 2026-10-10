@@ -83,23 +83,44 @@ export const studentEnrollmentRepository: IStudentEnrollmentRepository = {
 
     const keyOf = (i: { student_id: string; faculty_subject_id?: string | null; semesterId?: string | null }) =>
       `${i.student_id}|${i.faculty_subject_id ?? ""}|${i.semesterId ?? ""}`
+
+    // Dedupe the request against ITSELF before writing. One multi-row INSERT cannot
+    // contain two copies of the same (student, faculty_subject, semester) — Postgres
+    // checks the unique index per row, so the second copy raises 23505 and the whole
+    // statement rolls back. The 2026-1 student CSV has 5,162 redundant rows out of
+    // 28,096, so this is the common case, not an edge case.
+    //
+    // The service already dedupes; this is defence in depth, because the constraint
+    // is this layer's to guarantee and any other caller inherits it.
+    const seen = new Set<string>()
+    const uniqueItems = items.filter((i) => {
+      const k = keyOf(i)
+      if (seen.has(k)) return false
+      seen.add(k)
+      return true
+    })
+    const collapsed = items.length - uniqueItems.length
+
     const existingSet = new Set((existing || []).map((r) =>
       `${r.student_id}|${r.faculty_subject_id ?? ""}|${r.semesterId ?? ""}`))
 
-    const newItems = items.filter((i) => !existingSet.has(keyOf(i)))
-    const skippedItems = items
+    const newItems = uniqueItems.filter((i) => !existingSet.has(keyOf(i)))
+    const skippedItems = uniqueItems
       .filter((i) => existingSet.has(keyOf(i)))
       .map((i) => ({
         student_id: i.student_id,
         faculty_subject_id: i.faculty_subject_id ?? null,
         section_id: i.section_id,
       }))
+    // Rows collapsed by the dedupe above were not persisted either, so they belong
+    // in the same accounting as rows the database already held.
+    const skipped = skippedItems.length + collapsed
 
-    if (newItems.length === 0) return { inserted: 0, skipped: skippedItems.length, skippedItems }
+    if (newItems.length === 0) return { inserted: 0, skipped, skippedItems }
 
     const { error: insErr } = await supabase.from("student_enrollments").insert(newItems)
     if (insErr) throw insErr
-    return { inserted: newItems.length, skipped: skippedItems.length, skippedItems }
+    return { inserted: newItems.length, skipped, skippedItems }
   },
 
   async getFacultySubjectsByStudent(student_id, faculty_id, semesterId) {

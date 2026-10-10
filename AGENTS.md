@@ -12,6 +12,8 @@
 
 ## Commands
 
+> **Note (H1):** These are for the **user to run** — never execute them yourself. Present them copy-paste ready in PowerShell-compatible form.
+
 | Command | Action |
 |---------|--------|
 | `npm run dev` | Start dev server |
@@ -100,7 +102,7 @@ lib/                    # Global utilities & infrastructure
 ## Testing
 
 - Vitest with jsdom environment (config: `vitest.config.ts`)
-- All tests in `lib/__tests__/` (9 test files)
+- All tests in `lib/__tests__/` (20 test files, 2026-10-09)
 - Repositories mocked via `lib/repositories/factory.ts` module mock
 - CI runs `npx vitest run` on push/PR to `main`
 
@@ -108,7 +110,7 @@ lib/                    # Global utilities & infrastructure
 
 - **Faculty Evaluation Module** (`eval` branch): ~18 items marked ❌ missing in `README.md` (pages, API routes, repositories, reports)
 - **Sentiment analysis:** placeholders only (`lib/services/sentiment.ts`, API stubs)
-- **Test coverage:** minimal (8 test files ~17,619 LOC)
+- **Test coverage:** minimal (20 test files, ~3.3k non-blank test LOC, 2026-10-09)
 
 ## Setup
 
@@ -170,6 +172,34 @@ Renaming DB columns cascade through the full TypeScript stack:
 - **Symptom:** ESLint `@typescript-eslint/no-unused-vars` on destructured params like `({ role, ...fields })`
 - **Fix:** Prefix with underscore: `({ role: _role, ...fields })` — the config allows unused args matching `/^_/u`.
 
+## Hard Rules
+
+### H1. NEVER run CLI commands
+
+- **Absolute rule:** Do NOT execute shell/CLI commands (build, test, lint, npm, git, etc.). Do not run them "just to verify."
+- Instead, **provide copy-paste-ready commands** the user can paste into their terminal.
+- All provided commands must be **PowerShell-compatible** (Windows). Avoid bash-only syntax (`&&`, `export VAR=...`, `cp`, `sed`, etc.). Use PowerShell equivalents:
+  - Chaining: `cmd1; if ($?) { cmd2 }`
+  - Env vars: `$env:NAME = "value"`
+  - Copy: `Copy-Item`
+  - Replace: `-replace` operator or no inline sed
+- Format them in a fenced code block so the user can copy them verbatim.
+
+### H2. Calibrate, don't overthink
+
+- **Avoid overthinking and analysis paralysis.** When a decision is needed, **calibrate with the user** instead of deciding solo or spiraling into research.
+- Ask a short, concrete question with options (use the question tool when appropriate) rather than guessing or elaborating at length.
+- One decision at a time; confirm before proceeding.
+
+### H3. Decompose big tasks — offer tracking artifacts
+
+- If a task is **too large or risky**, decompose it into **smaller sub-tasks** that can be:
+  - **tracked individually**,
+  - **delivered incrementally**, and
+  - **verified not to break anything** before moving to the next.
+- When decomposition is warranted, **offer to create a tracking file** (e.g. a checklist/markdown file in the repo) and/or frame the work as a **spike** (time-boxed investigation) or a **spec** (written design) before any implementation.
+- Never attempt a large change in one shot.
+
 ## Behavioral Rules (from deleted `app/AGENT.md`)
 
 - **Default mode: advisory** — analyze, explain, review, recommend, ask. Do not generate code unless explicitly asked.
@@ -179,6 +209,6 @@ Renaming DB columns cascade through the full TypeScript stack:
 - **No autopilot** — prohibited unless requested: refactoring, renaming, restructuring, file movement/deletion, dependency install, arch changes, DB changes, API redesign, new features, cleanup, optimization, test gen, docs updates.
 - **Code review first** — point to files, methods, root causes. Do not rewrite code immediately.
 - **Proposal format** — for changes >20 lines: Understanding, Questions, Recommendation, Files Affected, Risks, then await approval.
-- **Implementation checklist** — TypeScript passes, build passes, lint passes, no unused imports, no `console.log`, no `any`, no `ts-ignore`, error handling present.
+- **Implementation checklist** — no unused imports, no `console.log`, no `any`, no `ts-ignore`, error handling present. Provide the user copy-paste PowerShell commands to verify TypeScript/build/lint themselves (per H1 — do not run them).
 
 
