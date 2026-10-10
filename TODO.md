@@ -12,12 +12,14 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
 
 ## NEXT (do first)
 
-- [ ] **C3 S1 — department grouping** (`specs/student-import-stepper.md` §3, §5).
-  Department grouping computed client-side at preview, stamped onto every row —
-  the zero-UI-risk entry point for the department stepper (decides the front-end
-  shape). Known: 176 students span >1 department; first-instance-wins accepted
-  (§3.3). Then S2 grid + panels → S3 Unassigned panel → S4 `userMap` merge.
-  D6 done 2026-10-10 (user-reported-green, gates rode unpaid into its run).
+- [ ] **C3 S2 — department grid + panels** (`specs/student-import-stepper.md` §3, §5).
+  S1 landed the data (grouping is derived, deterministic, already on every payload
+  row); S2 makes it VISIBLE: per-department grid of panels off `rowDept`
+  (the row's own code, §3.2), Unassigned rows in their own lazily-created panel,
+  global running guard on the preview table while any panel runs. No new writes —
+  panels drive the same per-department chunk runs C1/C2 already made safe.
+  C3 S1 done 2026-10-10 (user-reported green, gates pasted). Then S3 (Unassigned
+  panel polish) → S4 (`userMap` merge across panels).
 
 ## Queued (proposed order — reorder freely)
 
@@ -43,11 +45,16 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
   inserted 0; fresh 1/1). Route untouched. Greens USER-REPORTED (gates for S1 rode
   unpaid — covered only if the close-out run is pasted). Run file:
   `.opencode/skills/plan-fix/runs/20261010-1115-d6-inserted.md`.
-- [ ] **C3 S1–S4 — department stepper** (`specs/student-import-stepper.md` §3, §5).
-  S1 department grouping, computed client-side at preview, stamped onto every row
-  (zero UI risk; decides the front-end shape) → S2 grid + panels → S3 Unassigned
-  panel → S4 `userMap` merge. Known: 176 students span >1 department;
-  first-instance-wins is accepted (§3.3). Buys containment, not correctness.
+- [x] **C3 S1 — department grouping done 2026-10-10** (`specs/student-import-stepper.md` §3.3).
+  Pure `department-grouping.ts` + 6 tests (first-instance-in-file-order wins,
+  strict null → Unassigned, case-insensitive) · wiring via `useMemo` over
+  `previewRows` (derived, edit-proof) · payload sends the STUDENT's department so
+  the server's first-to-arrive map is degenerate by construction; the row's own
+  code stays on `resolvedDepartmentId` for S2's panels. Data layer only — nothing
+  renders it yet (that's S2). This slice also surfaced and fixed D6's latent
+  block-scoped `inserted` bug (TS18004 + 30 red tests; hoisted `let inserted = 0`).
+  Gates USER-REPORTED green. Run file:
+  `.opencode/skills/plan-fix/runs/20261010-1300-c3-s1-department-grouping.md`.
 - [ ] **Cleanup — deferred course payload**. Trim unconsumed `departmentCourses`
   from `/api/import/students/reference` in its own pass; confirm no other consumer
   (`BulkSectionImport.tsx` keeps separate state — do not touch). NOTE: the student

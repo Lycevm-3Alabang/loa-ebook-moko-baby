@@ -70,7 +70,7 @@ Sliced C1 → C2 → C3 so the integrity fixes do not wait on the UI layer.
 | **D9** — section preview | **Done (2026-10-09)** | Student preview matched sections by `departmentCourseId` obtained from a course looked up by `code` alone; now matches `name` + `program` like the faculty client and the server |
 | **D11** — 23505 | **Done (2026-10-09)** | Duplicate CSV rows put two copies of one key into a single multi-row INSERT. Deduped in `importStudents` *and* in `addEnrollments` as defence in depth; `23505` removed from the retryable set |
 | **Semester mismatch** | **Done (2026-10-09)** | Not a spec'd defect — found live. Mappings attached to a now-inactive semester now surface a red banner instead of every row failing "not assigned" |
-| **C3** — department stepper | **Not started** | Department grid · per-department panels · Unassigned panel · `userMap` merge. Slices S1→S4, see the run file |
+| **C3** — department stepper | **S1 Done (2026-10-10, user-reported green)** | S1: `department-grouping.ts` + 6 tests — first-instance-in-file-order per student (§3.3, strict null → Unassigned), wired via `useMemo` over `previewRows`; payload carries the student's department so the server's first-to-arrival map is degenerate by construction; the row's own code stays on `resolvedDepartmentId` for the panels. Data layer only — nothing renders it yet. Run file: `.opencode/skills/plan-fix/runs/20261010-1300-c3-s1-department-grouping.md` (also surfaced + fixed D6's block-scoped `inserted` bug). Remaining: S2 grid + panels → S3 Unassigned → S4 `userMap` merge |
 | **D3** — ledger | **Done (2026-10-10, user-reported green)** | One `student-import-ledger.csv`, every input row exactly once. 17-code shared vocabulary (`lib/csv-utils.ts`) · server `reasonCode` at all 9 reject sites + `alreadyPersisted` key-join + `DUPLICATE_IN_FILE` · pure builder `import-ledger.ts` + 25 tests · three downloads → one, closure assert exact · `DEPARTMENT_UNRESOLVED`/`DEPARTMENT_MISMATCH` flags · legend + 4 badges red. Run file: `.opencode/skills/plan-fix/runs/20261010-1600-d3-ledger.md`. `DEPARTMENT_FROM_FIRST_ROW` deferred to C3 |
 | **D6** — `inserted` surfaced | **Done (2026-10-10, user-reported green)** | `StudentImportResult.inserted` returned (0 on the early path) + client field + `?? 0` sum + tile "Enrollments Resolved" + summary line "resolved · newly written · skipped" + 2 service tests. A re-run now SHOWS enrolled>0 with inserted 0 instead of claiming it in prose. Run file: `.opencode/skills/plan-fix/runs/20261010-1115-d6-inserted.md`. Remaining: C3 S1–S4 |
 | [chunked-import-failure-ux.md](chunked-import-failure-ux.md) | **U1 Done (2026-10-10)** | `getChunkFailureMessage` in `useChunkedImport` + both `postChunk` typed errors + `lib/__tests__/chunk-failure-message.test.ts` (8 tests). Gates green. Run file: `.opencode/skills/plan-fix/runs/20261010-1100-u1.md`. **S1 done (2026-10-10)** — 504→fail-fast predicate + 504/503 policy test (+1 test), gates waived (suite unverified). Run file: `.opencode/skills/plan-fix/runs/20261010-1200-u2a-504-retry-split.md`. Remaining: halve-once/persist (S3/S4), 70s, `fileId` |
@@ -79,7 +79,7 @@ Sliced C1 → C2 → C3 so the integrity fixes do not wait on the UI layer.
 | **U4** — invariant + `fileId` | **Done (2026-10-10, user-reported green)** | Optional meta widen + `savedTotal` + suffix on mapper-authored branches (verbatim pure, Abort bare) + 6 message tests + 2 banner sentences. Family `chunked-import-failure-ux.md` complete (U1→U4). Run file: `.opencode/skills/plan-fix/runs/20261010-1500-u4-invariant-fileid.md`. Remaining: D3 (ledger), D6, C3 |
 
 **Gate:** `npx tsc --noEmit` → `npm run lint` → `npx vitest run` → `npm run build`.
-Current **326 tests / 23 files, user-reported green 2026-10-10** (was 259 / 18 when this work began; +8 U1, +1 S1, +4 U2b, +1 U3, +6 U4, +26 D3, +2 D6). Failure-UX family complete; D3 ledger and D6 inserted complete. Remaining: C3 S1–S4.
+Current **332 tests / 24 files, user-reported green 2026-10-10** (was 259 / 18 when this work began; +8 U1, +1 S1, +4 U2b, +1 U3, +6 U4, +26 D3, +2 D6, +6 C3 S1). Failure-UX family, D3 ledger, D6 `inserted`, and C3 S1 grouping complete. Remaining: C3 S2–S4.
 
 ### The 2026-1 CSV is now measured — §10's unknowns are closed
 
@@ -155,8 +155,8 @@ is containment and reporting, not correctness.
 
 ## Next slice to take
 
-**C3 S1** (`student-import-stepper.md` §3, §5): department grouping computed client-side at preview, stamped onto every row — the zero-UI-risk entry point that decides the front-end shape. Then S2 grid + panels → S3 Unassigned → S4 `userMap` merge. D6 done 2026-10-10 (user-reported green).
-Tracked as NEXT in root `TODO.md`. After C3: the deferred course-payload cleanup (note: `departmentCourses` is now consumed by the ledger — do not trim yet).
+**C3 S2** (`student-import-stepper.md` §3, §5): department grid + panels — S1's derived grouping made visible. Per-department panels grouped by the row's own code (§3.2), Unassigned rows in their own panel, global running guard. No new writes — panels drive the per-department chunk runs C1/C2 already made safe. C3 S1 done 2026-10-10 (user-reported green).
+Tracked as NEXT in root `TODO.md`. After: S3 (Unassigned polish) → S4 (`userMap` merge).
 
 After U2–U4, proposed order (reorder freely): D3 → D6 → C3 S1–S4 → deferred
 course-payload cleanup. S1 remains the zero-UI-risk C3 entry point — department grouping,
