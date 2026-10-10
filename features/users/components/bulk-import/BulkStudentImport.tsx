@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
-import { cleanCell, isExcelErrorCell, parseCsvRows, isAllowedStudentEmail } from "@/lib/csv-utils"
+import { cleanCell, isExcelErrorCell, parseCsvRows, isAllowedStudentEmail, type ImportReasonCode } from "@/lib/csv-utils"
 import { useChunkedImport, decodeCsvFile, withRetryHints, type ChunkMeta } from "@/features/admin-data/components/useChunkedImport"
+import { buildImportLedger, assertLedgerClosure, ledgerToCsv } from "./import-ledger"
 
 // Domain rule is shared with the import service via lib/csv-utils — one list,
 // one predicate, so the preview cannot disagree with the server.
@@ -34,10 +35,10 @@ interface ImportResult {
   created: { name: string; email: string; role: string }[]
   enrolled: number
   skipped: number
-  failed: { row: number; email: string; subjectCode: string; section: string; remark: string }[]
+  failed: { row: number; email: string; subjectCode: string; section: string; remark: string; reasonCode: ImportReasonCode }[]
+  duplicateRows: { row: number; email: string; subjectCode: string; section: string; reasonCode: ImportReasonCode; remark: string }[]
+  alreadyPersisted: { row: number; email: string; subjectCode: string; section: string; reasonCode: ImportReasonCode }[]
   parseErrors: { row: number; message: string }[]
-  successCsv: string
-  failureCsv: string
   totalRows: number
   termMismatch?: { mappedTerms: string[]; activeTerm: string | null } | null
 }
@@ -98,13 +99,6 @@ const PREVIEW_PAGE_SIZE = 50
 // Trade-off accepted: 5x the requests, each idempotent and independently resumable.
 const STUDENT_CHUNK_SIZE = 100
 
-function concatCsvBodies(first: string, next: string): string {
-  if (!first) return next
-  if (!next) return first
-  const nextLines = next.split("\n")
-  return `${first}\n${nextLines.slice(1).join("\n")}`
-}
-
 export default function BulkStudentImport({ departmentId: _departmentId, semesterId, previewOnly }: { departmentId?: string | null; semesterId?: string | null; previewOnly?: boolean }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [previewRows, setPreviewRows] = useState<PreviewRow[] | null>(null)
@@ -116,16 +110,20 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [importing, setImporting] = useState(false)
   const [problemFilter, setProblemFilter] = useState(false)
-  const [removedRows, setRemovedRows] = useState<StudentCsvRow[]>([])
+  const [removedRows, setRemovedRows] = useState<Array<StudentCsvRow & { reason?: ImportReasonCode }>>([])
+  const [ledgerCsv, setLedgerCsv] = useState("")
   const { isRunning: chunkRunning, progress: chunkProgress, history: chunkHistory, run: runChunks, cancel: cancelChunks } =
     useChunkedImport<PreviewRow, ImportResult>()
 
   const [existingSubjects, setExistingSubjects] = useState<{ code: string; id: string }[]>([])
-  const [existingSections, setExistingSections] = useState<{ name: string; program: string; id: string }[]>([])
+  const [existingSections, setExistingSections] = useState<{ name: string; program: string; id: string; departmentCourseId?: string | null }[]>([])
   const [existingUsers, setExistingUsers] = useState<{ email: string }[]>([])
   const [existingFacultyUsers, setExistingFacultyUsers] = useState<{ email: string; id: string }[]>([])
   const [existingFacultySubjects, setExistingFacultySubjects] = useState<{ subject_id: string; section_id: string; faculty_id: string; id: string }[]>([])
   const [existingDepartments, setExistingDepartments] = useState<{ code: string; id: string }[]>([])
+  // department_courses is UNIQUE("departmentId", code), so a section's owning
+  // department is reached through its course — never through a code lookup.
+  const [existingDepartmentCourses, setExistingDepartmentCourses] = useState<Map<string, string>>(new Map())
 
   const fetchReferenceData = useCallback(async () => {
     setReferenceError("")
@@ -148,6 +146,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       )
       setExistingFacultySubjects(d.facultySubjects || [])
       setExistingDepartments((d.departments || []).map((c: { code: string; id: string }) => ({ code: c.code, id: c.id })))
+      setExistingDepartmentCourses(new Map((d.departmentCourses || []).map((c: { id: string; code: string }) => [c.id, c.code])))
     } catch {
       setReferenceError("Could not load import reference data. Row flags may be inaccurate.")
     }
@@ -209,6 +208,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     setPreviewError("")
     setError("")
     setRemovedRows([])
+    setLedgerCsv("")
     const file = fileRef.current?.files?.[0]
     if (!file) { setPreviewError("Please select a CSV file"); return }
     const text = await decodeCsvFile(file)
@@ -291,7 +291,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const handleRemoveBlocked = () => {
     if (!previewRows) return
     const blocked = previewRows.filter(isBlockedPreviewRow)
-    setRemovedRows((prev) => [...prev, ...blocked.map((removed) => ({ row: removed.row, email: removed.email, name: removed.name, subjectCode: removed.subjectCode, section: removed.section, facultyEmail: removed.facultyEmail, departmentCode: removed.departmentCode }))])
+    setRemovedRows((prev) => [...prev, ...blocked.map((removed) => ({ row: removed.row, email: removed.email, name: removed.name, subjectCode: removed.subjectCode, section: removed.section, facultyEmail: removed.facultyEmail, departmentCode: removed.departmentCode, reason: "REMOVED_BLOCKED" as const }))])
     setPreviewRows(previewRows.filter((r) => !isBlockedPreviewRow(r)))
     setProblemFilter(false)
     setPreviewPage(0)
@@ -373,6 +373,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
           email: p.email,
           subjectCode: p.subjectCode,
           section: p.section,
+          reasonCode: "TRANSPORT_ERROR" as const,
           remark: `Chunk ${fc.meta.chunkIndex + 1} failed after ${fc.attempts} attempts: ${fc.error}`,
         })),
       )
@@ -387,25 +388,75 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
           const originRow = payload[previewIdx]?._originRow ?? ci * STUDENT_CHUNK_SIZE + f.row
           return { ...f, row: originRow }
         })), ...deadEntries],
+        // Same offset mapping as `failed` above: results holds successes only, so
+        // ci is not a chunk index — the collected meta gives the exact offset.
+        duplicateRows: [...results.flatMap((r, ci) => (r.duplicateRows ?? []).map((d) => {
+          const previewIdx = (resultMetas[ci]?.rowOffset ?? ci * STUDENT_CHUNK_SIZE) + (d.row - 1)
+          return { ...d, row: payload[previewIdx]?._originRow ?? d.row }
+        }))],
+        alreadyPersisted: [...results.flatMap((r, ci) => (r.alreadyPersisted ?? []).map((a) => {
+          const previewIdx = (resultMetas[ci]?.rowOffset ?? ci * STUDENT_CHUNK_SIZE) + (a.row - 1)
+          return { ...a, row: payload[previewIdx]?._originRow ?? a.row }
+        }))],
         parseErrors: results.flatMap((r) => r.parseErrors ?? []),
-        successCsv: results.map((r) => r.successCsv).filter(Boolean).reduce(concatCsvBodies, ""),
-        failureCsv: results.map((r) => r.failureCsv).filter(Boolean).reduce(concatCsvBodies, ""),
         totalRows: previewRows.length,
         // Any chunk reporting a mismatch means the whole run is against the wrong term.
         termMismatch: results.find((r) => r.termMismatch)?.termMismatch ?? null,
       }
       setImportResult(aggregated)
-      if (removedRows.length > 0) {
-        const removedHeaders = ["name", "email", "subject code", "section", "faculty email", "department code"]
-        const removedCsv = [removedHeaders.join(","), ...removedRows.map((r) => [r.name, r.email, r.subjectCode, r.section, r.facultyEmail, r.departmentCode].map((v) => `"${v}"`).join(","))].join("\n")
-        downloadBlob(removedCsv, "removed-rows.csv")
+      // The ledger is assembled here, at completion, from the same values the
+      // results panels use — one entry per input CSV row, in source order.
+      const ledger = buildImportLedger({
+        payload: previewRows.map((r) => ({
+          row: r.row,
+          name: r.name,
+          email: r.email,
+          subjectCode: r.subjectCode,
+          section: r.section,
+          facultyEmail: r.facultyEmail,
+          departmentCode: r.departmentCode,
+          resolvedDepartmentId: r.resolvedDepartmentId,
+          isInvalidDepartment: r.isInvalidDepartment,
+        })),
+        // Removed rows never resolved, so the department fields are meaningless.
+        removed: removedRows.map((r) => ({
+          row: r.row,
+          name: r.name,
+          email: r.email,
+          subjectCode: r.subjectCode,
+          section: r.section,
+          facultyEmail: r.facultyEmail,
+          departmentCode: r.departmentCode,
+          resolvedDepartmentId: null,
+          isInvalidDepartment: false,
+          reason: r.reason,
+        })),
+        // resultMetas were collected once per success, in completion order — so
+        // they line up with `results` index for index.
+        chunkResults: resultMetas.flatMap((meta, i) => {
+          const result = results[i]
+          return result ? [{ meta, result }] : []
+        }),
+        deadChunks: failedChunks,
+        sectionDeptCode: (section) => {
+          const { section: sec } = resolveSection(section)
+          const courseId = sec?.departmentCourseId
+          return courseId ? existingDepartmentCourses.get(courseId) ?? null : null
+        },
+      })
+      // Closure is exact now: every input row is classified by construction, so
+      // this assert replaces the old "unaccounted" arithmetic.
+      let ledgerClosed = true
+      try {
+        assertLedgerClosure(ledger, previewRows.length)
+      } catch {
+        ledgerClosed = false
       }
-      const unaccounted =
-        previewRows.length -
-        aggregated.enrolled -
-        aggregated.skipped -
-        aggregated.failed.length -
-        aggregated.parseErrors.length
+      setLedgerCsv(ledgerToCsv(ledger))
+      if (!ledgerClosed) {
+        setError(`Import incomplete: the ledger could not account for all ${previewRows.length} CSV rows — nothing was lost, ${aggregated.enrolled} rows are already saved. Press Import again to resume.`)
+        return
+      }
       if (stoppedEarly || failedChunks.length > 0) {
         // Every chunk failing with the SAME message is systematic — a config
         // problem such as "no active semester". Retrying cannot fix it, so the
@@ -416,10 +467,6 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             ? `${deadEntries.length} row${deadEntries.length !== 1 ? "s" : ""} not imported — ${reasons[0]}`
             : `${deadEntries.length} rows from failed chunks recorded as failures — nothing was lost, ${aggregated.enrolled} rows are already saved. Press Import again to resume.`
         )
-        return
-      }
-      if (unaccounted !== 0) {
-        setError(`Import incomplete: ${unaccounted} of ${previewRows.length} CSV rows are unaccounted for (not enrolled, skipped, or reported). Nothing was lost — ${aggregated.enrolled} rows are already saved. Press Import again to resume.`)
         return
       }
       setPreviewRows(null)
@@ -437,6 +484,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
   const handleReset = () => {
     setImportResult(null)
+    setLedgerCsv("")
     setPreviewRows(null)
     setPreviewPage(0)
     setPreviewError("")
@@ -558,10 +606,11 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
             <div className="flex items-center gap-3">
               <p className="text-[11px] text-tertiary/70 italic">
-                <span className="badge-red not-italic">Red</span> cannot import &mdash; remove those rows.
-                <span className="badge-amber not-italic ml-1">Amber</span> fix inline: a new student is
-                created and an unknown department imports as Unassigned, but an unknown subject, section
-                or faculty fails that row.
+                <span className="badge-red not-italic">Red</span> cannot import &mdash; the ledger
+                shows the reason. <span className="badge-amber not-italic ml-1">Amber</span> imports,
+                but is flagged (unresolved department, new student). An unknown subject, section or
+                faculty is <span className="badge-red not-italic">red</span>, not amber &mdash; the
+                server rejects it.
               </p>
               <div className="ml-auto">
                 {problemRows.length > 0 && (
@@ -592,7 +641,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             {previewRows && previewRows.length > 0 && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-[11px] text-tertiary">
                 <span><span className="font-semibold text-secondary">{previewRows.length - blockedRows.length}</span> ready to import</span>
-                <span><span className="font-semibold text-amber-600">{problemRows.length}</span> flagged &mdash; a new student is created and an unknown department imports as Unassigned; an unknown subject, section or faculty fails that row</span>
+                <span><span className="font-semibold text-amber-600">{problemRows.length}</span> flagged &mdash; imports with a flag; an unknown subject, section or faculty fails that row</span>
                 <span><span className="font-semibold text-red-600">{blockedRows.length}</span> blocked (missing email, bad domain, Excel error)</span>
               </div>
             )}
@@ -673,10 +722,10 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                             {r.isInvalidValue && <span className="badge-red text-[10px]">Invalid value</span>}
                             {isMissingEmail(r.email) && <span className="badge-red text-[10px]">Email missing</span>}
                             {isOffDomainEmail(r.email) && <span className="badge-red text-[10px]">Domain not allowed</span>}
-                            {r.isNewSubject && <span className="badge-amber text-[10px]">Subject not found</span>}
-                            {r.isNewSection && <span className="badge-amber text-[10px]">Section not found</span>}
-                            {r.isNewFaculty && <span className="badge-amber text-[10px]">Faculty not found</span>}
-                            {r.facultyNotAssigned && <span className="badge-amber text-[10px]">Faculty Loading Mismatch</span>}
+                            {r.isNewSubject && <span className="badge-red text-[10px]">Subject not found</span>}
+                            {r.isNewSection && <span className="badge-red text-[10px]">Section not found</span>}
+                            {r.isNewFaculty && <span className="badge-red text-[10px]">Faculty not found</span>}
+                            {r.facultyNotAssigned && <span className="badge-red text-[10px]">Faculty Loading Mismatch</span>}
                             {r.isInvalidDepartment && <span className="badge-amber text-[10px]">Dept code unknown</span>}
                             {!r.isInvalidValue && !isMissingEmail(r.email) && !isOffDomainEmail(r.email) && r.isNewStudent && (
                               <span className="badge-amber text-[10px]">New Student</span>
@@ -834,48 +883,18 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             </div>
           )}
 
-          <div className="space-y-2">
-            {importResult.successCsv && (
-              <button
-                type="button"
-                onClick={() => downloadBlob(importResult.successCsv, "import-successes.csv")}
-                className="w-full flex items-center justify-center gap-2 text-xs font-semibold px-4 py-3 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
-              >
-                <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Download Successes (.csv)
-              </button>
-            )}
-            {removedRows.length > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  const headers = ["name", "email", "subject code", "section", "faculty email", "department code"]
-                  const csv = [headers.join(","), ...removedRows.map((r) => [r.name, r.email, r.subjectCode, r.section, r.facultyEmail, r.departmentCode].map((v) => `"${v}"`).join(","))].join("\n")
-                  downloadBlob(csv, "removed-rows.csv")
-                }}
-                className="w-full flex items-center justify-center gap-2 text-xs font-semibold px-4 py-3 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
-              >
-                <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Download Removed (.csv)
-              </button>
-            )}
-            {importResult.failureCsv && (
-              <button
-                type="button"
-                onClick={() => downloadBlob(importResult.failureCsv, "import-failures.csv")}
-                className="w-full flex items-center justify-center gap-2 text-xs font-semibold px-4 py-3 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
-              >
-                <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Download Failures (.csv)
-              </button>
-            )}
-          </div>
+          {ledgerCsv && (
+            <button
+              type="button"
+              onClick={() => downloadBlob(ledgerCsv, "student-import-ledger.csv")}
+              className="w-full flex items-center justify-center gap-2 text-xs font-semibold px-4 py-3 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
+            >
+              <svg className="w-4 h-4 text-gold-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download Import Ledger (.csv)
+            </button>
+          )}
 
           <button type="button" onClick={handleReset} className="w-full text-sm font-semibold px-4 py-3 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors">
             Import Another File
