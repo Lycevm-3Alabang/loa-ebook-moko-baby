@@ -49,6 +49,14 @@ describe("isRetryableChunkError — Postgres errors are never retryable", () => 
     expect(isRetryableChunkError(withStatus(400))).toBe(false)
   })
 
+  it("does not blindly retry a 504, while 503 still retries", () => {
+    const withStatus = (status: number) => Object.assign(new Error("http"), { status })
+    // S1 (spec §4.2, F3): a 504 exhausted maxDuration on this exact work —
+    // retrying the same size cannot succeed. Halving lands in S3/S4.
+    expect(isRetryableChunkError(withStatus(504))).toBe(false)
+    expect(isRetryableChunkError(withStatus(503))).toBe(true)
+  })
+
   it("never retries a user abort", () => {
     expect(isRetryableChunkError(new DOMException("Aborted", "AbortError"))).toBe(false)
   })

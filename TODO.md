@@ -12,14 +12,18 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
 
 ## NEXT (do first)
 
-- [ ] **U2–U4** (`specs/chunked-import-failure-ux.md`). Natural continuation of U1
-  (same hook + spec): retry split, 70s alignment, invariant + `fileId`.
+- [ ] **U2b — 504 halve-once + persist (S3/S4)** (`specs/chunked-import-failure-ux.md` §4.3).
+  Retry chunk i once at half size, keep the smaller size for the run (`MIN_CHUNK` 25),
+  fix student fixed-stride consumers (`deadEntries` window, aggregation index).
+  S1 (504→fail-fast) done 2026-10-10, gates waived by owner (suite unverified).
+  After: U3 (70s) → U4 (invariant + `fileId`).
 
 ## Queued (proposed order — reorder freely)
 
-- [ ] **U2–U4** (`specs/chunked-import-failure-ux.md`). Retry split (504 halves the
-  chunk instead of blind retry), client timeout 120s → 70s, `fileId` reference in
-  every failure. Same hook and spec as U1 — natural continuation.
+- [ ] **U2–U4 remainder** (`specs/chunked-import-failure-ux.md`). S1 (504→fail-fast
+  predicate + policy test) done 2026-10-10, gates waived (suite unverified).
+  Remains: halve-once/persist (S3/S4), client timeout 120s → 70s, `fileId`
+  reference in every failure. Same hook and spec as U1 — natural continuation.
 - [ ] **D3 — ledger** (`specs/student-import-stepper/ledger-reason-codes.md`).
   Single CSV, reason codes, `ALREADY_PERSISTED` attribution. Largest remaining
   design; its precondition (`skippedItems` per-row attribution) already landed.
@@ -51,3 +55,10 @@ the run file above.
   Deleted dead `handleCsvImport` + orphaned chunk wiring/overlay/result panel from
   `features/admin-data/components/FacultyLoadingTab.tsx` (~230 lines). Hook + student
   caller untouched. Gates green. Same run file.
+- [x] **S1 — 504 out of blind retry done 2026-10-10** (`specs/chunked-import-failure-ux.md` §4.2 U2a).
+  Early-return `504→false` in `isRetryableChunkError` + new 504/503 policy test (+1 test).
+  Gates WAIVED by owner — tsc/lint/vitest unconfirmed, suite unverified.
+  Run file: `.opencode/skills/plan-fix/runs/20261010-1200-u2a-504-retry-split.md`.
+- [x] **Lint-fix done 2026-10-10** (completes the faculty dead-code removal).
+  Removed write-only `removedRows` state + 3 orphaned setter sites from
+  `features/admin-data/components/FacultyLoadingTab.tsx`. Re-lint unconfirmed (waived).

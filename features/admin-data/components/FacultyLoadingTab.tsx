@@ -130,7 +130,6 @@ function FacultyTab() {
   } | null>(null)
   const [csvError, setCsvError] = useState("")
   const [csvPreviewPage, setCsvPreviewPage] = useState(0)
-  const [removedRows, setRemovedRows] = useState<CsvRow[]>([])
   const [csvProblemFilter, setCsvProblemFilter] = useState(false)
   const [csvBlockedFilter, setCsvBlockedFilter] = useState(false)
   const [csvInvalidDeptFilter, setCsvInvalidDeptFilter] = useState(false)
@@ -727,7 +726,6 @@ function FacultyTab() {
 
   const handleCsvRowRemove = (index: number) => {
     if (!csvRows) return
-    setRemovedRows((prev) => [...prev, csvRows[index]])
     const next = csvRows.filter((_, i) => i !== index)
     if (next.length === 0) {
       handleCsvReset()
@@ -741,7 +739,6 @@ function FacultyTab() {
 
   const handleCsvRemoveBlocked = () => {
     if (!csvRows) return
-    setRemovedRows((prev) => [...prev, ...csvRows.filter((r) => r.isExistingMapping || r.isInvalidDept || r.isInvalidValue)])
     const next = csvRows.filter((r) => !r.isExistingMapping && !r.isInvalidDept && !r.isInvalidValue)
     if (next.length === 0) {
       handleCsvReset()
@@ -762,7 +759,6 @@ function FacultyTab() {
     setStep5Result(null)
     setStep6Result(null)
     setStep7Result(null)
-    setRemovedRows([])
     setCsvPreviewPage(0)
     setCsvProblemFilter(false)
     setCsvBlockedFilter(false)

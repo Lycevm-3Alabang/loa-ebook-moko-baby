@@ -67,6 +67,10 @@ export const CHUNK_RETRY_BASE_MS = 1000
 export const CHUNK_RETRY_CAP_MS = 30000
 export const CHUNK_RETRY_JITTER_MS = 250
 
+// Spec §4.3 floor for shrink-on-timeout: a pathological file degrades to many
+// small requests rather than one row per request.
+export const CHUNK_MIN_SIZE = 25
+
 export function isRetryableChunkError(err: unknown): boolean {
   if (err instanceof DOMException && err.name === "AbortError") return false
   // A database error carrying a Postgres SQLSTATE is deterministic, not a transport
@@ -78,6 +82,7 @@ export function isRetryableChunkError(err: unknown): boolean {
   if (typeof pgCode === "string" && pgCode.length > 0) return false
   const status = (err as ChunkErrorHints | null)?.status
   if (status === undefined) return true
+  if (status === 504) return false
   return status === 408 || status === 425 || status === 429 || status >= 500
 }
 
@@ -194,89 +199,113 @@ export function useChunkedImport<TRow, TChunkResult>() {
         retryBaseMs?: number
       }
     ): Promise<{ results: TChunkResult[]; cancelled: boolean; failedChunks: FailedChunk[]; stoppedEarly: boolean }> => {
-      const chunkSize = options.chunkSize ?? 500
+      const initialSize = Math.floor(options.chunkSize ?? 500)
+      if (initialSize <= 0) throw new Error("Chunk size must be a positive integer")
       const restMs = options.restMs ?? 750
       const chunkTimeoutMs = options.chunkTimeoutMs ?? 120000
       const maxRetries = options.maxRetries ?? 2
       const retryBaseMs = options.retryBaseMs ?? CHUNK_RETRY_BASE_MS
-      const chunks = chunkRows(rows, chunkSize)
       const fileId =
         options.fileId ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
       const controller = new AbortController()
       abortRef.current = controller
       setIsRunning(true)
       setHistory([])
-      setProgress({ doneChunks: 0, totalChunks: chunks.length, doneRows: 0, totalRows: rows.length })
+      // Total is an estimate, not a promise: done + ceil(remaining / size). It
+      // grows when a 504 halves the size mid-run — that growth IS the shrink
+      // signal (visible in progress + history, no console needed).
+      const estimateTotal = (doneCount: number, from: number, sizeNow: number) =>
+        doneCount + Math.ceil((rows.length - from) / sizeNow)
+      setProgress({ doneChunks: 0, totalChunks: estimateTotal(0, 0, initialSize), doneRows: 0, totalRows: rows.length })
       const results: TChunkResult[] = []
       const failedChunks: FailedChunk[] = []
       let consecutiveFailures = 0
       let stoppedEarly = false
+      // Size + offset replace the pre-split array: every chunk derives from
+      // (offset, size), so a 504 can shrink the REMAINDER without invalidating
+      // anything already sent.
+      let size = initialSize
+      let offset = 0
+      let done = 0
+      const callChunk = async (chunk: TRow[], meta: ChunkMeta): Promise<TChunkResult> => {
+        const attemptController = new AbortController()
+        const onParentAbort = () => attemptController.abort()
+        if (controller.signal.aborted) attemptController.abort()
+        else controller.signal.addEventListener("abort", onParentAbort, { once: true })
+        try {
+          return await new Promise<TChunkResult>((resolve, reject) => {
+            const timer = setTimeout(() => {
+              attemptController.abort()
+              reject(new Error(`Chunk ${meta.chunkIndex + 1} timed out after ${chunkTimeoutMs}ms`))
+            }, chunkTimeoutMs)
+            options.postChunk(chunk, meta, attemptController.signal).then(
+              (result) => { clearTimeout(timer); resolve(result) },
+              (err) => { clearTimeout(timer); reject(err) },
+            )
+          })
+        } finally {
+          controller.signal.removeEventListener("abort", onParentAbort)
+        }
+      }
       try {
-        for (let i = 0; i < chunks.length; i++) {
+        while (offset < rows.length) {
           if (controller.signal.aborted) return { results, cancelled: true, failedChunks, stoppedEarly }
+          const len = Math.min(size, rows.length - offset)
+          const chunk = rows.slice(offset, offset + len)
           const meta: ChunkMeta = {
-            chunkIndex: i,
-            totalChunks: chunks.length,
+            chunkIndex: done,
+            totalChunks: estimateTotal(done, offset, size),
             fileId,
-            isLast: i === chunks.length - 1,
-            rowOffset: i * chunkSize,
+            isLast: offset + len >= rows.length,
+            rowOffset: offset,
           }
-          const callChunk = async (): Promise<TChunkResult> => {
-            const attemptController = new AbortController()
-            const onParentAbort = () => attemptController.abort()
-            if (controller.signal.aborted) attemptController.abort()
-            else controller.signal.addEventListener("abort", onParentAbort, { once: true })
-            try {
-              return await new Promise<TChunkResult>((resolve, reject) => {
-                const timer = setTimeout(() => {
-                  attemptController.abort()
-                  reject(new Error(`Chunk ${meta.chunkIndex + 1} timed out after ${chunkTimeoutMs}ms`))
-                }, chunkTimeoutMs)
-                options.postChunk(chunks[i], meta, attemptController.signal).then(
-                  (result) => { clearTimeout(timer); resolve(result) },
-                  (err) => { clearTimeout(timer); reject(err) },
-                )
-              })
-            } finally {
-              controller.signal.removeEventListener("abort", onParentAbort)
-            }
-          }
-
           let attempt = 0
-          for (;;) {
+          let settled = false
+          while (!settled) {
             try {
-              const result = await callChunk()
+              const result = await callChunk(chunk, meta)
               results.push(result)
               options.onChunkResult?.(result, meta)
               const summary = options.summarizeResult?.(result) ?? { saved: 0, skipped: 0, issues: 0 }
-              setHistory((h) => [...h, { chunkIndex: i, rows: chunks[i].length, ok: true, saved: summary.saved, skipped: summary.skipped ?? 0, issues: summary.issues }])
+              setHistory((h) => [...h, { chunkIndex: done, rows: chunk.length, ok: true, saved: summary.saved, skipped: summary.skipped ?? 0, issues: summary.issues }])
               consecutiveFailures = 0
+              offset += len
+              done += 1
               const next: ChunkProgress = {
-                doneChunks: i + 1,
-                totalChunks: chunks.length,
-                doneRows: Math.min(rows.length, (i + 1) * chunkSize),
+                doneChunks: done,
+                totalChunks: estimateTotal(done, offset, size),
+                doneRows: offset,
                 totalRows: rows.length,
               }
               setProgress(next)
               options.onProgress?.(next)
-              break
+              settled = true
             } catch (err) {
               if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) throw err
-              if (!isRetryableChunkError(err) || attempt >= maxRetries) {
+              // Spec §4.3: a 504 says this size cannot fit under maxDuration —
+              // shrink once and retry the SAME offset at the smaller size. Each
+              // 504 halves once more down to CHUNK_MIN_SIZE, then fails fast.
+              if ((err as ChunkErrorHints | null)?.status === 504 && size > CHUNK_MIN_SIZE) {
+                size = Math.max(CHUNK_MIN_SIZE, Math.floor(size / 2))
+                settled = true
+              } else if (!isRetryableChunkError(err) || attempt >= maxRetries) {
                 const message = getChunkFailureMessage(err, meta)
-                setHistory((h) => [...h, { chunkIndex: i, rows: chunks[i].length, ok: false, saved: 0, skipped: 0, issues: 0, error: message }])
+                setHistory((h) => [...h, { chunkIndex: done, rows: chunk.length, ok: false, saved: 0, skipped: 0, issues: 0, error: message }])
                 failedChunks.push({ meta, error: message, attempts: attempt + 1 })
                 if (++consecutiveFailures >= 3) {
                   stoppedEarly = true
                   return { results, cancelled: false, failedChunks, stoppedEarly }
                 }
-                break
+                offset += len
+                done += 1
+                settled = true
+              } else {
+                attempt++
+                await sleepAbortable(chunkRetryDelayMs(err, attempt, retryBaseMs), controller.signal)
               }
-              attempt++
-              await sleepAbortable(chunkRetryDelayMs(err, attempt, retryBaseMs), controller.signal)
             }
           }
-          if (i < chunks.length - 1 && restMs > 0) {
+          if (offset < rows.length && restMs > 0) {
             await sleepAbortable(restMs, controller.signal)
           }
         }

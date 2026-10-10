@@ -73,10 +73,10 @@ Sliced C1 → C2 → C3 so the integrity fixes do not wait on the UI layer.
 | **C3** — department stepper | **Not started** | Department grid · per-department panels · Unassigned panel · `userMap` merge. Slices S1→S4, see the run file |
 | **D3** — ledger | **Not started** | Single CSV, reason codes, `ALREADY_PERSISTED` attribution (the `skippedItems` precondition it needed already landed with D2) |
 | **D6** — `inserted` surfaced | **Not started** | `addEnrollments` returns it but nothing renders it. Needs an `ImportResult` field + client display |
-| [chunked-import-failure-ux.md](chunked-import-failure-ux.md) | **U1 Done (2026-10-10)** | `getChunkFailureMessage` in `useChunkedImport` + both `postChunk` typed errors + `lib/__tests__/chunk-failure-message.test.ts` (8 tests). Gates green. Run file: `.opencode/skills/plan-fix/runs/20261010-1100-u1.md`. Remaining: U2–U4 (retry split, 70s, `fileId`) |
+| [chunked-import-failure-ux.md](chunked-import-failure-ux.md) | **U1 Done (2026-10-10)** | `getChunkFailureMessage` in `useChunkedImport` + both `postChunk` typed errors + `lib/__tests__/chunk-failure-message.test.ts` (8 tests). Gates green. Run file: `.opencode/skills/plan-fix/runs/20261010-1100-u1.md`. **S1 done (2026-10-10)** — 504→fail-fast predicate + 504/503 policy test (+1 test), gates waived (suite unverified). Run file: `.opencode/skills/plan-fix/runs/20261010-1200-u2a-504-retry-split.md`. Remaining: halve-once/persist (S3/S4), 70s, `fileId` |
 
 **Gate:** `npx tsc --noEmit` → `npm run lint` → `npx vitest run` → `npm run build`.
-Current **288 tests / 21 files** (was 259 / 18 when this work began; +8 U1).
+Current **288 tests / 21 files verified** (was 259 / 18 when this work began; +8 U1). S1 adds +1 test (289 total) — suite UNVERIFIED, gates waived 2026-10-10.
 
 ### The 2026-1 CSV is now measured — §10's unknowns are closed
 
@@ -149,9 +149,8 @@ is containment and reporting, not correctness.
 
 ## Next slice to take
 
-**U2–U4** (`chunked-import-failure-ux.md`): retry split (504 halves the chunk), 70s alignment,
-invariant + `fileId` in every failure. Same hook + spec as U1 — natural continuation.
-Tracked as NEXT in root `TODO.md`. U1 done 2026-10-10.
+**U2b (S3/S4)** (`chunked-import-failure-ux.md` §4.3): halve-once on 504 + persist-smaller + student fixed-stride follow-through. S1 (504→fail-fast) done 2026-10-10, gates waived (suite unverified).
+Tracked as NEXT in root `TODO.md`. After: U3 (70s) → U4 (invariant + `fileId`).
 
 After U2–U4, proposed order (reorder freely): D3 → D6 → C3 S1–S4 → deferred
 course-payload cleanup. S1 remains the zero-UI-risk C3 entry point — department grouping,
