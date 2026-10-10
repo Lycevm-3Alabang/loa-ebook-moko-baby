@@ -39,22 +39,7 @@ export interface StudentImportResult {
   // mappings resolve normally.
   termMismatch: { mappedTerms: string[]; activeTerm: string | null } | null
   parseErrors: { row: number; message: string }[]
-  successCsv: string
-  failureCsv: string
   totalRows: number
-}
-
-function escapeCsv(value: string): string {
-  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
-    return `"${value.replace(/"/g, '""')}"`
-  }
-  return value
-}
-
-function toCsv(rows: Record<string, string>[], headers: string[]): string {
-  const header = headers.map(escapeCsv).join(",")
-  const lines = rows.map((r) => headers.map((h) => escapeCsv(r[h] ?? "")).join(","))
-  return [header, ...lines].join("\n")
 }
 
 export function parseStudentCsv(text: string): {
@@ -130,7 +115,7 @@ export async function importStudents(
   let skipped = 0
 
   if (rows.length === 0) {
-    return { created, enrolled, skipped, failed, duplicateRows: [], alreadyPersisted: [], termMismatch: null, parseErrors: [], successCsv: "", failureCsv: "", totalRows: 0 }
+    return { created, enrolled, skipped, failed, duplicateRows: [], alreadyPersisted: [], termMismatch: null, parseErrors: [], totalRows: 0 }
   }
 
   const excelOffenderFor = (r: StudentCsvRow): string | null =>
@@ -342,18 +327,6 @@ export async function importStudents(
   // failed. The ledger (D3) now carries them as DUPLICATE_IN_FILE rows.
   skipped += duplicateRows.length
 
-  const successRows = rows
-    .filter((r) => !failed.some((f) => f.email === r.email && f.subjectCode === r.subjectCode && f.section === `${r.sectionProgram}-${r.sectionName}`))
-    .map((r) => ({ name: r.name, email: r.email, "subject code": r.subjectCode, section: `${r.sectionProgram}-${r.sectionName}`, "faculty email": r.facultyEmail || "" }))
-
-  const failureRows = failed.map((f) => ({
-    name: rows.find((r) => r.email === f.email && r.subjectCode === f.subjectCode)?.name ?? "",
-    email: f.email,
-    "subject code": f.subjectCode,
-    section: f.section,
-    remarks: f.remark,
-  }))
-
   return {
     created,
     enrolled,
@@ -363,8 +336,6 @@ export async function importStudents(
     alreadyPersisted,
     termMismatch,
     parseErrors: [],
-    successCsv: toCsv(successRows, ["name", "email", "subject code", "section", "faculty email"]),
-    failureCsv: toCsv(failureRows, ["name", "email", "subject code", "section", "remarks"]),
     totalRows: rows.length,
   }
 }

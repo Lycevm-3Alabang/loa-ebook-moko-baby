@@ -356,56 +356,37 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         summarizeResult: (r) => ({ saved: r.enrolled ?? 0, skipped: r.skipped ?? 0, issues: (r.failed?.length ?? 0) + (r.parseErrors?.length ?? 0) }),
       })
       if (cancelled) { setError(`Import cancelled after ${results.length} chunks — retry to resume`); return }
-      // Exact row window of a chunk: the next known boundary after its offset
-      // (a later chunk's start of either kind, else the payload end). Sequential
-      // offsets make this exact with no size constant.
-      const endOfChunk = (rowOffset: number) => {
-        const later = [...resultMetas, ...failedChunks.map((fc) => fc.meta)]
-          .map((m) => m.rowOffset)
-          .filter((o) => o > rowOffset)
-        return later.length > 0 ? Math.min(...later) : payload.length
-      }
-      const deadEntries = [...failedChunks]
-        .sort((a, b) => a.meta.rowOffset - b.meta.rowOffset)
-        .flatMap((fc) =>
-          payload.slice(fc.meta.rowOffset, endOfChunk(fc.meta.rowOffset)).map((p) => ({
-          row: p._originRow,
-          email: p.email,
-          subjectCode: p.subjectCode,
-          section: p.section,
-          reasonCode: "TRANSPORT_ERROR" as const,
-          remark: `Chunk ${fc.meta.chunkIndex + 1} failed after ${fc.attempts} attempts: ${fc.error}`,
-        })),
-      )
+      // Dead-chunk rows are TRANSPORT_ERROR rows inside the ledger now — the
+      // separate window math that used to live here is gone.
       const aggregated: ImportResult = {
         created: results.flatMap((r) => r.created ?? []),
         enrolled: results.reduce((s, r) => s + (r.enrolled ?? 0), 0),
         skipped: results.reduce((s, r) => s + (r.skipped ?? 0), 0),
-        failed: [...results.flatMap((r, ci) => (r.failed ?? []).map((f) => {
-          // results holds successes only, so ci is NOT a chunk index once any
-          // chunk fails — the collected meta gives the exact offset instead.
-          const previewIdx = (resultMetas[ci]?.rowOffset ?? ci * STUDENT_CHUNK_SIZE) + (f.row - 1)
-          const originRow = payload[previewIdx]?._originRow ?? ci * STUDENT_CHUNK_SIZE + f.row
-          return { ...f, row: originRow }
-        })), ...deadEntries],
-        // Same offset mapping as `failed` above: results holds successes only, so
-        // ci is not a chunk index — the collected meta gives the exact offset.
-        duplicateRows: [...results.flatMap((r, ci) => (r.duplicateRows ?? []).map((d) => {
-          const previewIdx = (resultMetas[ci]?.rowOffset ?? ci * STUDENT_CHUNK_SIZE) + (d.row - 1)
-          return { ...d, row: payload[previewIdx]?._originRow ?? d.row }
-        }))],
-        alreadyPersisted: [...results.flatMap((r, ci) => (r.alreadyPersisted ?? []).map((a) => {
-          const previewIdx = (resultMetas[ci]?.rowOffset ?? ci * STUDENT_CHUNK_SIZE) + (a.row - 1)
-          return { ...a, row: payload[previewIdx]?._originRow ?? a.row }
-        }))],
+        // Derived from the ledger — it already holds every row keyed by source
+        // number, so no second chunk-relative conversion exists.
+        failed: ledger.flatMap((r) =>
+          r.status === "invalid" && r.reasonCode !== ""
+            ? [{ row: r.row, email: r.email, subjectCode: r.subjectCode, section: r.section, remark: r.remarks, reasonCode: r.reasonCode }]
+            : [],
+        ),
+        duplicateRows: ledger.flatMap((r) =>
+          r.reasonCode === "DUPLICATE_IN_FILE"
+            ? [{ row: r.row, email: r.email, subjectCode: r.subjectCode, section: r.section, remark: r.remarks, reasonCode: "DUPLICATE_IN_FILE" as const }]
+            : [],
+        ),
+        alreadyPersisted: ledger.flatMap((r) =>
+          r.reasonCode === "ALREADY_PERSISTED"
+            ? [{ row: r.row, email: r.email, subjectCode: r.subjectCode, section: r.section, reasonCode: "ALREADY_PERSISTED" as const }]
+            : [],
+        ),
         parseErrors: results.flatMap((r) => r.parseErrors ?? []),
         totalRows: previewRows.length,
         // Any chunk reporting a mismatch means the whole run is against the wrong term.
         termMismatch: results.find((r) => r.termMismatch)?.termMismatch ?? null,
       }
-      setImportResult(aggregated)
-      // The ledger is assembled here, at completion, from the same values the
-      // results panels use — one entry per input CSV row, in source order.
+      // The ledger is assembled FIRST — one entry per input CSV row, in source
+      // order. The result panels then read from it, so exactly one
+      // chunk-relative → source-row conversion exists in the codebase.
       const ledger = buildImportLedger({
         payload: previewRows.map((r) => ({
           row: r.row,
@@ -452,6 +433,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       } catch {
         ledgerClosed = false
       }
+      setImportResult(aggregated)
       setLedgerCsv(ledgerToCsv(ledger))
       if (!ledgerClosed) {
         setError(`Import incomplete: the ledger could not account for all ${previewRows.length} CSV rows — nothing was lost, ${aggregated.enrolled} rows are already saved. Press Import again to resume.`)
@@ -464,8 +446,8 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         const reasons = [...new Set(failedChunks.map((fc) => fc.error))]
         setError(
           reasons.length === 1
-            ? `${deadEntries.length} row${deadEntries.length !== 1 ? "s" : ""} not imported — ${reasons[0]}`
-            : `${deadEntries.length} rows from failed chunks recorded as failures — nothing was lost, ${aggregated.enrolled} rows are already saved. Press Import again to resume.`
+            ? `${aggregated.failed.length} row${aggregated.failed.length !== 1 ? "s" : ""} not imported — ${reasons[0]}`
+            : `${aggregated.failed.length} rows from failed chunks recorded as failures — nothing was lost, ${aggregated.enrolled} rows are already saved. Press Import again to resume.`
         )
         return
       }
