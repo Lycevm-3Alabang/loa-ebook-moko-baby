@@ -20,15 +20,16 @@ pending: gates
 | plan-done | Is this plan done? | A — Done |
 | handoff | Run implement-fix with it? | A — Yes |
 | who-implements | Who implements C3 S1 Slice 1? | B — Code it |
-| slice-1 | Apply Slice 1 (pure grouping module + tests)? | Applied — department-grouping.ts + 6 tests. The run surfaced D6's latent bug: `inserted` was destructured INSIDE the `if (toEnroll.length > 0)` block (block-scoped) while the return sits outside it → TS18004 + 30 red tests + the unused-var lint warning. Fixed by hoisting `let inserted = 0` before the block and renaming the destructure to `inserted: wroteRows`. D6's own gate (which I flagged as unpaid debt) would have caught it; it surfaced here instead — recorded honestly. |
+| slice-1 | Slice 1 (pure grouping module + tests)? | Applied — plus D6's block-scoped `inserted` bug found + fixed (hoisted `let inserted = 0`, renamed destructure), 332 green reported. |
+| slice-2 | Slice 2 (wiring)? | Applied — import + `studentDepartmentByEmail` useMemo (derived from previewRows, strict null) + payload sends the student's department (row's own value untouched for S2's panels). Zero UI change, no server change. Awaiting close-out gates per H1. |
 
 ## Pending
 
-- gates: User re-runs the gate and pastes green/red; then Slice 2 (wiring) or stop.
+- gates: User runs the close-out gate and pastes green/red; then C3 S1 close-out (TODO/README) — which also formally retires D6's unpaid gate debt.
 
 ## Decisions
 
-- (unchanged + lesson recorded: a "returns 0 on the early path" field whose live value is set inside an `if` block must be hoisted — the early-return and the main return are in different scopes)
+- (unchanged + lesson recorded: fields whose live value is set inside an `if` block must be hoisted — early-return and main return are different scopes)
 
 ## Scan
 
@@ -36,5 +37,5 @@ pending: gates
 
 ## Plan
 
-Slice 1 — pure module + tests. STATUS: APPLIED (+ D6 scope-bug fixed, debt paid).
-Slice 2 — component wiring via useMemo + payload. STATUS: pending gates.
+Slice 1 — module + tests. STATUS: DONE (green reported).
+Slice 2 — wiring. STATUS: APPLIED (awaiting gates).

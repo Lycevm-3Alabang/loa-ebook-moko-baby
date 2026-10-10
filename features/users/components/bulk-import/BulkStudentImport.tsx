@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { cleanCell, isExcelErrorCell, parseCsvRows, isAllowedStudentEmail, type ImportReasonCode } from "@/lib/csv-utils"
 import { useChunkedImport, decodeCsvFile, withRetryHints, type ChunkMeta } from "@/features/admin-data/components/useChunkedImport"
 import { buildImportLedger, assertLedgerClosure, ledgerToCsv } from "./import-ledger"
+import { computeDepartmentGrouping } from "./department-grouping"
 
 // Domain rule is shared with the import service via lib/csv-utils — one list,
 // one predicate, so the preview cannot disagree with the server.
@@ -127,6 +128,15 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   // department_courses is UNIQUE("departmentId", code), so a section's owning
   // department is reached through its course — never through a code lookup.
   const [existingDepartmentCourses, setExistingDepartmentCourses] = useState<Map<string, string>>(new Map())
+
+  // §3.3 — a student's department is their FIRST row in file order. Derived, not
+  // stored: previewRows' order IS file order (removals already applied), so an
+  // inline department edit or a row removal recomputes this with nothing to
+  // re-stamp. Strict §3.3: a null first instance stays null → Unassigned.
+  const studentDepartmentByEmail = useMemo(
+    () => computeDepartmentGrouping(previewRows ?? []),
+    [previewRows],
+  )
 
   const fetchReferenceData = useCallback(async () => {
     setReferenceError("")
@@ -312,7 +322,10 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         subjectCode: r.subjectCode,
         section: r.section,
         facultyEmail: r.facultyEmail || undefined,
-        departmentId: r.resolvedDepartmentId || undefined,
+        // §3.3: users.departmentId is the STUDENT's department — first row in
+        // file order — never this row's own code. The row's own value stays on
+        // resolvedDepartmentId for S2's department panels to group by.
+        departmentId: studentDepartmentByEmail.get(r.email.toLowerCase().trim()) ?? undefined,
         _originRow: r.row,
       }))
       const postChunk = async (chunk: typeof payload, meta: ChunkMeta, signal: AbortSignal) => {
