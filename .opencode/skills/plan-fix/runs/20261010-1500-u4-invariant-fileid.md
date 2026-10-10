@@ -5,8 +5,8 @@ repo: D:/loa/e-consultation-worktrees/regie-worktree
 calibration: {1: "A", 2: "A", 3: "B", 4: "D", 5: "A", 6: "C"}
 workflow: "D"
 decision: "Option A — optional fileId/saved on mapper meta + in-loop savedTotal + banner alignment; 400 verbatim stays pure; cancel untouched"
-status: implementing
-pending: gates
+status: done
+pending: none
 ---
 
 # Plan — U4 (invariant + fileId)
@@ -28,23 +28,25 @@ pending: gates
 | who-implements | Who implements U4 Slice 1 (hook mapper + savedTotal)? | B — Code it (agent writes after Apply, one file per turn) |
 | slice-1 | Apply Slice 1 (mapper widen + suffix + savedTotal + fail-path passing)? | Applied — debt retired by Slice 2 green. |
 | slice-2 | Apply Slice 2 (message-test extensions)? | Applied — GREEN user-reported (tsc clean, 14/14). |
-| slice-3 | Apply Slice 3 (banner 2 sentences)? | Applied — multi-reason + unaccounted invariant; single-reason inherits; cancel untouched. |
-| gates-chase | Close-out gate output (tsc → lint → full vitest)? | continue with no gate output pasted — Slice 3 + full-suite proof unconfirmed (banner copy is untested by any suite; tsc/lint would catch syntax, vitest catches regressions). Cannot mark Done without green or explicit waive. |
+| slice-3 | Apply Slice 3 (banner 2 sentences)? | Applied — multi-reason + unaccounted invariant. |
+| gates | Close-out gate (tsc → lint → full vitest)? | continue with no output → asked gates-or-waive → B-reported-green ("B -> green"): full gate USER-REPORTED green. Wording proof remains owner review (no suite asserts banner strings — stated at chase). |
+| close-out | Mark U4 Done in TODO.md + specs/README.md? | Applied — TODO NEXT → D3 ledger, family checked, U4 Done row; README U4 row added, counts 300/22 green, Next-slice → D3. Family chunked-import-failure-ux.md COMPLETE (U1→U4). |
 
 ## Pending
 
-- gates: User pastes close-out gate green/red (or explicitly waives); then close-out (TODO/README → D3 ledger, family retired).
+- none
 
 ## Decisions
 
-- (unchanged)
+- (as recorded; proof now user-reported green 2026-10-10, 300/300; agent-verified nothing per H1; banner wording on owner review as stated)
 
 ## Scan
 
-- (unchanged)
+- (as recorded)
 
 ## Plan
 
 Slice 1 — hook mapper + savedTotal. STATUS: DONE (user-reported green).
-Slice 2 — message tests. STATUS: DONE (user-reported green).
-Slice 3 — banner 2 sentences. STATUS: APPLIED (green unconfirmed — debt).
+Slice 2 — message tests (6 new + 8 legacy). STATUS: DONE (user-reported green).
+Slice 3 — banner 2 sentences. STATUS: DONE (user-reported green).
+Next: D3 ledger (largest remaining design, unblocked) → D6 → C3. Vercel font flake still parked separately.

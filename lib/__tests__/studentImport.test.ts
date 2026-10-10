@@ -26,6 +26,7 @@ vi.mock("@/lib/repositories/factory", () => ({
 }))
 
 import { importStudents } from "@/lib/services/studentImport"
+import { reasonRemarks } from "@/lib/csv-utils"
 import * as factory from "@/lib/repositories/factory"
 
 // ── Fixtures: what the FACULTY csv leaves in the database ──────────
@@ -190,7 +191,9 @@ describe("importStudents — faculty inserts prerequisites, student looks them u
 describe("importStudents — no-pass rows (server half of the preview contract)", () => {
   it.each([
     ["blank email", { email: "" }, "Email is required"],
-    ["off-domain email", { email: "someone@gmail.com" }, "Email domain not allowed"],
+    // Spec-mandated copy: the ledger remark spells out the allowed domains
+    // (ledger-reason-codes.md §2.1) rather than the old terse "not allowed".
+    ["off-domain email", { email: "someone@gmail.com" }, reasonRemarks("EMAIL_DOMAIN_NOT_ALLOWED")],
   ])("fails a row with %s", async (_label, override, expectedRemark) => {
     arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
 
@@ -425,5 +428,92 @@ describe("asFn helper", () => {
   it("resolves a repository method", () => {
     const fn = asFn(factory.subjectRepository, "findByCode")
     expect(typeof fn).toBe("function")
+  })
+})
+
+// ═══ D3: reason codes at the reject sites ══════════════════════════
+
+describe("importStudents — reason codes (D3)", () => {
+  it("stamps SUBJECT_NOT_FOUND and a vocabulary-identical remark", async () => {
+    arrangeTables({ subject: null, section: SEC, slotMapping: MAPPING })
+
+    const result = await importStudents([baseStudentRow()], null, null)
+
+    expect(result.failed).toHaveLength(1)
+    expect(result.failed[0].reasonCode).toBe("SUBJECT_NOT_FOUND")
+    expect(result.failed[0].remark).toBe(reasonRemarks("SUBJECT_NOT_FOUND", { code: "CS101" }))
+  })
+
+  it("stamps SECTION_NOT_FOUND", async () => {
+    arrangeTables({ subject: SUBJ, section: null, slotMapping: MAPPING })
+
+    const result = await importStudents([baseStudentRow()], null, null)
+
+    expect(result.failed[0].reasonCode).toBe("SECTION_NOT_FOUND")
+    expect(result.failed[0].remark).toBe(reasonRemarks("SECTION_NOT_FOUND", { section: "BSIE-41M2" }))
+  })
+
+  it("stamps FACULTY_NOT_FOUND for an unknown named faculty", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING, facultyUsers: new Map() })
+
+    const result = await importStudents([baseStudentRow()], null, null)
+
+    expect(result.failed[0].reasonCode).toBe("FACULTY_NOT_FOUND")
+    expect(result.failed[0].remark).toBe(reasonRemarks("FACULTY_NOT_FOUND", { email: FACULTY.email }))
+  })
+
+  it("stamps FACULTY_NOT_ASSIGNED when the slot belongs to someone else", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, namedMapping: null })
+
+    const result = await importStudents([baseStudentRow()], null, null)
+
+    expect(result.failed[0].reasonCode).toBe("FACULTY_NOT_ASSIGNED")
+    expect(result.failed[0].remark).toBe(reasonRemarks("FACULTY_NOT_ASSIGNED", { email: FACULTY.email, subject: "CS101", section: "BSIE-41M2" }))
+  })
+
+  it("stamps NO_FACULTY_ASSIGNED on the blank-faculty fallback", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, namedMapping: null, slotMapping: null })
+
+    const result = await importStudents([baseStudentRow({ facultyEmail: undefined })], null, null)
+
+    expect(result.failed[0].reasonCode).toBe("NO_FACULTY_ASSIGNED")
+  })
+
+  it("stamps EXCEL_ERROR_CELL with the offender column in the remark", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
+
+    const result = await importStudents([baseStudentRow({ name: "#VALUE!" })], null, null)
+
+    expect(result.failed[0].reasonCode).toBe("EXCEL_ERROR_CELL")
+    expect(result.failed[0].remark).toMatch(/^Invalid value in .+ \(Excel error\)$/)
+  })
+})
+
+// ═══ D3: already-persisted join + in-file duplicates ═══════════════
+
+describe("importStudents — already-persisted and duplicates (D3)", () => {
+  it("joins repo-skipped keys back to source rows as ALREADY_PERSISTED", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
+    // The repo reports this exact (student, faculty_subject, semester) key as
+    // already in the database — the enrollment exists, the row did not insert.
+    asFn(factory.studentEnrollmentRepository, "addEnrollments")
+      .mockResolvedValue({ inserted: 0, skipped: 1, skippedItems: [{ student_id: "stu-1", faculty_subject_id: MAPPING.id, section_id: SEC.id }] })
+
+    const result = await importStudents([baseStudentRow()], null, null)
+
+    expect(result.alreadyPersisted).toHaveLength(1)
+    expect(result.alreadyPersisted[0].row).toBe(1)
+    expect(result.alreadyPersisted[0].reasonCode).toBe("ALREADY_PERSISTED")
+  })
+
+  it("marks in-file repeats DUPLICATE_IN_FILE pointing at the first row", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
+
+    const result = await importStudents([baseStudentRow(), baseStudentRow()], null, null)
+
+    expect(result.enrolled).toBe(1)
+    expect(result.duplicateRows).toHaveLength(1)
+    expect(result.duplicateRows[0].reasonCode).toBe("DUPLICATE_IN_FILE")
+    expect(result.duplicateRows[0].remark).toBe(reasonRemarks("DUPLICATE_IN_FILE", { row: "1" }))
   })
 })

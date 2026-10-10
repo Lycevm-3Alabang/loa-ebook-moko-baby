@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { cleanCell, parseCsvRows, parseCsvLines } from "@/lib/csv-utils"
+import { cleanCell, parseCsvRows, parseCsvLines, IMPORT_REASON_CODES, reasonRemarks, escapeCsvCell } from "@/lib/csv-utils"
 
 // ── cleanCell ─────────────────────────────────────────────
 
@@ -140,5 +140,55 @@ describe("parseCsvLines", () => {
     const text = "code, name\r\nCS101, Intro\r\nMATH201, Calc II"
     const { rows } = parseCsvLines(text)
     expect(rows).toHaveLength(2)
+  })
+})
+
+// ── Import reason codes (D3 ledger) ─────────────────────────
+
+describe("IMPORT_REASON_CODES", () => {
+  it("is a closed set of 17 codes", () => {
+    expect(Object.keys(IMPORT_REASON_CODES).sort()).toEqual(
+      [
+        "ALREADY_PERSISTED",
+        "DEPARTMENT_FROM_FIRST_ROW",
+        "DEPARTMENT_MISMATCH",
+        "DEPARTMENT_UNRESOLVED",
+        "DUPLICATE_IN_FILE",
+        "EMAIL_BLANK",
+        "EMAIL_DOMAIN_NOT_ALLOWED",
+        "EXCEL_ERROR_CELL",
+        "FACULTY_NOT_ASSIGNED",
+        "FACULTY_NOT_FOUND",
+        "NO_FACULTY_ASSIGNED",
+        "REMOVED_BLOCKED",
+        "REMOVED_BY_ADMIN",
+        "SECTION_NOT_FOUND",
+        "STUDENT_NOT_FOUND",
+        "SUBJECT_NOT_FOUND",
+        "TRANSPORT_ERROR",
+      ].sort(),
+    )
+  })
+
+  it("interpolates ctx placeholders", () => {
+    expect(reasonRemarks("SUBJECT_NOT_FOUND", { code: "CS101" })).toBe('Subject "CS101" not found')
+    expect(reasonRemarks("TRANSPORT_ERROR", { n: "3", k: "2", error: "boom" })).toBe(
+      "Chunk 3 failed after 2 attempts: boom",
+    )
+    expect(reasonRemarks("DEPARTMENT_MISMATCH", { code: "BSIT", sectionDept: "CBA" })).toContain("BSIT")
+    expect(reasonRemarks("EMAIL_BLANK")).toBe("Email is required")
+  })
+
+  it("leaves unknown placeholders verbatim", () => {
+    expect(reasonRemarks("SUBJECT_NOT_FOUND")).toContain("{code}")
+  })
+})
+
+describe("escapeCsvCell", () => {
+  it("quotes commas, quotes, and newlines; doubles embedded quotes", () => {
+    expect(escapeCsvCell("plain")).toBe("plain")
+    expect(escapeCsvCell("Reynaldo, Jr.")).toBe('"Reynaldo, Jr."')
+    expect(escapeCsvCell('say "hi"')).toBe('"say ""hi"""')
+    expect(escapeCsvCell("a\nb")).toBe('"a\nb"')
   })
 })

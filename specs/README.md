@@ -76,9 +76,10 @@ Sliced C1 → C2 → C3 so the integrity fixes do not wait on the UI layer.
 | [chunked-import-failure-ux.md](chunked-import-failure-ux.md) | **U1 Done (2026-10-10)** | `getChunkFailureMessage` in `useChunkedImport` + both `postChunk` typed errors + `lib/__tests__/chunk-failure-message.test.ts` (8 tests). Gates green. Run file: `.opencode/skills/plan-fix/runs/20261010-1100-u1.md`. **S1 done (2026-10-10)** — 504→fail-fast predicate + 504/503 policy test (+1 test), gates waived (suite unverified). Run file: `.opencode/skills/plan-fix/runs/20261010-1200-u2a-504-retry-split.md`. Remaining: halve-once/persist (S3/S4), 70s, `fileId` |
 | **U2b** — halve-once + persist | **Done (2026-10-10, user-reported green)** | Offset/size-driven loop (`CHUNK_MIN_SIZE = 25`, halve-to-floor, meta recompute) + `chunk-halve.test.ts` (4 tests) + student exact boundaries (`resultMetas`/`endOfChunk`). Zero hook-interface change. Full-suite green retro-covers S1's tests. Run file: `.opencode/skills/plan-fix/runs/20261010-1300-u2b-halve-persist.md`. Remaining: U3 (70s), U4 (`fileId`) |
 | **U3** — 70s alignment | **Done (2026-10-10, user-reported green)** | `CHUNK_TIMEOUT_MS = 70000` exported + default uses it + one const assert (+1 test). `maxDuration = 60` untouched, zero callers pass the option. Full 294/294 green pasted. Run file: `.opencode/skills/plan-fix/runs/20261010-1400-u3-timeout-70s.md`. Remaining: U4 (invariant + `fileId`) |
+| **U4** — invariant + `fileId` | **Done (2026-10-10, user-reported green)** | Optional meta widen + `savedTotal` + suffix on mapper-authored branches (verbatim pure, Abort bare) + 6 message tests + 2 banner sentences. Family `chunked-import-failure-ux.md` complete (U1→U4). Run file: `.opencode/skills/plan-fix/runs/20261010-1500-u4-invariant-fileid.md`. Remaining: D3 (ledger), D6, C3 |
 
 **Gate:** `npx tsc --noEmit` → `npm run lint` → `npx vitest run` → `npm run build`.
-Current **294 tests / 22 files, user-reported green 2026-10-10** (was 259 / 18 when this work began; +8 U1, +1 S1, +4 U2b, +1 U3). All prior suite debt retired by this green.
+Current **300 tests / 22 files, user-reported green 2026-10-10** (was 259 / 18 when this work began; +8 U1, +1 S1, +4 U2b, +1 U3, +6 U4). The failure-UX family (U1→U4) is complete.
 
 ### The 2026-1 CSV is now measured — §10's unknowns are closed
 
@@ -151,8 +152,8 @@ is containment and reporting, not correctness.
 
 ## Next slice to take
 
-**U4** (`chunked-import-failure-ux.md` §4.1 + §4.5): safety invariant + `Reference: {fileId}` in every failure (mapper signature widens; student banner aligned). U3 done 2026-10-10 (user-reported 294/294 green).
-Tracked as NEXT in root `TODO.md`. After: D3 (ledger) → D6 (`inserted`) → C3 S1–S4.
+**D3 — ledger** (`student-import-stepper/ledger-reason-codes.md`): one CSV where every input row appears exactly once, reason codes, `ALREADY_PERSISTED` attribution. Precondition (`skippedItems`) landed with D2 — unblocked, largest remaining design. U4 done 2026-10-10 (user-reported green).
+Tracked as NEXT in root `TODO.md`. After: D6 (`inserted`) → C3 S1–S4.
 
 After U2–U4, proposed order (reorder freely): D3 → D6 → C3 S1–S4 → deferred
 course-payload cleanup. S1 remains the zero-UI-risk C3 entry point — department grouping,

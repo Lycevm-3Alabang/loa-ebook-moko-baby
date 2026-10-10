@@ -12,20 +12,19 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
 
 ## NEXT (do first)
 
-- [ ] **U4 — invariant + `fileId` in every failure** (`specs/chunked-import-failure-ux.md` §4.1 + §4.5).
-  Widen `getChunkFailureMessage` meta to carry `fileId` (+ `{saved}` source — recommend
-  run-total from hook history/results); every 5xx gains "Nothing was lost — {saved} rows
-  already saved. Press Import to resume." + `Reference: {fileId}`; align the student
-  systematic-failure banner copy. U3 done 2026-10-10 (user-reported green).
-  After: D3 (ledger) → D6 (`inserted`) → C3 S1–S4.
+- [ ] **D3 — ledger** (`specs/student-import-stepper/ledger-reason-codes.md`).
+  Single CSV in which every input row appears exactly once (status + reason code +
+  remark); `ALREADY_PERSISTED` attribution; give in-file duplicates (`duplicateRows`,
+  currently folded into `skipped`) their own code. Precondition (`skippedItems`
+  per-row attribution) landed with D2 — unblocked. Largest remaining design.
+  U4 done 2026-10-10 (user-reported green). After: D6 (`inserted`) → C3 S1–S4.
 
 ## Queued (proposed order — reorder freely)
 
-- [ ] **U2–U4 remainder** (`specs/chunked-import-failure-ux.md`). S1 (504→fail-fast)
-  done 2026-10-10 (retro-covered by greens below). U2b (halve-once + persist +
-  student exact boundaries) done 2026-10-10 (user-reported green). U3 (70s default)
-  done 2026-10-10 (user-reported green, 294/294).
-  Remains: `fileId` reference + safety invariant in every failure (U4).
+- [x] **U2–U4 family done** (`specs/chunked-import-failure-ux.md`). S1 (504→fail-fast)
+  2026-10-10 · U2b (halve-once + persist + student exact boundaries) 2026-10-10 ·
+  U3 (70s default) 2026-10-10 · U4 (invariant + `Reference: {fileId}`, 400 verbatim
+  pure, cancel untouched) 2026-10-10. Greens user-reported (S1 waived, retro-covered).
 - [ ] **D3 — ledger** (`specs/student-import-stepper/ledger-reason-codes.md`).
   Single CSV, reason codes, `ALREADY_PERSISTED` attribution. Largest remaining
   design; its precondition (`skippedItems` per-row attribution) already landed.
@@ -75,3 +74,8 @@ the run file above.
   `chunk-error-policy.test.ts` (+1 test). `maxDuration = 60` untouched, no callers.
   Gates green USER-REPORTED (tsc → lint → 294/294 vitest, pasted).
   Run file: `.opencode/skills/plan-fix/runs/20261010-1400-u3-timeout-70s.md`.
+- [x] **U4 — invariant + `fileId` done 2026-10-10** (`specs/chunked-import-failure-ux.md` §4.1 + §4.5).
+  Optional `fileId`/`saved` on mapper meta + in-loop `savedTotal` + suffix on
+  mapper-authored branches (verbatim pure, Abort bare) + 6 message tests + 2 banner
+  sentences aligned. Gates green USER-REPORTED (agent never runs CLI per H1).
+  Run file: `.opencode/skills/plan-fix/runs/20261010-1500-u4-invariant-fileid.md`.
