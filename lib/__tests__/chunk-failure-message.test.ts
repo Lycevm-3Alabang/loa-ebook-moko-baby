@@ -72,3 +72,53 @@ describe("getChunkFailureMessage — U1 (F1, F2, F7)", () => {
     expect(message).toContain("Could not reach the server")
   })
 })
+
+describe("getChunkFailureMessage — U4 invariant + Reference (F5, F6)", () => {
+  const keyed = { chunkIndex: 2, totalChunks: 8, fileId: "run-abc", saved: 47 }
+
+  it("adds the invariant and Reference to a 504 when keyed", () => {
+    const message = getChunkFailureMessage(withStatus(504), keyed)
+    expect(message).toContain("ran out of time")
+    expect(message).toMatch(/nothing was lost/i)
+    expect(message).toContain("47 rows are already saved")
+    expect(message).toContain("Reference: run-abc")
+    expect(message).not.toContain("504")
+  })
+
+  it("adds the invariant and Reference to other 5xx when keyed", () => {
+    const message = getChunkFailureMessage(withStatus(503), keyed)
+    expect(message).toContain("could not be saved")
+    expect(message).toMatch(/nothing was lost/i)
+    expect(message).toContain("Reference: run-abc")
+    expect(message).not.toContain("503")
+  })
+
+  it("keeps server-authored 400 verbatim pure even when keyed", () => {
+    const verbatim = "More than one semester is active. Deactivate all but one before importing."
+    const message = getChunkFailureMessage(withStatus(400, { serverMessage: verbatim }), keyed)
+    expect(message).toBe(verbatim)
+  })
+
+  it("renders legacy bytes for a keyless call", () => {
+    const message = getChunkFailureMessage(withStatus(504), meta)
+    expect(message).toContain("ran out of time")
+    expect(message).not.toContain("Reference:")
+    expect(message).not.toMatch(/nothing was lost/i)
+  })
+
+  it("never renders a response body alongside the suffix", () => {
+    const html = "<html><head><title>504 Gateway Timeout</title></head></html>"
+    const err = Object.assign(new Error(html), { status: 504 })
+    const message = getChunkFailureMessage(err, keyed)
+    expect(message).not.toContain("<html")
+    expect(message).toContain("Reference: run-abc")
+  })
+
+  it("adds the invariant to a Postgres-coded failure when keyed", () => {
+    const err = { code: "23505", message: "duplicate key value violates unique constraint" }
+    const message = getChunkFailureMessage(err, keyed)
+    expect(message).toContain("could not be saved")
+    expect(message).toMatch(/nothing was lost/i)
+    expect(message).not.toContain("23505")
+  })
+})

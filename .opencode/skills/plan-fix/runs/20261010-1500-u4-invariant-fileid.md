@@ -6,7 +6,7 @@ calibration: {1: "A", 2: "A", 3: "B", 4: "D", 5: "A", 6: "C"}
 workflow: "D"
 decision: "Option A — optional fileId/saved on mapper meta + in-loop savedTotal + banner alignment; 400 verbatim stays pure; cancel untouched"
 status: implementing
-pending: slice-2
+pending: gates
 ---
 
 # Plan — U4 (invariant + fileId)
@@ -26,11 +26,14 @@ pending: slice-2
 | plan-done | Is this plan done? | A — Done |
 | handoff | Run implement-fix with it? | A — Yes, load implement-fix on this file (no slice starts yet) |
 | who-implements | Who implements U4 Slice 1 (hook mapper + savedTotal)? | B — Code it (agent writes after Apply, one file per turn) |
-| slice-1 | Apply Slice 1 (mapper widen + suffix + savedTotal + fail-path passing)? | Applied — whole mapper replaced (inline optional fields, suffix rule, verbatim/Abort preserved) + `savedTotal` accumulator + spread passing. Awaiting user gates per H1. |
+| slice-1 | Apply Slice 1 (mapper widen + suffix + savedTotal + fail-path passing)? | Applied — debt retired by Slice 2 green. |
+| slice-2 | Apply Slice 2 (message-test extensions)? | Applied — GREEN user-reported (tsc clean, 14/14). |
+| slice-3 | Apply Slice 3 (banner 2 sentences)? | Applied — multi-reason + unaccounted invariant; single-reason inherits; cancel untouched. |
+| gates-chase | Close-out gate output (tsc → lint → full vitest)? | continue with no gate output pasted — Slice 3 + full-suite proof unconfirmed (banner copy is untested by any suite; tsc/lint would catch syntax, vitest catches regressions). Cannot mark Done without green or explicit waive. |
 
 ## Pending
 
-- slice-2: Propose Slice 2 (message-test extensions) — starts only when user says continue (Slice 1 tsc + message-suite green welcome alongside).
+- gates: User pastes close-out gate green/red (or explicitly waives); then close-out (TODO/README → D3 ledger, family retired).
 
 ## Decisions
 
@@ -42,6 +45,6 @@ pending: slice-2
 
 ## Plan
 
-Slice 1 — hook mapper + savedTotal + fail-path passing. STATUS: APPLIED (awaiting gates).
-Slice 2 — message-test extensions (invariant/Reference/400-pure/no-body; 8 U1 untouched). STATUS: on continue.
-Slice 3 — banner 2 sentences (:417 multi, :422 unaccounted). STATUS: on continue.
+Slice 1 — hook mapper + savedTotal. STATUS: DONE (user-reported green).
+Slice 2 — message tests. STATUS: DONE (user-reported green).
+Slice 3 — banner 2 sentences. STATUS: APPLIED (green unconfirmed — debt).

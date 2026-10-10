@@ -414,12 +414,12 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         setError(
           reasons.length === 1
             ? `${deadEntries.length} row${deadEntries.length !== 1 ? "s" : ""} not imported — ${reasons[0]}`
-            : `${deadEntries.length} rows from failed chunks recorded as failures — press Import again to retry (completed chunks are idempotent).`
+            : `${deadEntries.length} rows from failed chunks recorded as failures — nothing was lost, ${aggregated.enrolled} rows are already saved. Press Import again to resume.`
         )
         return
       }
       if (unaccounted !== 0) {
-        setError(`Import incomplete: ${unaccounted} of ${previewRows.length} CSV rows are unaccounted for (not enrolled, skipped, or reported). Retry — completed chunks are idempotent.`)
+        setError(`Import incomplete: ${unaccounted} of ${previewRows.length} CSV rows are unaccounted for (not enrolled, skipped, or reported). Nothing was lost — ${aggregated.enrolled} rows are already saved. Press Import again to resume.`)
         return
       }
       setPreviewRows(null)
