@@ -47,3 +47,7 @@ the run file above.
   `getChunkFailureMessage` in `useChunkedImport` + both `postChunk` typed errors +
   `lib/__tests__/chunk-failure-message.test.ts` (8 tests). Gates green.
   Run file: `.opencode/skills/plan-fix/runs/20261010-1100-u1.md`.
+- [x] **Faculty dead-code removal done 2026-10-10** (follow-up to the stepper).
+  Deleted dead `handleCsvImport` + orphaned chunk wiring/overlay/result panel from
+  `features/admin-data/components/FacultyLoadingTab.tsx` (~230 lines). Hook + student
+  caller untouched. Gates green. Same run file.
