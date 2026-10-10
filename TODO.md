@@ -1,8 +1,8 @@
 # TODO — student CSV importer follow-ups
 
 Tracked 2026-10-09 for the next session. All production incidents are closed
-(504 timeout, 23505 duplicate key, silent cross-term loss); 288 tests / 21 files
-green (U1 done 2026-10-10, +8). What remains is reporting polish and containment — nothing is on fire.
+(504 timeout, 23505 duplicate key, silent cross-term loss); 298 tests / 22 files
+green (C3 S2 done 2026-10-10, +10). What remains is reporting polish and containment — nothing is on fire.
 
 Gate for every item: `npx tsc --noEmit` → `npm run lint` → `npx vitest run`
 (baseline 280/20) → `npm run build`.
@@ -12,16 +12,33 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
 
 ## NEXT (do first)
 
-- [ ] **C3 S2 — department grid + panels** (`specs/student-import-stepper.md` §3, §5).
-  S1 landed the data (grouping is derived, deterministic, already on every payload
-  row); S2 makes it VISIBLE: per-department grid of panels off `rowDept`
-  (the row's own code, §3.2), Unassigned rows in their own lazily-created panel,
-  global running guard on the preview table while any panel runs. No new writes —
-  panels drive the same per-department chunk runs C1/C2 already made safe.
-  C3 S1 done 2026-10-10 (user-reported green, gates pasted). Then S3 (Unassigned
-  panel polish) → S4 (`userMap` merge across panels).
+- [ ] **C3 S3 — Unassigned panel polish** (`specs/student-import-stepper.md` §3.4, §8).
+  S2 shipped the grid; the Unassigned panel renders whenever rows carry a blank or
+  unresolvable `department code`, but it is an ordinary panel today. §8's
+  "Invalid-list volume" row is the concrete work: 10 panels × hundreds of blocked
+  rows each need an **aggregate roll-up above the grid**, and the unresolved count
+  per panel wants a footnote. Scope it with /plan-fix first — §3.4's lazy-creation
+  timing and the roll-up placement are both still open. Then S4 (`userMap` merge
+  across panels).
 
 ## Queued (proposed order — reorder freely)
+
+- [x] **C3 S2 — department grid + panels done 2026-10-10** (`specs/student-import-stepper.md` §3, §5).
+  Pure `department-panels.ts` (`buildDepartmentPanels` groups ROWS by §3.2
+  `rowDept`, omits empty departments, code-ascending with Unassigned last) + 10
+  tests · one `useChunkedImport` instance driven per panel — `activePanelId` IS
+  the §3.1 global running guard, greying every Run button and dimming the preview
+  table · `panelResults`/`panelLedgers`/`panelErrors` keyed by `panel.id`, so
+  partial completion is a first-class state · **`assertLedgerClosure` is now
+  PER PANEL** (whole-file would fire on every partial run) · ledger download is
+  the union of panels that ran, merged on source row · `StepPanel` reused
+  unchanged from `FacultyImportStepper`; `StepperTrace` deliberately unused.
+  No server change. Gates green USER-REPORTED. Run file:
+  `.opencode/skills/plan-fix/runs/20261010-2132-c3-s2-department-panels.md`.
+  Side-effects to know: the one-click "Import N Rows" button is GONE (per-panel
+  control was the point), a panel's blocked rows no longer disable sibling
+  panels, and cross-department duplicates now read `ALREADY_PERSISTED` rather
+  than `DUPLICATE_IN_FILE` because the server dedupes per request.
 
 - [x] **U2–U4 family done** (`specs/chunked-import-failure-ux.md`). S1 (504→fail-fast)
   2026-10-10 · U2b (halve-once + persist + student exact boundaries) 2026-10-10 ·

@@ -1021,6 +1021,8 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             </div>
           )}
 
+          {/* "Everything succeeded" is only true when every panel ran. A partial
+              run with zero failures is a success SO FAR, not a completed import. */}
           {totalErrors === 0 && aggregateResult.enrolled > 0 && (
             <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl px-5 py-4 flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-emerald-200 dark:bg-emerald-700 flex items-center justify-center shrink-0">
@@ -1028,7 +1030,11 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">All {aggregateResult.totalRows} rows processed successfully.</p>
+              <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                {ranPanelCount === panels.length
+                  ? `All ${aggregateResult.totalRows} rows processed successfully.`
+                  : `Every row from the ${ranPanelCount} panel${ranPanelCount !== 1 ? "s" : ""} that ran processed successfully.`}
+              </p>
             </div>
           )}
 
@@ -1041,7 +1047,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
               <svg className="w-4 h-4 text-gold-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
-              Download Import Ledger (.csv)
+              Download Import Ledger (.csv) &mdash; {mergedLedgerRows.length} rows from {ranPanelCount} panel{ranPanelCount !== 1 ? "s" : ""}
             </button>
           )}
 
