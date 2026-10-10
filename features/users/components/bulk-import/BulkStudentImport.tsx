@@ -3,8 +3,10 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { cleanCell, isExcelErrorCell, parseCsvRows, isAllowedStudentEmail, type ImportReasonCode } from "@/lib/csv-utils"
 import { useChunkedImport, decodeCsvFile, withRetryHints, type ChunkMeta } from "@/features/admin-data/components/useChunkedImport"
-import { buildImportLedger, assertLedgerClosure, ledgerToCsv } from "./import-ledger"
+import { buildImportLedger, assertLedgerClosure, ledgerToCsv, type LedgerRow } from "./import-ledger"
 import { computeDepartmentGrouping } from "./department-grouping"
+import { buildDepartmentPanels, type DepartmentPanel } from "./department-panels"
+import { StepPanel } from "@/features/admin-data/components/FacultyImportStepper"
 
 // Domain rule is shared with the import service via lib/csv-utils — one list,
 // one predicate, so the preview cannot disagree with the server.
@@ -45,6 +47,43 @@ interface ImportResult {
   parseErrors: { row: number; message: string }[]
   totalRows: number
   termMismatch?: { mappedTerms: string[]; activeTerm: string | null } | null
+}
+
+/** A preview row plus the two tallies the grid needs — what buildDepartmentPanels consumes. */
+type PanelRow = PreviewRow & { isBlocked: boolean; isProblem: boolean }
+
+// Blocking = rows the server cannot accept under any resolution. Everything else
+// (unknown subject/section/faculty, dept mismatch) is created, resolved, or reported
+// per-row by importStudents, so it must NOT gate the whole import.
+// Module scope, not component scope: the panels memo depends on these, and a
+// predicate re-created on every render would thrash that memo.
+const isBlockedPreviewRow = (r: PreviewRow) =>
+  isMissingEmail(r.email) || isOffDomainEmail(r.email) || r.isInvalidValue
+
+const isProblemPreviewRow = (r: PreviewRow) =>
+  r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned ||
+  r.isNewStudent || r.isInvalidDepartment || r.isInvalidValue
+
+/**
+ * Sum the panels' results into the one whole-file view the result tiles render.
+ * Counts add because every input row lives in exactly one panel (guaranteed by
+ * `buildDepartmentPanels`); the row lists concatenate because a panel's ledger
+ * already keyed them by SOURCE row, so no two panels report the same row twice.
+ */
+function aggregatePanelResults(results: ImportResult[]): ImportResult | null {
+  if (results.length === 0) return null
+  return {
+    created: results.flatMap((r) => r.created),
+    enrolled: results.reduce((s, r) => s + r.enrolled, 0),
+    inserted: results.reduce((s, r) => s + r.inserted, 0),
+    skipped: results.reduce((s, r) => s + r.skipped, 0),
+    failed: results.flatMap((r) => r.failed),
+    duplicateRows: results.flatMap((r) => r.duplicateRows),
+    alreadyPersisted: results.flatMap((r) => r.alreadyPersisted),
+    parseErrors: results.flatMap((r) => r.parseErrors),
+    totalRows: results.reduce((s, r) => s + r.totalRows, 0),
+    termMismatch: results.find((r) => r.termMismatch)?.termMismatch ?? null,
+  }
 }
 
 const TEMPLATE_HEADERS = "name, email, subject code, section, faculty email, department code"
@@ -108,14 +147,18 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const [previewRows, setPreviewRows] = useState<PreviewRow[] | null>(null)
   const [previewPage, setPreviewPage] = useState(0)
   const [previewError, setPreviewError] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState("")
   const [referenceError, setReferenceError] = useState("")
-  const [importResult, setImportResult] = useState<ImportResult | null>(null)
-  const [importing, setImporting] = useState(false)
   const [problemFilter, setProblemFilter] = useState(false)
   const [removedRows, setRemovedRows] = useState<Array<StudentCsvRow & { reason?: ImportReasonCode }>>([])
-  const [ledgerCsv, setLedgerCsv] = useState("")
+  // §3.1 — the panel whose run owns the single useChunkedImport instance.
+  // Non-null IS the global running guard: every panel's Run button and the preview
+  // table read this one value, and it is the only cancel target.
+  const [activePanelId, setActivePanelId] = useState<string | null>(null)
+  // Keyed by panel.id and never overwritten by a sibling's run — partial
+  // completion is a NORMAL state, so a finished panel keeps its numbers.
+  const [panelResults, setPanelResults] = useState<Record<string, ImportResult>>({})
+  const [panelLedgers, setPanelLedgers] = useState<Record<string, LedgerRow[]>>({})
+  const [panelErrors, setPanelErrors] = useState<Record<string, string>>({})
   const { isRunning: chunkRunning, progress: chunkProgress, history: chunkHistory, run: runChunks, cancel: cancelChunks } =
     useChunkedImport<PreviewRow, ImportResult>()
 
@@ -137,6 +180,41 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     () => computeDepartmentGrouping(previewRows ?? []),
     [previewRows],
   )
+
+  // §3.2 — panels group ROWS by their own `department code`, which is a
+  // different map from studentDepartmentByEmail above (that one groups
+  // STUDENTS, §3.3). Derived, so an inline edit or a row removal re-groups the
+  // grid with nothing to re-stamp.
+  const panels = useMemo(
+    () =>
+      buildDepartmentPanels<PanelRow>(
+        (previewRows ?? []).map((r) => ({
+          ...r,
+          isBlocked: isBlockedPreviewRow(r),
+          isProblem: isProblemPreviewRow(r),
+        })),
+        existingDepartments,
+      ),
+    [previewRows, existingDepartments],
+  )
+
+  // The download is the union of the panels that have run, in source-row order.
+  // LedgerRow.row IS the source csv row, so merging on it is exact — and a panel
+  // the admin never ran contributes nothing, which is why closure is asserted
+  // per-panel and never against previewRows.length.
+  const mergedLedgerRows = useMemo(
+    () => Object.values(panelLedgers).flat().sort((a, b) => a.row - b.row),
+    [panelLedgers],
+  )
+  const mergedLedgerCsv = useMemo(
+    () => (mergedLedgerRows.length > 0 ? ledgerToCsv(mergedLedgerRows) : ""),
+    [mergedLedgerRows],
+  )
+  const aggregateResult = useMemo(
+    () => aggregatePanelResults(Object.values(panelResults)),
+    [panelResults],
+  )
+  const ranPanelCount = Object.keys(panelLedgers).length
 
   const fetchReferenceData = useCallback(async () => {
     setReferenceError("")
@@ -168,19 +246,13 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   useEffect(() => { Promise.resolve().then(() => fetchReferenceData()) }, [fetchReferenceData])
 
   useEffect(() => {
-    if (!importing) return
+    if (activePanelId === null) return
     const guard = (e: BeforeUnloadEvent) => {
       e.preventDefault()
     }
     window.addEventListener("beforeunload", guard)
     return () => window.removeEventListener("beforeunload", guard)
-  }, [importing])
-
-  // Blocking = rows the server cannot accept under any resolution. Everything else
-  // (unknown subject/section/faculty, dept mismatch) is created, resolved, or reported
-  // per-row by importStudents, so it must NOT gate the whole import.
-  const isBlockedPreviewRow = (r: PreviewRow) =>
-    isMissingEmail(r.email) || isOffDomainEmail(r.email) || r.isInvalidValue
+  }, [activePanelId])
 
   const blockedRows = useMemo(() => {
     if (!previewRows) return []
@@ -189,7 +261,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
   const problemRows = useMemo(() => {
     if (!previewRows) return []
-    return previewRows.filter((r) => r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned || r.isNewStudent || r.isInvalidDepartment || r.isInvalidValue)
+    return previewRows.filter(isProblemPreviewRow)
   }, [previewRows])
 
   const visibleRows = problemFilter ? problemRows : previewRows ?? []
@@ -219,9 +291,11 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
   const handlePreview = async () => {
     setPreviewError("")
-    setError("")
+    // A new file is a new grid: no panel from the previous file may survive it.
+    setPanelResults({})
+    setPanelLedgers({})
+    setPanelErrors({})
     setRemovedRows([])
-    setLedgerCsv("")
     const file = fileRef.current?.files?.[0]
     if (!file) { setPreviewError("Please select a CSV file"); return }
     const text = await decodeCsvFile(file)
@@ -310,13 +384,18 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     setPreviewPage(0)
   }
 
-  const handleConfirm = async () => {
-    if (!previewRows || loading) return
-    setError("")
-    setImporting(true)
-    setLoading(true)
+  // One panel, one run. The chunk offsets stay panel-local, so buildImportLedger's
+  // `payload[meta.rowOffset + i]` still resolves against the rows it was sent.
+  const runPanel = async (panel: DepartmentPanel<PanelRow>) => {
+    if (!previewRows || activePanelId !== null) return
+    // Declared out here, not inside the try: the catch block below reports through
+    // it too, and a block-scoped const would be invisible there.
+    const fail = (message: string) => setPanelErrors((prev) => ({ ...prev, [panel.id]: message }))
+    setActivePanelId(panel.id)
+    fail("")
     try {
-      const payload = previewRows.map((r) => ({
+      const rows = panel.rows
+      const payload = rows.map((r) => ({
         email: r.email,
         name: r.name,
         subjectCode: r.subjectCode,
@@ -324,7 +403,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         facultyEmail: r.facultyEmail || undefined,
         // §3.3: users.departmentId is the STUDENT's department — first row in
         // file order — never this row's own code. The row's own value stays on
-        // resolvedDepartmentId for S2's department panels to group by.
+        // resolvedDepartmentId, and it is what grouped this panel (§3.2).
         departmentId: studentDepartmentByEmail.get(r.email.toLowerCase().trim()) ?? undefined,
         _originRow: r.row,
       }))
@@ -364,21 +443,21 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       // in completion order — parallel to `results`). Merged with failed metas
       // they give exact per-chunk boundaries at any chunk size: no constant.
       const resultMetas: ChunkMeta[] = []
-      const { results, cancelled, failedChunks, stoppedEarly } = await runChunks(previewRows, {
+      const { results, cancelled, failedChunks, stoppedEarly } = await runChunks(rows, {
         chunkSize: STUDENT_CHUNK_SIZE,
         postChunk: (chunk, meta, signal) =>
           postChunk(payload.slice(meta.rowOffset, meta.rowOffset + chunk.length), meta, signal),
         onChunkResult: (_r, meta) => { resultMetas.push(meta) },
         summarizeResult: (r) => ({ saved: r.enrolled ?? 0, skipped: r.skipped ?? 0, issues: (r.failed?.length ?? 0) + (r.parseErrors?.length ?? 0) }),
       })
-      if (cancelled) { setError(`Import cancelled after ${results.length} chunks — retry to resume`); return }
+      if (cancelled) { fail(`Import cancelled after ${results.length} chunks — retry this panel to resume`); return }
       // Dead-chunk rows are TRANSPORT_ERROR rows inside the ledger now — the
       // separate window math that used to live here is gone.
       // The ledger is built FIRST — one entry per input CSV row, in source order.
-      // The result panels then read from it, so exactly one chunk-relative →
-      // source-row conversion exists in the codebase.
+      // The panel's own result then reads from it, so exactly one chunk-relative
+      // → source-row conversion exists in the codebase.
       const ledger = buildImportLedger({
-        payload: previewRows.map((r) => ({
+        payload: rows.map((r) => ({
           row: r.row,
           name: r.name,
           email: r.email,
@@ -415,11 +494,12 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
           return courseId ? existingDepartmentCourses.get(courseId) ?? null : null
         },
       })
-      // Closure is exact now: every input row is classified by construction, so
-      // this assert replaces the old "unaccounted" arithmetic.
+      // Closure is PER PANEL, not whole-file. Asserting against previewRows.length here
+      // would fire on every partial run and tell the admin the import is incomplete
+      // when one panel of ten has finished — which is a normal state.
       let ledgerClosed = true
       try {
-        assertLedgerClosure(ledger, previewRows.length)
+        assertLedgerClosure(ledger, rows.length)
       } catch {
         ledgerClosed = false
       }
@@ -446,14 +526,14 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             : [],
         ),
         parseErrors: results.flatMap((r) => r.parseErrors ?? []),
-        totalRows: previewRows.length,
-        // Any chunk reporting a mismatch means the whole run is against the wrong term.
+        totalRows: rows.length,
+        // Any chunk reporting a mismatch means this panel's rows are against the wrong term.
         termMismatch: results.find((r) => r.termMismatch)?.termMismatch ?? null,
       }
-      setImportResult(aggregated)
-      setLedgerCsv(ledgerToCsv(ledger))
+      setPanelResults((prev) => ({ ...prev, [panel.id]: aggregated }))
+      setPanelLedgers((prev) => ({ ...prev, [panel.id]: ledger }))
       if (!ledgerClosed) {
-        setError(`Import incomplete: the ledger could not account for all ${previewRows.length} CSV rows — nothing was lost, ${aggregated.enrolled} rows are already saved. Press Import again to resume.`)
+        fail(`Could not account for all ${rows.length} rows of this panel — nothing was lost, ${aggregated.enrolled} rows are already saved. Press Run again to resume.`)
         return
       }
       if (stoppedEarly || failedChunks.length > 0) {
@@ -461,48 +541,48 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         // problem such as "no active semester". Retrying cannot fix it, so the
         // server's own message must replace the "try again" advice.
         const reasons = [...new Set(failedChunks.map((fc) => fc.error))]
-        setError(
+        fail(
           reasons.length === 1
             ? `${aggregated.failed.length} row${aggregated.failed.length !== 1 ? "s" : ""} not imported — ${reasons[0]}`
-            : `${aggregated.failed.length} rows from failed chunks recorded as failures — nothing was lost, ${aggregated.enrolled} rows are already saved. Press Import again to resume.`
+            : `${aggregated.failed.length} rows from failed chunks recorded as failures — nothing was lost, ${aggregated.enrolled} rows are already saved. Press Run again to resume.`
         )
         return
       }
-      setPreviewRows(null)
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        setError("Import cancelled — completed chunks are persisted. Press Import again to resume.")
+        fail("Import cancelled — completed chunks are persisted. Press Run again to resume.")
         return
       }
-      setError("Could not reach the server. Please check your connection and try again.")
+      fail("Could not reach the server. Please check your connection and try again.")
     } finally {
-      setLoading(false)
-      setImporting(false)
+      setActivePanelId(null)
     }
   }
 
   const handleReset = () => {
-    setImportResult(null)
-    setLedgerCsv("")
+    setPanelResults({})
+    setPanelLedgers({})
+    setPanelErrors({})
     setPreviewRows(null)
     setPreviewPage(0)
     setPreviewError("")
-    setError("")
     setReferenceError("")
     if (fileRef.current) fileRef.current.value = ""
   }
 
-  const totalErrors = importResult
-    ? importResult.failed.length + importResult.parseErrors.length
+  const totalErrors = aggregateResult
+    ? aggregateResult.failed.length + aggregateResult.parseErrors.length
     : 0
 
   return (
     <>
-      {importing && (
+      {activePanelId !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="bg-white dark:bg-surface-dim rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl">
             <div className="w-10 h-10 border-4 border-gold-600 border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm font-semibold text-secondary">Importing student enrollments...</p>
+            <p className="text-sm font-semibold text-secondary">
+              Importing {panels.find((p) => p.id === activePanelId)?.label ?? "enrollments"}...
+            </p>
             <p className="text-xs text-tertiary">
               {chunkProgress.totalRows > 0
                 ? `${chunkProgress.doneRows}/${chunkProgress.totalRows} rows (${chunkProgress.doneChunks}/${chunkProgress.totalChunks} chunks)`
@@ -536,7 +616,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         </div>
       )}
 
-      {!previewRows && !importResult && (
+      {!previewRows && !aggregateResult && (
         <div className="space-y-5">
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 rounded-xl px-4 py-3">
             <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1">CSV Format Hints</p>
@@ -645,18 +725,83 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
               </div>
             )}
 
-            {error && <p className="text-xs font-medium text-red-600">{error}</p>}
+            {panels.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[11px] text-tertiary/70">
+                  {panels.length} department{panels.length !== 1 ? "s" : ""} in this file — run them independently, in any
+                  order. A re-run skips rows already saved, so nothing is written twice.
+                  {!semesterId && (
+                    <span className="text-red-600 font-semibold"> No active semester — every panel is disabled.</span>
+                  )}
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {panels.map((panel) => {
+                    const result = panelResults[panel.id]
+                    const panelError = panelErrors[panel.id]
+                    const isActive = activePanelId === panel.id
+                    const blocked = panel.blockedCount > 0
+                    const disabled = !semesterId || blocked || (activePanelId !== null && !isActive)
+                    const disabledTitle = !semesterId
+                      ? "Set an active semester before importing."
+                      : blocked
+                        ? `${panel.blockedCount} blocked row${panel.blockedCount !== 1 ? "s" : ""} — fix or remove them in the table below.`
+                        : undefined
+                    return (
+                      <StepPanel
+                        key={panel.id}
+                        title={`${panel.label} · ${panel.rows.length}`}
+                        runLabel="Run"
+                        runningLabel="Running…"
+                        running={isActive}
+                        disabled={disabled}
+                        disabledTitle={disabledTitle}
+                        onRun={() => runPanel(panel)}
+                        summary={
+                          <>
+                            <p className="text-[11px] text-tertiary">
+                              {panel.rows.length - panel.blockedCount} ready · {panel.problemCount} flagged · {panel.blockedCount} blocked
+                            </p>
+                            {result && (
+                              <p className="text-[11px] text-secondary">
+                                {result.enrolled} resolved · {result.inserted} written · {result.skipped} skipped ·{" "}
+                                <span className={result.failed.length > 0 ? "text-amber-600" : "text-emerald-600"}>
+                                  {result.failed.length} failed
+                                </span>
+                              </p>
+                            )}
+                            {panelError && <p className="text-[11px] text-red-600">{panelError}</p>}
+                          </>
+                        }
+                        invalid={panel.rows
+                          .filter((r) => r.isBlocked)
+                          .map((r) => ({
+                            key: `Row ${r.row}`,
+                            reason: isMissingEmail(r.email)
+                              ? "email missing"
+                              : isOffDomainEmail(r.email)
+                                ? "domain not allowed"
+                                : "invalid value (Excel error)",
+                          }))}
+                        invalidKeyPrefix={`blocked-${panel.id}`}
+                        confirmTitle={`Import ${panel.rows.length} row${panel.rows.length !== 1 ? "s" : ""} from ${panel.label}?`}
+                        confirmMessage="Only this department's rows are sent. Re-running skips rows already saved."
+                      />
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
-            {importResult?.termMismatch && (
+            {aggregateResult?.termMismatch && (
               <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-xl px-4 py-3 space-y-1">
                 <p className="text-xs font-semibold text-red-700 dark:text-red-300">
                   Faculty mappings are attached to an inactive semester
                 </p>
                 <p className="text-[11px] text-red-600/80 dark:text-red-300/70">
                   The subjects and sections in this file have no faculty for the active semester
-                  {importResult.termMismatch.mappedTerms.length > 0 && (
-                    <> &mdash; their mappings sit under {importResult.termMismatch.mappedTerms.length} other
-                    semester{importResult.termMismatch.mappedTerms.length !== 1 ? "s" : ""}</>
+                  {aggregateResult.termMismatch.mappedTerms.length > 0 && (
+                    <> &mdash; their mappings sit under {aggregateResult.termMismatch.mappedTerms.length} other
+                    semester{aggregateResult.termMismatch.mappedTerms.length !== 1 ? "s" : ""}</>
                   )}
                   . Re-import the faculty CSV while that semester is active, or activate the semester
                   the mappings belong to. Rows below fail with &ldquo;not assigned&rdquo; because of
@@ -665,7 +810,12 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
               </div>
             )}
 
-            <div className="max-h-72 overflow-y-auto tbl-container tbl">
+            <div
+              aria-busy={activePanelId !== null}
+              className={`max-h-72 overflow-y-auto tbl-container tbl transition-opacity ${
+                activePanelId !== null ? "pointer-events-none opacity-60" : ""
+              }`}
+            >
               <table>
                 <thead>
                   <tr>
@@ -783,109 +933,97 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
           <div className="sticky bottom-0 pt-4 pb-1 bg-white dark:bg-surface-dim flex items-center gap-3">
             <button
               type="button"
+              disabled={activePanelId !== null}
               onClick={handleReset}
-              className={`text-sm font-semibold px-4 py-3 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors ${previewOnly ? "w-full" : "flex-1"}`}
+              className={`text-sm font-semibold px-4 py-3 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors disabled:opacity-40 ${previewOnly ? "w-full" : "flex-1"}`}
             >
               Cancel
             </button>
-            {!previewOnly && (
-              <button
-                type="button"
-                disabled={loading || previewRows.length === 0 || blockedRows.length > 0}
-                onClick={handleConfirm}
-                className={`flex-1 text-sm font-semibold px-4 py-3 rounded-xl transition-colors ${
-                  blockedRows.length > 0
-                    ? "bg-red-400 text-white cursor-not-allowed"
-                    : "bg-gold-600 text-white hover:bg-gold-700 disabled:opacity-40"
-                }`}
-              >
-                {loading
-                  ? "Importing..."
-                  : blockedRows.length > 0
-                    ? `${blockedRows.length} Error${blockedRows.length !== 1 ? "s" : ""} — Fix to import`
-                    : `Import ${previewRows.length} Row${previewRows.length !== 1 ? "s" : ""}`}
-              </button>
+            {!previewOnly && ranPanelCount > 0 && (
+              <p className="text-[11px] text-tertiary text-right">
+                {ranPanelCount} of {panels.length} panel{panels.length !== 1 ? "s" : ""} run
+              </p>
             )}
           </div>
         </div>
       )}
 
-      {importResult && !previewOnly && (
+      {aggregateResult && !previewOnly && (
         <div className="space-y-5">
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl p-5 text-center">
-              <p className="text-2xl font-bold text-emerald-600">{importResult.created.length}</p>
+              <p className="text-2xl font-bold text-emerald-600">{aggregateResult.created.length}</p>
               <p className="text-[11px] font-semibold text-emerald-700/70 dark:text-emerald-300/70">Users Created</p>
             </div>
             <div className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-5 text-center">
-              <p className="text-2xl font-bold text-blue-600">{importResult.enrolled}</p>
+              <p className="text-2xl font-bold text-blue-600">{aggregateResult.enrolled}</p>
               <p className="text-[11px] font-semibold text-blue-700/70 dark:text-blue-300/70">Enrollments Resolved</p>
             </div>
           </div>
 
           <div className="bg-slate-50 dark:bg-slate-800/30 rounded-2xl px-5 py-3 space-y-1">
             <p className="text-xs font-semibold text-secondary">
-              {importResult.totalRows} rows sent · {importResult.enrolled} resolved · {importResult.inserted} newly written · {importResult.skipped} skipped (already enrolled) · {importResult.failed.length} failed
+              {aggregateResult.totalRows} rows sent · {aggregateResult.enrolled} resolved · {aggregateResult.inserted} newly written · {aggregateResult.skipped} skipped (already enrolled) · {aggregateResult.failed.length} failed
             </p>
             <p className="text-[11px] text-tertiary">
               Seed 2026-1 reference: 3,302 students · 21,989 enrollments. Re-running this file should enroll 0 and skip all (idempotent).
             </p>
             {(() => {
               const boxUnaccounted =
-                importResult.totalRows -
-                importResult.enrolled -
-                importResult.skipped -
-                importResult.failed.length -
-                importResult.parseErrors.length
+                aggregateResult.totalRows -
+                aggregateResult.enrolled -
+                aggregateResult.skipped -
+                aggregateResult.failed.length -
+                aggregateResult.parseErrors.length
               return (
                 <p className={`text-[11px] font-semibold ${boxUnaccounted !== 0 ? "text-red-600" : "text-emerald-600 dark:text-emerald-300"}`}>
-                  {boxUnaccounted === 0 ? "All rows accounted for." : `${boxUnaccounted} of ${importResult.totalRows} CSV rows unaccounted — retry the import.`}
+                  {boxUnaccounted === 0 ? "All rows accounted for." : `${boxUnaccounted} of ${aggregateResult.totalRows} CSV rows unaccounted — retry the import.`}
                 </p>
               )
             })()}
           </div>
 
-          {importResult.parseErrors.length > 0 && (
+          {aggregateResult.parseErrors.length > 0 && (
             <div className="bg-red-50 dark:bg-red-900/20 rounded-2xl overflow-hidden">
               <div className="px-5 py-3 border-b border-red-100 dark:border-red-800/30">
-                <p className="text-sm font-semibold text-red-700 dark:text-red-300">{importResult.parseErrors.length} Parse Error{importResult.parseErrors.length !== 1 ? "s" : ""}</p>
+                <p className="text-sm font-semibold text-red-700 dark:text-red-300">{aggregateResult.parseErrors.length} Parse Error{aggregateResult.parseErrors.length !== 1 ? "s" : ""}</p>
               </div>
               <div className="px-5 py-3 space-y-2 max-h-40 overflow-y-auto">
-                {importResult.parseErrors.map((e, i) => (
+                {aggregateResult.parseErrors.map((e, i) => (
                   <p key={`pe-${i}`} className="text-xs text-red-600 dark:text-red-400">Row {e.row}: {e.message}</p>
                 ))}
               </div>
             </div>
           )}
 
-          {importResult.failed.length > 0 && (
+          {aggregateResult.failed.length > 0 && (
             <div className="bg-amber-50 dark:bg-amber-900/20 rounded-2xl overflow-hidden">
               <div className="px-5 py-3 border-b border-amber-100 dark:border-amber-800/30">
-                <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">{importResult.failed.length} Import Failure{importResult.failed.length !== 1 ? "s" : ""}</p>
+                <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">{aggregateResult.failed.length} Import Failure{aggregateResult.failed.length !== 1 ? "s" : ""}</p>
               </div>
               <div className="px-5 py-3 space-y-2 max-h-40 overflow-y-auto">
-                {importResult.failed.map((f, i) => (
+                {aggregateResult.failed.map((f, i) => (
                   <p key={`f-${i}`} className="text-xs text-amber-700 dark:text-amber-400">Row {f.row}: {f.email} — {f.remark}</p>
                 ))}
               </div>
             </div>
           )}
 
-          {totalErrors === 0 && importResult.enrolled > 0 && (
+          {totalErrors === 0 && aggregateResult.enrolled > 0 && (
             <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl px-5 py-4 flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-emerald-200 dark:bg-emerald-700 flex items-center justify-center shrink-0">
                 <svg className="w-4 h-4 text-emerald-700 dark:text-emerald-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">All {importResult.totalRows} rows processed successfully.</p>
+              <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">All {aggregateResult.totalRows} rows processed successfully.</p>
             </div>
           )}
 
-          {ledgerCsv && (
+          {mergedLedgerCsv && (
             <button
               type="button"
-              onClick={() => downloadBlob(ledgerCsv, "student-import-ledger.csv")}
+              onClick={() => downloadBlob(mergedLedgerCsv, "student-import-ledger.csv")}
               className="w-full flex items-center justify-center gap-2 text-xs font-semibold px-4 py-3 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
             >
               <svg className="w-4 h-4 text-gold-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
