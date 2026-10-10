@@ -12,18 +12,20 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
 
 ## NEXT (do first)
 
-- [ ] **U3 — timeout alignment to 70s** (`specs/chunked-import-failure-ux.md` §4.4).
-  One-liner: `chunkTimeoutMs` default 120000 → 70000 in `useChunkedImport`
-  (platform 504 wins over client timer; `maxDuration = 60` unchanged on both routes).
-  U2b done 2026-10-10 (user-reported green). After: U4 (invariant + `fileId`).
+- [ ] **U4 — invariant + `fileId` in every failure** (`specs/chunked-import-failure-ux.md` §4.1 + §4.5).
+  Widen `getChunkFailureMessage` meta to carry `fileId` (+ `{saved}` source — recommend
+  run-total from hook history/results); every 5xx gains "Nothing was lost — {saved} rows
+  already saved. Press Import to resume." + `Reference: {fileId}`; align the student
+  systematic-failure banner copy. U3 done 2026-10-10 (user-reported green).
+  After: D3 (ledger) → D6 (`inserted`) → C3 S1–S4.
 
 ## Queued (proposed order — reorder freely)
 
-- [ ] **U2–U4 remainder** (`specs/chunked-import-failure-ux.md`). S1 (504→fail-fast
-  predicate + policy test) done 2026-10-10 (gates waived; retro-covered by the U2b
-  full-suite green below). U2b (halve-once + persist + student exact boundaries)
-  done 2026-10-10 (user-reported green).
-  Remains: client timeout 120s → 70s (U3), `fileId` reference in every failure (U4).
+- [ ] **U2–U4 remainder** (`specs/chunked-import-failure-ux.md`). S1 (504→fail-fast)
+  done 2026-10-10 (retro-covered by greens below). U2b (halve-once + persist +
+  student exact boundaries) done 2026-10-10 (user-reported green). U3 (70s default)
+  done 2026-10-10 (user-reported green, 294/294).
+  Remains: `fileId` reference + safety invariant in every failure (U4).
 - [ ] **D3 — ledger** (`specs/student-import-stepper/ledger-reason-codes.md`).
   Single CSV, reason codes, `ALREADY_PERSISTED` attribution. Largest remaining
   design; its precondition (`skippedItems` per-row attribution) already landed.
@@ -68,3 +70,8 @@ the run file above.
   (`resultMetas`/`endOfChunk`, meta-based aggregation). Zero hook-interface change.
   Gates green USER-REPORTED (agent never runs CLI per H1) — full suite incl. S1's tests.
   Run file: `.opencode/skills/plan-fix/runs/20261010-1300-u2b-halve-persist.md`.
+- [x] **U3 — 70s timeout alignment done 2026-10-10** (`specs/chunked-import-failure-ux.md` §4.4).
+  `CHUNK_TIMEOUT_MS = 70000` exported + default uses it + one const assert in
+  `chunk-error-policy.test.ts` (+1 test). `maxDuration = 60` untouched, no callers.
+  Gates green USER-REPORTED (tsc → lint → 294/294 vitest, pasted).
+  Run file: `.opencode/skills/plan-fix/runs/20261010-1400-u3-timeout-70s.md`.
