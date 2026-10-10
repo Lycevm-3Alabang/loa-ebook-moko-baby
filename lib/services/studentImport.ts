@@ -1,5 +1,5 @@
 import { userRepository, sectionRepository, subjectRepository, facultySubjectRepository, studentEnrollmentRepository } from "@/lib/repositories/factory"
-import { isExcelErrorCell, isAllowedStudentEmail, STUDENT_ALLOWED_DOMAINS } from "@/lib/csv-utils"
+import { isExcelErrorCell, isAllowedStudentEmail, STUDENT_ALLOWED_DOMAINS, reasonRemarks, type ImportReasonCode } from "@/lib/csv-utils"
 
 function parseSectionIdentifier(raw: string): { name: string; program: string } {
   const idx = raw.indexOf("-")
@@ -20,12 +20,22 @@ export interface StudentCsvRow {
 export interface StudentImportResult {
   created: { name: string; email: string; role: string }[]
   enrolled: number
+  // Rows this call actually WROTE, as the repository reports them — distinct from
+  // `enrolled`, which counts rows RESOLVED (including ones the database already
+  // held). A re-run reads enrolled > 0 with inserted === 0.
+  inserted: number
   skipped: number
-  failed: { row: number; email: string; subjectCode: string; section: string; remark: string }[]
+  failed: { row: number; email: string; subjectCode: string; section: string; remark: string; reasonCode: ImportReasonCode }[]
   // Rows the file repeated: same (student, subject, section) as an earlier row in
-  // this same request. Counted in `skipped`, never inserted twice. D3 gives them a
-  // ledger reason code distinct from ALREADY_PERSISTED.
-  duplicateRows: { row: number; email: string; subjectCode: string; section: string }[]
+  // this same request. Counted in `skipped`, never inserted twice. Distinguished
+  // from ALREADY_PERSISTED (already in the database) by DUPLICATE_IN_FILE
+  // (already in THIS file) — different statements, different ledger rows.
+  duplicateRows: { row: number; email: string; subjectCode: string; section: string; reasonCode: ImportReasonCode; remark: string }[]
+  // Keys the repository found already in the database for (student,
+  // faculty_subject, semester). The enrollment exists — a re-run of a completed
+  // file reads entirely of these. Joined back to source rows by the same key the
+  // repo dedupes on, so no new query and no client-side id mapping.
+  alreadyPersisted: { row: number; email: string; subjectCode: string; section: string; reasonCode: ImportReasonCode }[]
   // Set when the faculty mappings this chunk needs are attached to a semester other
   // than the active one — typically because a new term was activated without
   // re-importing the faculty CSV. Without this the symptom is every row failing
@@ -33,22 +43,7 @@ export interface StudentImportResult {
   // mappings resolve normally.
   termMismatch: { mappedTerms: string[]; activeTerm: string | null } | null
   parseErrors: { row: number; message: string }[]
-  successCsv: string
-  failureCsv: string
   totalRows: number
-}
-
-function escapeCsv(value: string): string {
-  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
-    return `"${value.replace(/"/g, '""')}"`
-  }
-  return value
-}
-
-function toCsv(rows: Record<string, string>[], headers: string[]): string {
-  const header = headers.map(escapeCsv).join(",")
-  const lines = rows.map((r) => headers.map((h) => escapeCsv(r[h] ?? "")).join(","))
-  return [header, ...lines].join("\n")
 }
 
 export function parseStudentCsv(text: string): {
@@ -124,7 +119,7 @@ export async function importStudents(
   let skipped = 0
 
   if (rows.length === 0) {
-    return { created, enrolled, skipped, failed, duplicateRows: [], termMismatch: null, parseErrors: [], successCsv: "", failureCsv: "", totalRows: 0 }
+    return { created, enrolled, inserted: 0, skipped, failed, duplicateRows: [], alreadyPersisted: [], termMismatch: null, parseErrors: [], totalRows: 0 }
   }
 
   const excelOffenderFor = (r: StudentCsvRow): string | null =>
@@ -242,6 +237,10 @@ export async function importStudents(
   // cannot contain two copies of the same (student, faculty_subject, semester).
   const seenEnrollments = new Set<string>()
   const duplicateRows: StudentImportResult["duplicateRows"] = []
+  // Enrollment key → the source row that first produced it. The repository
+  // reports already-present keys as bare ids; this map turns them back into
+  // ledger rows without a second query.
+  const enrollmentRow = new Map<string, { row: number; email: string; subjectCode: string; section: string }>()
 
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i]
@@ -249,26 +248,26 @@ export async function importStudents(
     const sectionLabel = `${r.sectionProgram}-${r.sectionName}`
 
     const excelOffender = excelOffenderFor(r)
-    if (excelOffender) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: `Invalid value in ${excelOffender} (Excel error)` }); continue }
+    if (excelOffender) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, reasonCode: "EXCEL_ERROR_CELL", remark: reasonRemarks("EXCEL_ERROR_CELL", { column: excelOffender }) }); continue }
 
-    if (!r.email) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Email is required" }); continue }
-    if (!isAllowedStudentEmail(r.email)) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Email domain not allowed" }); continue }
+    if (!r.email) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, reasonCode: "EMAIL_BLANK", remark: reasonRemarks("EMAIL_BLANK") }); continue }
+    if (!isAllowedStudentEmail(r.email)) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, reasonCode: "EMAIL_DOMAIN_NOT_ALLOWED", remark: reasonRemarks("EMAIL_DOMAIN_NOT_ALLOWED") }); continue }
 
     const user = userMap.get(r.email.toLowerCase().trim())
-    if (!user) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: "Student not found" }); continue }
+    if (!user) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, reasonCode: "STUDENT_NOT_FOUND", remark: reasonRemarks("STUDENT_NOT_FOUND") }); continue }
 
     const subject = subjects.get(r.subjectCode)
-    if (!subject) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: `Subject "${r.subjectCode}" not found` }); continue }
+    if (!subject) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, reasonCode: "SUBJECT_NOT_FOUND", remark: reasonRemarks("SUBJECT_NOT_FOUND", { code: r.subjectCode }) }); continue }
 
     const section = sections.get(`${r.sectionName}|${r.sectionProgram}`)
-    if (!section) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: `Section "${sectionLabel}" not found` }); continue }
+    if (!section) { failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, reasonCode: "SECTION_NOT_FOUND", remark: reasonRemarks("SECTION_NOT_FOUND", { section: sectionLabel }) }); continue }
 
     let mapping: { id: string } | null = null
     if (r.facultyEmail) {
       const facEmail = r.facultyEmail.toLowerCase().trim()
       const facUser = facultyUserMap.get(facEmail)
       if (!facUser) {
-        failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: `Faculty "${facEmail}" not found` })
+        failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, reasonCode: "FACULTY_NOT_FOUND", remark: reasonRemarks("FACULTY_NOT_FOUND", { email: facEmail }) })
         continue
       }
       // One mapping per (subject, section) per semester, so a named faculty row
@@ -276,7 +275,7 @@ export async function importStudents(
       const slot = resolveSlot(subject.id, section.id)
       mapping = slot && slot.faculty_id === facUser.id ? { id: slot.id } : null
       if (!mapping) {
-        failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: `${facEmail} not assigned to ${r.subjectCode} in ${sectionLabel}` })
+        failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, reasonCode: "FACULTY_NOT_ASSIGNED", remark: reasonRemarks("FACULTY_NOT_ASSIGNED", { email: facEmail, subject: r.subjectCode, section: sectionLabel }) })
         continue
       }
     } else {
@@ -284,7 +283,7 @@ export async function importStudents(
       // including the dummy faculty for an unassigned slot.
       const slot = resolveSlot(subject.id, section.id)
       if (!slot) {
-        failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, remark: `No faculty assigned to ${r.subjectCode} in ${sectionLabel}` })
+        failed.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, reasonCode: "NO_FACULTY_ASSIGNED", remark: reasonRemarks("NO_FACULTY_ASSIGNED", { subject: r.subjectCode, section: sectionLabel }) })
         continue
       }
       mapping = { id: slot.id }
@@ -304,35 +303,37 @@ export async function importStudents(
     // row, so the second copy raises 23505 and the whole chunk's insert rolls back.
     const enrollmentKey = `${user.id}|${mapping.id}|${semesterId ?? ""}`
     if (seenEnrollments.has(enrollmentKey)) {
-      duplicateRows.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel })
+      const first = enrollmentRow.get(enrollmentKey)?.row ?? rowNum
+      duplicateRows.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel, reasonCode: "DUPLICATE_IN_FILE", remark: reasonRemarks("DUPLICATE_IN_FILE", { row: String(first) }) })
       continue
     }
     seenEnrollments.add(enrollmentKey)
+    enrollmentRow.set(enrollmentKey, { row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel })
 
     toEnroll.push({ student_id: user.id, section_id: section.id, faculty_subject_id: mapping.id, semesterId })
     enrolled++
   }
 
+  const alreadyPersisted: StudentImportResult["alreadyPersisted"] = []
+  // Rows this call actually wrote, as the repository reports them — 0 when the
+  // insert never ran (every row failed) or wrote nothing.
+  let inserted = 0
   if (toEnroll.length > 0) {
-    const { skipped: dupSkipped } = await studentEnrollmentRepository.addEnrollments(toEnroll)
+    // The repo returns which keys were ALREADY in the database as bare ids —
+    // join them back to source rows so the ledger can say which rows a re-run
+    // skipped as persisted, distinct from rows this file repeated.
+    const { inserted: wroteRows, skipped: dupSkipped, skippedItems } = await studentEnrollmentRepository.addEnrollments(toEnroll)
+    inserted = wroteRows
     skipped = dupSkipped
+    for (const s of skippedItems) {
+      const origin = enrollmentRow.get(`${s.student_id}|${s.faculty_subject_id ?? ""}|${semesterId ?? ""}`)
+      if (origin) alreadyPersisted.push({ ...origin, reasonCode: "ALREADY_PERSISTED" })
+    }
   }
-  // In-file duplicates are not persisted, so they must still be accounted for —
-  // the client reconciles every preview row against enrolled + skipped + failed.
-  // Folded into `skipped` for now; the ledger (D3) will separate the two reasons.
+  // In-file duplicates are not persisted either, so they must still be accounted
+  // for — the client reconciles every preview row against enrolled + skipped +
+  // failed. The ledger (D3) now carries them as DUPLICATE_IN_FILE rows.
   skipped += duplicateRows.length
-
-  const successRows = rows
-    .filter((r) => !failed.some((f) => f.email === r.email && f.subjectCode === r.subjectCode && f.section === `${r.sectionProgram}-${r.sectionName}`))
-    .map((r) => ({ name: r.name, email: r.email, "subject code": r.subjectCode, section: `${r.sectionProgram}-${r.sectionName}`, "faculty email": r.facultyEmail || "" }))
-
-  const failureRows = failed.map((f) => ({
-    name: rows.find((r) => r.email === f.email && r.subjectCode === f.subjectCode)?.name ?? "",
-    email: f.email,
-    "subject code": f.subjectCode,
-    section: f.section,
-    remarks: f.remark,
-  }))
 
   return {
     created,
@@ -340,10 +341,10 @@ export async function importStudents(
     skipped,
     failed,
     duplicateRows,
+    alreadyPersisted,
+    inserted,
     termMismatch,
     parseErrors: [],
-    successCsv: toCsv(successRows, ["name", "email", "subject code", "section", "faculty email"]),
-    failureCsv: toCsv(failureRows, ["name", "email", "subject code", "section", "remarks"]),
     totalRows: rows.length,
   }
 }

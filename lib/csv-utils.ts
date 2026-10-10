@@ -139,3 +139,47 @@ export function parseCsvLines(text: string): { headers: string[]; rows: string[]
 
   return { headers, rows }
 }
+
+// ── Import reason codes (D3 ledger) ─────────────────────────
+// Closed vocabulary shared by the student-import service (server) and the
+// preview/ledger UI (client), so both sides name every outcome identically.
+// Same pattern as STUDENT_ALLOWED_DOMAINS above: one list, one predicate.
+// Remarks preserve the server's current phrasings; the CODES are the contract.
+export const IMPORT_REASON_CODES = {
+  EMAIL_BLANK: "Email is required",
+  EMAIL_DOMAIN_NOT_ALLOWED: "Email must end with @lyceumalabang.edu.ph or @itmlyceumalabang.onmicrosoft.com",
+  EXCEL_ERROR_CELL: "Invalid value in {column} (Excel error)",
+  STUDENT_NOT_FOUND: "Student not found",
+  SUBJECT_NOT_FOUND: 'Subject "{code}" not found',
+  SECTION_NOT_FOUND: 'Section "{section}" not found',
+  FACULTY_NOT_FOUND: 'Faculty "{email}" not found',
+  FACULTY_NOT_ASSIGNED: "{email} not assigned to {subject} in {section}",
+  NO_FACULTY_ASSIGNED: "No faculty assigned to {subject} in {section}",
+  TRANSPORT_ERROR: "Chunk {n} failed after {k} attempts: {error}",
+  REMOVED_BY_ADMIN: "Removed in preview",
+  REMOVED_BLOCKED: "Removed with {n} other blocked rows",
+  DEPARTMENT_UNRESOLVED: "Enrolled; no department attributed ({detail})",
+  DEPARTMENT_MISMATCH: 'Enrolled; row says "{code}", section belongs to "{sectionDept}"',
+  DEPARTMENT_FROM_FIRST_ROW: 'Enrolled; department "{code}" taken from the student\'s first row in the file',
+  DUPLICATE_IN_FILE: "Duplicate of row {row} in this file",
+  ALREADY_PERSISTED: "Already persisted — enrollment already in the database",
+} as const
+
+export type ImportReasonCode = keyof typeof IMPORT_REASON_CODES
+
+/** Fill `{placeholders}` from ctx; unknown tokens are left verbatim. */
+export function reasonRemarks(code: ImportReasonCode, ctx: Record<string, string> = {}): string {
+  return IMPORT_REASON_CODES[code].replace(/\{(\w+)\}/g, (_, key: string) => ctx[key] ?? `{${key}}`)
+}
+
+/**
+ * Quote a single CSV cell (RFC 4180): quote only when the value contains a
+ * comma, quote, or newline, doubling embedded quotes. Shared by the import
+ * service and the ledger UI so every download escapes identically.
+ */
+export function escapeCsvCell(value: string): string {
+  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+    return `"${value.replace(/"/g, '""')}"`
+  }
+  return value
+}

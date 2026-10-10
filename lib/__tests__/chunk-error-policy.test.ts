@@ -9,7 +9,7 @@ vi.mock("@/lib/db", () => ({
 }))
 
 import { studentEnrollmentRepository } from "@/features/admin-data/student-enrollment.repository"
-import { isRetryableChunkError } from "@/features/admin-data/components/useChunkedImport"
+import { CHUNK_TIMEOUT_MS, isRetryableChunkError } from "@/features/admin-data/components/useChunkedImport"
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -47,6 +47,14 @@ describe("isRetryableChunkError — Postgres errors are never retryable", () => 
     expect(isRetryableChunkError(withStatus(429))).toBe(true)
     expect(isRetryableChunkError(withStatus(503))).toBe(true)
     expect(isRetryableChunkError(withStatus(400))).toBe(false)
+  })
+
+  it("does not blindly retry a 504, while 503 still retries", () => {
+    const withStatus = (status: number) => Object.assign(new Error("http"), { status })
+    // S1 (spec §4.2, F3): a 504 exhausted maxDuration on this exact work —
+    // retrying the same size cannot succeed. Halving lands in S3/S4.
+    expect(isRetryableChunkError(withStatus(504))).toBe(false)
+    expect(isRetryableChunkError(withStatus(503))).toBe(true)
   })
 
   it("never retries a user abort", () => {
@@ -90,5 +98,13 @@ describe("addEnrollments — duplicate rows in one request", () => {
     // …but NOT in skippedItems, which means "already in the database". A repeated
     // CSV row is a different reason; D3 gives it its own ledger code.
     expect(result.skippedItems).toHaveLength(0)
+  })
+})
+
+// ── U3: the client timer must lose to the platform ceiling ────────────
+
+describe("CHUNK_TIMEOUT_MS — client timeout alignment (spec §4.4)", () => {
+  it("defaults above maxDuration so the platform 504 stays authoritative", () => {
+    expect(CHUNK_TIMEOUT_MS).toBe(70000)
   })
 })
