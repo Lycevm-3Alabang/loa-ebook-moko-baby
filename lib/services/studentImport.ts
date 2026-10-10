@@ -22,6 +22,16 @@ export interface StudentImportResult {
   enrolled: number
   skipped: number
   failed: { row: number; email: string; subjectCode: string; section: string; remark: string }[]
+  // Rows the file repeated: same (student, subject, section) as an earlier row in
+  // this same request. Counted in `skipped`, never inserted twice. D3 gives them a
+  // ledger reason code distinct from ALREADY_PERSISTED.
+  duplicateRows: { row: number; email: string; subjectCode: string; section: string }[]
+  // Set when the faculty mappings this chunk needs are attached to a semester other
+  // than the active one — typically because a new term was activated without
+  // re-importing the faculty CSV. Without this the symptom is every row failing
+  // with "not assigned to X in Y", which reads like bad data. Never null when the
+  // mappings resolve normally.
+  termMismatch: { mappedTerms: string[]; activeTerm: string | null } | null
   parseErrors: { row: number; message: string }[]
   successCsv: string
   failureCsv: string
@@ -114,7 +124,7 @@ export async function importStudents(
   let skipped = 0
 
   if (rows.length === 0) {
-    return { created, enrolled, skipped, failed, parseErrors: [], successCsv: "", failureCsv: "", totalRows: 0 }
+    return { created, enrolled, skipped, failed, duplicateRows: [], termMismatch: null, parseErrors: [], successCsv: "", failureCsv: "", totalRows: 0 }
   }
 
   const excelOffenderFor = (r: StudentCsvRow): string | null =>
@@ -210,7 +220,28 @@ export async function importStudents(
       ?? null
   }
 
+  // ── Term mismatch: mappings live under a semester that is not the active one ──
+  //
+  // faculty_subjects keeps its semesterId forever. Activating a new term deactivates
+  // the old one but never re-stamps its mappings, so the mappings a student import
+  // needs can all be attached to a now-inactive term. resolveSlot deliberately
+  // refuses to substitute another term's mapping, so every row would then fail with
+  // "not assigned to X in Y" — which reads like bad CSV data, and sends an admin
+  // hunting for typos that do not exist.
+  //
+  // Detect it from the rows already fetched, and say so. A null-semester row is NOT
+  // a mismatch: resolveSlot falls back to those, so they still work.
+  const mappedTerms = [...new Set(slotRows.map((r) => r.semesterId ?? ""))]
+    .filter((t) => t !== semesterId && t !== "")
+  const termMismatch = slotRows.length > 0 && mappedTerms.length > 0
+    ? { mappedTerms, activeTerm: semesterId }
+    : null
+
   const toEnroll: { student_id: string; section_id: string; faculty_subject_id?: string | null; semesterId?: string | null }[] = []
+  // Dedupe within this request: the CSV may repeat a row, and one multi-row INSERT
+  // cannot contain two copies of the same (student, faculty_subject, semester).
+  const seenEnrollments = new Set<string>()
+  const duplicateRows: StudentImportResult["duplicateRows"] = []
 
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i]
@@ -259,6 +290,25 @@ export async function importStudents(
       mapping = { id: slot.id }
     }
 
+    // An enrollment's identity is (student, faculty_subject, semester) — the
+    // columns of student_enrollments_student_id_faculty_subject_id_key. The
+    // faculty_subject already pins (subject, section, semester), and
+    // faculty_subjects is UNIQUE(subject, section, semester), so the CSV's
+    // (student, subject code, section) triple plus the active semester IS the key.
+    //
+    // The 2026-1 student CSV contains 5,162 redundant rows out of 28,096 —
+    // 4,208 (student, subject, section, faculty) tuples appearing more than once,
+    // with zero cases of the same triple carrying a different faculty. Without
+    // this dedupe, a chunk holding a redundant tuple twice puts two copies of the
+    // same key into ONE multi-row INSERT; Postgres checks the unique index per
+    // row, so the second copy raises 23505 and the whole chunk's insert rolls back.
+    const enrollmentKey = `${user.id}|${mapping.id}|${semesterId ?? ""}`
+    if (seenEnrollments.has(enrollmentKey)) {
+      duplicateRows.push({ row: rowNum, email: r.email, subjectCode: r.subjectCode, section: sectionLabel })
+      continue
+    }
+    seenEnrollments.add(enrollmentKey)
+
     toEnroll.push({ student_id: user.id, section_id: section.id, faculty_subject_id: mapping.id, semesterId })
     enrolled++
   }
@@ -267,6 +317,10 @@ export async function importStudents(
     const { skipped: dupSkipped } = await studentEnrollmentRepository.addEnrollments(toEnroll)
     skipped = dupSkipped
   }
+  // In-file duplicates are not persisted, so they must still be accounted for —
+  // the client reconciles every preview row against enrolled + skipped + failed.
+  // Folded into `skipped` for now; the ledger (D3) will separate the two reasons.
+  skipped += duplicateRows.length
 
   const successRows = rows
     .filter((r) => !failed.some((f) => f.email === r.email && f.subjectCode === r.subjectCode && f.section === `${r.sectionProgram}-${r.sectionName}`))
@@ -285,6 +339,8 @@ export async function importStudents(
     enrolled,
     skipped,
     failed,
+    duplicateRows,
+    termMismatch,
     parseErrors: [],
     successCsv: toCsv(successRows, ["name", "email", "subject code", "section", "faculty email"]),
     failureCsv: toCsv(failureRows, ["name", "email", "subject code", "section", "remarks"]),

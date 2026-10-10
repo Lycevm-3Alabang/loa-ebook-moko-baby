@@ -249,15 +249,26 @@ describe("importStudents — student accounts", () => {
     ])
   })
 
-  it("creates one student row only when the same student appears twice", async () => {
+  it("creates one student row and ONE enrollment when the same student+topic repeats", async () => {
     arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
 
     const result = await importStudents(
       [baseStudentRow(), baseStudentRow({ facultyEmail: undefined })], null, null,
     )
 
+    // The student is created once…
     expect(result.created).toHaveLength(1)
-    expect(result.enrolled).toBe(2)
+    // …and the repeated row is collapsed, NOT counted as a second enrollment.
+    // The pre-fix assertion here was `enrolled).toBe(2)` — i.e. it asserted two
+    // copies of one (student, faculty_subject, semester) tuple, which is exactly
+    // what made the multi-row INSERT raise 23505 in production.
+    expect(result.enrolled).toBe(1)
+    expect(result.duplicateRows).toHaveLength(1)
+    expect(result.skipped).toBe(1)
+    expect(factory.studentEnrollmentRepository.addEnrollments).toHaveBeenCalledTimes(1)
+    expect(factory.studentEnrollmentRepository.addEnrollments).toHaveBeenCalledWith([
+      expect.objectContaining({ student_id: "stu-1", faculty_subject_id: MAPPING.id }),
+    ])
   })
 })
 
@@ -327,7 +338,6 @@ describe("importStudents — batched faculty-subject resolution", () => {
   })
 
   it("picks the ACTIVE semester's slot, never another term's", async () => {
-    const { supabase: _unused } = { supabase: null }
     // Two rows for one pair — one per semester, which UNIQUE(subject, section,
     // "semesterId") permits. Register the active semester's owner.
     arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
@@ -358,6 +368,41 @@ describe("importStudents — batched faculty-subject resolution", () => {
     expect(factory.studentEnrollmentRepository.addEnrollments).toHaveBeenCalledWith([
       expect.objectContaining({ faculty_subject_id: "fs-legacy" }),
     ])
+    // A null-semester mapping resolves via fallback, so it is NOT a term mismatch.
+    expect(result.termMismatch).toBeNull()
+  })
+
+  it("surfaces a term mismatch when the mappings belong to an inactive semester", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
+    // Every mapping is stamped with a term other than the active one.
+    ;(factory.facultySubjectRepository.findManyBySubjectSectionIds as ReturnType<typeof vi.fn>)
+      .mockResolvedValue([
+        { id: "fs-old", subject_id: SUBJ.id, section_id: SEC.id, faculty_id: FACULTY.id, semesterId: "sem-2026-1" },
+      ])
+
+    const result = await importStudents([baseStudentRow()], null, "sem-2026-2")
+
+    // The row fails with its specific reason, as before…
+    expect(result.enrolled).toBe(0)
+    expect(result.failed[0].remark).toContain("not assigned to CS101 in BSIE-41M2")
+    // …AND the run says why, so the admin is not sent hunting for a typo.
+    expect(result.termMismatch).toEqual({
+      mappedTerms: ["sem-2026-1"],
+      activeTerm: "sem-2026-2",
+    })
+  })
+
+  it("does not report a mismatch when the active term's mappings are present", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
+    ;(factory.facultySubjectRepository.findManyBySubjectSectionIds as ReturnType<typeof vi.fn>)
+      .mockResolvedValue([
+        { id: "fs-active", subject_id: SUBJ.id, section_id: SEC.id, faculty_id: FACULTY.id, semesterId: "sem-2026-2" },
+      ])
+
+    const result = await importStudents([baseStudentRow()], null, "sem-2026-2")
+
+    expect(result.enrolled).toBe(1)
+    expect(result.termMismatch).toBeNull()
   })
 
   it("fails the row when the active term has no slot and no legacy one", async () => {

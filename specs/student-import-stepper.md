@@ -44,10 +44,12 @@ explicitly. Chunking is retained for step 3 and only step 3.
 |---|---|---|---|---|---|
 | 1 | `upload` | file | none (client-side) | 0 | — |
 | 2 | `student-users` | per department | distinct-set | 3,302 emails / 10 departments | active semester |
-| 3 | `enrollments` | per department | chunked rows | 21,989 enrollments | step 2 (same department) |
+| 3 | `enrollments` | per department | chunked rows | 22,934 distinct `(student, subject, section)` tuples + semester | step 2 (same department) |
 
-**Total for the 2026-1 file: 20 requests** — 10 departments × (1 user step + ⌈rows/500⌉ enrollment
-chunks).
+**Total for the 2026-1 file: ≈296 requests at 100-row chunks** — 10 departments × (1 user step +
+⌈rows/100⌉ enrollment chunks). Per-department enrollment chunks (measured): CAS 30 · CBA 26 ·
+CCA 14 · CCJ 24 · CCS 49 · COA 17 · COE 28 · COED 12 · CREM 3 · CTHM 83 = 286, plus 10 user
+steps.
 
 ## 3.1 Departments are unordered, so the trace is not linear
 
@@ -269,22 +271,24 @@ C1 (integrity) → C2 (batched resolution) → C3 (stepper). Each ships independ
 | **C2** | step-03 batched resolution; `facultySubjectRepository.findManyBySubjectSectionIds` |
 | **C3** | department grid · per-department panels · Unassigned panel · `userMap` merge |
 
-Gate per slice: `npx tsc --noEmit` → `npm run lint` → `npx vitest run` (baseline 250 tests / 18
-files) → `npm run build`.
+Gate per slice: `npx tsc --noEmit` → `npm run lint` → `npx vitest run` (baseline 280 tests / 20
+files, 2026-10-09) → `npm run build`.
 
 ---
 
-# 10. Unverified Before Sizing
+# 10. Measured Before Sizing — closed 2026-10-09
 
-Measure directly from `student-import-template (latest 2026-1).csv`:
+Measured directly from `student-import-template (latest 2026-1).csv` (full table in
+[README.md](README.md) §"The 2026-1 CSV is now measured"):
 
 | Quantity | Status |
 |---|---|
-| CSV row count | **UNKNOWN** |
-| Distinct `(student, section)` pairs | **22,934** (`faculty-import-stepper.md:60`) vs **21,989 persisted** (`seed-2026-1-etl.md:22`) — 945 unexplained |
-| Distinct `department code` values | **UNKNOWN**; 10 departments persisted (`seed-2026-1-etl.md:16`) |
-| Rows per department | **UNKNOWN** — drives chunk count and therefore the 20-request estimate in §3 |
-| Students whose rows span >1 department | **UNKNOWN** — drives how often first-instance (§3.3) discards a value |
+| CSV row count | **28,096** |
+| Distinct `(student, subject, section, faculty)` tuples | **22,934** — explains the 945 gap: 22,934 distinct − 21,989 persisted (`seed-2026-1-etl.md:22`) are genuinely unpersisted |
+| Redundant rows | **5,162** (4,208 tuples repeat, zero with a different faculty) |
+| Distinct `department code` values | **10** — matches 10 persisted departments (`seed-2026-1-etl.md:16`): CAS 2,997 · CBA 2,531 · CCA 1,357 · CCJ 2,396 · CCS 4,893 · COA 1,648 · COE 2,710 · COED 1,118 · CREM 229 · CTHM 8,217 |
+| Rows per department | **measured** — drives the ≈296-request estimate in §3 |
+| Students whose rows span >1 department | **176 of 3,303** — drives how often first-instance (§3.3) discards a value; the number is known and the choice is accepted |
 
 ---
 

@@ -1,6 +1,6 @@
 # ACES — Specs
 
-**Version:** 1.6
+**Version:** 1.7
 **Status:** Draft
 **Last Updated:** 2026-10-09
 
@@ -26,9 +26,10 @@ Specs must be Final before code is written (per loa-apache-server-apps conventio
 | [faculty-import-stepper/step-06-faculty-users.md](faculty-import-stepper/step-06-faculty-users.md) | Draft | Step 6 — create missing faculty, dummy is dept-agnostic, off-domain never becomes a user |
 | [faculty-import-stepper/step-07-mappings.md](faculty-import-stepper/step-07-mappings.md) | Draft | Step 7 — terminal step; `existing` vs `invalid`, real-beats-dummy, real-vs-real refused |
 | [student-import-stepper.md](student-import-stepper.md) | Draft | Decompose the student CSV import into per-department panels — unordered step registry, required `semesterId`, first-instance department, Unassigned panel |
-| [student-import-stepper/step-02-student-users.md](student-import-stepper/step-02-student-users.md) | Draft | Step 2 — the only `create` in the student importer; department resolved client-side at preview time, not per chunk |
-| [student-import-stepper/step-03-enrollments.md](student-import-stepper/step-03-enrollments.md) | Draft | Step 3 — terminal `O(rows)` step; batched resolution (~40k → ~6 round trips/chunk); `semesterId` in the dedupe key |
+| [student-import-stepper/step-02-student-users.md](student-import-stepper/step-02-student-users.md) | Draft | Step 2 — the only `create` in this importer; department resolved client-side at preview time, not per chunk |
+| [student-import-stepper/step-03-enrollments.md](student-import-stepper/step-03-enrollments.md) | Draft | Step 3 — terminal `O(rows)` step; batched resolution; `semesterId` in the dedupe key; per-row skip attribution |
 | [student-import-stepper/ledger-reason-codes.md](student-import-stepper/ledger-reason-codes.md) | Draft | One CSV in which every input row appears exactly once, with status + reason code + remark |
+| [chunked-import-failure-ux.md](chunked-import-failure-ux.md) | Draft | Failure UX and timeout policy for the shared chunk driver `useChunkedImport` — status→message mapping, no raw response bodies, retry policy, correlation key. Sub-spec of both importer families |
 | [auth-integration.md](auth-integration.md) | Draft | Contract between e-consultation and loa-auth — SSO flow, JWT claims, shared secrets, what each side owns |
 | [endpoint-catalog.md](endpoint-catalog.md) | Draft | Full endpoint catalog (~130 entries) with required levels — must stay in sync with loa-auth-platform |
 | [migration-checklist.md](migration-checklist.md) | Draft | Step-by-step tasks for each side, verification checklist, timeline |
@@ -60,22 +61,101 @@ A **separate importer with a different step shape**: per-department, unordered, 
 (`student-users`, `enrollments`) rather than the faculty family's six ordered create-phases.
 Sliced C1 → C2 → C3 so the integrity fixes do not wait on the UI layer.
 
-| Spec | Build | Notes |
-|------|-------|-------|
-| [student-import-stepper.md](student-import-stepper.md) + 3 sub-specs | Not started | **C1** integrity — required `semesterId`, `semesterId` in the dedupe key, single ledger with reason codes, badge + reference-guard alignment · **C2** batched resolution (~40k → ~6 round trips/chunk) · **C3** per-department panels + Unassigned panel |
+| Slice | Build | Contents |
+|-------|-------|----------|
+| **C1** — integrity | **Done (2026-10-09)** | D1 `semesterId` derived server-side and 400s on zero-or-many active · D2 `semesterId` in the `addEnrollments` dedupe key + select, read scoped to the chunk, `skippedItems` per-row attribution · D5 reference guard aligned to `requireRole([ADMIN, DEAN, FACULTY])` · client error surfacing (`referenceError` banner, systematic-failure message, abort path) |
+| **C2** — batched resolution | **Done (2026-10-09)** | D7 `findManyBySubjectSectionIds` batches the faculty-subject read; the per-row lookups are hoisted out of the loop (~22k round trips → 1 per chunk) · D8 both semester-blind per-row finders are now uncalled, closed as a side effect · D10 the 504 `FUNCTION_INVOCATION_TIMEOUT` is closed by D7, with `STUDENT_CHUNK_SIZE` 500→100 as belt-and-braces |
+| **D4** — preview honesty | **Done (2026-10-09)** | Legend + preview summary relabelled (two instances of the same false promise; the amber badges themselves were accurate) |
+| **D9** — section preview | **Done (2026-10-09)** | Student preview matched sections by `departmentCourseId` obtained from a course looked up by `code` alone; now matches `name` + `program` like the faculty client and the server |
+| **D11** — 23505 | **Done (2026-10-09)** | Duplicate CSV rows put two copies of one key into a single multi-row INSERT. Deduped in `importStudents` *and* in `addEnrollments` as defence in depth; `23505` removed from the retryable set |
+| **Semester mismatch** | **Done (2026-10-09)** | Not a spec'd defect — found live. Mappings attached to a now-inactive semester now surface a red banner instead of every row failing "not assigned" |
+| **C3** — department stepper | **Not started** | Department grid · per-department panels · Unassigned panel · `userMap` merge. Slices S1→S4, see the run file |
+| **D3** — ledger | **Not started** | Single CSV, reason codes, `ALREADY_PERSISTED` attribution (the `skippedItems` precondition it needed already landed with D2) |
+| **D6** — `inserted` surfaced | **Not started** | `addEnrollments` returns it but nothing renders it. Needs an `ImportResult` field + client display |
+| [chunked-import-failure-ux.md](chunked-import-failure-ux.md) | **Spec'd, not built** | U1–U4: status→message mapping in `useChunkedImport`, retry split, timeout aligned to 70s, `fileId` reference in every failure |
 
-**Blocked on one measurement before slicing.** Row count, distinct `(student, section)` count,
-distinct `department code` values and rows-per-department are all unverified for the 2026-1
-student CSV. `faculty-import-stepper.md:60` claims 22,934 distinct pairs while
-`seed-2026-1-etl.md:22` persists 21,989 enrollments — the 945-row gap is unexplained and moves the
-chunk-count estimate. See [student-import-stepper.md](student-import-stepper.md) §10.
+**Gate:** `npx tsc --noEmit` → `npm run lint` → `npx vitest run` → `npm run build`.
+Current **280 tests / 20 files** (was 259 / 18 when this work began).
 
-**Seven defects are spec'd and closed** (general spec §7): D1 unguarded `semesterId` (mass-produces
-rows no reader can use — the proven cause of the 403 in
-[spike-student-eval-enrollment-gate.md](spike-student-eval-enrollment-gate.md)), D2 `semesterId`
-missing from the dedupe key (silent cross-term loss), D3 no per-row rejection vocabulary, D4 preview
-claims the server resolves what it rejects, D5 Dean's preview 403s silently, D6 `inserted`
-discarded, D7 ~40k sequential round trips.
+### The 2026-1 CSV is now measured — §10's unknowns are closed
+
+Measured directly from `student-import-template (latest 2026-1).csv`:
+
+| Quantity | Value |
+|---|---|
+| CSV row count | **28,096** |
+| Distinct `(student, subject, section, faculty)` tuples | **22,934** |
+| Redundant rows | **5,162** — 4,208 tuples repeat; **zero** repeat with a different faculty |
+| Distinct students | **3,303** (8.5 rows each) |
+| Distinct subject codes / sections | **315 / 142** |
+| Rows per department | CAS 2,997 · CBA 2,531 · CCA 1,357 · CCJ 2,396 · CCS 4,893 · COA 1,648 · COE 2,710 · COED 1,118 · CREM 229 · CTHM 8,217 |
+| Students whose rows span >1 department | **176 of 3,303** |
+
+**The 945-row gap is explained:** 22,934 distinct tuples against 21,989 persisted leaves 945
+genuinely unpersisted. The file was always the deduplicated count.
+
+### Decisions worth carrying forward
+
+- **Faculty is not part of any key.** `faculty_subjects` is `UNIQUE(subject_id, section_id, "semesterId")`, so one faculty per (subject, section) per term; the CSV's faculty email is a *validation*, never a join key. An enrollment's identity is `(student, subject, section) + semester`.
+- **"Only one semester is active" does not prevent a term mismatch.** Deactivating a term never re-stamps `faculty_subjects`, so mappings can all sit under a dead term. This is now surfaced, not investigated — no SQL is needed to proceed.
+- **5,162 redundant rows in the real file is why the per-row insert failed.** Any future CSV with repeated rows exercises this path; the dedupe is load-bearing, not defensive.
+- **The stepper buys containment, not correctness.** It does not prevent a 23505; the dedupe does. Its value is that a failure costs one department's rows rather than 28,096, and users created in step 2 survive an enrollment failure.
+
+---
+
+# Next Session — Start Here
+
+The student CSV importer had three live production failures (504 timeout, 23505 duplicate key,
+silent cross-term loss). **All three are closed.** 280 tests / 20 files green. The remaining work
+is containment and reporting, not correctness.
+
+## Read in this order
+
+1. **`student-import-stepper.md`** — the general spec. §3 step registry, §4.2 why `semesterId` is
+   load-bearing, §4.3 the dedupe key, §5 the state machine. §7's defect table and §9's C1/C2/C3
+   split are now partly historical — C1 and C2 are built, read §"Implementation Status" above
+   instead of trusting §7 or §10.
+2. **`student-import-stepper/step-03-enrollments.md`** — the slice with the most design in it.
+   §"Batched resolution" is implemented (`findManyBySubjectSectionIds`); §"`semesterId` in the
+   idempotency key" is implemented; per-row skip attribution is implemented.
+3. **`ledger-reason-codes.md`** — **not implemented.** This is D3, and it is the largest remaining
+   design. Its precondition (`skippedItems` per-row attribution) already landed, so it is unblocked.
+4. **`chunked-import-failure-ux.md`** — new, spec'd, **not built**. U1–U4. U1 (status→message
+   mapping, no raw response bodies) is the one that stops platform HTML reaching the admin.
+5. **`.opencode/skills/plan-fix/runs/20261009-1743-student-import-c1.md`** — the authoritative
+   defect ledger and the D8/D9/D10/D11 discovery notes. Read the ledger table first; it is now
+  accurate.
+
+## Do not re-derive these — they are settled and measured
+
+- The 2026-1 file's shape (28,096 rows / 22,934 distinct / 5,162 redundant). §10 of the general
+  spec still lists these as UNKNOWN; **the table above supersedes it.**
+- Faculty is not a join key anywhere; it is a validation. `UNIQUE(subject, section, semester)`.
+- An enrollment's identity is `(student, subject, section) + semester`.
+- `student_enrollments` is `UNIQUE(student_id, faculty_subject_id, "semesterId")` after Migrations
+  21 + 25. Any dedupe key must match it column-for-column.
+- The student CSV contains redundant rows as normal input, not as an edge case.
+
+## Known traps in this area
+
+| Trap | Why it bites |
+|---|---|
+| `useChunkedImport` defaults `chunkTimeoutMs` to 120s while both routes cap at `maxDuration = 60` | A 504 is decided by the platform, not the client timer |
+| `isRetryableChunkError` now rejects any error carrying a Postgres SQLSTATE | Before that, a `23505` was retried — 46s to fail deterministically three times |
+| `resolveSlot` refuses to substitute another term's mapping | Correct, but makes a term mismatch look like 22,000 rows of bad data. Now surfaced |
+| `PostgREST` caps responses at ~1000 rows by default | Both DB sample exports came back at 100. `users.repository.ts:215-233` pages for this reason; any new wide read must too |
+| `BulkStudentImport.tsx` carries its own `ImportResult` shape, separate from the service's | Adding a field to the service result does not reach the client unless added here too |
+
+## Next slice to take
+
+**U1** — status-to-message mapping in `useChunkedImport`, stop both `postChunk` bodies reading
+raw response bodies (`chunked-import-failure-ux.md` U1). Shared hook: fixes both importers at
+once, self-contained, no chain behind it. Tracked as NEXT in root `TODO.md`.
+
+After U1, proposed order (reorder freely): U2–U4 → D3 → D6 → C3 S1–S4 → deferred
+course-payload cleanup. S1 remains the zero-UI-risk C3 entry point — department grouping,
+computed client-side at preview, stamped onto every row — with 176 multi-department students
+already measured and first-instance-wins already accepted.
 
 ---
 
