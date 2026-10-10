@@ -72,10 +72,10 @@ Sliced C1 → C2 → C3 so the integrity fixes do not wait on the UI layer.
 | **C3** — department stepper | **Not started** | Department grid · per-department panels · Unassigned panel · `userMap` merge. Slices S1→S4, see the run file |
 | **D3** — ledger | **Not started** | Single CSV, reason codes, `ALREADY_PERSISTED` attribution (the `skippedItems` precondition it needed already landed with D2) |
 | **D6** — `inserted` surfaced | **Not started** | `addEnrollments` returns it but nothing renders it. Needs an `ImportResult` field + client display |
-| [chunked-import-failure-ux.md](chunked-import-failure-ux.md) | **Spec'd, not built** | U1–U4: status→message mapping in `useChunkedImport`, retry split, timeout aligned to 70s, `fileId` reference in every failure |
+| [chunked-import-failure-ux.md](chunked-import-failure-ux.md) | **U1 Done (2026-10-10)** | `getChunkFailureMessage` in `useChunkedImport` + both `postChunk` typed errors + `lib/__tests__/chunk-failure-message.test.ts` (8 tests). Gates green. Run file: `.opencode/skills/plan-fix/runs/20261010-1100-u1.md`. Remaining: U2–U4 (retry split, 70s, `fileId`) |
 
 **Gate:** `npx tsc --noEmit` → `npm run lint` → `npx vitest run` → `npm run build`.
-Current **280 tests / 20 files** (was 259 / 18 when this work began).
+Current **288 tests / 21 files** (was 259 / 18 when this work began; +8 U1).
 
 ### The 2026-1 CSV is now measured — §10's unknowns are closed
 
@@ -148,11 +148,11 @@ is containment and reporting, not correctness.
 
 ## Next slice to take
 
-**U1** — status-to-message mapping in `useChunkedImport`, stop both `postChunk` bodies reading
-raw response bodies (`chunked-import-failure-ux.md` U1). Shared hook: fixes both importers at
-once, self-contained, no chain behind it. Tracked as NEXT in root `TODO.md`.
+**U2–U4** (`chunked-import-failure-ux.md`): retry split (504 halves the chunk), 70s alignment,
+invariant + `fileId` in every failure. Same hook + spec as U1 — natural continuation.
+Tracked as NEXT in root `TODO.md`. U1 done 2026-10-10.
 
-After U1, proposed order (reorder freely): U2–U4 → D3 → D6 → C3 S1–S4 → deferred
+After U2–U4, proposed order (reorder freely): D3 → D6 → C3 S1–S4 → deferred
 course-payload cleanup. S1 remains the zero-UI-risk C3 entry point — department grouping,
 computed client-side at preview, stamped onto every row — with 176 multi-department students
 already measured and first-instance-wins already accepted.

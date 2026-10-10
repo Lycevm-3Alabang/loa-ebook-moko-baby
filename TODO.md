@@ -1,8 +1,8 @@
 # TODO — student CSV importer follow-ups
 
 Tracked 2026-10-09 for the next session. All production incidents are closed
-(504 timeout, 23505 duplicate key, silent cross-term loss); 280 tests / 20 files
-green. What remains is reporting polish and containment — nothing is on fire.
+(504 timeout, 23505 duplicate key, silent cross-term loss); 288 tests / 21 files
+green (U1 done 2026-10-10, +8). What remains is reporting polish and containment — nothing is on fire.
 
 Gate for every item: `npx tsc --noEmit` → `npm run lint` → `npx vitest run`
 (baseline 280/20) → `npm run build`.
@@ -12,12 +12,8 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
 
 ## NEXT (do first)
 
-- [ ] **U1 — failure messages** (`specs/chunked-import-failure-ux.md`, slice U1).
-  Map chunk-failure status to plain language inside the shared `useChunkedImport`
-  hook; stop both `postChunk` bodies reading raw response bodies
-  (`features/users/components/bulk-import/BulkStudentImport.tsx`,
-  `features/admin-data/components/FacultyLoadingTab.tsx`). One hook fixes both
-  importers; self-contained, no chain behind it.
+- [ ] **U2–U4** (`specs/chunked-import-failure-ux.md`). Natural continuation of U1
+  (same hook + spec): retry split, 70s alignment, invariant + `fileId`.
 
 ## Queued (proposed order — reorder freely)
 
@@ -46,3 +42,8 @@ C1, C2, D4 (legend + summary relabel), D9 (section preview), D11 (23505 dedupe,
 both layers), 504 mitigation (`STUDENT_CHUNK_SIZE` 500 → 100), inactive-semester
 mismatch surfacing (`termMismatch` banner), `specs/README.md` v1.7. Full ledger in
 the run file above.
+
+- [x] **U1 — failure messages done 2026-10-10** (`specs/chunked-import-failure-ux.md` U1).
+  `getChunkFailureMessage` in `useChunkedImport` + both `postChunk` typed errors +
+  `lib/__tests__/chunk-failure-message.test.ts` (8 tests). Gates green.
+  Run file: `.opencode/skills/plan-fix/runs/20261010-1100-u1.md`.

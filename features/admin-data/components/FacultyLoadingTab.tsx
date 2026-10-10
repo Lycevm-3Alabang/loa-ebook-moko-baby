@@ -779,7 +779,10 @@ function FacultyTab() {
         })
         if (!res.ok) {
           const d = await res.json().catch(() => ({}))
-          throw withRetryHints(new Error((d as { error?: string }).error || `Chunk ${meta.chunkIndex + 1} failed`), res)
+          const serverError = (d as { error?: unknown }).error
+          const verbatim = typeof serverError === "string" && serverError.trim() !== "" ? serverError : undefined
+          // Same contract as the student caller: 400 verbatim, else status-only for the hook mapper.
+          throw withRetryHints(Object.assign(new Error(verbatim ?? "Chunk request failed"), { serverMessage: verbatim }), res)
         }
         return (await res.json()) as FacultyChunkResult
       }

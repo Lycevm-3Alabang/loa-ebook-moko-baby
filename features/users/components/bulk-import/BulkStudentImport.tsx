@@ -330,10 +330,18 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         try {
           data = await res.json()
         } catch {
-          const text = await res.text().catch(() => "")
-          throw withRetryHints(new Error(`Chunk ${meta.chunkIndex + 1} failed (${res.status}). ${text.slice(0, 200) || "No details available."}`), res)
+          // Not JSON — never fall back to res.text() (F1: body already consumed,
+          // and any readable body would leak markup into the UI). Status-only;
+          // the hook mapper renders (2xx-non-JSON maps as 5xx via status).
+          throw withRetryHints(Object.assign(new Error("Chunk request failed"), { serverMessage: undefined }), res)
         }
-        if (!res.ok) throw withRetryHints(new Error(String(data.error) || `Chunk ${meta.chunkIndex + 1} failed`), res)
+        if (!res.ok) {
+          const serverError = (data as { error?: unknown }).error
+          const verbatim = typeof serverError === "string" && serverError.trim() !== "" ? serverError : undefined
+          // 400 carries the server reason verbatim (F7 guarded by typeof);
+          // all other statuses carry status only — never the body.
+          throw withRetryHints(Object.assign(new Error(verbatim ?? "Chunk request failed"), { serverMessage: verbatim }), res)
+        }
         return data as unknown as ImportResult
       }
       const { results, cancelled, failedChunks, stoppedEarly } = await runChunks(previewRows, {
