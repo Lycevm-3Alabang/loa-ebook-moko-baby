@@ -98,37 +98,43 @@ export function chunkRetryDelayMs(err: unknown, attempt: number, baseMs: number 
 
 // U1 — status → plain-language message. Never emits a status code or a response
 // body. The 400 branch returns the caller's safe verbatim reason; every other
-// branch ignores err.message entirely. Safety invariant + fileId arrive in U4.
+// branch ignores err.message entirely.
+// U4 — safety invariant + correlation key on mapper-authored branches. A call
+// carrying fileId gains the suffix; server-authored verbatim stays pure; a
+// keyless call renders the legacy bytes exactly (U1 tests pin this).
 export interface ChunkFailureHints extends ChunkErrorHints {
   serverMessage?: unknown
 }
 
 export function getChunkFailureMessage(
   err: unknown,
-  meta: Pick<ChunkMeta, "chunkIndex" | "totalChunks">,
+  meta: Pick<ChunkMeta, "chunkIndex" | "totalChunks"> & { fileId?: string; saved?: number },
 ): string {
   const chunkLabel = `chunk ${meta.chunkIndex + 1} of ${meta.totalChunks}`
+  const suffix = meta.fileId
+    ? ` Nothing was lost — ${meta.saved ?? 0} rows are already saved. Press Import to resume. Reference: ${meta.fileId}`
+    : ""
   if (err instanceof DOMException && err.name === "AbortError") return "Import cancelled."
   const hints = (err as ChunkFailureHints | null) ?? null
   const pgCode = (err as { code?: unknown } | null)?.code
-  if (typeof pgCode === "string" && pgCode.length > 0) return `Chunk ${chunkLabel} could not be saved.`
+  if (typeof pgCode === "string" && pgCode.length > 0) return `Chunk ${chunkLabel} could not be saved.${suffix}`
   const status = hints?.status
   if (status === 400) {
     const serverMessage = hints?.serverMessage
     if (typeof serverMessage === "string" && serverMessage.trim() !== "") return serverMessage
-    return `Chunk ${chunkLabel} was rejected. Check the import requirements and try again.`
+    return `Chunk ${chunkLabel} was rejected. Check the import requirements and try again.${suffix}`
   }
   if (status === 429) {
     const waitMs = hints?.retryAfterMs
     if (typeof waitMs === "number" && Number.isFinite(waitMs) && waitMs >= 0) {
       const seconds = Math.max(1, Math.round(waitMs / 1000))
-      return `Too many requests — waiting ${seconds}s before retrying ${chunkLabel}.`
+      return `Too many requests — waiting ${seconds}s before retrying ${chunkLabel}.${suffix}`
     }
-    return `Too many requests — retrying ${chunkLabel}.`
+    return `Too many requests — retrying ${chunkLabel}.${suffix}`
   }
-  if (status === 504) return `The server ran out of time on ${chunkLabel}.`
-  if (status !== undefined) return `Chunk ${chunkLabel} could not be saved.`
-  return "Could not reach the server. Check your connection and try again."
+  if (status === 504) return `The server ran out of time on ${chunkLabel}.${suffix}`
+  if (status !== undefined) return `Chunk ${chunkLabel} could not be saved.${suffix}`
+  return `Could not reach the server. Check your connection and try again.${suffix}`
 }
 
 function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
@@ -224,6 +230,7 @@ export function useChunkedImport<TRow, TChunkResult>() {
       const results: TChunkResult[] = []
       const failedChunks: FailedChunk[] = []
       let consecutiveFailures = 0
+      let savedTotal = 0
       let stoppedEarly = false
       // Size + offset replace the pre-split array: every chunk derives from
       // (offset, size), so a 504 can shrink the REMAINDER without invalidating
@@ -271,6 +278,7 @@ export function useChunkedImport<TRow, TChunkResult>() {
               results.push(result)
               options.onChunkResult?.(result, meta)
               const summary = options.summarizeResult?.(result) ?? { saved: 0, skipped: 0, issues: 0 }
+              savedTotal += summary.saved
               setHistory((h) => [...h, { chunkIndex: done, rows: chunk.length, ok: true, saved: summary.saved, skipped: summary.skipped ?? 0, issues: summary.issues }])
               consecutiveFailures = 0
               offset += len
@@ -293,7 +301,7 @@ export function useChunkedImport<TRow, TChunkResult>() {
                 size = Math.max(CHUNK_MIN_SIZE, Math.floor(size / 2))
                 settled = true
               } else if (!isRetryableChunkError(err) || attempt >= maxRetries) {
-                const message = getChunkFailureMessage(err, meta)
+                const message = getChunkFailureMessage(err, { ...meta, saved: savedTotal })
                 setHistory((h) => [...h, { chunkIndex: done, rows: chunk.length, ok: false, saved: 0, skipped: 0, issues: 0, error: message }])
                 failedChunks.push({ meta, error: message, attempts: attempt + 1 })
                 if (++consecutiveFailures >= 3) {
