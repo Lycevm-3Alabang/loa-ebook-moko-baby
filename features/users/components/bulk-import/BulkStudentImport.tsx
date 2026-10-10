@@ -6,6 +6,7 @@ import { useChunkedImport, decodeCsvFile, withRetryHints, type ChunkMeta } from 
 import { buildImportLedger, assertLedgerClosure, ledgerToCsv, type LedgerRow } from "./import-ledger"
 import { computeDepartmentGrouping } from "./department-grouping"
 import { buildDepartmentPanels, type DepartmentPanel } from "./department-panels"
+import { applyCreatedUsers } from "./apply-created-users"
 import { StepPanel } from "@/features/admin-data/components/FacultyImportStepper"
 
 // Domain rule is shared with the import service via lib/csv-utils — one list,
@@ -563,6 +564,16 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       }
       setPanelResults((prev) => ({ ...prev, [panel.id]: aggregated }))
       setPanelLedgers((prev) => ({ ...prev, [panel.id]: ledger }))
+      // S4 — fold this panel's created users into the client-held snapshot so
+      // sibling panels stop badging them "New Student". Functional updaters: a
+      // row removal mid-run would leave the closure's arrays stale. Created
+      // users persist even when chunks fail or the ledger doesn't close, so
+      // this merges whenever a result commits; the cancel path returns before
+      // any result exists and never merges half-state.
+      if (aggregated.created.length > 0) {
+        setExistingUsers((prev) => applyCreatedUsers(prev, [], aggregated.created).existingUsers)
+        setPreviewRows((prev) => (prev ? applyCreatedUsers([], prev, aggregated.created).previewRows : prev))
+      }
       if (!ledgerClosed) {
         fail(`Could not account for all ${rows.length} rows of this panel — nothing was lost, ${aggregated.enrolled} rows are already saved. Press Run again to resume.`)
         return
