@@ -34,6 +34,9 @@ interface PreviewRow extends StudentCsvRow {
 interface ImportResult {
   created: { name: string; email: string; role: string }[]
   enrolled: number
+  // Rows actually written (resolved rows the database already held are NOT
+  // counted). A re-run reads enrolled > 0 with inserted === 0.
+  inserted: number
   skipped: number
   failed: { row: number; email: string; subjectCode: string; section: string; remark: string; reasonCode: ImportReasonCode }[]
   duplicateRows: { row: number; email: string; subjectCode: string; section: string; reasonCode: ImportReasonCode; remark: string }[]
@@ -410,6 +413,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       const aggregated: ImportResult = {
         created: results.flatMap((r) => r.created ?? []),
         enrolled: results.reduce((s, r) => s + (r.enrolled ?? 0), 0),
+        inserted: results.reduce((s, r) => s + (r.inserted ?? 0), 0),
         skipped: results.reduce((s, r) => s + (r.skipped ?? 0), 0),
         // Derived from the ledger — it already holds every row keyed by source
         // number, so no second chunk-relative conversion exists.
@@ -802,13 +806,13 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             </div>
             <div className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-5 text-center">
               <p className="text-2xl font-bold text-blue-600">{importResult.enrolled}</p>
-              <p className="text-[11px] font-semibold text-blue-700/70 dark:text-blue-300/70">Enrollments</p>
+              <p className="text-[11px] font-semibold text-blue-700/70 dark:text-blue-300/70">Enrollments Resolved</p>
             </div>
           </div>
 
           <div className="bg-slate-50 dark:bg-slate-800/30 rounded-2xl px-5 py-3 space-y-1">
             <p className="text-xs font-semibold text-secondary">
-              {importResult.totalRows} rows sent · {importResult.enrolled} enrolled · {importResult.skipped} skipped (already enrolled) · {importResult.failed.length} failed
+              {importResult.totalRows} rows sent · {importResult.enrolled} resolved · {importResult.inserted} newly written · {importResult.skipped} skipped (already enrolled) · {importResult.failed.length} failed
             </p>
             <p className="text-[11px] text-tertiary">
               Seed 2026-1 reference: 3,302 students · 21,989 enrollments. Re-running this file should enroll 0 and skip all (idempotent).

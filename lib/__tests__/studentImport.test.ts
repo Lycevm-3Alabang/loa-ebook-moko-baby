@@ -516,4 +516,28 @@ describe("importStudents — already-persisted and duplicates (D3)", () => {
     expect(result.duplicateRows[0].reasonCode).toBe("DUPLICATE_IN_FILE")
     expect(result.duplicateRows[0].remark).toBe(reasonRemarks("DUPLICATE_IN_FILE", { row: "1" }))
   })
+
+  it("reports rows actually written, distinct from rows resolved", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
+    // A re-run: the repo finds the key already present, so nothing is written.
+    asFn(factory.studentEnrollmentRepository, "addEnrollments")
+      .mockResolvedValue({ inserted: 0, skipped: 1, skippedItems: [{ student_id: "stu-1", faculty_subject_id: MAPPING.id, section_id: SEC.id }] })
+
+    const result = await importStudents([baseStudentRow()], null, null)
+
+    // Resolved but NOT written — the pair that makes idempotency visible.
+    expect(result.enrolled).toBe(1)
+    expect(result.inserted).toBe(0)
+  })
+
+  it("counts a fresh write in inserted", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
+    asFn(factory.studentEnrollmentRepository, "addEnrollments")
+      .mockResolvedValue({ inserted: 1, skipped: 0, skippedItems: [] })
+
+    const result = await importStudents([baseStudentRow()], null, null)
+
+    expect(result.enrolled).toBe(1)
+    expect(result.inserted).toBe(1)
+  })
 })

@@ -20,6 +20,10 @@ export interface StudentCsvRow {
 export interface StudentImportResult {
   created: { name: string; email: string; role: string }[]
   enrolled: number
+  // Rows this call actually WROTE, as the repository reports them — distinct from
+  // `enrolled`, which counts rows RESOLVED (including ones the database already
+  // held). A re-run reads enrolled > 0 with inserted === 0.
+  inserted: number
   skipped: number
   failed: { row: number; email: string; subjectCode: string; section: string; remark: string; reasonCode: ImportReasonCode }[]
   // Rows the file repeated: same (student, subject, section) as an earlier row in
@@ -115,7 +119,7 @@ export async function importStudents(
   let skipped = 0
 
   if (rows.length === 0) {
-    return { created, enrolled, skipped, failed, duplicateRows: [], alreadyPersisted: [], termMismatch: null, parseErrors: [], totalRows: 0 }
+    return { created, enrolled, inserted: 0, skipped, failed, duplicateRows: [], alreadyPersisted: [], termMismatch: null, parseErrors: [], totalRows: 0 }
   }
 
   const excelOffenderFor = (r: StudentCsvRow): string | null =>
@@ -311,11 +315,15 @@ export async function importStudents(
   }
 
   const alreadyPersisted: StudentImportResult["alreadyPersisted"] = []
+  // Rows this call actually wrote, as the repository reports them — 0 when the
+  // insert never ran (every row failed) or wrote nothing.
+  let inserted = 0
   if (toEnroll.length > 0) {
     // The repo returns which keys were ALREADY in the database as bare ids —
     // join them back to source rows so the ledger can say which rows a re-run
     // skipped as persisted, distinct from rows this file repeated.
-    const { skipped: dupSkipped, skippedItems } = await studentEnrollmentRepository.addEnrollments(toEnroll)
+    const { inserted: wroteRows, skipped: dupSkipped, skippedItems } = await studentEnrollmentRepository.addEnrollments(toEnroll)
+    inserted = wroteRows
     skipped = dupSkipped
     for (const s of skippedItems) {
       const origin = enrollmentRow.get(`${s.student_id}|${s.faculty_subject_id ?? ""}|${semesterId ?? ""}`)
@@ -334,6 +342,7 @@ export async function importStudents(
     failed,
     duplicateRows,
     alreadyPersisted,
+    inserted,
     termMismatch,
     parseErrors: [],
     totalRows: rows.length,

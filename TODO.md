@@ -12,12 +12,12 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
 
 ## NEXT (do first)
 
-- [ ] **D3 — ledger** (`specs/student-import-stepper/ledger-reason-codes.md`).
-  Single CSV in which every input row appears exactly once (status + reason code +
-  remark); `ALREADY_PERSISTED` attribution; give in-file duplicates (`duplicateRows`,
-  currently folded into `skipped`) their own code. Precondition (`skippedItems`
-  per-row attribution) landed with D2 — unblocked. Largest remaining design.
-  U4 done 2026-10-10 (user-reported green). After: D6 (`inserted`) → C3 S1–S4.
+- [ ] **C3 S1 — department grouping** (`specs/student-import-stepper.md` §3, §5).
+  Department grouping computed client-side at preview, stamped onto every row —
+  the zero-UI-risk entry point for the department stepper (decides the front-end
+  shape). Known: 176 students span >1 department; first-instance-wins accepted
+  (§3.3). Then S2 grid + panels → S3 Unassigned panel → S4 `userMap` merge.
+  D6 done 2026-10-10 (user-reported-green, gates rode unpaid into its run).
 
 ## Queued (proposed order — reorder freely)
 
@@ -25,13 +25,24 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
   2026-10-10 · U2b (halve-once + persist + student exact boundaries) 2026-10-10 ·
   U3 (70s default) 2026-10-10 · U4 (invariant + `Reference: {fileId}`, 400 verbatim
   pure, cancel untouched) 2026-10-10. Greens user-reported (S1 waived, retro-covered).
-- [ ] **D3 — ledger** (`specs/student-import-stepper/ledger-reason-codes.md`).
-  Single CSV, reason codes, `ALREADY_PERSISTED` attribution. Largest remaining
-  design; its precondition (`skippedItems` per-row attribution) already landed.
-  Give in-file duplicates (`duplicateRows`, currently folded into `skipped`) their
-  own ledger code here.
-- [ ] **D6 — surface `inserted`**. `addEnrollments` already returns it; needs an
-  `ImportResult` field plus client rendering.
+- [x] **D3 — ledger done 2026-10-10** (`specs/student-import-stepper/ledger-reason-codes.md`).
+  Shared 17-code vocabulary + `escapeCsvCell` + `reasonRemarks` in `lib/csv-utils.ts` ·
+  server stamps `reasonCode` at all 9 reject sites + joins `alreadyPersisted` by the
+  repo's own key + `DUPLICATE_IN_FILE` · pure builder `import-ledger.ts` (offset windows,
+  dept flags UNRESOLVED + MISMATCH) + 25 ledger tests · component wired: one
+  `student-import-ledger.csv` replaces three downloads, closure assert replaces the
+  unaccounted arithmetic, removed rows carry their reason · legend + 4 blocking badges
+  red · server's dead `successCsv`/`failureCsv` removed. Greens USER-REPORTED (agent
+  never runs CLI per H1). Run file:
+  `.opencode/skills/plan-fix/runs/20261010-1600-d3-ledger.md`.
+- [x] **D6 — surface `inserted` done 2026-10-10** (`specs/student-import-stepper.md`).
+  `StudentImportResult.inserted` returned (captured from `addEnrollments`, 0 on the
+  early path) + client `ImportResult.inserted` summed with `?? 0` + tile relabel
+  "Enrollments Resolved" (number unchanged) + summary line "resolved · newly
+  written · skipped (already enrolled)" + 2 service tests (re-run enrolled 1 /
+  inserted 0; fresh 1/1). Route untouched. Greens USER-REPORTED (gates for S1 rode
+  unpaid — covered only if the close-out run is pasted). Run file:
+  `.opencode/skills/plan-fix/runs/20261010-1115-d6-inserted.md`.
 - [ ] **C3 S1–S4 — department stepper** (`specs/student-import-stepper.md` §3, §5).
   S1 department grouping, computed client-side at preview, stamped onto every row
   (zero UI risk; decides the front-end shape) → S2 grid + panels → S3 Unassigned
@@ -39,7 +50,9 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
   first-instance-wins is accepted (§3.3). Buys containment, not correctness.
 - [ ] **Cleanup — deferred course payload**. Trim unconsumed `departmentCourses`
   from `/api/import/students/reference` in its own pass; confirm no other consumer
-  (`BulkSectionImport.tsx` keeps separate state — do not touch).
+  (`BulkSectionImport.tsx` keeps separate state — do not touch). NOTE: the student
+  ledger's `DEPARTMENT_MISMATCH` flag now consumes this dataset (D3, 2026-10-10) —
+  do not trim until the ledger no longer reads it.
 
 ## Done this session (do not redo)
 
