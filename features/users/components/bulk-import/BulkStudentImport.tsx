@@ -7,6 +7,7 @@ import { buildImportLedger, assertLedgerClosure, ledgerToCsv, type LedgerRow } f
 import { computeDepartmentGrouping } from "./department-grouping"
 import { buildDepartmentPanels, type DepartmentPanel } from "./department-panels"
 import { applyCreatedUsers } from "./apply-created-users"
+import { panelStripStatus, type StripStatus } from "./panel-strip-status"
 import { StepPanel } from "@/features/admin-data/components/FacultyImportStepper"
 
 // Domain rule is shared with the import service via lib/csv-utils — one list,
@@ -64,6 +65,17 @@ const isBlockedPreviewRow = (r: PreviewRow) =>
 const isProblemPreviewRow = (r: PreviewRow) =>
   r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned ||
   r.isNewStudent || r.isInvalidDepartment || r.isInvalidValue
+
+// Table-first slice 2 — dot colors for the five strip states. Module scope:
+// a re-created map every render would thrash nothing (it isn't in a memo),
+// but module scope states the intent — this never changes per render.
+const STATUS_DOT: Record<StripStatus, string> = {
+  "not-run": "bg-surface-tertiary",
+  "blocked-gated": "bg-red-500",
+  running: "bg-amber-500 animate-pulse",
+  done: "bg-emerald-500",
+  failed: "bg-red-700",
+}
 
 /**
  * Sum the panels' results into the one whole-file view the result tiles render.
@@ -147,9 +159,16 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const fileRef = useRef<HTMLInputElement>(null)
   const [previewRows, setPreviewRows] = useState<PreviewRow[] | null>(null)
   const [previewPage, setPreviewPage] = useState(0)
+  // Table-first slice 4 — source row flashing after an edit. Ref-held timer:
+  // rapid edits reset the fade instead of stacking timeouts.
+  const [highlightRow, setHighlightRow] = useState<number | null>(null)
+  const highlightTimer = useRef<number | null>(null)
   const [previewError, setPreviewError] = useState("")
   const [referenceError, setReferenceError] = useState("")
   const [problemFilter, setProblemFilter] = useState(false)
+  // Table-first slice 2 — department view filter. View-only: run scope is
+  // always the whole panel, never the filtered set (pinned contract §3.1).
+  const [deptFilter, setDeptFilter] = useState<string | null>(null)
   const [removedRows, setRemovedRows] = useState<Array<StudentCsvRow & { reason?: ImportReasonCode }>>([])
   // §3.1 — the panel whose run owns the single useChunkedImport instance.
   // Non-null IS the global running guard: every panel's Run button and the preview
@@ -264,12 +283,37 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   // state that could drift from `panels`.
   const blockedPanels = useMemo(() => panels.filter((p) => p.blockedCount > 0), [panels])
 
-  const problemRows = useMemo(() => {
-    if (!previewRows) return []
-    return previewRows.filter(isProblemPreviewRow)
-  }, [previewRows])
+  // Source-row numbers of the filtered panel, or null for the whole file.
+  // Keyed by SOURCE row: `panels` holds copies, so object identity would
+  // match nothing. A filter pointing at an emptied panel yields an empty
+  // set — the chip below always offers the way back.
+  const activePanelRows = useMemo(() => {
+    if (!deptFilter) return null
+    return new Set(panels.find((p) => p.id === deptFilter)?.rows.map((r) => r.row) ?? [])
+  }, [panels, deptFilter])
 
-  const visibleRows = problemFilter ? problemRows : previewRows ?? []
+  const deptRows = useMemo(() => {
+    const all = previewRows ?? []
+    if (!activePanelRows) return all
+    return all.filter((r) => activePanelRows.has(r.row))
+  }, [previewRows, activePanelRows])
+
+  const problemRows = useMemo(() => deptRows.filter(isProblemPreviewRow), [deptRows])
+
+  // File-wide flagged tally: the overview line below stays global even while
+  // the table is filtered (problemRows above is now dept-scoped).
+  const fileProblemCount = useMemo(
+    () => (previewRows ?? []).filter(isProblemPreviewRow).length,
+    [previewRows],
+  )
+
+  const deptBlockedCount = useMemo(() => deptRows.filter(isBlockedPreviewRow).length, [deptRows])
+
+  const visibleRows = problemFilter ? problemRows : deptRows
+  // Table-first slice 3 — blocked rows inside the CURRENT view (dept and/or
+  // problem filters applied). removeBlockedRows keys on source row, so the
+  // filtered copies are safe to pass straight through.
+  const shownBlockedRows = useMemo(() => visibleRows.filter(isBlockedPreviewRow), [visibleRows])
   const paginatedRows = visibleRows.slice(previewPage * PREVIEW_PAGE_SIZE, (previewPage + 1) * PREVIEW_PAGE_SIZE)
   const totalPreviewPages = Math.ceil(visibleRows.length / PREVIEW_PAGE_SIZE)
 
@@ -301,6 +345,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     setPanelLedgers({})
     setPanelErrors({})
     setRemovedRows([])
+    setDeptFilter(null)
     const file = fileRef.current?.files?.[0]
     if (!file) { setPreviewError("Please select a CSV file"); return }
     const text = await decodeCsvFile(file)
@@ -331,13 +376,19 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     })
     setPreviewRows(withFlags)
     setPreviewPage(0)
+    setHighlightRow(null)
   }
 
-  const handleFieldChange = (index: number, field: "name" | "subjectCode" | "section" | "facultyEmail" | "departmentCode", value: string) => {
+  // Keyed by SOURCE CSV row, not position: every filter (even the
+  // blocked-only toggle) makes positional indexes lie. Returns silently on
+  // a row that no longer exists (removed mid-edit).
+  const handleFieldChange = (sourceRow: number, field: "name" | "email" | "subjectCode" | "section" | "facultyEmail" | "departmentCode", value: string) => {
     if (!previewRows) return
+    const index = previewRows.findIndex((r) => r.row === sourceRow)
+    if (index === -1) return
     const next = [...previewRows]
     const updated = { ...next[index], [field]: value }
-    if (field === "subjectCode" || field === "section" || field === "facultyEmail" || field === "departmentCode") {
+    if (field === "email" || field === "subjectCode" || field === "section" || field === "facultyEmail" || field === "departmentCode") {
       const { section: sec, isNewSection } = resolveSection(updated.section)
       updated.isNewSubject = !existingSubjects.some((s) => s.code === updated.subjectCode)
       updated.isNewSection = isNewSection
@@ -363,13 +414,17 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     )
     next[index] = updated
     setPreviewRows(next)
+    setHighlightRow(sourceRow)
+    if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current)
+    highlightTimer.current = window.setTimeout(() => setHighlightRow(null), 1500)
   }
 
-  const handleRemoveRow = (index: number) => {
+  const handleRemoveRow = (sourceRow: number) => {
     if (!previewRows) return
-    const removed = previewRows[index]
+    const removed = previewRows.find((r) => r.row === sourceRow)
+    if (!removed) return
     setRemovedRows((prev) => [...prev, { row: removed.row, email: removed.email, name: removed.name, subjectCode: removed.subjectCode, section: removed.section, facultyEmail: removed.facultyEmail, departmentCode: removed.departmentCode }])
-    const next = previewRows.filter((_, i) => i !== index)
+    const next = previewRows.filter((r) => r.row !== sourceRow)
     if (next.length === 0) {
       setRemovedRows([])
     } else {
@@ -412,6 +467,14 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
   const handleRemoveBlockedIn = (panel: DepartmentPanel<PanelRow>) =>
     removeBlockedRows(panel.rows.filter((r) => r.isBlocked))
+
+  // Strip → table bridge. Filter-only: run scope is untouched (pinned §3.1).
+  const viewPanelRows = (panel: DepartmentPanel<PanelRow>) => {
+    setDeptFilter(panel.id)
+    if (panel.blockedCount > 0) setProblemFilter(true)
+    setPreviewPage(0)
+    document.getElementById("student-preview-table")?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
 
   const handleRemoveAllBlocked = () =>
     removeBlockedRows(previewRows?.filter(isBlockedPreviewRow) ?? [])
@@ -722,6 +785,16 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                 {visibleRows.length} row{visibleRows.length !== 1 ? "s" : ""}
                 {problemFilter && ` (filtered)`}
               </h4>
+              {deptFilter && (
+                <button
+                  type="button"
+                  onClick={() => { setDeptFilter(null); setPreviewPage(0) }}
+                  title="Clear the department filter"
+                  className="text-[11px] font-semibold px-3 py-1 rounded-full border border-default text-secondary hover:bg-surface-dim transition-colors"
+                >
+                  Showing {panels.find((p) => p.id === deptFilter)?.label ?? "department"} · clear ×
+                </button>
+              )}
               <span className="text-[11px] text-tertiary">{TEMPLATE_HEADERS}</span>
             </div>
 
@@ -733,7 +806,28 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                 faculty is <span className="badge-red not-italic">red</span>, not amber &mdash; the
                 server rejects it.
               </p>
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-2">
+                <select
+                  value={deptFilter ?? ""}
+                  onChange={(e) => { setDeptFilter(e.target.value || null); setPreviewPage(0) }}
+                  title="Filter the table by department (view only — runs always send the whole panel)"
+                  className="text-[11px] font-semibold px-2 py-1 rounded-full border border-default bg-surface-hover text-secondary outline-none"
+                >
+                  <option value="">All departments</option>
+                  {panels.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label} · {p.rows.length} rows{p.blockedCount > 0 ? ` · ${p.blockedCount} blocked` : ""}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => { setDeptFilter(null); setProblemFilter(true); setPreviewPage(0) }}
+                  title="Show every blocked row in the file"
+                  className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
+                >
+                  Errors only
+                </button>
                 {problemRows.length > 0 && (
                   <button
                     type="button"
@@ -744,7 +838,17 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                         : "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400"
                     }`}
                   >
-{problemFilter ? "Show all rows" : `Show ${blockedRows.length} blocked only`}
+{problemFilter ? "Show all rows" : `Show ${deptBlockedCount} blocked only`}
+                  </button>
+                )}
+                {shownBlockedRows.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => removeBlockedRows(shownBlockedRows)}
+                    title="Remove the blocked rows currently shown (view only — other departments untouched)"
+                    className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
+                  >
+                    Remove {shownBlockedRows.length} shown blocked
                   </button>
                 )}
               </div>
@@ -753,7 +857,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             {previewRows && previewRows.length > 0 && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-[11px] text-tertiary">
                 <span><span className="font-semibold text-secondary">{previewRows.length - blockedRows.length}</span> ready to import</span>
-                <span><span className="font-semibold text-amber-600">{problemRows.length}</span> flagged &mdash; imports with a flag; an unknown subject, section or faculty fails that row</span>
+                <span><span className="font-semibold text-amber-600">{fileProblemCount}</span> flagged &mdash; imports with a flag; an unknown subject, section or faculty fails that row</span>
                 <span><span className="font-semibold text-red-600">{blockedRows.length}</span> blocked (missing email, bad domain, Excel error)</span>
               </div>
             )}
@@ -795,12 +899,19 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                     <span className="text-red-600 font-semibold"> No active semester — every panel is disabled.</span>
                   )}
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                <div className="space-y-2">
                   {panels.map((panel) => {
                     const result = panelResults[panel.id]
-                    const panelError = panelErrors[panel.id]
+                    const panelError = panelErrors[panel.id] ?? ""
                     const isActive = activePanelId === panel.id
                     const blocked = panel.blockedCount > 0
+                    const status = panelStripStatus({
+                      blockedCount: panel.blockedCount,
+                      isRunning: isActive,
+                      hasResult: !!result,
+                      failedCount: result?.failed.length ?? 0,
+                      error: panelError,
+                    })
                     const disabled = !semesterId || blocked || (activePanelId !== null && !isActive)
                     const disabledTitle = !semesterId
                       ? "Set an active semester before importing."
@@ -819,8 +930,14 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                         onRun={() => runPanel(panel)}
                         summary={
                           <>
-                            <p className="text-[11px] text-tertiary">
-                              {panel.rows.length - panel.blockedCount} ready · {panel.problemCount} flagged · {panel.blockedCount} blocked
+                            <p className="text-[11px] text-tertiary flex items-center gap-1.5">
+                              <span title={status} className={`inline-block w-2 h-2 rounded-full shrink-0 ${STATUS_DOT[status]}`} />
+                              <span>
+                                {panel.rows.length - panel.blockedCount} ready · {panel.problemCount} flagged · {panel.blockedCount} blocked
+                                {result && (
+                                  <> · {result.enrolled} resolved · {result.inserted} written · {result.skipped} skipped · {result.failed.length} failed</>
+                                )}
+                              </span>
                             </p>
                             {/* Only the Unassigned panel can carry these — the builder
                                 routes every null id there (pinned by
@@ -834,36 +951,28 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                                 still imported; the ledger records which.
                               </p>
                             )}
-                            {blocked && (
+                            <div className="flex items-center gap-3">
                               <button
                                 type="button"
-                                onClick={() => handleRemoveBlockedIn(panel)}
-                                className="text-[11px] font-semibold text-red-600 hover:underline"
+                                onClick={() => viewPanelRows(panel)}
+                                className="text-[11px] font-semibold text-secondary hover:underline"
                               >
-                                Remove these {panel.blockedCount}
+                                View rows
                               </button>
-                            )}
-                            {result && (
-                              <p className="text-[11px] text-secondary">
-                                {result.enrolled} resolved · {result.inserted} written · {result.skipped} skipped ·{" "}
-                                <span className={result.failed.length > 0 ? "text-amber-600" : "text-emerald-600"}>
-                                  {result.failed.length} failed
-                                </span>
-                              </p>
-                            )}
+                              {blocked && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveBlockedIn(panel)}
+                                  className="text-[11px] font-semibold text-red-600 hover:underline"
+                                >
+                                  Remove these {panel.blockedCount}
+                                </button>
+                              )}
+                            </div>
                             {panelError && <p className="text-[11px] text-red-600">{panelError}</p>}
                           </>
                         }
-                        invalid={panel.rows
-                          .filter((r) => r.isBlocked)
-                          .map((r) => ({
-                            key: `Row ${r.row}`,
-                            reason: isMissingEmail(r.email)
-                              ? "email missing"
-                              : isOffDomainEmail(r.email)
-                                ? "domain not allowed"
-                                : "invalid value (Excel error)",
-                          }))}
+                        invalid={[]}
                         invalidKeyPrefix={`blocked-${panel.id}`}
                         confirmTitle={`Import ${panel.rows.length} row${panel.rows.length !== 1 ? "s" : ""} from ${panel.label}?`}
                         confirmMessage="Only this department's rows are sent. Re-running skips rows already saved."
@@ -893,6 +1002,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             )}
 
             <div
+              id="student-preview-table"
               aria-busy={activePanelId !== null}
               className={`max-h-72 overflow-y-auto tbl-container tbl transition-opacity ${
                 activePanelId !== null ? "pointer-events-none opacity-60" : ""
@@ -913,38 +1023,47 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                 </thead>
                 <tbody>
                   {paginatedRows.map((r, i) => {
-                    const absIdx = previewPage * PREVIEW_PAGE_SIZE + i
                     return (
-                      <tr key={`${previewPage}-${i}`}>
+                      <tr
+                        key={`${previewPage}-${i}`}
+                        id={`preview-row-${r.row}`}
+                        className={highlightRow === r.row ? "bg-amber-100/60 dark:bg-amber-900/30" : undefined}
+                      >
                         <td className="text-tertiary">{previewPage * PREVIEW_PAGE_SIZE + i + 1}</td>
-                        <td className="text-secondary text-[13px] whitespace-nowrap">
-                          {r.name} <span className="text-tertiary">({r.email})</span>
+                        <td className="text-secondary text-[13px]">
+                          {r.name}{" "}
+                          <input
+                            value={r.email}
+                            onChange={(e) => handleFieldChange(r.row, "email", e.target.value)}
+                            title="Student email — editing re-checks domain and regroups the table"
+                            className="bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px] text-tertiary w-56"
+                          />
                         </td>
                         <td>
                           <input
                             value={r.subjectCode}
-                            onChange={(e) => handleFieldChange(absIdx, "subjectCode", e.target.value)}
+                            onChange={(e) => handleFieldChange(r.row, "subjectCode", e.target.value)}
                             className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px]"
                           />
                         </td>
                         <td>
                           <input
                             value={r.section}
-                            onChange={(e) => handleFieldChange(absIdx, "section", e.target.value)}
+                            onChange={(e) => handleFieldChange(r.row, "section", e.target.value)}
                             className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px]"
                           />
                         </td>
                         <td>
                           <input
                             value={r.facultyEmail}
-                            onChange={(e) => handleFieldChange(absIdx, "facultyEmail", e.target.value)}
+                            onChange={(e) => handleFieldChange(r.row, "facultyEmail", e.target.value)}
                             className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px]"
                           />
                         </td>
                         <td>
                           <input
                             value={r.departmentCode}
-                            onChange={(e) => handleFieldChange(absIdx, "departmentCode", e.target.value.toUpperCase())}
+                            onChange={(e) => handleFieldChange(r.row, "departmentCode", e.target.value.toUpperCase())}
                             className={`w-16 bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px] uppercase ${r.isInvalidDepartment ? "text-red-600" : ""}`}
                           />
                         </td>
@@ -969,7 +1088,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                         <td className="text-center">
                           <button
                             type="button"
-                            onClick={() => handleRemoveRow(absIdx)}
+                            onClick={() => handleRemoveRow(r.row)}
                             className="w-7 h-7 flex items-center justify-center rounded-full bg-red-50 dark:bg-red-900/20 text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors"
                             title="Remove row"
                           >
