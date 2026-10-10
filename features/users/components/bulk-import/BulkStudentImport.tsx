@@ -962,11 +962,13 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
           </div>
 
           <div className="bg-slate-50 dark:bg-slate-800/30 rounded-2xl px-5 py-3 space-y-1">
+            {/* Every number below covers the panels that RAN, not the file. Naming
+                the scope is the whole point — a partial run is a normal state. */}
             <p className="text-xs font-semibold text-secondary">
-              {aggregateResult.totalRows} rows sent · {aggregateResult.enrolled} resolved · {aggregateResult.inserted} newly written · {aggregateResult.skipped} skipped (already enrolled) · {aggregateResult.failed.length} failed
+              {ranPanelCount} of {panels.length} panel{panels.length !== 1 ? "s" : ""} run · {aggregateResult.totalRows} rows sent · {aggregateResult.enrolled} resolved · {aggregateResult.inserted} newly written · {aggregateResult.skipped} skipped (already enrolled) · {aggregateResult.failed.length} failed
             </p>
             <p className="text-[11px] text-tertiary">
-              Seed 2026-1 reference: 3,302 students · 21,989 enrollments. Re-running this file should enroll 0 and skip all (idempotent).
+              Seed 2026-1 reference: 3,302 students · 21,989 enrollments. Re-running a panel should enroll 0 and skip all (idempotent).
             </p>
             {(() => {
               const boxUnaccounted =
@@ -975,10 +977,20 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                 aggregateResult.skipped -
                 aggregateResult.failed.length -
                 aggregateResult.parseErrors.length
+              const notYetRun = panels.length - ranPanelCount
               return (
-                <p className={`text-[11px] font-semibold ${boxUnaccounted !== 0 ? "text-red-600" : "text-emerald-600 dark:text-emerald-300"}`}>
-                  {boxUnaccounted === 0 ? "All rows accounted for." : `${boxUnaccounted} of ${aggregateResult.totalRows} CSV rows unaccounted — retry the import.`}
-                </p>
+                <>
+                  <p className={`text-[11px] font-semibold ${boxUnaccounted !== 0 ? "text-red-600" : "text-emerald-600 dark:text-emerald-300"}`}>
+                    {boxUnaccounted === 0
+                      ? `All ${aggregateResult.totalRows} rows from the panels that ran are accounted for.`
+                      : `${boxUnaccounted} of ${aggregateResult.totalRows} CSV rows unaccounted — re-run that panel.`}
+                  </p>
+                  {notYetRun > 0 && (
+                    <p className="text-[11px] text-tertiary">
+                      {notYetRun} panel{notYetRun !== 1 ? "s have" : " has"} not run yet — their rows are not in these totals or in the ledger.
+                    </p>
+                  )}
+                </>
               )
             })()}
           </div>
