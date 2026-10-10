@@ -358,35 +358,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       if (cancelled) { setError(`Import cancelled after ${results.length} chunks — retry to resume`); return }
       // Dead-chunk rows are TRANSPORT_ERROR rows inside the ledger now — the
       // separate window math that used to live here is gone.
-      const aggregated: ImportResult = {
-        created: results.flatMap((r) => r.created ?? []),
-        enrolled: results.reduce((s, r) => s + (r.enrolled ?? 0), 0),
-        skipped: results.reduce((s, r) => s + (r.skipped ?? 0), 0),
-        // Derived from the ledger — it already holds every row keyed by source
-        // number, so no second chunk-relative conversion exists.
-        failed: ledger.flatMap((r) =>
-          r.status === "invalid" && r.reasonCode !== ""
-            ? [{ row: r.row, email: r.email, subjectCode: r.subjectCode, section: r.section, remark: r.remarks, reasonCode: r.reasonCode }]
-            : [],
-        ),
-        duplicateRows: ledger.flatMap((r) =>
-          r.reasonCode === "DUPLICATE_IN_FILE"
-            ? [{ row: r.row, email: r.email, subjectCode: r.subjectCode, section: r.section, remark: r.remarks, reasonCode: "DUPLICATE_IN_FILE" as const }]
-            : [],
-        ),
-        alreadyPersisted: ledger.flatMap((r) =>
-          r.reasonCode === "ALREADY_PERSISTED"
-            ? [{ row: r.row, email: r.email, subjectCode: r.subjectCode, section: r.section, reasonCode: "ALREADY_PERSISTED" as const }]
-            : [],
-        ),
-        parseErrors: results.flatMap((r) => r.parseErrors ?? []),
-        totalRows: previewRows.length,
-        // Any chunk reporting a mismatch means the whole run is against the wrong term.
-        termMismatch: results.find((r) => r.termMismatch)?.termMismatch ?? null,
-      }
-      // The ledger is assembled FIRST — one entry per input CSV row, in source
-      // order. The result panels then read from it, so exactly one
-      // chunk-relative → source-row conversion exists in the codebase.
+      // The ledger is built FIRST — one entry per input CSV row, in source order.
+      // The result panels then read from it, so exactly one chunk-relative →
+      // source-row conversion exists in the codebase.
       const ledger = buildImportLedger({
         payload: previewRows.map((r) => ({
           row: r.row,
@@ -432,6 +406,32 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         assertLedgerClosure(ledger, previewRows.length)
       } catch {
         ledgerClosed = false
+      }
+      const aggregated: ImportResult = {
+        created: results.flatMap((r) => r.created ?? []),
+        enrolled: results.reduce((s, r) => s + (r.enrolled ?? 0), 0),
+        skipped: results.reduce((s, r) => s + (r.skipped ?? 0), 0),
+        // Derived from the ledger — it already holds every row keyed by source
+        // number, so no second chunk-relative conversion exists.
+        failed: ledger.flatMap((r) =>
+          r.status === "invalid" && r.reasonCode !== ""
+            ? [{ row: r.row, email: r.email, subjectCode: r.subjectCode, section: r.section, remark: r.remarks, reasonCode: r.reasonCode }]
+            : [],
+        ),
+        duplicateRows: ledger.flatMap((r) =>
+          r.reasonCode === "DUPLICATE_IN_FILE"
+            ? [{ row: r.row, email: r.email, subjectCode: r.subjectCode, section: r.section, remark: r.remarks, reasonCode: "DUPLICATE_IN_FILE" as const }]
+            : [],
+        ),
+        alreadyPersisted: ledger.flatMap((r) =>
+          r.reasonCode === "ALREADY_PERSISTED"
+            ? [{ row: r.row, email: r.email, subjectCode: r.subjectCode, section: r.section, reasonCode: "ALREADY_PERSISTED" as const }]
+            : [],
+        ),
+        parseErrors: results.flatMap((r) => r.parseErrors ?? []),
+        totalRows: previewRows.length,
+        // Any chunk reporting a mismatch means the whole run is against the wrong term.
+        termMismatch: results.find((r) => r.termMismatch)?.termMismatch ?? null,
       }
       setImportResult(aggregated)
       setLedgerCsv(ledgerToCsv(ledger))
