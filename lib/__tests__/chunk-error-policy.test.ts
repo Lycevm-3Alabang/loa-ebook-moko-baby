@@ -9,7 +9,7 @@ vi.mock("@/lib/db", () => ({
 }))
 
 import { studentEnrollmentRepository } from "@/features/admin-data/student-enrollment.repository"
-import { isRetryableChunkError } from "@/features/admin-data/components/useChunkedImport"
+import { CHUNK_TIMEOUT_MS, isRetryableChunkError } from "@/features/admin-data/components/useChunkedImport"
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -98,5 +98,13 @@ describe("addEnrollments — duplicate rows in one request", () => {
     // …but NOT in skippedItems, which means "already in the database". A repeated
     // CSV row is a different reason; D3 gives it its own ledger code.
     expect(result.skippedItems).toHaveLength(0)
+  })
+})
+
+// ── U3: the client timer must lose to the platform ceiling ────────────
+
+describe("CHUNK_TIMEOUT_MS — client timeout alignment (spec §4.4)", () => {
+  it("defaults above maxDuration so the platform 504 stays authoritative", () => {
+    expect(CHUNK_TIMEOUT_MS).toBe(70000)
   })
 })

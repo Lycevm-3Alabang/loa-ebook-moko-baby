@@ -71,6 +71,10 @@ export const CHUNK_RETRY_JITTER_MS = 250
 // small requests rather than one row per request.
 export const CHUNK_MIN_SIZE = 25
 
+// Spec §4.4: just above the route ceiling (maxDuration = 60), so the
+// platform's 504 stays authoritative and the client stops narrating stale.
+export const CHUNK_TIMEOUT_MS = 70000
+
 export function isRetryableChunkError(err: unknown): boolean {
   if (err instanceof DOMException && err.name === "AbortError") return false
   // A database error carrying a Postgres SQLSTATE is deterministic, not a transport
@@ -202,7 +206,7 @@ export function useChunkedImport<TRow, TChunkResult>() {
       const initialSize = Math.floor(options.chunkSize ?? 500)
       if (initialSize <= 0) throw new Error("Chunk size must be a positive integer")
       const restMs = options.restMs ?? 750
-      const chunkTimeoutMs = options.chunkTimeoutMs ?? 120000
+      const chunkTimeoutMs = options.chunkTimeoutMs ?? CHUNK_TIMEOUT_MS
       const maxRetries = options.maxRetries ?? 2
       const retryBaseMs = options.retryBaseMs ?? CHUNK_RETRY_BASE_MS
       const fileId =

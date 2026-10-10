@@ -12,18 +12,18 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
 
 ## NEXT (do first)
 
-- [ ] **U2b — 504 halve-once + persist (S3/S4)** (`specs/chunked-import-failure-ux.md` §4.3).
-  Retry chunk i once at half size, keep the smaller size for the run (`MIN_CHUNK` 25),
-  fix student fixed-stride consumers (`deadEntries` window, aggregation index).
-  S1 (504→fail-fast) done 2026-10-10, gates waived by owner (suite unverified).
-  After: U3 (70s) → U4 (invariant + `fileId`).
+- [ ] **U3 — timeout alignment to 70s** (`specs/chunked-import-failure-ux.md` §4.4).
+  One-liner: `chunkTimeoutMs` default 120000 → 70000 in `useChunkedImport`
+  (platform 504 wins over client timer; `maxDuration = 60` unchanged on both routes).
+  U2b done 2026-10-10 (user-reported green). After: U4 (invariant + `fileId`).
 
 ## Queued (proposed order — reorder freely)
 
 - [ ] **U2–U4 remainder** (`specs/chunked-import-failure-ux.md`). S1 (504→fail-fast
-  predicate + policy test) done 2026-10-10, gates waived (suite unverified).
-  Remains: halve-once/persist (S3/S4), client timeout 120s → 70s, `fileId`
-  reference in every failure. Same hook and spec as U1 — natural continuation.
+  predicate + policy test) done 2026-10-10 (gates waived; retro-covered by the U2b
+  full-suite green below). U2b (halve-once + persist + student exact boundaries)
+  done 2026-10-10 (user-reported green).
+  Remains: client timeout 120s → 70s (U3), `fileId` reference in every failure (U4).
 - [ ] **D3 — ledger** (`specs/student-import-stepper/ledger-reason-codes.md`).
   Single CSV, reason codes, `ALREADY_PERSISTED` attribution. Largest remaining
   design; its precondition (`skippedItems` per-row attribution) already landed.
@@ -62,3 +62,9 @@ the run file above.
 - [x] **Lint-fix done 2026-10-10** (completes the faculty dead-code removal).
   Removed write-only `removedRows` state + 3 orphaned setter sites from
   `features/admin-data/components/FacultyLoadingTab.tsx`. Re-lint unconfirmed (waived).
+- [x] **U2b — halve-once + persist done 2026-10-10** (`specs/chunked-import-failure-ux.md` §4.3).
+  Offset/size-driven run loop (`CHUNK_MIN_SIZE = 25`, halve-to-floor, meta recompute)
+  + new `lib/__tests__/chunk-halve.test.ts` (4 tests) + student exact-boundary windows
+  (`resultMetas`/`endOfChunk`, meta-based aggregation). Zero hook-interface change.
+  Gates green USER-REPORTED (agent never runs CLI per H1) — full suite incl. S1's tests.
+  Run file: `.opencode/skills/plan-fix/runs/20261010-1300-u2b-halve-persist.md`.
