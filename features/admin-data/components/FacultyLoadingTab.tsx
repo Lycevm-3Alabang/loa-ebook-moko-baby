@@ -119,7 +119,7 @@ function FacultyTab() {
     status: string
     inserted: number
     existing: number
-    invalid: { key: string; reason: string }[]
+    invalid: { key: string; reason: string; detail?: { subjectCode: string; section: string; facultyEmail: string; ownerEmail: string } }[]
   } | null>(null)
   const [step7Progress, setStep7Progress] = useState<{
     doneChunks: number
@@ -128,6 +128,8 @@ function FacultyTab() {
     totalRows: number
     history: { chunkIndex: number; rows: number; saved: number; skipped: number; issues: number; ok: boolean }[]
   } | null>(null)
+  // Slice F1 — which step's invalid list is open in the details modal.
+  const [invalidModal, setInvalidModal] = useState<"step2" | "step6" | null>(null)
   const [csvError, setCsvError] = useState("")
   const [csvPreviewPage, setCsvPreviewPage] = useState(0)
   const [csvProblemFilter, setCsvProblemFilter] = useState(false)
@@ -1217,6 +1219,15 @@ function FacultyTab() {
                     confirmTitle="Run Step 2 — Courses?"
                     confirmMessage="Resolve distinct program pairs against their departments. Missing courses are created visibly marked; re-running reports inserted 0."
                   >
+                    {step3Result && step3Result.invalid.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setInvalidModal("step2")}
+                        className="text-[11px] font-semibold text-secondary hover:underline"
+                      >
+                        View {step3Result.invalid.length} invalid
+                      </button>
+                    )}
                     {step3Result && Object.keys(step3Result.programToCourseId).length > 0 && (
                       <div className="max-h-32 overflow-y-auto space-y-0.5">
                         {Object.keys(step3Result.programToCourseId).sort().map((program) => (
@@ -1342,7 +1353,17 @@ function FacultyTab() {
                     invalidKeyPrefix="step7-inv"
                     confirmTitle="Run Step 6 — Faculty Loading?"
                     confirmMessage="Build 903 faculty-loading slots from resolved subjects, sections and faculty. Dummy-held slots are reassigned to the real teacher; slots held by a different real teacher are refused, never overwritten; re-running reports inserted 0."
-                  />
+                  >
+                    {step7Result && step7Result.invalid.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setInvalidModal("step6")}
+                        className="text-[11px] font-semibold text-secondary hover:underline"
+                      >
+                        View {step7Result.invalid.length} invalid
+                      </button>
+                    )}
+                  </StepPanel>
                 )}
                 <div className="sticky bottom-0 pt-2 pb-1 bg-white dark:bg-surface-dim flex justify-center">
                   <IosButton variant="plain" size="sm" type="button" onClick={handleCsvReset}>Cancel</IosButton>
@@ -1714,6 +1735,74 @@ function FacultyTab() {
             <div className="flex items-center justify-between px-6 py-3 border-t border-default bg-surface-dim text-xs text-tertiary">
               <span>{selectedFacultyLoad.length} subject load{selectedFacultyLoad.length !== 1 ? "s" : ""}</span>
               <Paginator page={facultyLoadPagination.page} totalPages={facultyLoadPagination.totalPages} pageSize={facultyLoadPagination.pageSize} totalItems={selectedFacultyLoad.length} setPage={facultyLoadPagination.setPage} setPageSize={facultyLoadPagination.setPageSize} showSizeSelector={false} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Invalid details modal (Step 2 + Step 6) ─────────────────── */}
+      {invalidModal && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 sm:pt-20 bg-black/60" onClick={() => setInvalidModal(null)}>
+          <div className="bg-white dark:bg-surface-dim rounded-2xl w-full max-w-2xl mx-4 shadow-2xl border border-default overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-default">
+              <p className="text-sm font-bold text-secondary">
+                {invalidModal === "step6"
+                  ? `Step 6 invalid (${step7Result?.invalid.length ?? 0})`
+                  : `Step 2 invalid (${step3Result?.invalid.length ?? 0})`}
+              </p>
+              <button
+                type="button"
+                onClick={() => setInvalidModal(null)}
+                title="Close"
+                className="w-7 h-7 flex items-center justify-center rounded-full bg-surface-hover text-tertiary hover:text-secondary transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 max-h-[60vh] overflow-y-auto tbl">
+              {invalidModal === "step6" ? (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Subject</th>
+                      <th>Section</th>
+                      <th>Requested</th>
+                      <th>Current holder</th>
+                      <th>Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(step7Result?.invalid ?? []).map((inv, i) => (
+                      <tr key={`${inv.key}-${i}`}>
+                        <td className="font-medium text-secondary">{inv.detail?.subjectCode ?? inv.key}</td>
+                        <td className="text-secondary">{inv.detail?.section ?? "—"}</td>
+                        <td className="text-tertiary">{inv.detail?.facultyEmail ?? "—"}</td>
+                        <td className="text-tertiary">{inv.detail?.ownerEmail ?? "—"}</td>
+                        <td className="text-tertiary">{inv.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Course</th>
+                      <th>Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(step3Result?.invalid ?? []).map((inv, i) => (
+                      <tr key={`${inv.key}-${i}`}>
+                        <td className="font-medium text-secondary">{inv.key}</td>
+                        <td className="text-tertiary">{inv.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>

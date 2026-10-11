@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 vi.mock("@/lib/repositories/factory", () => ({
   subjectRepository: { upsertMany: vi.fn() },
   sectionRepository: { upsertMany: vi.fn() },
-  userRepository: { findManyByEmail: vi.fn(), createMany: vi.fn() },
+  userRepository: { findManyByEmail: vi.fn(), createMany: vi.fn(), listByIds: vi.fn() },
   facultySubjectRepository: { replaceBySection: vi.fn(), create: vi.fn(), createMany: vi.fn().mockResolvedValue([]), list: vi.fn().mockResolvedValue([]), update: vi.fn(), findBySubjectAndSection: vi.fn().mockResolvedValue(null), findBySubjectSectionAndFaculty: vi.fn().mockResolvedValue(null) },
   studentEnrollmentRepository: { replaceBySection: vi.fn() },
   // Precedence insert path: importFacultySubjects resolves departments and
@@ -938,6 +938,7 @@ describe("importMappingsStep", () => {
     fsCreate().mockResolvedValue({ id: "fs-new" })
     fsCreateMany().mockResolvedValue([])
     fsUpdate().mockResolvedValue({ id: "fs-1" })
+    ;(factory.userRepository.listByIds as ReturnType<typeof vi.fn>).mockResolvedValue([])
   })
 
   it("maps slots on a fresh DB", async () => {
@@ -1021,6 +1022,37 @@ describe("importMappingsStep", () => {
     expect(fsUpdate()).not.toHaveBeenCalled()
     expect(fsCreateMany()).not.toHaveBeenCalled()
     expect(result.invalid).toEqual([expect.objectContaining({ reason: "Already assigned — not overwritten (existing load kept)" })])
+  })
+
+  it("names names on already-assigned invalids (subject, section, both faculties)", async () => {
+    fsList().mockResolvedValue([
+      { id: "fs-1", faculty_id: "user-2", subject_id: "sub-1", section_id: "sec-1", semesterId: "sem-1" },
+      { id: "fs-2", faculty_id: "user-9", subject_id: "sub-2", section_id: "sec-2", semesterId: "sem-1" },
+    ])
+    // user-9 is outside the file's map: proves the single batched lookup.
+    ;(factory.userRepository.listByIds as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: "user-9", email: "external@lyceumalabang.edu.ph", name: "External", role: "FACULTY" },
+    ])
+    const result = await importMappingsStep([
+      { subjectCode: "CS101", sectionName: "32A3", sectionProgram: "BSIT", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
+      { subjectCode: "MATH201", sectionName: "21B", sectionProgram: "BSCS", facultyEmail: "juan.delacruz@lyceumalabang.edu.ph" },
+    ], maps, "sem-1")
+    expect(result.invalid).toHaveLength(2)
+    // Holder inside the file's map: resolved free, no query for them.
+    expect(result.invalid[0]).toEqual({
+      key: "sub-1|sec-1",
+      reason: "Already assigned — not overwritten (existing load kept)",
+      detail: {
+        subjectCode: "CS101",
+        section: "BSIT-32A3",
+        facultyEmail: "juan.delacruz@lyceumalabang.edu.ph",
+        ownerEmail: "maria.santos@lyceumalabang.edu.ph",
+      },
+    })
+    // Holder outside the map: one batched read.
+    expect(result.invalid[1]?.detail?.ownerEmail).toBe("external@lyceumalabang.edu.ph")
+    expect(factory.userRepository.listByIds).toHaveBeenCalledTimes(1)
+    expect(factory.userRepository.listByIds).toHaveBeenCalledWith(["user-9"])
   })
 
   it("blank faculty resolves to the dummy slot", async () => {
