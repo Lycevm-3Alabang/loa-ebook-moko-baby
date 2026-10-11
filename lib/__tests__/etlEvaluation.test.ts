@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import fs from "fs"
+import path from "path"
 
 // Mock the factory module BEFORE any imports that use it
 vi.mock("@/lib/repositories/factory", () => ({
@@ -10,11 +12,19 @@ vi.mock("@/lib/repositories/factory", () => ({
   // Precedence insert path: importFacultySubjects resolves departments and
   // department_courses through these repositories rather than direct supabase.
   departmentRepository: {
-    findByCode: vi.fn(async (code: string) =>
-      code === "CCS" ? { id: "dept-ccs", name: "CCS", code: "CCS" }
-        : code === "CAS" ? { id: "dept-cas", name: "CAS", code: "CAS" }
-          : null,
-    ),
+    findByCode: vi.fn(async (code: string) => {
+      const depts: Record<string, { id: string; name: string; code: string }> = {
+        CCS: { id: "dept-ccs", name: "CCS", code: "CCS" },
+        CAS: { id: "dept-cas", name: "CAS", code: "CAS" },
+        COE: { id: "dept-coe", name: "COE", code: "COE" },
+        CBA: { id: "dept-cba", name: "CBA", code: "CBA" },
+        CCCA: { id: "dept-cca", name: "CCCA", code: "CCCA" },
+        CREM: { id: "dept-crem", name: "CREM", code: "CREM" },
+        CTHM: { id: "dept-cthm", name: "CTHM", code: "CTHM" },
+        CPEA: { id: "dept-cpea", name: "CPEA", code: "CPEA" },
+      }
+      return depts[code] ?? null
+    }),
     create: vi.fn(async (data: { name: string; code: string }) => ({
       id: `dept-${data.code.toLowerCase()}`, name: data.name, code: data.code,
     })),
@@ -71,8 +81,24 @@ function mockFindUsers(map: Map<string, { id: string; email: string; name: strin
   ;(factory.userRepository.findManyByEmail as ReturnType<typeof vi.fn>).mockResolvedValue(map)
 }
 
-function mockCreateUsers(map: Map<string, { id: string; email: string; name: string; role: string }>) {
-  ;(factory.userRepository.createMany as ReturnType<typeof vi.fn>).mockResolvedValue(map)
+function mockCreateUsers(map?: Map<string, { id: string; email: string; name: string; role: string }>) {
+  if (map) {
+    ;(factory.userRepository.createMany as ReturnType<typeof vi.fn>).mockResolvedValue(map)
+  } else {
+    ;(factory.userRepository.createMany as ReturnType<typeof vi.fn>).mockImplementation(
+      async (users: { email: string; name: string; role: string; departmentId?: string }[]) => {
+        const result = new Map<string, { id: string; email: string; name: string; role: string }>()
+        for (const u of users) {
+          result.set(u.email, { id: `user-${u.email.split("@")[0]}`, ...u })
+        }
+        return result
+      },
+    )
+  }
+}
+
+function readCsv(filename: string): string {
+  return fs.readFileSync(path.resolve(process.cwd(), filename), "utf-8")
 }
 
 const userCreateRepo = () => factory.userRepository.createMany as ReturnType<typeof vi.fn>
@@ -1177,4 +1203,100 @@ describe("importStudentEnrollments", () => {
     expect(result.errors).toHaveLength(1)
     expect(result.errors[0].message).toContain("could not be created or found")
   })
+})
+
+// ── Integration: real faculty CSV ──────────────────────────────
+
+describe("integration: real faculty CSV", () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    mockFindUsers(new Map())
+    mockCreateUsers()
+    ;(factory.facultySubjectRepository.list as ReturnType<typeof vi.fn>).mockResolvedValue([])
+  })
+
+  it("runs full pipeline and inserts all faculty + mappings", async () => {
+    const csv = readCsv("faculty-import-test.csv")
+    const { rows, errors } = parseFacultySubjectCsv(csv)
+    expect(errors).toHaveLength(0)
+    expect(rows.length).toBeGreaterThan(0)
+
+    // Build deptCodeToId from all departments in CSV
+    const allDeptCodes = [...new Set(rows.map((r) => r.departmentCode.toUpperCase()))]
+    const deptCodeToId: Record<string, string> = {}
+    for (const code of allDeptCodes) {
+      deptCodeToId[code] = `dept-${code.toLowerCase()}`
+    }
+
+    // Step 1: departments
+    const step1 = await importDepartmentsStep(allDeptCodes)
+    expect(step1.invalid).toHaveLength(0)
+
+    // Step 2: courses
+    const coursePairs: { departmentCode: string; program: string }[] = []
+    const seenCourses = new Set<string>()
+    for (const r of rows) {
+      const program = r.sectionProgram
+      const key = `${r.departmentCode}|${program}`
+      if (!seenCourses.has(key)) {
+        seenCourses.add(key)
+        coursePairs.push({ departmentCode: r.departmentCode, program })
+      }
+    }
+    const step2 = await importCoursesStep(coursePairs, deptCodeToId)
+    expect(step2.invalid).toHaveLength(0)
+
+    // Step 3: sections
+    const sectionItems: { name: string; program: string }[] = []
+    const seenSections = new Set<string>()
+    for (const r of rows) {
+      const name = r.sectionName
+      const program = r.sectionProgram
+      const key = `${name}|${program}`
+      if (!seenSections.has(key)) {
+        seenSections.add(key)
+        sectionItems.push({ name, program })
+      }
+    }
+    mockSectionUpsert(new Map(sectionItems.map((s, i) => [`${s.name}|${s.program}`, { id: `sec-${i}` }])), sectionItems.length)
+    const step3 = await importSectionsStep(sectionItems, step2.programToCourseId)
+    expect(step3.invalid).toHaveLength(0)
+
+    // Step 4: subjects
+    const subjectCodes = [...new Set(rows.map((r) => r.subjectCode))]
+    mockSubjectUpsert(new Map(subjectCodes.map((c, i) => [c, { id: `subj-${i}` }])), subjectCodes.length)
+    const step4 = await importSubjectsStep(subjectCodes)
+    expect(step4.invalid).toHaveLength(0)
+
+    // Step 5: faculty users
+    const facultyItems: { email: string; name: string; departmentCode: string }[] = []
+    const seenEmails = new Set<string>()
+    for (const r of rows) {
+      const email = r.email.length === 0 ? DUMMY_FACULTY_EMAIL : r.email
+      if (!seenEmails.has(email)) {
+        seenEmails.add(email)
+        facultyItems.push({ email, name: r.name, departmentCode: r.departmentCode })
+      }
+    }
+    const step5 = await importFacultyUsersStep(facultyItems, deptCodeToId)
+    expect(step5.invalid).toHaveLength(0)
+    expect(step5.inserted).toBe(148) // 147 real + 1 dummy
+
+    // Step 6: mappings
+    const mappingItems: { subjectCode: string; sectionName: string; sectionProgram: string; facultyEmail: string }[] = []
+    for (const r of rows) {
+      mappingItems.push({
+        subjectCode: r.subjectCode,
+        sectionName: r.sectionName,
+        sectionProgram: r.sectionProgram,
+        facultyEmail: r.email.length === 0 ? DUMMY_FACULTY_EMAIL : r.email,
+      })
+    }
+    const step6 = await importMappingsStep(mappingItems, {
+      sectionKeyToId: step3.sectionKeyToId,
+      subjectCodeToId: step4.subjectCodeToId,
+      facultyUserMap: step5.facultyUserMap,
+    }, "sem-1")
+    expect(step6.inserted + step6.existing).toBeGreaterThan(0)
+  }, 30000)
 })
