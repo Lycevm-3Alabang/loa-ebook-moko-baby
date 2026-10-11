@@ -44,6 +44,10 @@ interface ImportResult {
   // Rows actually written (resolved rows the database already held are NOT
   // counted). A re-run reads enrolled > 0 with inserted === 0.
   inserted: number
+  // Echo of the term a chunk resolved against (S-b). Optional: only the
+  // server produces these; absence means "unknown", never "same".
+  semesterId?: string | null
+  semesterTitle?: string | null
   skipped: number
   failed: { row: number; email: string; subjectCode: string; section: string; remark: string; reasonCode: ImportReasonCode }[]
   duplicateRows: { row: number; email: string; subjectCode: string; section: string; reasonCode: ImportReasonCode; remark: string }[]
@@ -673,10 +677,12 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       // would fire on every partial run and tell the admin the import is incomplete
       // when one panel of ten has finished — which is a normal state.
       let ledgerClosed = true
+      let closureDetail = ""
       try {
         assertLedgerClosure(ledger, rows.length)
-      } catch {
+      } catch (err) {
         ledgerClosed = false
+        closureDetail = err instanceof Error ? ` (${err.message})` : ""
       }
       const aggregated: ImportResult = {
         created: results.flatMap((r) => r.created ?? []),
@@ -718,7 +724,33 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         setPreviewRows((prev) => (prev ? applyCreatedUsers([], prev, aggregated.created).previewRows : prev))
       }
       if (!ledgerClosed) {
-        fail(`Could not account for all ${rows.length} rows of this panel — nothing was lost, ${aggregated.enrolled} rows are already saved. Press Run again to resume.`)
+        // Name where every accounted row went — invalid (incl. failed and
+        // transport), duplicates, removed — so this reads as bookkeeping,
+        // not data loss. `ledger` is fully built at this point win or lose.
+        const counted = (s: LedgerRow["status"]) => ledger.filter((l) => l.status === s).length
+        fail(
+          `Panel books don't close: accounted ${ledger.length} of ${rows.length} rows ` +
+          `(${counted("persisted")} saved, ${counted("already-persisted")} already saved, ` +
+          `${counted("invalid")} invalid, ${counted("removed")} removed)${closureDetail}. ` +
+          `Nothing was lost — ${aggregated.enrolled} rows are already saved. Press Run again to resume.`,
+        )
+        return
+      }
+      // S-b — the route re-derives the active semester per request, so a
+      // mid-run flip splits one panel across two terms while every gate
+      // stays green. The echo makes it loud instead of silent. Results and
+      // ledger above are committed regardless — this never destroys truth.
+      const terms = new Map<string, string | null>()
+      for (const r of results) {
+        const id = r.semesterId ?? ""
+        if (!terms.has(id)) terms.set(id, r.semesterTitle ?? null)
+      }
+      if (terms.size > 1) {
+        const names = [...terms].map(([id, title]) => title ?? (id === "" ? "unknown term" : id))
+        fail(
+          `Semester changed mid-run (${names.join(" → ")}). ${aggregated.enrolled} rows are saved across terms — ` +
+          `the ledger shows every row. Finish under one active semester, then remove the stray term's rows manually.`,
+        )
         return
       }
       if (stoppedEarly || failedChunks.length > 0) {

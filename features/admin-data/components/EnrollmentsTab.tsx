@@ -129,51 +129,8 @@ export function EnrollmentsTab() {
         </div>
       )}
 
-      {/* ── Quick Add ────────────────────────────────────── */}
-      <div className="border border-default rounded-lg overflow-hidden">
-        <button
-          onClick={() => setShowQuickAdd(!showQuickAdd)}
-          className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold text-secondary hover:bg-surface-dim/40 transition-colors"
-        >
-          <span>Quick Add Single Student</span>
-          <span className="text-tertiary">{showQuickAdd ? "▲" : "▼"}</span>
-        </button>
-        {showQuickAdd && (
-          <div className="border-t border-default px-3 pb-3 space-y-4">
-            {formError && <p className="text-xs font-medium text-red-600 bg-red-50 p-2 rounded">{formError}</p>}
-            {formSuccess && <p className="text-xs font-medium text-green-600 bg-green-50 p-2 rounded">{formSuccess}</p>}
-            <form onSubmit={handleQuickAdd} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-tertiary mb-1">Faculty-Subject</label>
-                <select
-                  value={formFsId}
-                  onChange={(e) => setFormFsId(e.target.value)}
-                  className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
-                  required
-                >
-                  <option value="">Select subject...</option>
-                  {facultySubjects.map((fs) => (
-                    <option key={fs.id} value={fs.id}>
-                      {fs.section.program} {fs.section.name} - {fs.subject.code} : {fs.subject.name} ({fs.faculty.name})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-tertiary mb-1">Student Name</label>
-                  <input type="text" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="e.g. Juan Dela Cruz" className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" required />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-tertiary mb-1">Student Email</label>
-                  <input type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} placeholder="e.g. juan@example.com" className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" required />
-                </div>
-              </div>
-              <IosButton type="submit" loading={formSaving} disabled={!activeSemesterId} variant="primary">Add Enrollment</IosButton>
-            </form>
-          </div>
-        )}
-      </div>
+      {/* ── Quick Add — modal (form lives below, beside the subjects modal) ── */}
+      <IosButton variant="primary" onClick={() => setShowQuickAdd(true)}>+ Quick Add Single Student</IosButton>
 
       {/* ═══════════════════════════════════════════════════
           ENROLLMENT TABLE
@@ -324,6 +281,55 @@ export function EnrollmentsTab() {
             <div className="flex items-center justify-between px-6 py-3 border-t border-default bg-surface-dim text-xs text-tertiary">
               <span>{selectedStudentEnrollments.length} enrolled subject{selectedStudentEnrollments.length !== 1 ? "s" : ""}</span>
               <Paginator page={enrolledPagination.page} totalPages={enrolledPagination.totalPages} pageSize={enrolledPagination.pageSize} totalItems={selectedStudentEnrollments.length} setPage={enrolledPagination.setPage} setPageSize={enrolledPagination.setPageSize} showSizeSelector={false} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Quick Add Modal ─────────────────────────── */}
+      {showQuickAdd && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 sm:pt-20 bg-black/60" onClick={() => setShowQuickAdd(false)}>
+          <div className="bg-white dark:bg-surface-dim rounded-2xl w-full max-w-2xl mx-4 shadow-2xl border border-default overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-default">
+              <p className="text-sm font-bold text-secondary">Quick Add Single Student</p>
+              <IosButton variant="gray" size="xs" onClick={() => setShowQuickAdd(false)}>
+                <svg className="w-4 h-4 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </IosButton>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              {formError && <p className="text-xs font-medium text-red-600 bg-red-50 p-2 rounded">{formError}</p>}
+              {formSuccess && <p className="text-xs font-medium text-green-600 bg-green-50 p-2 rounded">{formSuccess}</p>}
+              <form onSubmit={handleQuickAdd} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-tertiary mb-1">Faculty-Subject</label>
+                  <select
+                    value={formFsId}
+                    onChange={(e) => setFormFsId(e.target.value)}
+                    className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    required
+                  >
+                    <option value="">Select subject...</option>
+                    {facultySubjects.map((fs) => (
+                      <option key={fs.id} value={fs.id}>
+                        {fs.section.program} {fs.section.name} - {fs.subject.code} : {fs.subject.name} ({fs.faculty.name})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-tertiary mb-1">Student Name</label>
+                    <input type="text" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="e.g. Juan Dela Cruz" className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" required />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-tertiary mb-1">Student Email</label>
+                    <input type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} placeholder="e.g. juan@example.com" className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" required />
+                  </div>
+                </div>
+                <IosButton type="submit" loading={formSaving} disabled={!activeSemesterId} variant="primary">Add Enrollment</IosButton>
+              </form>
             </div>
           </div>
         </div>

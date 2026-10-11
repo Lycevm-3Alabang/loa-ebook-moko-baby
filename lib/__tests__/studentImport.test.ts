@@ -573,3 +573,21 @@ describe("importStudents — already-persisted and duplicates (D3)", () => {
     expect(result.inserted).toBe(1)
   })
 })
+
+// ═══ S-b semester echo (the drift alarm's precondition) ═══
+
+describe("importStudents — semester echo", () => {
+  it("echoes the resolved semesterId on the result", async () => {
+    arrangeTables({ subject: SUBJ, section: SEC, slotMapping: MAPPING })
+
+    const result = await importStudents([baseStudentRow()], null, "sem-2026-1")
+
+    expect(result.semesterId).toBe("sem-2026-1")
+  })
+
+  it("echoes null semesterId on the empty early return", async () => {
+    const result = await importStudents([], null, null)
+
+    expect(result.semesterId).toBeNull()
+  })
+})
