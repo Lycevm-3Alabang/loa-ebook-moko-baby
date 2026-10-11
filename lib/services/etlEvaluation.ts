@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase"
 import { userRepository, sectionRepository, subjectRepository, facultySubjectRepository, studentEnrollmentRepository, departmentRepository, departmentCourseRepository } from "@/lib/repositories/factory"
 import { cleanCell, cleanSubjectCode, isExcelErrorCell } from "@/lib/csv-utils"
+import { distinctFacultyUsers } from "@/lib/utils/distinct-faculty-users"
 
 function parseSectionIdentifier(raw: string): { name: string; program: string } {
   const dashIdx = raw.indexOf("-")
@@ -313,19 +314,7 @@ export async function importFacultyUsersStep(
   const invalid: DepartmentStepInvalid[] = []
   const facultyUserMap: Record<string, string> = {}
 
-  const seen = new Set<string>()
-  const distinct: FacultyUserStepItem[] = []
-  for (const raw of items) {
-    const email = (raw?.email ?? "").toLowerCase().trim()
-    const key = email.length === 0 ? DUMMY_FACULTY_EMAIL : email
-    if (seen.has(key)) continue
-    seen.add(key)
-    distinct.push({
-      email: key,
-      name: key === DUMMY_FACULTY_EMAIL ? "Unassigned Faculty" : (raw?.name ?? ""),
-      departmentCode: (raw?.departmentCode ?? "").trim().toUpperCase(),
-    })
-  }
+  const distinct = distinctFacultyUsers(items, DUMMY_FACULTY_EMAIL)
 
   const mappable: FacultyUserStepItem[] = []
   for (const item of distinct) {

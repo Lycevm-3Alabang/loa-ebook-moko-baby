@@ -15,6 +15,7 @@ import { FacultySubjectDetail } from "./FacultySubjectDetail"
 import type { DepartmentData, SemesterData } from "@/lib/types"
 import type { FacEnrollTab, FacViewTab, Subject, Section, FacultyMapping, Enrollment } from "./types"
 import { deriveCsvFlags, DUMMY_FACULTY_EMAIL_CLIENT, type CsvRow, type CsvRowWithFlags } from "./csv-helpers"
+import { distinctFacultyUsers } from "@/lib/utils/distinct-faculty-users"
 import { cleanSubjectCode, isExcelErrorCell } from "@/lib/csv-utils"
 import { decodeCsvFile } from "./useChunkedImport"
 
@@ -552,20 +553,15 @@ function FacultyTab() {
     try {
       // Blank emails collapse onto the dummy BEFORE dedupe (902 blanks → 1);
       // the dummy name is fixed, which subsumes the Excel-error narrow rule.
-      const seen = new Set<string>()
-      const items: { email: string; name: string; departmentCode: string }[] = []
-      for (const r of csvRows) {
-        const rawEmail = (r.email || "").toLowerCase().trim()
-        const key = rawEmail.length === 0 ? DUMMY_FACULTY_EMAIL_CLIENT : rawEmail
-        if (seen.has(key)) continue
-        seen.add(key)
-        const isDummy = key === DUMMY_FACULTY_EMAIL_CLIENT
-        items.push({
-          email: key,
-          name: isDummy ? "Unassigned Faculty" : (r.name || ""),
-          departmentCode: (r.departmentCode || "").trim().toUpperCase(),
-        })
-      }
+      const distinctItems = distinctFacultyUsers(
+        csvRows.map((r) => ({
+          email: r.email,
+          name: r.name || "",
+          departmentCode: r.departmentCode || "",
+        })),
+        DUMMY_FACULTY_EMAIL_CLIENT
+      )
+      const items = distinctItems
       const res = await fetch("/api/import/faculties", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
