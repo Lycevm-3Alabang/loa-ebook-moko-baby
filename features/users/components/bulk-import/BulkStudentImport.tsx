@@ -5,7 +5,7 @@ import { cleanCell, isExcelErrorCell, parseCsvRows, isAllowedStudentEmail, type 
 import { useChunkedImport, decodeCsvFile, withRetryHints, type ChunkMeta } from "@/features/admin-data/components/useChunkedImport"
 import { buildImportLedger, assertLedgerClosure, ledgerToCsv, type LedgerRow } from "./import-ledger"
 import { computeDepartmentGrouping } from "./department-grouping"
-import { buildDepartmentPanels, type DepartmentPanel } from "./department-panels"
+import { buildDepartmentPanels, UNASSIGNED_PANEL_ID, type DepartmentPanel } from "./department-panels"
 import { applyCreatedUsers } from "./apply-created-users"
 import { panelStripStatus, type StripStatus } from "./panel-strip-status"
 import { ISSUE_KEYS, ISSUE_LABELS, matchesIssue, type IssueKey } from "./issue-filter"
@@ -165,6 +165,22 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   // rapid edits reset the fade instead of stacking timeouts.
   const [highlightRow, setHighlightRow] = useState<number | null>(null)
   const highlightTimer = useRef<number | null>(null)
+  // Table-first follow-up — chips trigger their dropdowns (label opens the
+  // select, × clears). Refs because a closed <select> opens only imperatively.
+  const deptSelectRef = useRef<HTMLSelectElement | null>(null)
+  const issueSelectRef = useRef<HTMLSelectElement | null>(null)
+  const openSelect = (el: HTMLSelectElement | null) => {
+    const picker = el as (HTMLSelectElement & { showPicker?: () => void }) | null
+    if (typeof picker?.showPicker === "function") {
+      try {
+        picker.showPicker()
+        return
+      } catch {
+        /* not openable here — fall through to focus */
+      }
+    }
+    el?.focus()
+  }
   const [previewError, setPreviewError] = useState("")
   const [referenceError, setReferenceError] = useState("")
   // True blocked-only (red rows), dept-scoped by deptRows. Replaces the old
@@ -174,6 +190,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   // and single-issue filter. Both compose inside the current view.
   const [query, setQuery] = useState("")
   const [issueFilter, setIssueFilter] = useState<IssueKey | null>(null)
+  // Table-first slice 8 — ledger-status dimension for the Duplicate badge.
+  // Orthogonal to flags: a duplicate row can still carry an amber flag.
+  const [dupOnly, setDupOnly] = useState(false)
   // Table-first slice 2 — department view filter. View-only: run scope is
   // always the whole panel, never the filtered set (pinned contract §3.1).
   const [deptFilter, setDeptFilter] = useState<string | null>(null)
@@ -234,6 +253,13 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     () => Object.values(panelLedgers).flat().sort((a, b) => a.row - b.row),
     [panelLedgers],
   )
+  // Table-first slice 8 — run outcomes by SOURCE row, for badges. A panel
+  // re-run overwrites its own key, so the map always reflects the latest run.
+  const ledgerStatusByRow = useMemo(() => {
+    const m = new Map<number, LedgerRow["status"]>()
+    for (const rows of Object.values(panelLedgers)) for (const l of rows) m.set(l.row, l.status)
+    return m
+  }, [panelLedgers])
   const mergedLedgerCsv = useMemo(
     () => (mergedLedgerRows.length > 0 ? ledgerToCsv(mergedLedgerRows) : ""),
     [mergedLedgerRows],
@@ -325,13 +351,16 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   // inside whatever the dept/blocked/issue filters already narrowed.
   const visibleRows = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return issueView
-    return issueView.filter((r) =>
+    const base = dupOnly
+      ? issueView.filter((r) => ledgerStatusByRow.get(r.row) === "already-persisted")
+      : issueView
+    if (!q) return base
+    return base.filter((r) =>
       [r.name, r.email, r.subjectCode, r.section, r.facultyEmail, r.departmentCode].some((c) =>
         (c || "").toLowerCase().includes(q),
       ),
     )
-  }, [issueView, query])
+  }, [issueView, query, dupOnly, ledgerStatusByRow])
   // Table-first slice 3 — blocked rows inside the CURRENT view (dept and/or
   // problem filters applied). removeBlockedRows keys on source row, so the
   // filtered copies are safe to pass straight through.
@@ -370,6 +399,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     setDeptFilter(null)
     setQuery("")
     setIssueFilter(null)
+    setDupOnly(false)
     const file = fileRef.current?.files?.[0]
     if (!file) { setPreviewError("Please select a CSV file"); return }
     const text = await decodeCsvFile(file)
@@ -498,6 +528,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     // Land on ALL of the panel's rows — the table's own toggle surfaces
     // the blocked subset from there.
     setBlockedOnly(false)
+    setDupOnly(false)
     setPreviewPage(0)
     // Focus (not just scroll) is the verifiable landing: sticky headers and
     // nested scroll containers make scroll position best-effort, but
@@ -505,6 +536,24 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     const previewTable = document.getElementById("student-preview-table")
     previewTable?.scrollIntoView({ behavior: "smooth", block: "start" })
     previewTable?.focus({ preventScroll: true })
+  }
+
+  // Table-first slice 8 — badge click filters the table to that badge's set
+  // inside the clicked row's department, clearing the other dimensions first
+  // so one click means exactly one set.
+  const filterToBadge = (kind: "ready" | "review" | "duplicate", deptId: string | null) => {
+    setDeptFilter(deptId ?? UNASSIGNED_PANEL_ID)
+    setBlockedOnly(false)
+    setQuery("")
+    setPreviewPage(0)
+    if (kind === "duplicate") {
+      setIssueFilter(null)
+      setDupOnly(true)
+    } else {
+      setDupOnly(false)
+      setIssueFilter(kind === "ready" ? "no-issues" : "has-issues")
+    }
+    document.getElementById("student-preview-table")?.focus({ preventScroll: true })
   }
 
   const handleRemoveAllBlocked = () =>
@@ -814,18 +863,8 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-semibold text-secondary">
                 {visibleRows.length} row{visibleRows.length !== 1 ? "s" : ""}
-                {(blockedOnly || deptFilter || issueFilter || query.trim().length > 0) && ` (filtered)`}
+                {(blockedOnly || deptFilter || issueFilter || dupOnly || query.trim().length > 0) && ` (filtered)`}
               </h4>
-              {deptFilter && (
-                <button
-                  type="button"
-                  onClick={() => { setDeptFilter(null); setPreviewPage(0) }}
-                  title="Clear the department filter"
-                  className="text-[11px] font-semibold px-3 py-1 rounded-full border border-default text-secondary hover:bg-surface-dim transition-colors"
-                >
-                  Showing {panels.find((p) => p.id === deptFilter)?.label ?? "department"} · clear ×
-                </button>
-              )}
               <span className="text-[11px] text-tertiary">{TEMPLATE_HEADERS}</span>
             </div>
 
@@ -887,6 +926,11 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                       failedCount: result?.failed.length ?? 0,
                       error: panelError,
                     })
+                    // Table-first slice 8 — this panel's rows still needing work
+                    // (invalid incl. failed; deliberately excludes removed discards).
+                    const unpersisted = (panelLedgers[panel.id] ?? []).filter(
+                      (l) => l.status !== "persisted" && l.status !== "already-persisted",
+                    )
                     const disabled = !semesterId || blocked || (activePanelId !== null && !isActive)
                     const disabledTitle = !semesterId
                       ? "Set an active semester before importing."
@@ -934,6 +978,16 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                               >
                                 View rows
                               </button>
+                              {unpersisted.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => downloadBlob(ledgerToCsv(unpersisted), `student-unpersisted-${panel.id}.csv`)}
+                                  title="Download this panel's rows still needing work"
+                                  className="text-[11px] font-semibold text-secondary hover:underline"
+                                >
+                                  Unpersisted ({unpersisted.length})
+                                </button>
+                              )}
                               {blocked && (
                                 <button
                                   type="button"
@@ -977,15 +1031,62 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             )}
 
             {/* Table tools live directly above the table they govern — never above the strip. */}
+            <div className="rounded-xl border border-default bg-surface-dim/40 px-4 py-2">
+              <p className="text-[11px] text-tertiary">
+                Preview shows your file plus this session&apos;s runs — not the live database.
+                Rows already imported still appear until you re-upload. Work what&apos;s left
+                via the unpersisted downloads below.
+              </p>
+            </div>
             <div className="flex items-center gap-3">
               <p className="text-[11px] text-tertiary/70 italic">
-                <span className="badge-red not-italic">Red</span> cannot import &mdash; the ledger
-                shows the reason. <span className="badge-amber not-italic ml-1">Amber</span> imports,
-                but is flagged (unresolved department, new student). An unknown subject, section or
-                faculty is <span className="badge-red not-italic">red</span>, not amber &mdash; the
-                server rejects it.
+                <span className="badge-emerald not-italic">Ready</span> imports cleanly.{" "}
+                <span className="badge-red not-italic ml-1">Needs Review</span> carries any issue —
+                hover the chip for the reasons, or filter by issue above.{" "}
+                <span className="badge-amber not-italic ml-1">Duplicate</span> is already saved;
+                skipped on re-run, never an error. The ledger names the reason per row.
               </p>
               <div className="ml-auto flex flex-wrap items-center gap-2">
+                {deptFilter && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-3 py-1 rounded-full border border-default text-secondary">
+                    <button
+                      type="button"
+                      onClick={() => openSelect(deptSelectRef.current)}
+                      title="Change the department filter"
+                      className="hover:underline"
+                    >
+                      Showing {panels.find((p) => p.id === deptFilter)?.label ?? "department"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setDeptFilter(null); setPreviewPage(0) }}
+                      title="Clear the department filter"
+                      className="text-tertiary hover:text-secondary"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                {issueFilter && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-3 py-1 rounded-full border border-default text-secondary">
+                    <button
+                      type="button"
+                      onClick={() => openSelect(issueSelectRef.current)}
+                      title="Change the issue filter"
+                      className="hover:underline"
+                    >
+                      Issue: {ISSUE_LABELS[issueFilter]}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setIssueFilter(null); setPreviewPage(0) }}
+                      title="Clear the issue filter"
+                      className="text-tertiary hover:text-secondary"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
                 <input
                   value={query}
                   onChange={(e) => { setQuery(e.target.value); setPreviewPage(0) }}
@@ -994,6 +1095,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                   className="text-[11px] px-3 py-1 rounded-full border border-default bg-surface-hover text-secondary outline-none focus:border-gold-400 w-44"
                 />
                 <select
+                  ref={issueSelectRef}
                   value={issueFilter ?? ""}
                   onChange={(e) => {
                     const v = e.target.value
@@ -1009,6 +1111,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                   ))}
                 </select>
                 <select
+                  ref={deptSelectRef}
                   value={deptFilter ?? ""}
                   onChange={(e) => { setDeptFilter(e.target.value || null); setPreviewPage(0) }}
                   title="Filter the table by department (view only — runs always send the whole panel)"
@@ -1023,12 +1126,22 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                 </select>
                 <button
                   type="button"
-                  onClick={() => { setDeptFilter(null); setBlockedOnly(true); setPreviewPage(0) }}
-                  title="Show every blocked row in the file"
+                  onClick={() => { setBlockedOnly(true); setPreviewPage(0) }}
+                  title="Show the blocked rows in the current view"
                   className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
                 >
                   Errors only
                 </button>
+                {(deptFilter || issueFilter || dupOnly || query.trim().length > 0 || blockedOnly) && (
+                  <button
+                    type="button"
+                    onClick={() => { setDeptFilter(null); setIssueFilter(null); setQuery(""); setBlockedOnly(false); setDupOnly(false); setPreviewPage(0) }}
+                    title="Clear all table filters"
+                    className="text-[11px] font-semibold px-3 py-1 rounded-full border border-default text-secondary hover:bg-surface-dim transition-colors"
+                  >
+                    Clear filters ×
+                  </button>
+                )}
                 {deptBlockedCount > 0 && (
                   <button
                     type="button"
@@ -1058,7 +1171,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             {previewRows && previewRows.length > 0 && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-[11px] text-tertiary">
                 <span><span className="font-semibold text-secondary">{previewRows.length - blockedRows.length}</span> ready to import</span>
-                <span><span className="font-semibold text-amber-600">{fileProblemCount}</span> flagged &mdash; imports with a flag; an unknown subject, section or faculty fails that row</span>
+                <span><span className="font-semibold text-amber-600">{fileProblemCount}</span> need review &mdash; fix, remove, or run and check the ledger</span>
                 <span><span className="font-semibold text-red-600">{blockedRows.length}</span> blocked (missing email, bad domain, Excel error)</span>
               </div>
             )}
@@ -1132,19 +1245,43 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                         </td>
                         <td>
                           <div className="flex flex-wrap gap-1">
-                            {r.isInvalidValue && <span className="badge-red text-[10px]">Invalid value</span>}
-                            {isMissingEmail(r.email) && <span className="badge-red text-[10px]">Email missing</span>}
-                            {isOffDomainEmail(r.email) && <span className="badge-red text-[10px]">Domain not allowed</span>}
-                            {r.isNewSubject && <span className="badge-red text-[10px]">Subject not found</span>}
-                            {r.isNewSection && <span className="badge-red text-[10px]">Section not found</span>}
-                            {r.isNewFaculty && <span className="badge-red text-[10px]">Faculty not found</span>}
-                            {r.facultyNotAssigned && <span className="badge-red text-[10px]">Faculty Loading Mismatch</span>}
-                            {r.isInvalidDepartment && <span className="badge-amber text-[10px]">Dept code unknown</span>}
-                            {!r.isInvalidValue && !isMissingEmail(r.email) && !isOffDomainEmail(r.email) && r.isNewStudent && (
-                              <span className="badge-amber text-[10px]">New Student</span>
-                            )}
-                            {!r.isInvalidValue && !isMissingEmail(r.email) && !isOffDomainEmail(r.email) && !r.isNewSubject && !r.isNewSection && !r.isNewFaculty && !r.facultyNotAssigned && !r.isInvalidDepartment && !r.isNewStudent && (
-                              <span className="badge-emerald text-[10px]">Ready</span>
+                            {ledgerStatusByRow.get(r.row) === "already-persisted" ? (
+                              <button
+                                type="button"
+                                onClick={() => filterToBadge("duplicate", r.resolvedDepartmentId)}
+                                title="Already in the database — skipped on re-run, never written twice. Click to show all duplicates."
+                                className="badge-amber text-[10px] cursor-pointer hover:underline"
+                              >
+                                Duplicate
+                              </button>
+                            ) : !r.isInvalidValue && !isMissingEmail(r.email) && !isOffDomainEmail(r.email) && !r.isNewSubject && !r.isNewSection && !r.isNewFaculty && !r.facultyNotAssigned && !r.isInvalidDepartment && !r.isNewStudent ? (
+                              <button
+                                type="button"
+                                onClick={() => filterToBadge("ready", r.resolvedDepartmentId)}
+                                title="No issues. Click to show all ready rows."
+                                className="badge-emerald text-[10px] cursor-pointer hover:underline"
+                              >
+                                Ready
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => filterToBadge("review", r.resolvedDepartmentId)}
+                                title={[
+                                  r.isInvalidValue && "invalid value (Excel error)",
+                                  isMissingEmail(r.email) && "email missing",
+                                  isOffDomainEmail(r.email) && "domain not allowed",
+                                  r.isNewSubject && "subject not found",
+                                  r.isNewSection && "section not found",
+                                  r.isNewFaculty && "faculty not found",
+                                  r.facultyNotAssigned && "faculty not assigned",
+                                  r.isInvalidDepartment && "dept code unknown",
+                                  r.isNewStudent && "new student",
+                                ].filter(Boolean).join("; ") || "Click to show rows needing review"}
+                                className="badge-red text-[10px] cursor-pointer hover:underline"
+                              >
+                                Needs Review
+                              </button>
                             )}
                           </div>
                         </td>
@@ -1314,6 +1451,20 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
               Download Import Ledger (.csv) &mdash; {mergedLedgerRows.length} rows from {ranPanelCount} panel{ranPanelCount !== 1 ? "s" : ""}
             </button>
           )}
+
+          {(() => {
+            const left = mergedLedgerRows.filter((l) => l.status !== "persisted" && l.status !== "already-persisted")
+            return left.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => downloadBlob(ledgerToCsv(left), "student-unpersisted-rows.csv")}
+                title="Rows still needing work across the panels that ran (excludes deliberately removed rows)"
+                className="w-full flex items-center justify-center gap-2 text-xs font-semibold px-4 py-3 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
+              >
+                Download unpersisted ({left.length}) — rows still needing work
+              </button>
+            ) : null
+          })()}
 
           <button type="button" onClick={handleReset} className="w-full text-sm font-semibold px-4 py-3 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors">
             Import Another File

@@ -1,8 +1,8 @@
 # TODO — student CSV importer follow-ups
 
 Tracked 2026-10-09 for the next session. All production incidents are closed
-(504 timeout, 23505 duplicate key, silent cross-term loss); 316 tests / 24 files
-green (C3 S4 + table-first UI done 2026-10-10, +12). What remains is reporting polish and containment — nothing is on fire.
+(504 timeout, 23505 duplicate key, silent cross-term loss); 324 tests / 26 files
+green (page split + follow-ups done 2026-10-10, +8). What remains is reporting polish and containment — nothing is on fire.
 
 Gate for every item: `npx tsc --noEmit` → `npm run lint` → `npx vitest run`
 (baseline 280/20) → `npm run build`.
@@ -24,8 +24,24 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
   + Errors-only shortcut + Remove-shown, all view-only — runs still send whole panels); row
   handlers re-keyed on source row (positional indexes lied under any filter); email editable
   with regroup + edit-flash. One component touched (`BulkStudentImport.tsx`) + 2 helpers +
-  2 test files. Gates green USER-REPORTED; **browser unconfirmed** (strip dots, view-links,
-  email-edit regroup, run-after-filter whole-panel proof).
+  2 test files. Gates green USER-REPORTED; **browser green USER-REPORTED 2026-10-10**
+  (strip dots, view-links + focus, email-edit regroup, run-after-filter whole-panel proof).
+
+- [x] **Table-first follow-ups done 2026-10-10** (slices 5–7, 6, A–C, same run file).
+  Slice 5: `View rows` lands on All, toggle is true blocked-only (`blockedOnly`
+  rename, dead memo out) · slice 6: preview search (loaded rows only, composes in-view)
+  + issue-type dropdown (`issue-filter.ts` + 4 tests) · slice 7: toolbar + tally moved
+  above the preview table (pure JSX move, h4/chip stay on top) · A: blocked-rows CSV
+  download (`blocked-row-export.ts` + 4 tests, ledger vocabulary) · B: view-rows focus
+  (`tabIndex` + `focus({preventScroll:true})`, single lookup) · C: main ENROLLMENT TABLE
+  collapsible (`EnrollmentsTab`, default open, Importer pattern verbatim).
+  Gates + browser green USER-REPORTED.
+
+- [x] **Import dedicated page done 2026-10-10** (`specs/student-import-stepper/import-dedicated-page.md`).
+  `StudentImportPage` (semester self-fetch + banner + back-link) + admin/dean wrappers
+  (no `loading.tsx` — neither tree has one); `EnrollmentsTab` trimmed (collapsible out,
+  role-aware link card in via pathname, Quick Add untouched — modal deferred).
+  Gates + browser green USER-REPORTED (both roles, round trip).
 
 - [ ] **VERIFY (no code) — S2 + S3 browser pass.** Both slices are gate-green but have
   never been rendered. Cheapest to close while they are fresh:

@@ -93,6 +93,9 @@ export default function Sidebar() {
   const [mobilePopoverGroup, setMobilePopoverGroup] = useState<string | null>(null)
   const [showMobileActions, setShowMobileActions] = useState(false)
   const [evalAvailable, setEvalAvailable] = useState<boolean | null>(null)
+  // Table-first follow-up — active semester title for the nav pill. Rides
+  // the semesters fetch below; no extra request.
+  const [activeSemesterTitle, setActiveSemesterTitle] = useState<string | null>(null)
   const [manageUsersOpen, setManageUsersOpen] = useState(false)
 
   const { data: accessData } = useApiGet<{ access: { url: string; access: string; type: string }[] }>(
@@ -161,6 +164,11 @@ export default function Sidebar() {
         const res = await fetch("/api/semesters")
         const { data: semesters } = await res.json()
         const active = Array.isArray(semesters) ? semesters.find((s: { isActive: boolean }) => s.isActive) : null
+        setActiveSemesterTitle(
+          active && typeof (active as { title?: unknown }).title === "string"
+            ? (active as { title: string }).title
+            : null,
+        )
         if (!active?.evalStartDate) {
           setEvalAvailable(false)
           return
@@ -184,6 +192,7 @@ export default function Sidebar() {
         }
       } catch {
         setEvalAvailable(false)
+        setActiveSemesterTitle(null)
       }
     })
   }, [])
@@ -539,6 +548,15 @@ export default function Sidebar() {
           )}
         </div>
 
+        {!collapsed && (
+          <div className="mx-3 mt-3 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2">
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-tertiary">Active semester</p>
+            <p className="mt-0.5 flex items-center gap-1.5 text-xs font-semibold text-white">
+              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${activeSemesterTitle ? "bg-gold-500" : "bg-amber-500"}`} />
+              {activeSemesterTitle ?? "None — set one active"}
+            </p>
+          </div>
+        )}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {!collapsed && <p className="px-3 text-[10px] font-semibold uppercase tracking-widest text-tertiary mb-2">Main Menu</p>}
 

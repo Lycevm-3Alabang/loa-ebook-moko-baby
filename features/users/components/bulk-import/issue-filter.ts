@@ -9,6 +9,8 @@ export const ISSUE_KEYS = [
   "unknown-section",
   "unknown-faculty",
   "dept-unknown",
+  "has-issues",
+  "no-issues",
 ] as const
 
 export type IssueKey = (typeof ISSUE_KEYS)[number]
@@ -21,6 +23,8 @@ export const ISSUE_LABELS: Record<IssueKey, string> = {
   "unknown-section": "Unknown section",
   "unknown-faculty": "Unknown faculty",
   "dept-unknown": "Dept unknown",
+  "has-issues": "Has issues",
+  "no-issues": "No issues",
 }
 
 /** Minimum a row must expose to be issue-filtered. */
@@ -38,6 +42,26 @@ export interface IssueRowLike {
 const emailMissing = (v: string) => v.trim().length === 0
 const emailOffDomain = (v: string) => v.trim().length > 0 && !isAllowedStudentEmail(v)
 
+/**
+ * Whether a row has ANY issue — the union of every granular key plus the
+ * invalid-value catch-all (an Excel error in a non-email cell matches no
+ * granular key but is still an issue). `no-issues` is its exact negation,
+ * so the Ready badge and the dropdown can never disagree.
+ */
+export function hasIssue(row: IssueRowLike): boolean {
+  return (
+    row.isInvalidValue ||
+    emailMissing(row.email) ||
+    emailOffDomain(row.email) ||
+    row.isNewSubject ||
+    row.isNewSection ||
+    row.isNewFaculty ||
+    row.facultyNotAssigned ||
+    row.isInvalidDepartment ||
+    row.isNewStudent
+  )
+}
+
 export function matchesIssue(row: IssueRowLike, issue: IssueKey): boolean {
   switch (issue) {
     case "invalid-email":
@@ -54,5 +78,9 @@ export function matchesIssue(row: IssueRowLike, issue: IssueKey): boolean {
       return row.isNewFaculty
     case "dept-unknown":
       return row.isInvalidDepartment
+    case "has-issues":
+      return hasIssue(row)
+    case "no-issues":
+      return !hasIssue(row)
   }
 }
