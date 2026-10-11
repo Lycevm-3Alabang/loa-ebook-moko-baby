@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { requireAdmin } from "@/lib/route-guard"
 import { parseFacultySubjectCsv, importFacultySubjects, importDepartmentsStep, importCoursesStep, importSectionsStep, importSubjectsStep, importFacultyUsersStep, importMappingsStep } from "@/lib/services/etlEvaluation"
 import { logAuditEvent } from "@/lib/services/audit"
+import { semesterRepository } from "@/lib/repositories/factory"
 
 // Chunked ETL: chunks insert hundreds of rows per request; allow a long
 // execution window on platforms that cap serverless run time.
@@ -22,9 +23,30 @@ export async function POST(request: NextRequest) {
 
   const session = await auth()
 
+  // semesterId is load-bearing for the mappings step: it becomes
+  // faculty_subjects."semesterId", which the evaluation gate and every
+  // semester-scoped query read. The client-held `activeSemesterId || null`
+  // pattern wrote NULL-semester mappings whenever the semesters fetch had
+  // not resolved, and the form-data branch passed null unconditionally.
+  // Resolve server-side: exactly one active semester, else refuse — same
+  // pattern as POST /api/import/students. Steps 1-5 are semester-agnostic;
+  // this guard rides along with them (the UI already enforces the same lock).
+  const activeSemesters = await semesterRepository.list({ isActive: true })
+  if (activeSemesters.length !== 1) {
+    return NextResponse.json(
+      {
+        error:
+          activeSemesters.length === 0
+            ? "No active semester. Activate one before importing."
+            : "More than one semester is active. Deactivate all but one before importing.",
+      },
+      { status: 400 },
+    )
+  }
+  const semesterId = activeSemesters[0].id
+
   let importRows: { email: string; name: string; subjectCode: string; subjectName: string; sectionName: string; sectionProgram: string; departmentCode: string }[]
   let parseErrors: { row: number; message: string }[] = []
-  let semesterId: string | null = null
   let chunkIndex = 0
   let totalChunks = 1
   let fileId: string | undefined = undefined
@@ -34,7 +56,6 @@ export async function POST(request: NextRequest) {
 
   if (contentType.includes("application/json")) {
     const body = await request.json()
-    semesterId = body.semesterId || null
     chunkIndex = typeof body.chunkIndex === "number" ? body.chunkIndex : 0
     totalChunks = typeof body.totalChunks === "number" ? body.totalChunks : 1
     fileId = typeof body.fileId === "string" ? body.fileId : undefined
