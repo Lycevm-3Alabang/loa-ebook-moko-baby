@@ -66,6 +66,17 @@ export const facultySubjectRepository: IFacultySubjectRepository = {
     return data as FacultySubjectData
   },
 
+  // Semester backfill for a caller-vetted id set (single roundtrip, atomic).
+  // Callers must pre-filter against UNIQUE(subject_id, section_id,
+  // "semesterId"): a stray colliding id here raises 23505 and rolls back the
+  // whole statement — hence the id-set signature rather than a blanket WHERE.
+  async updateSemesterForIds(ids: string[], semesterId: string): Promise<number> {
+    if (ids.length === 0) return 0
+    const { error } = await supabase.from("faculty_subjects").update({ semesterId }).in("id", ids)
+    if (error) throw error
+    return ids.length
+  },
+
   async findBySubjectAndSection(subject_id, section_id) {
     const { data, error } = await supabase
       .from("faculty_subjects")

@@ -17,6 +17,15 @@ interface Impacts {
   sections: number
 }
 
+interface ApplyPreview {
+  semesterTitle: string
+  total: number
+  alreadyActive: number
+  willUpdate: number
+  willSkip: number
+  skippedSample: { id: string; label: string }[]
+}
+
 export function SemestersTab() {
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
@@ -35,6 +44,11 @@ export function SemestersTab() {
   const [activateTarget, setActivateTarget] = useState<string | null>(null)
   const [impacts, setImpacts] = useState<Impacts | null>(null)
   const [loadingImpacts, setLoadingImpacts] = useState(false)
+
+  const [applyOpen, setApplyOpen] = useState(false)
+  const [applyPreview, setApplyPreview] = useState<ApplyPreview | null>(null)
+  const [applyLoading, setApplyLoading] = useState(false)
+  const [applying, setApplying] = useState(false)
 
   const { data: semestersData, isLoading: semestersLoading, error: semestersErr } = useApiGet<{ data: SemesterData[] }>("/api/semesters")
 
@@ -122,6 +136,43 @@ export function SemestersTab() {
       }
     } catch { /* ignore */ }
     setLoadingImpacts(false)
+  }
+
+  const openApplySemester = async () => {
+    setError("")
+    setApplyLoading(true)
+    try {
+      const res = await fetch("/api/admin/faculty-subjects/apply-semester", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preview: true }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || "Failed to preview")
+      setApplyPreview(d)
+      setApplyOpen(true)
+    } catch (err) { setError((err as Error).message) }
+    finally { setApplyLoading(false) }
+  }
+
+  const confirmApplySemester = async () => {
+    setApplying(true); setError("")
+    try {
+      const res = await fetch("/api/admin/faculty-subjects/apply-semester", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || "Failed to apply")
+      showSuccessMessage(
+        `Applied "${d.semesterTitle}" to ${d.updated} mapping${d.updated === 1 ? "" : "s"}.` +
+        (d.skipped > 0 ? ` ${d.skipped} skipped due to conflicting rows.` : ""),
+      )
+      invalidate("/api/data/evaluation-mappings?type=faculty")
+      setApplyOpen(false); setApplyPreview(null)
+    } catch (err) { setError((err as Error).message) }
+    finally { setApplying(false) }
   }
 
   const isEditing = editingId !== null
@@ -228,8 +279,65 @@ export function SemestersTab() {
         </div>
       )}
 
+      {applyOpen && applyPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center">
+              <h2 className="text-sm font-bold text-primary">Apply Semester to All Mappings</h2>
+            </div>
+            <div className="space-y-3 text-xs text-tertiary">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+                <p className="font-semibold text-amber-800">This will:</p>
+                <ul className="list-disc list-inside space-y-1 text-amber-700">
+                  <li>Set every conflict-free faculty-subject mapping to <span className="font-semibold">{applyPreview.semesterTitle}</span></li>
+                  <li>Overwrite prior semester values — <span className="font-semibold">no undo</span> (the audit log keeps the before-state)</li>
+                  <li>Leave conflicting rows untouched so no unique constraint is violated</li>
+                </ul>
+              </div>
+              <div className="bg-slate-50 rounded-lg p-3 space-y-1.5">
+                <p className="font-semibold text-primary">Preview:</p>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <span className="text-tertiary">Total mappings:</span><span className="font-semibold text-right">{applyPreview.total}</span>
+                  <span className="text-tertiary">Already on this semester:</span><span className="font-semibold text-right">{applyPreview.alreadyActive}</span>
+                  <span className="text-tertiary">Will update:</span><span className="font-semibold text-right text-green-600">{applyPreview.willUpdate}</span>
+                  <span className="text-tertiary">Will skip:</span><span className="font-semibold text-right text-amber-600">{applyPreview.willSkip}</span>
+                </div>
+              </div>
+              {applyPreview.willSkip > 0 && (
+                <div className="bg-slate-50 rounded-lg p-3 space-y-1">
+                  <p className="font-semibold text-primary">Skipped — another mapping already exists for these subject + section pairs:</p>
+                  <ul className="space-y-0.5">
+                    {applyPreview.skippedSample.map((s) => (
+                      <li key={s.id} className="font-mono text-[11px]">{s.label}</li>
+                    ))}
+                  </ul>
+                  {applyPreview.willSkip > applyPreview.skippedSample.length && (
+                    <p className="text-[11px]">…and {applyPreview.willSkip - applyPreview.skippedSample.length} more</p>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <IosButton variant="gray" onClick={() => { setApplyOpen(false); setApplyPreview(null) }}>Cancel</IosButton>
+              <IosButton type="button" loading={applying} variant="primary" onClick={confirmApplySemester}>Apply Semester</IosButton>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="card bg-surface overflow-hidden">
-        <div className="px-6 py-4 border-b border-default bg-surface"><h3 className="text-sm font-bold text-primary">Semesters Directory</h3></div>
+        <div className="px-6 py-4 border-b border-default bg-surface flex items-center justify-between gap-3 flex-wrap">
+          <h3 className="text-sm font-bold text-primary">Semesters Directory</h3>
+          <IosButton
+            variant="tinted" size="sm"
+            loading={applyLoading}
+            disabled={activeCount !== 1 || applying}
+            title={activeCount !== 1 ? "Activate exactly one semester first" : "Set the active semester on every conflict-free faculty-subject mapping"}
+            onClick={openApplySemester}
+          >
+            Apply Semester to All Mappings
+          </IosButton>
+        </div>
         {semesters.length === 0 ? (
           <p className="text-xs text-tertiary p-6">No semesters configured yet.</p>
         ) : (

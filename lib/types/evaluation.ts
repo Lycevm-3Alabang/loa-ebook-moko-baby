@@ -415,6 +415,7 @@ export interface IFacultySubjectRepository {
   create(data: { faculty_id: string; subject_id: string; section_id: string; semesterId?: string | null }): Promise<FacultySubjectData>
   createMany(items: { faculty_id: string; subject_id: string; section_id: string; semesterId?: string | null }[]): Promise<FacultySubjectData[]>
   update(id: string, data: Partial<FacultySubjectData>): Promise<FacultySubjectData>
+  updateSemesterForIds(ids: string[], semesterId: string): Promise<number>
   findBySubjectAndSection(subject_id: string, section_id: string): Promise<FacultySubjectData | null>
   findBySubjectSectionAndFaculty(subject_id: string, section_id: string, faculty_id: string): Promise<FacultySubjectData | null>
   findBySubjectSectionSemester?(subject_id: string, section_id: string, semesterId?: string | null): Promise<FacultySubjectData | null>
