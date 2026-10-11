@@ -165,7 +165,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const highlightTimer = useRef<number | null>(null)
   const [previewError, setPreviewError] = useState("")
   const [referenceError, setReferenceError] = useState("")
-  const [problemFilter, setProblemFilter] = useState(false)
+  // True blocked-only (red rows), dept-scoped by deptRows. Replaces the old
+  // problems view: amber rows badge in place and need no separate view.
+  const [blockedOnly, setBlockedOnly] = useState(false)
   // Table-first slice 2 — department view filter. View-only: run scope is
   // always the whole panel, never the filtered set (pinned contract §3.1).
   const [deptFilter, setDeptFilter] = useState<string | null>(null)
@@ -298,10 +300,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     return all.filter((r) => activePanelRows.has(r.row))
   }, [previewRows, activePanelRows])
 
-  const problemRows = useMemo(() => deptRows.filter(isProblemPreviewRow), [deptRows])
-
   // File-wide flagged tally: the overview line below stays global even while
-  // the table is filtered (problemRows above is now dept-scoped).
+  // the table is filtered. (The old problems view is gone — the toggle is
+  // true blocked-only now; amber rows badge in place.)
   const fileProblemCount = useMemo(
     () => (previewRows ?? []).filter(isProblemPreviewRow).length,
     [previewRows],
@@ -309,7 +310,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
   const deptBlockedCount = useMemo(() => deptRows.filter(isBlockedPreviewRow).length, [deptRows])
 
-  const visibleRows = problemFilter ? problemRows : deptRows
+  const visibleRows = blockedOnly ? deptRows.filter(isBlockedPreviewRow) : deptRows
   // Table-first slice 3 — blocked rows inside the CURRENT view (dept and/or
   // problem filters applied). removeBlockedRows keys on source row, so the
   // filtered copies are safe to pass straight through.
@@ -461,7 +462,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       })),
     ])
     setPreviewRows((prev) => prev?.filter((r) => !gone.has(r.row)) ?? prev)
-    setProblemFilter(false)
+    setBlockedOnly(false)
     setPreviewPage(0)
   }
 
@@ -471,7 +472,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   // Strip → table bridge. Filter-only: run scope is untouched (pinned §3.1).
   const viewPanelRows = (panel: DepartmentPanel<PanelRow>) => {
     setDeptFilter(panel.id)
-    if (panel.blockedCount > 0) setProblemFilter(true)
+    // Land on ALL of the panel's rows — the table's own toggle surfaces
+    // the blocked subset from there.
+    setBlockedOnly(false)
     setPreviewPage(0)
     document.getElementById("student-preview-table")?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
@@ -783,7 +786,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-semibold text-secondary">
                 {visibleRows.length} row{visibleRows.length !== 1 ? "s" : ""}
-                {problemFilter && ` (filtered)`}
+                {(blockedOnly || deptFilter) && ` (filtered)`}
               </h4>
               {deptFilter && (
                 <button
@@ -822,23 +825,23 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                 </select>
                 <button
                   type="button"
-                  onClick={() => { setDeptFilter(null); setProblemFilter(true); setPreviewPage(0) }}
+                  onClick={() => { setDeptFilter(null); setBlockedOnly(true); setPreviewPage(0) }}
                   title="Show every blocked row in the file"
                   className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
                 >
                   Errors only
                 </button>
-                {problemRows.length > 0 && (
+                {deptBlockedCount > 0 && (
                   <button
                     type="button"
-                    onClick={() => { setProblemFilter((p) => !p); setPreviewPage(0) }}
+                    onClick={() => { setBlockedOnly((p) => !p); setPreviewPage(0) }}
                     className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition-colors ${
-                      problemFilter
+                      blockedOnly
                         ? "bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-700 dark:text-red-300"
                         : "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400"
                     }`}
                   >
-{problemFilter ? "Show all rows" : `Show ${deptBlockedCount} blocked only`}
+{blockedOnly ? "Show all rows" : `Show ${deptBlockedCount} blocked only`}
                   </button>
                 )}
                 {shownBlockedRows.length > 0 && (
