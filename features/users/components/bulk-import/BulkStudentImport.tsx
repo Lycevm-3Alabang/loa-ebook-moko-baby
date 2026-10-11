@@ -673,10 +673,12 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       // would fire on every partial run and tell the admin the import is incomplete
       // when one panel of ten has finished — which is a normal state.
       let ledgerClosed = true
+      let closureDetail = ""
       try {
         assertLedgerClosure(ledger, rows.length)
-      } catch {
+      } catch (err) {
         ledgerClosed = false
+        closureDetail = err instanceof Error ? ` (${err.message})` : ""
       }
       const aggregated: ImportResult = {
         created: results.flatMap((r) => r.created ?? []),
@@ -718,7 +720,16 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         setPreviewRows((prev) => (prev ? applyCreatedUsers([], prev, aggregated.created).previewRows : prev))
       }
       if (!ledgerClosed) {
-        fail(`Could not account for all ${rows.length} rows of this panel — nothing was lost, ${aggregated.enrolled} rows are already saved. Press Run again to resume.`)
+        // Name where every accounted row went — invalid (incl. failed and
+        // transport), duplicates, removed — so this reads as bookkeeping,
+        // not data loss. `ledger` is fully built at this point win or lose.
+        const counted = (s: LedgerRow["status"]) => ledger.filter((l) => l.status === s).length
+        fail(
+          `Panel books don't close: accounted ${ledger.length} of ${rows.length} rows ` +
+          `(${counted("persisted")} saved, ${counted("already-persisted")} already saved, ` +
+          `${counted("invalid")} invalid, ${counted("removed")} removed)${closureDetail}. ` +
+          `Nothing was lost — ${aggregated.enrolled} rows are already saved. Press Run again to resume.`,
+        )
         return
       }
       if (stoppedEarly || failedChunks.length > 0) {
