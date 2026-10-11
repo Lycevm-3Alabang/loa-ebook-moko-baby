@@ -46,6 +46,10 @@ export default function StudentEvaluationsPage() {
   // const [searching, setSearching] = useState(false)
   const [disputingFsId, setDisputingFsId] = useState<string | null>(null)
   const [disputeMessage, setDisputeMessage] = useState("")
+  // Semester name for the pending cards: every pending item is scoped to the
+  // active period's term (evaluations.repository findPending filters
+  // faculty_subjects on the period's semesterId), so one label fits all.
+  const [semesterName, setSemesterName] = useState<string | null>(null)
 
   function openEvalTab(id: string) {
     if (evalTabRef.current && !evalTabRef.current.closed) {
@@ -67,6 +71,11 @@ export default function StudentEvaluationsPage() {
         const data = await res.json()
 
         const active = (data.periods || []).find((p: { isActive: boolean }) => p.isActive)
+        setSemesterName(
+          (data.periods || []).find(
+            (p: { id?: string; semesterTitle?: string }) => p.id === data.activePeriodId,
+          )?.semesterTitle ?? null,
+        )
         if (active?.startDate) {
           const now = Date.now()
           const start = new Date(active.startDate).getTime()
@@ -290,9 +299,14 @@ export default function StudentEvaluationsPage() {
                     onClick={(e) => { e.stopPropagation(); handleDispute(item) }}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); handleDispute(item) } }}
                     aria-disabled={disputingFsId === item.facultySubjectId}
-                    className="mt-1 text-[11px] text-red-500 hover:text-red-700 underline decoration-dotted underline-offset-2 opacity-60 hover:opacity-100 transition-opacity disabled:opacity-30 cursor-pointer"
+                    className="mt-1 block text-[11px] text-red-500 hover:text-red-700 underline decoration-dotted underline-offset-2 opacity-60 hover:opacity-100 transition-opacity disabled:opacity-30 cursor-pointer"
                     style={disputingFsId === item.facultySubjectId ? { opacity: 0.3, pointerEvents: 'none' } : {}}
                   >
+                    {semesterName && (
+                      <span className="block text-[11px] italic font-normal text-tertiary no-underline">
+                        ({semesterName})
+                      </span>
+                    )}
                     {disputingFsId === item.facultySubjectId ? "Reporting..." : "Wrong faculty?"}
                   </span>
                 </div>
