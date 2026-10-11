@@ -1,8 +1,8 @@
 # TODO — student CSV importer follow-ups
 
 Tracked 2026-10-09 for the next session. All production incidents are closed
-(504 timeout, 23505 duplicate key, silent cross-term loss); 324 tests / 26 files
-green (page split + follow-ups done 2026-10-10, +8). What remains is reporting polish and containment — nothing is on fire.
+(504 timeout, 23505 duplicate key, silent cross-term loss); 326 tests / 26 files
+green (echo tests + modal + alarm done 2026-10-10, +2). What remains is reporting polish and containment — nothing is on fire.
 
 Gate for every item: `npx tsc --noEmit` → `npm run lint` → `npx vitest run`
 (baseline 280/20) → `npm run build`.
@@ -37,11 +37,35 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
   collapsible (`EnrollmentsTab`, default open, Importer pattern verbatim).
   Gates + browser green USER-REPORTED.
 
+- [x] **Badges + strip follow-ups done 2026-10-10** (slice 8 + amendments, same run file).
+  Table badges collapsed to Ready / Needs Review / Duplicate (3-cap, display-only,
+  reason titles); strip chips carry counts and are the auto-filters (dept-pinned
+  via `resolvedDepartmentId`, + scroll); `has-issues`/`no-issues` metas + `dupOnly`
+  dimension close the no-issues gap (invalid-value-only precision case tested);
+  new-student exits the issue family (insert candidate; finder key stays); `View rows`
+  lands on All, toggle is true blocked-only, Errors-only respects dept, chip splits
+  open/clear (+ Issue twin); strip `View/Remote N blocked` pair names the deletable set;
+  staleness banner + panel/table unpersisted downloads + Clear-filters ×5.
+  Gates + browser green USER-REPORTED.
+
+- [x] **Semester + message hardening done 2026-10-10** (slices 10, S-a, S-b).
+  Nav pill with active title above Main Menu (reuses Sidebar's fetch, expanded only;
+  per-table badges dropped as decoration) · closure failure now prints the per-status
+  breakdown + assert text instead of reading like data loss · semester echo
+  (`semesterId` required, route attaches title) + mid-run flip alarm with unanimity
+  check + 2 echo tests. Already-persisted confirmed semester-keyed (no gap).
+  Gates + browser green USER-REPORTED.
+
 - [x] **Import dedicated page done 2026-10-10** (`specs/student-import-stepper/import-dedicated-page.md`).
   `StudentImportPage` (semester self-fetch + banner + back-link) + admin/dean wrappers
   (no `loading.tsx` — neither tree has one); `EnrollmentsTab` trimmed (collapsible out,
-  role-aware link card in via pathname, Quick Add untouched — modal deferred).
+  role-aware link card in via pathname).
   Gates + browser green USER-REPORTED (both roles, round trip).
+
+- [x] **Quick-Add modal done 2026-10-10** (slice Q, same run file).
+  Collapsible replaced by a primary trigger button; form moved verbatim into a modal
+  copying the file's own subjects-modal shell; `handleQuickAdd` untouched (close +
+  refetch). Gates + browser green USER-REPORTED.
 
 - [ ] **VERIFY (no code) — S2 + S3 browser pass.** Both slices are gate-green but have
   never been rendered. Cheapest to close while they are fresh:
@@ -121,9 +145,11 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
   `.opencode/skills/plan-fix/runs/20261010-1300-c3-s1-department-grouping.md`.
 - [ ] **Cleanup — deferred course payload**. Trim unconsumed `departmentCourses`
   from `/api/import/students/reference` in its own pass; confirm no other consumer
-  (`BulkSectionImport.tsx` keeps separate state — do not touch). NOTE: the student
-  ledger's `DEPARTMENT_MISMATCH` flag now consumes this dataset (D3, 2026-10-10) —
-  do not trim until the ledger no longer reads it.
+  (`BulkSectionImport.tsx` keeps separate state — do not touch). NOTE (re-confirmed
+  BLOCKED 2026-10-10 by sweep): the ledger's `DEPARTMENT_MISMATCH` flag consumes this
+  dataset via `sectionDeptCode` — a tested path (`import-ledger.test.ts:186-190`), so
+  trimming now would silently kill mismatch detection. Unblocks only via explicit
+  product call (drop MISMATCH) or server-side ownership resolution.
 
 ## Done this session (do not redo)
 
