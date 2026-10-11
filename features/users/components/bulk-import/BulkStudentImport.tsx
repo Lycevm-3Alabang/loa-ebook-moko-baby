@@ -8,6 +8,7 @@ import { computeDepartmentGrouping } from "./department-grouping"
 import { buildDepartmentPanels, type DepartmentPanel } from "./department-panels"
 import { applyCreatedUsers } from "./apply-created-users"
 import { panelStripStatus, type StripStatus } from "./panel-strip-status"
+import { ISSUE_KEYS, ISSUE_LABELS, matchesIssue, type IssueKey } from "./issue-filter"
 import { StepPanel } from "@/features/admin-data/components/FacultyImportStepper"
 
 // Domain rule is shared with the import service via lib/csv-utils — one list,
@@ -168,6 +169,10 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   // True blocked-only (red rows), dept-scoped by deptRows. Replaces the old
   // problems view: amber rows badge in place and need no separate view.
   const [blockedOnly, setBlockedOnly] = useState(false)
+  // Table-first slice 6 — text search (loaded rows only, never the server)
+  // and single-issue filter. Both compose inside the current view.
+  const [query, setQuery] = useState("")
+  const [issueFilter, setIssueFilter] = useState<IssueKey | null>(null)
   // Table-first slice 2 — department view filter. View-only: run scope is
   // always the whole panel, never the filtered set (pinned contract §3.1).
   const [deptFilter, setDeptFilter] = useState<string | null>(null)
@@ -310,7 +315,22 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
   const deptBlockedCount = useMemo(() => deptRows.filter(isBlockedPreviewRow).length, [deptRows])
 
-  const visibleRows = blockedOnly ? deptRows.filter(isBlockedPreviewRow) : deptRows
+  const blockedView = blockedOnly ? deptRows.filter(isBlockedPreviewRow) : deptRows
+  const issueView = useMemo(
+    () => (issueFilter ? blockedView.filter((r) => matchesIssue(r, issueFilter)) : blockedView),
+    [blockedView, issueFilter],
+  )
+  // Free text over the loaded preview only — never a server query. Composes
+  // inside whatever the dept/blocked/issue filters already narrowed.
+  const visibleRows = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return issueView
+    return issueView.filter((r) =>
+      [r.name, r.email, r.subjectCode, r.section, r.facultyEmail, r.departmentCode].some((c) =>
+        (c || "").toLowerCase().includes(q),
+      ),
+    )
+  }, [issueView, query])
   // Table-first slice 3 — blocked rows inside the CURRENT view (dept and/or
   // problem filters applied). removeBlockedRows keys on source row, so the
   // filtered copies are safe to pass straight through.
@@ -347,6 +367,8 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     setPanelErrors({})
     setRemovedRows([])
     setDeptFilter(null)
+    setQuery("")
+    setIssueFilter(null)
     const file = fileRef.current?.files?.[0]
     if (!file) { setPreviewError("Please select a CSV file"); return }
     const text = await decodeCsvFile(file)
@@ -786,7 +808,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-semibold text-secondary">
                 {visibleRows.length} row{visibleRows.length !== 1 ? "s" : ""}
-                {(blockedOnly || deptFilter) && ` (filtered)`}
+                {(blockedOnly || deptFilter || issueFilter || query.trim().length > 0) && ` (filtered)`}
               </h4>
               {deptFilter && (
                 <button
@@ -809,7 +831,29 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                 faculty is <span className="badge-red not-italic">red</span>, not amber &mdash; the
                 server rejects it.
               </p>
-              <div className="ml-auto flex items-center gap-2">
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                <input
+                  value={query}
+                  onChange={(e) => { setQuery(e.target.value); setPreviewPage(0) }}
+                  placeholder="Search rows…"
+                  title="Search the loaded preview (name, email, subject, section, faculty, dept)"
+                  className="text-[11px] px-3 py-1 rounded-full border border-default bg-surface-hover text-secondary outline-none focus:border-gold-400 w-44"
+                />
+                <select
+                  value={issueFilter ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setIssueFilter(v !== "" && (ISSUE_KEYS as readonly string[]).includes(v) ? (v as IssueKey) : null)
+                    setPreviewPage(0)
+                  }}
+                  title="Filter by issue type (composes with department, blocked, and search)"
+                  className="text-[11px] font-semibold px-2 py-1 rounded-full border border-default bg-surface-hover text-secondary outline-none"
+                >
+                  <option value="">All issues</option>
+                  {ISSUE_KEYS.map((k) => (
+                    <option key={k} value={k}>{ISSUE_LABELS[k]}</option>
+                  ))}
+                </select>
                 <select
                   value={deptFilter ?? ""}
                   onChange={(e) => { setDeptFilter(e.target.value || null); setPreviewPage(0) }}
