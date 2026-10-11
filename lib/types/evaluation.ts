@@ -300,6 +300,10 @@ export interface PendingEvaluationItem {
   // Why not eligible: enrollment row names another/absent mapping vs names
   // this mapping under a different semester. Null when eligible.
   ineligibilityReason: "WRONG_TERM" | "NOT_ENROLLED" | null
+  // Section of the mapping (faculty_subjects.section_id → sections),
+  // composed client-side as `${sectionProgram}-${sectionName}` to match CSV labels.
+  sectionProgram: string | null
+  sectionName: string | null
 }
 
 export interface EvaluationResultData {

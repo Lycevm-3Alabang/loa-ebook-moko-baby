@@ -20,6 +20,8 @@ interface PendingItem {
   isMappedToActiveSemester: boolean
   eligible: boolean
   ineligibilityReason: "WRONG_TERM" | "NOT_ENROLLED" | null
+  sectionProgram: string | null
+  sectionName: string | null
 }
 
 interface ExistingEvaluation {
@@ -46,6 +48,8 @@ interface ExistingEvaluation {
   // Display-only, resolved client-side from the bootstrap periods payload.
   evalPeriodName?: string | null
   evalSemesterTitle?: string | null
+  sectionProgram?: string | null
+  sectionName?: string | null
 }
 
 interface PeriodLite {
@@ -356,9 +360,18 @@ export default function StudentEvaluationsPage() {
                 className="card w-full p-4 bg-surface flex items-center justify-between hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99] transition-all duration-200 text-left cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-primary">{item.subjectName || item.subjectCode}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-bold text-primary min-w-0">{item.subjectName || item.subjectCode}</p>
+                    <span className="group relative inline-flex shrink-0 cursor-help">
+                      <svg className="h-4 w-4 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      <span className="pointer-events-none absolute left-0 top-full z-10 mt-1 hidden w-max max-w-56 whitespace-normal rounded-lg bg-slate-900 px-2 py-1 text-[11px] font-normal text-white shadow-lg group-hover:block dark:bg-slate-700">
+                        <span className="block">Semester: {item.mappingSemesterTitle ?? "No semester assigned"} ({item.mappingSemesterId ?? "none"})</span>
+                        <span className="block">Evaluation Period: {activePeriodName ?? "—"} ({activeEvalPeriodId ?? "—"})</span>
+                      </span>
+                    </span>
+                  </div>
                   <p className="text-xs text-tertiary mt-0.5">
-                    {item.evaluateeName}{item.subjectCode ? ` · ${item.subjectCode}` : ""}
+                    {item.evaluateeName}{item.subjectCode ? ` · ${item.subjectCode}` : ""}{item.sectionProgram ? ` · ${item.sectionProgram}-${item.sectionName ?? ""}` : ""}
                   </p>
                   {!item.eligible && (
                     <span className="mt-1 inline-block text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded-full">
@@ -376,13 +389,6 @@ export default function StudentEvaluationsPage() {
                     className="mt-1 block text-[11px] text-red-500 hover:text-red-700 underline decoration-dotted underline-offset-2 opacity-60 hover:opacity-100 transition-opacity disabled:opacity-30 cursor-pointer"
                     style={disputingFsId === item.facultySubjectId ? { opacity: 0.3, pointerEvents: 'none' } : {}}
                   >
-                    <span className="group relative mt-1 inline-block cursor-help">
-                      <svg className="h-4 w-4 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                      <span className="pointer-events-none absolute bottom-full left-0 z-10 mb-1 hidden w-max max-w-56 whitespace-normal rounded-lg bg-slate-900 px-2 py-1 text-[11px] font-normal text-white shadow-lg group-hover:block dark:bg-slate-700">
-                        <span className="block">Semester: {item.mappingSemesterTitle ?? "No semester assigned"} ({item.mappingSemesterId ?? "none"})</span>
-                        <span className="block">Evaluation Period: {activePeriodName ?? "—"} ({activeEvalPeriodId ?? "—"})</span>
-                      </span>
-                    </span>
                     {disputingFsId === item.facultySubjectId ? "Reporting..." : "Wrong faculty?"}
                   </span>
                 </div>
@@ -502,19 +508,21 @@ export default function StudentEvaluationsPage() {
                 className="card w-full p-4 bg-surface flex items-center justify-between hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99] transition-all duration-200 text-left cursor-pointer"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-primary">{ev.subjectName || ev.evaluateeName}</p>
-                  <p className="text-xs text-tertiary mt-0.5">
-                    {ev.evaluateeName}{ev.subjectCode ? ` · ${ev.subjectCode}` : ""}
-                    {" · "}
-                    Draft · {new Date(ev.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                  </p>
-                  <span className="group relative mt-1 inline-block cursor-help">
-                    <svg className="h-4 w-4 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                      <span className="pointer-events-none absolute bottom-full left-0 z-10 mb-1 hidden w-max max-w-56 whitespace-normal rounded-lg bg-slate-900 px-2 py-1 text-[11px] font-normal text-white shadow-lg group-hover:block dark:bg-slate-700">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-bold text-primary min-w-0">{ev.subjectName || ev.evaluateeName}</p>
+                    <span className="group relative inline-flex shrink-0 cursor-help">
+                      <svg className="h-4 w-4 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      <span className="pointer-events-none absolute left-0 top-full z-10 mt-1 hidden w-max max-w-56 whitespace-normal rounded-lg bg-slate-900 px-2 py-1 text-[11px] font-normal text-white shadow-lg group-hover:block dark:bg-slate-700">
                         <span className="block">Semester: {ev.evalSemesterTitle ?? "—"} ({ev.semesterId ?? "none"})</span>
                         <span className="block">Evaluation Period: {ev.evalPeriodName ?? "—"} ({ev.evaluation_period_id ?? "—"})</span>
                       </span>
                     </span>
+                  </div>
+                  <p className="text-xs text-tertiary mt-0.5">
+                    {ev.evaluateeName}{ev.subjectCode ? ` · ${ev.subjectCode}` : ""}{ev.sectionProgram ? ` · ${ev.sectionProgram}-${ev.sectionName ?? ""}` : ""}
+                    {" · "}
+                    Draft · {new Date(ev.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                  </p>
                   {ev.facultySubjectId ? (
                     <span
                       role="button"

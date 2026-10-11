@@ -16,14 +16,31 @@ async function fetchSemesterTitleMap(semesterIds: (string | null | undefined)[])
   return new Map(((data || []) as { id: string; title: string }[]).map((r) => [r.id, r.title]))
 }
 
+// Sections for a set of mapping section_ids, in one round trip. Same shape
+// as the title lookup above; sections are few, so callers pass every id.
+async function fetchSectionMap(sectionIds: (string | null | undefined)[]) {
+  const ids = [...new Set(sectionIds.filter((id): id is string => !!id))]
+  if (ids.length === 0) return new Map<string, { name: string; program: string }>()
+  const { data, error } = await supabase.from("sections").select("id, name, program").in("id", ids)
+  if (error) throw error
+  return new Map(
+    ((data || []) as { id: string; name: string; program: string }[]).map((r) => [
+      r.id,
+      { name: r.name, program: r.program },
+    ]),
+  )
+}
+
 function toEligiblePendingItem(
-  fs: { id: string; faculty_id: string; subject_id: string; semesterId?: string | null },
+  fs: { id: string; faculty_id: string; subject_id: string; semesterId?: string | null; section_id?: string | null },
   enrollments: { faculty_subject_id?: string | null; semesterId?: string | null }[],
   periodSemesterId: string,
   activeSemesterId: string | null | undefined,
   titleBySemesterId: Map<string, string>,
+  sectionById: Map<string, { name: string; program: string }>,
 ): PendingEvaluationItem {
   const mappingSemesterId = fs.semesterId ?? null
+  const section = fs.section_id ? (sectionById.get(fs.section_id) ?? null) : null
   const rowsForMapping = enrollments.filter((e) => e.faculty_subject_id === fs.id)
   // Gate mirror: studentEnrollmentRepository.findExisting matches
   // (student_id, faculty_subject_id, semesterId) exactly, and .eq() never
@@ -34,6 +51,8 @@ function toEligiblePendingItem(
     evaluateeId: fs.faculty_id,
     facultySubjectId: fs.id,
     subjectId: fs.subject_id,
+    sectionProgram: section?.program ?? null,
+    sectionName: section?.name ?? null,
     mappingSemesterId,
     mappingSemesterTitle: mappingSemesterId ? (titleBySemesterId.get(mappingSemesterId) ?? null) : null,
     // Display/diagnostic only — never gates. False when either side is null.
@@ -88,7 +107,7 @@ export const evaluationRepository: IEvaluationRepository = {
     if (directIds.length > 0) {
       const { data: facultySubjects, error: fsErr } = await supabase
         .from("faculty_subjects")
-        .select("id, faculty_id, subject_id, semesterId")
+        .select("id, faculty_id, subject_id, semesterId, section_id")
         .in("id", directIds)
       if (fsErr) throw fsErr
 
@@ -113,18 +132,19 @@ export const evaluationRepository: IEvaluationRepository = {
       }
 
       const titleBySemesterId = await fetchSemesterTitleMap(facultySubjects.map((fs) => fs.semesterId))
+      const sectionById = await fetchSectionMap(facultySubjects.map((fs) => fs.section_id))
 
       return facultySubjects
         .filter((fs) => !skipFsIds.has(fs.id) && fs.faculty_id !== dummyId)
         .map((fs) =>
-          toEligiblePendingItem(fs, enrollments, evalPeriod.semesterId, activeSemesterId, titleBySemesterId),
+          toEligiblePendingItem(fs, enrollments, evalPeriod.semesterId, activeSemesterId, titleBySemesterId, sectionById),
         )
     }
 
     const sectionIds = enrollments.map((r) => r.section_id)
     const { data: facultySubjects, error: fsErr } = await supabase
       .from("faculty_subjects")
-      .select("id, faculty_id, subject_id, semesterId")
+      .select("id, faculty_id, subject_id, semesterId, section_id")
       .in("section_id", sectionIds)
       .eq("semesterId", evalPeriod.semesterId)
     if (fsErr) throw fsErr
@@ -150,11 +170,12 @@ export const evaluationRepository: IEvaluationRepository = {
     }
 
     const titleBySemesterId = await fetchSemesterTitleMap(facultySubjects.map((fs) => fs.semesterId))
+    const sectionById = await fetchSectionMap(facultySubjects.map((fs) => fs.section_id))
 
     return facultySubjects
       .filter((fs) => !skipFsIds.has(fs.id) && fs.faculty_id !== dummyId)
       .map((fs) =>
-        toEligiblePendingItem(fs, enrollments, evalPeriod.semesterId, activeSemesterId, titleBySemesterId),
+        toEligiblePendingItem(fs, enrollments, evalPeriod.semesterId, activeSemesterId, titleBySemesterId, sectionById),
       )
   },
 
