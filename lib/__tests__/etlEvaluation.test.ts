@@ -1300,6 +1300,23 @@ describe("integration: real faculty CSV", () => {
       facultyUserMap: step5.facultyUserMap,
     }, "sem-1")
     expect(step6.inserted + step6.existing).toBeGreaterThan(0)
+
+    // ── Verify Regie Ellana's 5 unique mappings ──
+    const regieUserId = step5.facultyUserMap["r.ellana@lyceumalabang.edu.ph"]
+    expect(regieUserId).toBeDefined()
+    const allCreateManyCalls = (factory.facultySubjectRepository.createMany as ReturnType<typeof vi.fn>).mock.calls
+    const allMappedItems = allCreateManyCalls.flat()
+    const regieMappings = allMappedItems.filter((i) => i.faculty_id === regieUserId)
+    const regieUniqueSlots = new Set(regieMappings.map((i) => `${i.subject_id}|${i.section_id}`))
+    expect(regieUniqueSlots.size).toBe(5)
+
+    // ── Verify CCS department member count ──
+    const ccsEmails = new Set(
+      rows.filter((r) => r.departmentCode === "CCS").map((r) => r.email),
+    )
+    expect(ccsEmails.size).toBeGreaterThan(0)
+    const ccsUserIds = [...ccsEmails].map((e) => step5.facultyUserMap[e]).filter(Boolean)
+    expect(ccsUserIds.length).toBe(ccsEmails.size)
     },
     30000,
   )
