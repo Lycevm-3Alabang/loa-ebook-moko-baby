@@ -33,6 +33,22 @@ interface ExistingEvaluation {
   submittedAt: string | null
   createdAt: string
   updatedAt: string
+  // Runtime row keys (the evaluations table stores these per row). Note the
+  // drift: EvaluationData declares camelCase evaluationPeriodId, but
+  // findByEvaluator returns select("*") unmapped, so the live key is the
+  // snake_case column evaluation_period_id.
+  evaluation_period_id?: string | null
+  semesterId?: string | null
+  // Display-only, resolved client-side from the bootstrap periods payload.
+  evalPeriodName?: string | null
+  evalSemesterTitle?: string | null
+}
+
+interface PeriodLite {
+  id: string
+  name?: string | null
+  semesterId?: string | null
+  semesterTitle?: string | null
 }
 
 
@@ -104,7 +120,25 @@ export default function StudentEvaluationsPage() {
         }
 
         setPending(data.pending || [])
-        setEvaluations(data.evaluations || [])
+        // Resolve draft display terms client-side from the same bootstrap
+        // payload (no extra query): title by the row's OWN semesterId, so a
+        // later period repoint can't mislabel an old draft.
+        const periodById = new Map<string, PeriodLite>(
+          ((data.periods || []) as PeriodLite[]).map((p) => [p.id, p]),
+        )
+        const semTitleBySemesterId = new Map<string, string>()
+        for (const p of periodById.values()) {
+          if (p.semesterId && p.semesterTitle && !semTitleBySemesterId.has(p.semesterId)) {
+            semTitleBySemesterId.set(p.semesterId, p.semesterTitle)
+          }
+        }
+        setEvaluations(
+          (data.evaluations || []).map((e: ExistingEvaluation) => ({
+            ...e,
+            evalPeriodName: periodById.get(e.evaluation_period_id ?? "")?.name ?? null,
+            evalSemesterTitle: e.semesterId ? (semTitleBySemesterId.get(e.semesterId) ?? null) : null,
+          })),
+        )
       } catch {
         setErrorMessage("Failed to load evaluations")
       } finally {
@@ -451,7 +485,7 @@ export default function StudentEvaluationsPage() {
                   }
                 }}
                 disabled={navigatingId === ev.id}
-                className="card w-full p-4 bg-surface flex items-center justify-between hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99] transition-all duration-200 text-left"
+                className="card w-full p-4 bg-surface flex items-center justify-between hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99] transition-all duration-200 text-left cursor-pointer"
               >
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold text-primary">{ev.subjectName || ev.evaluateeName}</p>
@@ -460,6 +494,13 @@ export default function StudentEvaluationsPage() {
                     {" · "}
                     Draft · {new Date(ev.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                   </p>
+                  <span className="group relative mt-1 inline-block cursor-help">
+                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] font-bold text-tertiary dark:border-slate-600">?</span>
+                    <span className="pointer-events-none absolute bottom-full left-0 z-10 mb-1 hidden w-max max-w-56 whitespace-normal rounded-lg bg-slate-900 px-2 py-1 text-[11px] font-normal text-white shadow-lg group-hover:block dark:bg-slate-700">
+                      <span className="block">Semester: {ev.evalSemesterTitle ?? "—"} ({ev.semesterId ?? "none"})</span>
+                      <span className="block">Evaluation Period: {ev.evalPeriodName ?? "—"} ({ev.evaluation_period_id ?? "—"})</span>
+                    </span>
+                  </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 ml-3">
                   {navigatingId === ev.id ? (
