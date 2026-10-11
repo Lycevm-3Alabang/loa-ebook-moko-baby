@@ -70,7 +70,7 @@ const isBlockedPreviewRow = (r: PreviewRow) =>
 
 const isProblemPreviewRow = (r: PreviewRow) =>
   r.isNewSubject || r.isNewSection || r.isNewFaculty || r.facultyNotAssigned ||
-  r.isNewStudent || r.isInvalidDepartment || r.isInvalidValue
+  r.isInvalidDepartment || r.isInvalidValue
 
 // Table-first slice 2 — dot colors for the five strip states. Module scope:
 // a re-created map every render would thrash nothing (it isn't in a memo),
@@ -542,6 +542,20 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     previewTable?.focus({ preventScroll: true })
   }
 
+  // Sibling of viewPanelRows for the blocked subset: same landing, toggle on.
+  // Gives "Remove N blocked" a preview — the admin sees the rows before deleting them.
+  const viewBlockedRows = (panel: DepartmentPanel<PanelRow>) => {
+    setDeptFilter(panel.id)
+    setBlockedOnly(true)
+    setDupOnly(false)
+    setIssueFilter(null)
+    setQuery("")
+    setPreviewPage(0)
+    const previewTable = document.getElementById("student-preview-table")
+    previewTable?.scrollIntoView({ behavior: "smooth", block: "start" })
+    previewTable?.focus({ preventScroll: true })
+  }
+
   // Table-first slice 8 — badge click filters the table to that badge's set
   // inside the clicked row's department, clearing the other dimensions first
   // so one click means exactly one set.
@@ -558,6 +572,13 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       setIssueFilter(kind === "ready" ? "no-issues" : "has-issues")
     }
     document.getElementById("student-preview-table")?.focus({ preventScroll: true })
+  }
+
+  // Strip chips are the auto-filters: same filtering as badge clicks, plus
+  // the scroll down to the table (badges already live there).
+  const stripFilterToBadge = (kind: "ready" | "review" | "duplicate", panel: DepartmentPanel<PanelRow>) => {
+    filterToBadge(kind, panel.departmentId)
+    document.getElementById("student-preview-table")?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
 
   const handleRemoveAllBlocked = () =>
@@ -990,10 +1011,31 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                           <>
                             <p className="text-[11px] text-tertiary flex items-center gap-1.5 flex-wrap">
                               <span title={status} className={`inline-block w-2 h-2 rounded-full shrink-0 ${STATUS_DOT[status]}`} />
-                              <span className="badge-emerald text-[10px]">Ready {readyCount}</span>
-                              <span className="badge-red text-[10px]">Needs Review {panel.rows.length - readyCount}</span>
+                              <button
+                                type="button"
+                                onClick={() => stripFilterToBadge("ready", panel)}
+                                title="Show this panel's ready rows in the table"
+                                className="badge-emerald text-[10px] cursor-pointer hover:underline"
+                              >
+                                Ready {readyCount}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => stripFilterToBadge("review", panel)}
+                                title="Show this panel's rows needing review in the table"
+                                className="badge-red text-[10px] cursor-pointer hover:underline"
+                              >
+                                Needs Review {panel.rows.length - readyCount}
+                              </button>
                               {dupCount > 0 && (
-                                <span className="badge-amber text-[10px]">Duplicate {dupCount}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => stripFilterToBadge("duplicate", panel)}
+                                  title="Show this panel's already-saved rows in the table"
+                                  className="badge-amber text-[10px] cursor-pointer hover:underline"
+                                >
+                                  Duplicate {dupCount}
+                                </button>
                               )}
                               {result && (
                                 <span className="text-tertiary">· {result.inserted} written · {result.skipped} skipped · {result.failed.length} failed</span>
@@ -1032,10 +1074,21 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                               {blocked && (
                                 <button
                                   type="button"
+                                  onClick={() => viewBlockedRows(panel)}
+                                  title="Show only this panel's blocked rows in the table below"
+                                  className="text-[11px] font-semibold text-secondary hover:underline"
+                                >
+                                  View {panel.blockedCount} blocked
+                                </button>
+                              )}
+                              {blocked && (
+                                <button
+                                  type="button"
                                   onClick={() => handleRemoveBlockedIn(panel)}
+                                  title="Delete only the blocked rows (missing email, bad domain, Excel error). Flagged rows import normally and are kept."
                                   className="text-[11px] font-semibold text-red-600 hover:underline"
                                 >
-                                  Remove these {panel.blockedCount}
+                                  Remove {panel.blockedCount} blocked
                                 </button>
                               )}
                             </div>
@@ -1081,7 +1134,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             </div>
             <div className="flex items-center gap-3">
               <p className="text-[11px] text-tertiary/70 italic">
-                <span className="badge-emerald not-italic">Ready</span> imports cleanly.{" "}
+                <span className="badge-emerald not-italic">Ready</span> imports cleanly — including brand-new students (the normal insert path).{" "}
                 <span className="badge-red not-italic ml-1">Needs Review</span> carries any issue —
                 hover the chip for the reasons, or filter by issue above.{" "}
                 <span className="badge-amber not-italic ml-1">Duplicate</span> is already saved;
@@ -1287,27 +1340,19 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                         <td>
                           <div className="flex flex-wrap gap-1">
                             {ledgerStatusByRow.get(r.row) === "already-persisted" ? (
-                              <button
-                                type="button"
-                                onClick={() => filterToBadge("duplicate", r.resolvedDepartmentId)}
-                                title="Already in the database — skipped on re-run, never written twice. Click to show all duplicates."
-                                className="badge-amber text-[10px] cursor-pointer hover:underline"
+                              <span
+                                className="badge-amber text-[10px]"
+                                title="Already in the database — skipped on re-run, never written twice"
                               >
                                 Duplicate
-                              </button>
-                            ) : !r.isInvalidValue && !isMissingEmail(r.email) && !isOffDomainEmail(r.email) && !r.isNewSubject && !r.isNewSection && !r.isNewFaculty && !r.facultyNotAssigned && !r.isInvalidDepartment && !r.isNewStudent ? (
-                              <button
-                                type="button"
-                                onClick={() => filterToBadge("ready", r.resolvedDepartmentId)}
-                                title="No issues. Click to show all ready rows."
-                                className="badge-emerald text-[10px] cursor-pointer hover:underline"
-                              >
+                              </span>
+                            ) : !r.isInvalidValue && !isMissingEmail(r.email) && !isOffDomainEmail(r.email) && !r.isNewSubject && !r.isNewSection && !r.isNewFaculty && !r.facultyNotAssigned && !r.isInvalidDepartment ? (
+                              <span className="badge-emerald text-[10px]" title="No issues">
                                 Ready
-                              </button>
+                              </span>
                             ) : (
-                              <button
-                                type="button"
-                                onClick={() => filterToBadge("review", r.resolvedDepartmentId)}
+                              <span
+                                className="badge-red text-[10px]"
                                 title={[
                                   r.isInvalidValue && "invalid value (Excel error)",
                                   isMissingEmail(r.email) && "email missing",
@@ -1318,11 +1363,10 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                                   r.facultyNotAssigned && "faculty not assigned",
                                   r.isInvalidDepartment && "dept code unknown",
                                   r.isNewStudent && "new student",
-                                ].filter(Boolean).join("; ") || "Click to show rows needing review"}
-                                className="badge-red text-[10px] cursor-pointer hover:underline"
+                                ].filter(Boolean).join("; ")}
                               >
                                 Needs Review
-                              </button>
+                              </span>
                             )}
                           </div>
                         </td>

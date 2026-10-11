@@ -43,10 +43,12 @@ const emailMissing = (v: string) => v.trim().length === 0
 const emailOffDomain = (v: string) => v.trim().length > 0 && !isAllowedStudentEmail(v)
 
 /**
- * Whether a row has ANY issue — the union of every granular key plus the
- * invalid-value catch-all (an Excel error in a non-email cell matches no
- * granular key but is still an issue). `no-issues` is its exact negation,
- * so the Ready badge and the dropdown can never disagree.
+ * Whether a row has ANY issue — the union of every granular key EXCEPT
+ * new-student (a new student is the normal insert candidate, not an issue;
+ * only Duplicate, a run outcome, overrules it) plus the invalid-value
+ * catch-all (an Excel error in a non-email cell matches no granular key but
+ * is still an issue). `no-issues` is its exact negation, so the Ready badge
+ * and the dropdown can never disagree.
  */
 export function hasIssue(row: IssueRowLike): boolean {
   return (
@@ -57,8 +59,7 @@ export function hasIssue(row: IssueRowLike): boolean {
     row.isNewSection ||
     row.isNewFaculty ||
     row.facultyNotAssigned ||
-    row.isInvalidDepartment ||
-    row.isNewStudent
+    row.isInvalidDepartment
   )
 }
 

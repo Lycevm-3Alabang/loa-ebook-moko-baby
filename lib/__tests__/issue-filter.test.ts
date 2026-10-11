@@ -42,8 +42,17 @@ describe("matchesIssue", () => {
   it("treats has-issues as the exact union, no-issues as its negation", () => {
     expect(matchesIssue(clean, "has-issues")).toBe(false)
     expect(matchesIssue(clean, "no-issues")).toBe(true)
-    expect(matchesIssue({ ...clean, isNewStudent: true }, "has-issues")).toBe(true)
-    expect(matchesIssue({ ...clean, isNewStudent: true }, "no-issues")).toBe(false)
+    expect(matchesIssue({ ...clean, isNewSubject: true }, "has-issues")).toBe(true)
+    expect(matchesIssue({ ...clean, isNewSubject: true }, "no-issues")).toBe(false)
+  })
+
+  it("does not count a new student as an issue (insert candidate, not a problem)", () => {
+    const newcomer: IssueRowLike = { ...clean, isNewStudent: true }
+    expect(hasIssue(newcomer)).toBe(false)
+    expect(matchesIssue(newcomer, "no-issues")).toBe(true)
+    expect(matchesIssue(newcomer, "has-issues")).toBe(false)
+    // ...yet the informational key still finds them
+    expect(matchesIssue(newcomer, "new-student")).toBe(true)
   })
 
   it("counts an invalid-value-only row as an issue (the precision case)", () => {
