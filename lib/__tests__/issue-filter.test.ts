@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ISSUE_KEYS, ISSUE_LABELS, matchesIssue, type IssueRowLike } from "@/features/users/components/bulk-import/issue-filter"
+import { hasIssue, ISSUE_KEYS, ISSUE_LABELS, matchesIssue, type IssueRowLike } from "@/features/users/components/bulk-import/issue-filter"
 
 const clean: IssueRowLike = {
   email: "a@itmlyceumalabang.onmicrosoft.com",
@@ -35,7 +35,23 @@ describe("matchesIssue", () => {
   })
 
   it("covers every key with a label", () => {
-    expect(ISSUE_KEYS).toHaveLength(7)
+    expect(ISSUE_KEYS).toHaveLength(9)
     for (const key of ISSUE_KEYS) expect(ISSUE_LABELS[key].length).toBeGreaterThan(0)
+  })
+
+  it("treats has-issues as the exact union, no-issues as its negation", () => {
+    expect(matchesIssue(clean, "has-issues")).toBe(false)
+    expect(matchesIssue(clean, "no-issues")).toBe(true)
+    expect(matchesIssue({ ...clean, isNewStudent: true }, "has-issues")).toBe(true)
+    expect(matchesIssue({ ...clean, isNewStudent: true }, "no-issues")).toBe(false)
+  })
+
+  it("counts an invalid-value-only row as an issue (the precision case)", () => {
+    const excelElsewhere: IssueRowLike = { ...clean, isInvalidValue: true }
+    expect(hasIssue(excelElsewhere)).toBe(true)
+    expect(matchesIssue(excelElsewhere, "has-issues")).toBe(true)
+    expect(matchesIssue(excelElsewhere, "no-issues")).toBe(false)
+    // ...and no granular key claims it
+    expect(matchesIssue(excelElsewhere, "invalid-email")).toBe(false)
   })
 })
