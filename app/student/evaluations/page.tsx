@@ -33,6 +33,10 @@ interface ExistingEvaluation {
   submittedAt: string | null
   createdAt: string
   updatedAt: string
+  // Runtime-present via select("*") (declared in EvaluationData): the mapping
+  // this draft evaluates. Null for legacy rows; dispute requires it, so the
+  // link renders only when present.
+  facultySubjectId?: string | null
   // Runtime row keys (the evaluations table stores these per row). Note the
   // drift: EvaluationData declares camelCase evaluationPeriodId, but
   // findByEvaluator returns select("*") unmapped, so the live key is the
@@ -176,7 +180,17 @@ export default function StudentEvaluationsPage() {
   //   return () => clearTimeout(timer)
   // }, [searchQuery, activeSemesterId])
 
-  async function handleDispute(item: PendingItem) {
+  async function handleDispute(
+    item: {
+      facultySubjectId?: string | null
+      evaluateeId: string
+      evaluateeName: string
+      subjectName: string
+      subjectCode: string
+    },
+    removeCard: () => void,
+  ) {
+    if (!item.facultySubjectId) return
     if (!confirm(`Report "${item.evaluateeName}" as the wrong faculty for "${item.subjectName || item.subjectCode}"?\n\nThis evaluation will be disabled and an admin will review the assignment.`)) return
     setDisputingFsId(item.facultySubjectId)
     try {
@@ -195,7 +209,7 @@ export default function StudentEvaluationsPage() {
         setDisputeMessage(data.error || "Failed to report dispute")
         return
       }
-      setPending((prev) => prev.filter((p) => p.facultySubjectId !== item.facultySubjectId))
+      removeCard()
       setDisputeMessage(`Dispute reported for "${item.subjectName || item.subjectCode}". An admin will review.`)
     } catch {
       setDisputeMessage("Failed to report dispute")
@@ -356,8 +370,8 @@ export default function StudentEvaluationsPage() {
                   <span
                     role="button"
                     tabIndex={0}
-                    onClick={(e) => { e.stopPropagation(); handleDispute(item) }}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); handleDispute(item) } }}
+                    onClick={(e) => { e.stopPropagation(); handleDispute(item, () => setPending((prev) => prev.filter((p) => p.facultySubjectId !== item.facultySubjectId))) }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); handleDispute(item, () => setPending((prev) => prev.filter((p) => p.facultySubjectId !== item.facultySubjectId))) } }}
                     aria-disabled={disputingFsId === item.facultySubjectId}
                     className="mt-1 block text-[11px] text-red-500 hover:text-red-700 underline decoration-dotted underline-offset-2 opacity-60 hover:opacity-100 transition-opacity disabled:opacity-30 cursor-pointer"
                     style={disputingFsId === item.facultySubjectId ? { opacity: 0.3, pointerEvents: 'none' } : {}}
@@ -496,11 +510,24 @@ export default function StudentEvaluationsPage() {
                   </p>
                   <span className="group relative mt-1 inline-block cursor-help">
                     <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] font-bold text-tertiary dark:border-slate-600">?</span>
-                    <span className="pointer-events-none absolute bottom-full left-0 z-10 mb-1 hidden w-max max-w-56 whitespace-normal rounded-lg bg-slate-900 px-2 py-1 text-[11px] font-normal text-white shadow-lg group-hover:block dark:bg-slate-700">
-                      <span className="block">Semester: {ev.evalSemesterTitle ?? "—"} ({ev.semesterId ?? "none"})</span>
-                      <span className="block">Evaluation Period: {ev.evalPeriodName ?? "—"} ({ev.evaluation_period_id ?? "—"})</span>
+                      <span className="pointer-events-none absolute bottom-full left-0 z-10 mb-1 hidden w-max max-w-56 whitespace-normal rounded-lg bg-slate-900 px-2 py-1 text-[11px] font-normal text-white shadow-lg group-hover:block dark:bg-slate-700">
+                        <span className="block">Semester: {ev.evalSemesterTitle ?? "—"} ({ev.semesterId ?? "none"})</span>
+                        <span className="block">Evaluation Period: {ev.evalPeriodName ?? "—"} ({ev.evaluation_period_id ?? "—"})</span>
+                      </span>
                     </span>
-                  </span>
+                  {ev.facultySubjectId ? (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => { e.stopPropagation(); handleDispute(ev, () => setEvaluations((prev) => prev.filter((x) => x.id !== ev.id))) }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); handleDispute(ev, () => setEvaluations((prev) => prev.filter((x) => x.id !== ev.id))) } }}
+                      aria-disabled={disputingFsId === ev.facultySubjectId}
+                      className="mt-1 block text-[11px] text-red-500 hover:text-red-700 underline decoration-dotted underline-offset-2 opacity-60 hover:opacity-100 transition-opacity disabled:opacity-30 cursor-pointer"
+                      style={disputingFsId === ev.facultySubjectId ? { opacity: 0.3, pointerEvents: 'none' } : {}}
+                    >
+                      {disputingFsId === ev.facultySubjectId ? "Reporting..." : "Wrong faculty?"}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-2 shrink-0 ml-3">
                   {navigatingId === ev.id ? (
