@@ -25,7 +25,7 @@ export default function FacultySubjectDetailPage() {
   return (
     <div className="w-full min-h-[calc(100dvh-var(--app-shell-header-height,64px))] px-4 py-6 space-y-4 animate-ios-slide-in">
       <Link
-        href="/admin/data/academic-infrastructure"
+        href="/admin/data/academic-infrastructure?tab=faculty_enroll&sub=faculty"
         className="inline-flex items-center gap-1 text-xs text-tertiary hover:text-secondary transition-colors"
       >
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

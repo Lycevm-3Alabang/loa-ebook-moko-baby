@@ -1,4 +1,4 @@
-import { userRepository, studentEnrollmentRepository } from "@/lib/repositories/factory"
+import { userRepository, studentEnrollmentRepository, semesterRepository } from "@/lib/repositories/factory"
 import { supabase } from "@/lib/db"
 import { logAuditEvent } from "@/lib/services/audit"
 import type { StudentEnrollmentData } from "@/lib/types"
@@ -17,7 +17,10 @@ export interface CreateEnrollmentInput {
   email?: string
   faculty_subject_id: string
   section_id?: string
-  semesterId?: string | null
+  // NOTE: semesterId is deliberately NOT accepted. The client-held
+  // `activeSemesterId || null` pattern wrote NULL rows whenever the
+  // semesters fetch had not resolved — and a NULL semester is exactly what
+  // the evaluation gate (findExisting) rejects. Resolve server-side instead.
 }
 
 export interface CreateEnrollmentResult {
@@ -30,11 +33,25 @@ export async function createEnrollment(
   input: CreateEnrollmentInput,
   currentUserId: string
 ): Promise<CreateEnrollmentResult> {
-  const { student_id, name, email, faculty_subject_id, section_id, semesterId } = input
+  const { student_id, name, email, faculty_subject_id, section_id } = input
 
   if (!faculty_subject_id) {
     throw new EnrollmentError("faculty_subject_id is required", 400)
   }
+
+  // Server-side active semester, exactly-once — same pattern as
+  // POST /api/import/students (which its own comment calls load-bearing:
+  // a null or stale value produces rows the evaluation gate rejects).
+  const activeSemesters = await semesterRepository.list({ isActive: true })
+  if (activeSemesters.length !== 1) {
+    throw new EnrollmentError(
+      activeSemesters.length === 0
+        ? "No active semester. Activate one before adding enrollments."
+        : "More than one semester is active. Deactivate all but one before adding enrollments.",
+      400,
+    )
+  }
+  const semesterId = activeSemesters[0].id
 
   let resolvedStudentId = student_id
   let createdNewUser = false
@@ -88,7 +105,7 @@ export async function createEnrollment(
       student_id: resolvedStudentId,
       faculty_subject_id,
       section_id: resolvedSectionId!,
-      semesterId: semesterId || null,
+      semesterId,
     })
   } catch (err: unknown) {
     const dbErr = err as { code?: string; message?: string }

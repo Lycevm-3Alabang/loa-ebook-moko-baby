@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
-import { userRepository, subjectRepository, facultySubjectRepository, rubricGroupRepository } from "@/lib/repositories/factory"
+import { userRepository, subjectRepository, facultySubjectRepository, rubricGroupRepository, sectionRepository } from "@/lib/repositories/factory"
 import { getEvaluationPeriods, getActiveEvaluationPeriod } from "@/features/admin-data/evaluation-periods.service"
 import { getActiveSemester } from "@/features/admin-data/semesters.service"
 import { getPendingEvaluations, getMyEvaluations } from "@/features/evaluations/evaluations.service"
@@ -61,6 +61,8 @@ export async function GET() {
         subjectName: s?.name ?? "",
         mappingSemesterId: p.mappingSemesterId,
         mappingSemesterTitle: p.mappingSemesterTitle,
+        sectionProgram: p.sectionProgram,
+        sectionName: p.sectionName,
         isMappedToActiveSemester: p.isMappedToActiveSemester,
         eligible: p.eligible,
         ineligibilityReason: p.ineligibilityReason,
@@ -83,8 +85,10 @@ export async function GET() {
 
     const evalFacultyMap = new Map(evalFacultyData.map((u) => [u.id, u]))
     const fsSubjectIdMap = new Map<string, string>()
+    const fsSectionIdMap = new Map<string, string>()
     for (const fs of fsData) {
       fsSubjectIdMap.set(fs.id, fs.subject_id)
+      if (fs.section_id) fsSectionIdMap.set(fs.id, fs.section_id)
     }
 
     const evalSubjectIds = [...new Set(fsData.map((fs) => fs.subject_id))]
@@ -94,16 +98,26 @@ export async function GET() {
 
     const evalSubjectMap = new Map(evalSubjectData.map((s) => [s.id, s]))
 
+    // Section names for drafts: sections are few, so resolve in memory from
+    // the row's OWN section (via its mapping), not from any active value.
+    const allSections = await sectionRepository.list()
+    const sectionById = new Map(
+      (allSections as { id: string; name: string; program: string }[]).map((s) => [s.id, s]),
+    )
+
     const enrichedEvaluations = evaluations.map((e) => {
       const subjectId = e.facultySubjectId ? (fsSubjectIdMap.get(e.facultySubjectId) ?? "") : ""
       const subj = subjectId ? evalSubjectMap.get(subjectId) : undefined
       const fac = evalFacultyMap.get(e.evaluateeId)
+      const sec = e.facultySubjectId ? sectionById.get(fsSectionIdMap.get(e.facultySubjectId) ?? "") : undefined
       return {
         ...e,
         evaluateeName: fac?.name ?? "Unknown",
         subjectId,
         subjectCode: subj?.code ?? "",
         subjectName: subj?.name ?? "",
+        sectionProgram: sec?.program ?? null,
+        sectionName: sec?.name ?? null,
       }
     })
 

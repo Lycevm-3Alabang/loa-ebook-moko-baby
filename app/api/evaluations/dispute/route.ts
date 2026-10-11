@@ -67,10 +67,21 @@ export async function POST(request: Request) {
       }),
     })
 
-    if (emailEnabled()) {
-      const admins = await userRepository.listByRole("ADMIN")
+    // Success is defined as invalidated + audited (both committed above).
+    // Email is a notification, not the contract: it fires after we respond,
+    // so a slow or dead SMTP can never stall or fail the dispute. The sends
+    // remain awaited *inside* the background task (not floated individually)
+    // so one hanging connection cannot strand another admin's mail; on
+    // serverless this task is best-effort — a frozen invocation may kill it,
+    // which is acceptable for a notification.
+    const notifyAdmins = (async () => {
+      try {
+        if (!emailEnabled()) return
 
-      if (admins.length > 0) {
+        const admins = await userRepository.listByRole("ADMIN")
+
+        if (admins.length === 0) return
+
         const transporter = nodemailer.createTransport({
           host: "smtp.gmail.com",
           port: 587,
@@ -90,7 +101,7 @@ export async function POST(request: Request) {
           <p><strong>Faculty Subject ID:</strong> ${facultySubjectId}</p>
           <p>The student reported that they are evaluating the wrong faculty for this subject. Please review and update the faculty-subject assignment if needed.</p>
           <hr>
-          <p style="color:#666;font-size:12px;">This is an automated notification from ACES.</p>
+          <p style="color:#666;font-size:12px">This is an automated notification from ACES.</p>
         `
 
         for (const admin of admins) {
@@ -100,8 +111,14 @@ export async function POST(request: Request) {
             // Silently fail per-email errors
           }
         }
+      } catch {
+        // Notification is best-effort; the dispute has already succeeded.
       }
-    }
+    })()
+
+    // Float the task deliberately: the void documents that a rejection is
+    // impossible to surface here (caught inside). Do not await this.
+    void notifyAdmins
 
     return NextResponse.json({ success: true })
   } catch {
