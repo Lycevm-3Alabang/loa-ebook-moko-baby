@@ -8,6 +8,8 @@ import { computeDepartmentGrouping } from "./department-grouping"
 import { buildDepartmentPanels, type DepartmentPanel } from "./department-panels"
 import { applyCreatedUsers } from "./apply-created-users"
 import { panelStripStatus, type StripStatus } from "./panel-strip-status"
+import { ISSUE_KEYS, ISSUE_LABELS, matchesIssue, type IssueKey } from "./issue-filter"
+import { BLOCKED_CSV_FILENAME, buildBlockedCsv } from "./blocked-row-export"
 import { StepPanel } from "@/features/admin-data/components/FacultyImportStepper"
 
 // Domain rule is shared with the import service via lib/csv-utils — one list,
@@ -165,7 +167,13 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const highlightTimer = useRef<number | null>(null)
   const [previewError, setPreviewError] = useState("")
   const [referenceError, setReferenceError] = useState("")
-  const [problemFilter, setProblemFilter] = useState(false)
+  // True blocked-only (red rows), dept-scoped by deptRows. Replaces the old
+  // problems view: amber rows badge in place and need no separate view.
+  const [blockedOnly, setBlockedOnly] = useState(false)
+  // Table-first slice 6 — text search (loaded rows only, never the server)
+  // and single-issue filter. Both compose inside the current view.
+  const [query, setQuery] = useState("")
+  const [issueFilter, setIssueFilter] = useState<IssueKey | null>(null)
   // Table-first slice 2 — department view filter. View-only: run scope is
   // always the whole panel, never the filtered set (pinned contract §3.1).
   const [deptFilter, setDeptFilter] = useState<string | null>(null)
@@ -298,10 +306,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     return all.filter((r) => activePanelRows.has(r.row))
   }, [previewRows, activePanelRows])
 
-  const problemRows = useMemo(() => deptRows.filter(isProblemPreviewRow), [deptRows])
-
   // File-wide flagged tally: the overview line below stays global even while
-  // the table is filtered (problemRows above is now dept-scoped).
+  // the table is filtered. (The old problems view is gone — the toggle is
+  // true blocked-only now; amber rows badge in place.)
   const fileProblemCount = useMemo(
     () => (previewRows ?? []).filter(isProblemPreviewRow).length,
     [previewRows],
@@ -309,7 +316,22 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
   const deptBlockedCount = useMemo(() => deptRows.filter(isBlockedPreviewRow).length, [deptRows])
 
-  const visibleRows = problemFilter ? problemRows : deptRows
+  const blockedView = blockedOnly ? deptRows.filter(isBlockedPreviewRow) : deptRows
+  const issueView = useMemo(
+    () => (issueFilter ? blockedView.filter((r) => matchesIssue(r, issueFilter)) : blockedView),
+    [blockedView, issueFilter],
+  )
+  // Free text over the loaded preview only — never a server query. Composes
+  // inside whatever the dept/blocked/issue filters already narrowed.
+  const visibleRows = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return issueView
+    return issueView.filter((r) =>
+      [r.name, r.email, r.subjectCode, r.section, r.facultyEmail, r.departmentCode].some((c) =>
+        (c || "").toLowerCase().includes(q),
+      ),
+    )
+  }, [issueView, query])
   // Table-first slice 3 — blocked rows inside the CURRENT view (dept and/or
   // problem filters applied). removeBlockedRows keys on source row, so the
   // filtered copies are safe to pass straight through.
@@ -346,6 +368,8 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     setPanelErrors({})
     setRemovedRows([])
     setDeptFilter(null)
+    setQuery("")
+    setIssueFilter(null)
     const file = fileRef.current?.files?.[0]
     if (!file) { setPreviewError("Please select a CSV file"); return }
     const text = await decodeCsvFile(file)
@@ -461,7 +485,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       })),
     ])
     setPreviewRows((prev) => prev?.filter((r) => !gone.has(r.row)) ?? prev)
-    setProblemFilter(false)
+    setBlockedOnly(false)
     setPreviewPage(0)
   }
 
@@ -471,7 +495,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   // Strip → table bridge. Filter-only: run scope is untouched (pinned §3.1).
   const viewPanelRows = (panel: DepartmentPanel<PanelRow>) => {
     setDeptFilter(panel.id)
-    if (panel.blockedCount > 0) setProblemFilter(true)
+    // Land on ALL of the panel's rows — the table's own toggle surfaces
+    // the blocked subset from there.
+    setBlockedOnly(false)
     setPreviewPage(0)
     document.getElementById("student-preview-table")?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
@@ -783,7 +809,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-semibold text-secondary">
                 {visibleRows.length} row{visibleRows.length !== 1 ? "s" : ""}
-                {problemFilter && ` (filtered)`}
+                {(blockedOnly || deptFilter || issueFilter || query.trim().length > 0) && ` (filtered)`}
               </h4>
               {deptFilter && (
                 <button
@@ -806,7 +832,29 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                 faculty is <span className="badge-red not-italic">red</span>, not amber &mdash; the
                 server rejects it.
               </p>
-              <div className="ml-auto flex items-center gap-2">
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                <input
+                  value={query}
+                  onChange={(e) => { setQuery(e.target.value); setPreviewPage(0) }}
+                  placeholder="Search rows…"
+                  title="Search the loaded preview (name, email, subject, section, faculty, dept)"
+                  className="text-[11px] px-3 py-1 rounded-full border border-default bg-surface-hover text-secondary outline-none focus:border-gold-400 w-44"
+                />
+                <select
+                  value={issueFilter ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setIssueFilter(v !== "" && (ISSUE_KEYS as readonly string[]).includes(v) ? (v as IssueKey) : null)
+                    setPreviewPage(0)
+                  }}
+                  title="Filter by issue type (composes with department, blocked, and search)"
+                  className="text-[11px] font-semibold px-2 py-1 rounded-full border border-default bg-surface-hover text-secondary outline-none"
+                >
+                  <option value="">All issues</option>
+                  {ISSUE_KEYS.map((k) => (
+                    <option key={k} value={k}>{ISSUE_LABELS[k]}</option>
+                  ))}
+                </select>
                 <select
                   value={deptFilter ?? ""}
                   onChange={(e) => { setDeptFilter(e.target.value || null); setPreviewPage(0) }}
@@ -822,23 +870,23 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                 </select>
                 <button
                   type="button"
-                  onClick={() => { setDeptFilter(null); setProblemFilter(true); setPreviewPage(0) }}
+                  onClick={() => { setDeptFilter(null); setBlockedOnly(true); setPreviewPage(0) }}
                   title="Show every blocked row in the file"
                   className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
                 >
                   Errors only
                 </button>
-                {problemRows.length > 0 && (
+                {deptBlockedCount > 0 && (
                   <button
                     type="button"
-                    onClick={() => { setProblemFilter((p) => !p); setPreviewPage(0) }}
+                    onClick={() => { setBlockedOnly((p) => !p); setPreviewPage(0) }}
                     className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition-colors ${
-                      problemFilter
+                      blockedOnly
                         ? "bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-700 dark:text-red-300"
                         : "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400"
                     }`}
                   >
-{problemFilter ? "Show all rows" : `Show ${deptBlockedCount} blocked only`}
+{blockedOnly ? "Show all rows" : `Show ${deptBlockedCount} blocked only`}
                   </button>
                 )}
                 {shownBlockedRows.length > 0 && (
@@ -885,6 +933,14 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                     className="shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
                   >
                     Remove all {blockedRows.length} blocked
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => downloadBlob(buildBlockedCsv(blockedRows), BLOCKED_CSV_FILENAME)}
+                    title="Download every blocked row with its reason — fix outside and re-upload, or fix inline"
+                    className="shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-default text-secondary hover:bg-surface-dim transition-colors"
+                  >
+                    Download {blockedRows.length} blocked
                   </button>
                 </div>
               </div>

@@ -1,8 +1,8 @@
 # TODO — student CSV importer follow-ups
 
 Tracked 2026-10-09 for the next session. All production incidents are closed
-(504 timeout, 23505 duplicate key, silent cross-term loss); 304 tests / 22 files
-green (C3 S3 done 2026-10-10, +6). What remains is reporting polish and containment — nothing is on fire.
+(504 timeout, 23505 duplicate key, silent cross-term loss); 316 tests / 24 files
+green (C3 S4 + table-first UI done 2026-10-10, +12). What remains is reporting polish and containment — nothing is on fire.
 
 Gate for every item: `npx tsc --noEmit` → `npm run lint` → `npx vitest run`
 (baseline 280/20) → `npm run build`.
@@ -12,13 +12,20 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
 
 ## NEXT (do first)
 
-- [ ] **C3 S4 — `userMap` merge across panels** (`specs/student-import-stepper.md` §8, first row).
-  The LAST item in C3. After a panel runs, `existingUsers` is stale for **every** panel:
-  a student CCS created is still shown as "New Student" in CTHM. Each step returns its
-  own `userMap`; the client merges it, the same client-held-map model the faculty steps
-  use (`app/api/import/faculties/route.ts:63-64`). Scope it with /plan-fix first — the
-  open question is whether merging happens on `created[]` alone or whether the panel
-  result must grow a `userMap` field for it to read from.
+- [x] **C3 S4 — `userMap` merge done 2026-10-10** (`specs/student-import-stepper.md` §8, first row).
+  Last C3 item. Option A as planned: merge on the already-returned `created[]`, zero
+  server change — pure `apply-created-users.ts` (normalize/dedupe/no-mutate) + 6 tests +
+  guarded functional-merge in `runPanel` after the result commit. Gates green USER-REPORTED.
+  Run file: `20261010-2300-session.md` (planned + implemented on the same file).
+
+- [x] **Table-first UI done 2026-10-10** (`specs/student-import-stepper/table-first-ui.md`, new spec).
+  Panels slimmed to an execution strip (`StepPanel` reused untouched, `invalid={[]}`, status
+  dots via pure `panel-strip-status.ts` + 6 tests); the table is the work surface (dept filter
+  + Errors-only shortcut + Remove-shown, all view-only — runs still send whole panels); row
+  handlers re-keyed on source row (positional indexes lied under any filter); email editable
+  with regroup + edit-flash. One component touched (`BulkStudentImport.tsx`) + 2 helpers +
+  2 test files. Gates green USER-REPORTED; **browser unconfirmed** (strip dots, view-links,
+  email-edit regroup, run-after-filter whole-panel proof).
 
 - [ ] **VERIFY (no code) — S2 + S3 browser pass.** Both slices are gate-green but have
   never been rendered. Cheapest to close while they are fresh:
