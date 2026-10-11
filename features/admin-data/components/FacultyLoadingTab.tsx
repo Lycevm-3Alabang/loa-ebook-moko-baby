@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
+import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { useApiGet } from "@/lib/api/client"
 import { usePagination, Paginator } from "@/components/ui/Paginator"
@@ -27,7 +28,11 @@ const IMPORT_STEPS = [
 ]
 
 export function FacultyLoadingTab() {
-  const [facEnrollTab, setFacEnrollTab] = useState<FacEnrollTab>("faculty")
+  const searchParams = useSearchParams()
+  // Deep-link support (?sub=enrollments): unknown values fall back to faculty.
+  const [facEnrollTab, setFacEnrollTab] = useState<FacEnrollTab>(() =>
+    searchParams.get("sub") === "enrollments" ? "enrollments" : "faculty",
+  )
   return (
     <div className="space-y-6">
       <SegmentedControl

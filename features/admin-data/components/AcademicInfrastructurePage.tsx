@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { SegmentedControl } from "@/features/admin-data/components/shared"
 import { SemestersTab } from "@/features/admin-data/components/SemestersTab"
 import { DepartmentsCoursesTab } from "@/features/admin-data/components/DepartmentsCoursesTab"
@@ -27,10 +28,19 @@ const setupSteps = [
 ]
 
 export default function AcademicInfrastructurePage() {
-  const [mainTab, setMainTab] = useState<MainTab>("semesters")
+  const searchParams = useSearchParams()
+  // Deep-link support (e.g. "Back to Faculty Loading" lands on the
+  // faculty_enroll tab): unknown values fall back to semesters.
+  const [mainTab, setMainTab] = useState<MainTab>(() => {
+    const tab = searchParams.get("tab")
+    return allTabs.some((t) => t.key === tab) ? (tab as MainTab) : "semesters"
+  })
   const [showGuide, setShowGuide] = useState(false)
   const { data: countData } = useApiGet<{ count: number }>("/api/semesters/count-active")
   const semesterLocked = (countData?.count ?? 1) !== 1
+
+  // A deep link must not render a gated tab behind the semester lock.
+  const effectiveTab = semesterLocked && mainTab !== "semesters" ? "semesters" : mainTab
 
   const tabs = semesterLocked
     ? allTabs.map((t) => ({ ...t, disabled: t.key !== "semesters" }))
@@ -119,14 +129,14 @@ export default function AcademicInfrastructurePage() {
 
       <SegmentedControl
         options={tabs}
-        selected={mainTab}
+        selected={effectiveTab}
         onSelect={(key) => setMainTab(key)}
       />
 
-      {mainTab === "semesters" && <SemestersTab />}
-      {mainTab === "departments" && <DepartmentsCoursesTab />}
-      {mainTab === "subjects" && <SubjectsSectionsTab />}
-      {mainTab === "faculty_enroll" && <FacultyLoadingTab />}
+      {effectiveTab === "semesters" && <SemestersTab />}
+      {effectiveTab === "departments" && <DepartmentsCoursesTab />}
+      {effectiveTab === "subjects" && <SubjectsSectionsTab />}
+      {effectiveTab === "faculty_enroll" && <FacultyLoadingTab />}
     </div>
   )
 }
