@@ -542,6 +542,20 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     previewTable?.focus({ preventScroll: true })
   }
 
+  // Sibling of viewPanelRows for the blocked subset: same landing, toggle on.
+  // Gives "Remove N blocked" a preview — the admin sees the rows before deleting them.
+  const viewBlockedRows = (panel: DepartmentPanel<PanelRow>) => {
+    setDeptFilter(panel.id)
+    setBlockedOnly(true)
+    setDupOnly(false)
+    setIssueFilter(null)
+    setQuery("")
+    setPreviewPage(0)
+    const previewTable = document.getElementById("student-preview-table")
+    previewTable?.scrollIntoView({ behavior: "smooth", block: "start" })
+    previewTable?.focus({ preventScroll: true })
+  }
+
   // Table-first slice 8 — badge click filters the table to that badge's set
   // inside the clicked row's department, clearing the other dimensions first
   // so one click means exactly one set.
@@ -1032,10 +1046,21 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                               {blocked && (
                                 <button
                                   type="button"
+                                  onClick={() => viewBlockedRows(panel)}
+                                  title="Show only this panel's blocked rows in the table below"
+                                  className="text-[11px] font-semibold text-secondary hover:underline"
+                                >
+                                  View {panel.blockedCount} blocked
+                                </button>
+                              )}
+                              {blocked && (
+                                <button
+                                  type="button"
                                   onClick={() => handleRemoveBlockedIn(panel)}
+                                  title="Delete only the blocked rows (missing email, bad domain, Excel error). Flagged rows import normally and are kept."
                                   className="text-[11px] font-semibold text-red-600 hover:underline"
                                 >
-                                  Remove these {panel.blockedCount}
+                                  Remove {panel.blockedCount} blocked
                                 </button>
                               )}
                             </div>
