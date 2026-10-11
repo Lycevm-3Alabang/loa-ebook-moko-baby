@@ -1,8 +1,8 @@
 # TODO — student CSV importer follow-ups
 
 Tracked 2026-10-09 for the next session. All production incidents are closed
-(504 timeout, 23505 duplicate key, silent cross-term loss); 298 tests / 22 files
-green (C3 S2 done 2026-10-10, +10). What remains is reporting polish and containment — nothing is on fire.
+(504 timeout, 23505 duplicate key, silent cross-term loss); 304 tests / 22 files
+green (C3 S3 done 2026-10-10, +6). What remains is reporting polish and containment — nothing is on fire.
 
 Gate for every item: `npx tsc --noEmit` → `npm run lint` → `npx vitest run`
 (baseline 280/20) → `npm run build`.
@@ -12,16 +12,40 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
 
 ## NEXT (do first)
 
-- [ ] **C3 S3 — Unassigned panel polish** (`specs/student-import-stepper.md` §3.4, §8).
-  S2 shipped the grid; the Unassigned panel renders whenever rows carry a blank or
-  unresolvable `department code`, but it is an ordinary panel today. §8's
-  "Invalid-list volume" row is the concrete work: 10 panels × hundreds of blocked
-  rows each need an **aggregate roll-up above the grid**, and the unresolved count
-  per panel wants a footnote. Scope it with /plan-fix first — §3.4's lazy-creation
-  timing and the roll-up placement are both still open. Then S4 (`userMap` merge
-  across panels).
+- [ ] **C3 S4 — `userMap` merge across panels** (`specs/student-import-stepper.md` §8, first row).
+  The LAST item in C3. After a panel runs, `existingUsers` is stale for **every** panel:
+  a student CCS created is still shown as "New Student" in CTHM. Each step returns its
+  own `userMap`; the client merges it, the same client-held-map model the faculty steps
+  use (`app/api/import/faculties/route.ts:63-64`). Scope it with /plan-fix first — the
+  open question is whether merging happens on `created[]` alone or whether the panel
+  result must grow a `userMap` field for it to read from.
+
+- [ ] **VERIFY (no code) — S2 + S3 browser pass.** Both slices are gate-green but have
+  never been rendered. Cheapest to close while they are fresh:
+  - **S2:** run one panel, confirm the **preview table survives its own run** (this is the
+    deleted `setPreviewRows(null)` — invisible to tsc/lint/vitest/build), and that the
+    ledger download covers exactly the panels that ran.
+  - **S3:** §3.4's Unassigned panel has **never rendered** — the 2026-1 file has zero
+    unresolvable codes (its ten department counts sum to exactly 28,096). Author a CSV
+    with one `department code` = `ZZZ`, one blank, and two blank emails; that exercises
+    the roll-up, the unresolved footnote, and both remove verbs.
 
 ## Queued (proposed order — reorder freely)
+
+- [x] **C3 S3 — Unassigned panel polish done 2026-10-10** (`specs/student-import-stepper.md` §3.4, §8).
+  Option C, all four parts: **the fixture first** — `studentImport.test.ts` now asserts
+  §3.4 decision (b) directly (unresolvable department still enrolls, user created with
+  `departmentId: null`) plus the `r.departmentId ?? departmentId ?? null` fallback
+  direction; that decision had **zero** coverage and tightening the validation would
+  have passed every gate while silently dropping enrollments · `DepartmentPanel` gains
+  `unresolvedCount` + `blankDeptCount` (blank vs typo are different admin mistakes and
+  the ledger already distinguishes them) · §8 roll-up above the grid, informational only
+  · `removeBlockedRows(target)` serves both verbs — per-panel and a relabelled
+  `Remove all N blocked` inside the roll-up. §3.4's ambiguous "lazily on first run" is
+  now a **pinned contract** (`no Unassigned panel when every row resolves`), not a
+  reading; no production behaviour changed for it. Gates green USER-REPORTED (304/22 after
+  a TS2345 fix); **browser unconfirmed**. Run file:
+  `.opencode/skills/plan-fix/runs/20261010-2155-c3-s3-unassigned-polish.md`.
 
 - [x] **C3 S2 — department grid + panels done 2026-10-10** (`specs/student-import-stepper.md` §3, §5).
   Pure `department-panels.ts` (`buildDepartmentPanels` groups ROWS by §3.2
