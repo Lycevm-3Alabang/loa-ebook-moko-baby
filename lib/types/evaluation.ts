@@ -286,6 +286,20 @@ export interface PendingEvaluationItem {
   evaluateeId: string
   facultySubjectId: string
   subjectId: string
+  // Mapped term, sourced from faculty_subjects."semesterId" — never the
+  // active semester/period. Null when the mapping has no semester.
+  mappingSemesterId: string | null
+  // Human-readable semesters.title for mappingSemesterId; null when unmapped.
+  mappingSemesterTitle: string | null
+  // mappingSemesterId === activeSemesterId (both non-null). Display/diagnostic
+  // only — never gates. Locking keys off `eligible`.
+  isMappedToActiveSemester: boolean
+  // Gate mirror: a student_enrollments row exists for
+  // (student, facultySubjectId, active evaluation_periods."semesterId").
+  eligible: boolean
+  // Why not eligible: enrollment row names another/absent mapping vs names
+  // this mapping under a different semester. Null when eligible.
+  ineligibilityReason: "WRONG_TERM" | "NOT_ENROLLED" | null
 }
 
 export interface EvaluationResultData {
@@ -432,7 +446,7 @@ export interface IRubricRepository {
 }
 
 export interface IEvaluationRepository {
-  findPending(evaluatorId: string, evaluationPeriodId: string): Promise<PendingEvaluationItem[]>
+  findPending(evaluatorId: string, evaluationPeriodId: string, activeSemesterId?: string | null): Promise<PendingEvaluationItem[]>
   findByEvaluator(evaluatorId: string, evaluationPeriodId?: string): Promise<EvaluationData[]>
   findByEvaluatorBrief(evaluatorId: string): Promise<EvaluationData[]>
   findById(id: string): Promise<EvaluationData | null>

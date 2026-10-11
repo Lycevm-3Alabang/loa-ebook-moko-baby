@@ -1,7 +1,11 @@
 import { evaluationRepository, studentEnrollmentRepository } from "@/lib/repositories/factory"
 
-export async function getPendingEvaluations(evaluatorId: string, evaluationPeriodId: string) {
-  return evaluationRepository.findPending(evaluatorId, evaluationPeriodId)
+export async function getPendingEvaluations(
+  evaluatorId: string,
+  evaluationPeriodId: string,
+  activeSemesterId?: string | null,
+) {
+  return evaluationRepository.findPending(evaluatorId, evaluationPeriodId, activeSemesterId)
 }
 
 export async function getMyEvaluations(evaluatorId: string, evaluationPeriodId?: string) {

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
 import { userRepository, subjectRepository, facultySubjectRepository, rubricGroupRepository } from "@/lib/repositories/factory"
 import { getEvaluationPeriods, getActiveEvaluationPeriod } from "@/features/admin-data/evaluation-periods.service"
+import { getActiveSemester } from "@/features/admin-data/semesters.service"
 import { getPendingEvaluations, getMyEvaluations } from "@/features/evaluations/evaluations.service"
 import { groupSnapshotRows } from "@/lib/evaluation-utils"
 
@@ -21,9 +22,10 @@ export async function GET() {
     const periods = await getEvaluationPeriods()
     const activePeriod = await getActiveEvaluationPeriod()
     const activePeriodId = activePeriod?.id ?? null
+    const activeSemester = await getActiveSemester()
 
     const [pending, evaluations, rawRubric] = await Promise.all([
-      activePeriodId ? getPendingEvaluations(userId, activePeriodId) : Promise.resolve([]),
+      activePeriodId ? getPendingEvaluations(userId, activePeriodId, activeSemester?.id ?? null) : Promise.resolve([]),
       activePeriodId ? getMyEvaluations(userId, activePeriodId) : Promise.resolve([]),
       activePeriodId
         ? rubricGroupRepository.getSnapshot(activePeriodId).catch(() => null)
@@ -57,6 +59,11 @@ export async function GET() {
         subjectId: p.subjectId,
         subjectCode: s?.code ?? "",
         subjectName: s?.name ?? "",
+        mappingSemesterId: p.mappingSemesterId,
+        mappingSemesterTitle: p.mappingSemesterTitle,
+        isMappedToActiveSemester: p.isMappedToActiveSemester,
+        eligible: p.eligible,
+        ineligibilityReason: p.ineligibilityReason,
       }
     })
 
@@ -102,8 +109,10 @@ export async function GET() {
 
     return NextResponse.json({
       periods,
-      activePeriodId,
-      activePeriodName: activePeriod?.name ?? null,
+      activeEvalPeriodId: activePeriodId,
+      activeEvalPeriodName: activePeriod?.name ?? null,
+      activeEvalPeriodSemesterId: activePeriod?.semesterId ?? null,
+      activeSemesterId: activeSemester?.id ?? null,
       pending: enrichedPending,
       evaluations: enrichedEvaluations,
       rubric,
