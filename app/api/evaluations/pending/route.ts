@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
 import { getActiveEvaluationPeriod } from "@/features/admin-data/evaluation-periods.service"
+import { getActiveSemester } from "@/features/admin-data/semesters.service"
 import { getPendingEvaluations } from "@/features/evaluations/evaluations.service"
 import { userRepository, subjectRepository } from "@/lib/repositories/factory"
 
@@ -21,7 +22,8 @@ export async function GET() {
     if (!activePeriod) {
       return NextResponse.json({ error: "No active evaluation period" }, { status: 400 })
     }
-    const pending = await getPendingEvaluations(userId, activePeriod.id)
+    const activeSemester = await getActiveSemester()
+    const pending = await getPendingEvaluations(userId, activePeriod.id, activeSemester?.id ?? null)
     if (pending.length === 0) return NextResponse.json({ pending: [] })
 
     const facultyIds = [...new Set(pending.map((p) => p.evaluateeId))]
@@ -46,6 +48,11 @@ export async function GET() {
         subjectId: p.subjectId,
         subjectCode: s?.code || "",
         subjectName: s?.name || "",
+        mappingSemesterId: p.mappingSemesterId,
+        mappingSemesterTitle: p.mappingSemesterTitle,
+        isMappedToActiveSemester: p.isMappedToActiveSemester,
+        eligible: p.eligible,
+        ineligibilityReason: p.ineligibilityReason,
       }
     })
 

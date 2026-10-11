@@ -4,11 +4,51 @@ import type { EvaluationData, EvaluationComment, EvaluationCommentWithEvaluation
 
 const DUMMY_FACULTY_EMAIL_EVAL = "placeholder@lyceumalabang.edu.ph"
 
+// Semester titles for a set of mapping semesterIds, in one round trip.
+// Deliberately a separate query, NOT an embedded `semesters!inner(title)`
+// join on the faculty_subjects selects: !inner would silently drop
+// NULL-semester mappings from Branch A, which must still list (locked).
+async function fetchSemesterTitleMap(semesterIds: (string | null | undefined)[]) {
+  const ids = [...new Set(semesterIds.filter((id): id is string => !!id))]
+  if (ids.length === 0) return new Map<string, string>()
+  const { data, error } = await supabase.from("semesters").select("id, title").in("id", ids)
+  if (error) throw error
+  return new Map(((data || []) as { id: string; title: string }[]).map((r) => [r.id, r.title]))
+}
+
+function toEligiblePendingItem(
+  fs: { id: string; faculty_id: string; subject_id: string; semesterId?: string | null },
+  enrollments: { faculty_subject_id?: string | null; semesterId?: string | null }[],
+  periodSemesterId: string,
+  activeSemesterId: string | null | undefined,
+  titleBySemesterId: Map<string, string>,
+): PendingEvaluationItem {
+  const mappingSemesterId = fs.semesterId ?? null
+  const rowsForMapping = enrollments.filter((e) => e.faculty_subject_id === fs.id)
+  // Gate mirror: studentEnrollmentRepository.findExisting matches
+  // (student_id, faculty_subject_id, semesterId) exactly, and .eq() never
+  // matches NULL — so strict === here, including NULL-* handling, is the
+  // same predicate the POST gate will apply.
+  const eligible = rowsForMapping.some((e) => e.semesterId === periodSemesterId)
+  return {
+    evaluateeId: fs.faculty_id,
+    facultySubjectId: fs.id,
+    subjectId: fs.subject_id,
+    mappingSemesterId,
+    mappingSemesterTitle: mappingSemesterId ? (titleBySemesterId.get(mappingSemesterId) ?? null) : null,
+    // Display/diagnostic only — never gates. False when either side is null.
+    isMappedToActiveSemester:
+      mappingSemesterId !== null && activeSemesterId != null && mappingSemesterId === activeSemesterId,
+    eligible,
+    ineligibilityReason: eligible ? null : rowsForMapping.length > 0 ? "WRONG_TERM" : "NOT_ENROLLED",
+  }
+}
+
 export const evaluationRepository: IEvaluationRepository = {
-  async findPending(evaluatorId, evaluationPeriodId) {
+  async findPending(evaluatorId, evaluationPeriodId, activeSemesterId?: string | null) {
     const { data: enrollments, error: enrollErr } = await supabase
       .from("student_enrollments")
-      .select("faculty_subject_id, section_id")
+      .select("faculty_subject_id, section_id, semesterId")
       .eq("student_id", evaluatorId)
     if (enrollErr) throw enrollErr
     if (enrollments.length === 0) return []
@@ -48,7 +88,7 @@ export const evaluationRepository: IEvaluationRepository = {
     if (directIds.length > 0) {
       const { data: facultySubjects, error: fsErr } = await supabase
         .from("faculty_subjects")
-        .select("id, faculty_id, subject_id")
+        .select("id, faculty_id, subject_id, semesterId")
         .in("id", directIds)
       if (fsErr) throw fsErr
 
@@ -72,21 +112,19 @@ export const evaluationRepository: IEvaluationRepository = {
         if (fsId) skipFsIds.delete(fsId)
       }
 
+      const titleBySemesterId = await fetchSemesterTitleMap(facultySubjects.map((fs) => fs.semesterId))
+
       return facultySubjects
         .filter((fs) => !skipFsIds.has(fs.id) && fs.faculty_id !== dummyId)
-        .map(
-          (fs): PendingEvaluationItem => ({
-            evaluateeId: fs.faculty_id,
-            facultySubjectId: fs.id,
-            subjectId: fs.subject_id,
-          }),
+        .map((fs) =>
+          toEligiblePendingItem(fs, enrollments, evalPeriod.semesterId, activeSemesterId, titleBySemesterId),
         )
     }
 
     const sectionIds = enrollments.map((r) => r.section_id)
     const { data: facultySubjects, error: fsErr } = await supabase
       .from("faculty_subjects")
-      .select("id, faculty_id, subject_id")
+      .select("id, faculty_id, subject_id, semesterId")
       .in("section_id", sectionIds)
       .eq("semesterId", evalPeriod.semesterId)
     if (fsErr) throw fsErr
@@ -111,14 +149,12 @@ export const evaluationRepository: IEvaluationRepository = {
       if (fsId) skipFsIds.delete(fsId)
     }
 
+    const titleBySemesterId = await fetchSemesterTitleMap(facultySubjects.map((fs) => fs.semesterId))
+
     return facultySubjects
       .filter((fs) => !skipFsIds.has(fs.id) && fs.faculty_id !== dummyId)
-      .map(
-        (fs): PendingEvaluationItem => ({
-          evaluateeId: fs.faculty_id,
-          facultySubjectId: fs.id,
-          subjectId: fs.subject_id,
-        }),
+      .map((fs) =>
+        toEligiblePendingItem(fs, enrollments, evalPeriod.semesterId, activeSemesterId, titleBySemesterId),
       )
   },
 

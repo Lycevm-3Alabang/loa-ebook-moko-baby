@@ -15,6 +15,11 @@ interface PendingItem {
   subjectId: string
   subjectCode: string
   subjectName: string
+  mappingSemesterId: string | null
+  mappingSemesterTitle: string | null
+  isMappedToActiveSemester: boolean
+  eligible: boolean
+  ineligibilityReason: "WRONG_TERM" | "NOT_ENROLLED" | null
 }
 
 interface ExistingEvaluation {
@@ -46,10 +51,12 @@ export default function StudentEvaluationsPage() {
   // const [searching, setSearching] = useState(false)
   const [disputingFsId, setDisputingFsId] = useState<string | null>(null)
   const [disputeMessage, setDisputeMessage] = useState("")
-  // Semester name for the pending cards: every pending item is scoped to the
-  // active period's term (evaluations.repository findPending filters
-  // faculty_subjects on the period's semesterId), so one label fits all.
+  // Active evaluation period's term, shown once as page-level context — kept,
+  // never stamped on cards. Per-card terms come from each item's own mapping
+  // (mappingSemesterTitle): Branch A of findPending applies no semester
+  // filter, so cards are NOT all in the active term.
   const [semesterName, setSemesterName] = useState<string | null>(null)
+  const [activePeriodName, setActivePeriodName] = useState<string | null>(null)
 
   function openEvalTab(id: string) {
     if (evalTabRef.current && !evalTabRef.current.closed) {
@@ -73,9 +80,10 @@ export default function StudentEvaluationsPage() {
         const active = (data.periods || []).find((p: { isActive: boolean }) => p.isActive)
         setSemesterName(
           (data.periods || []).find(
-            (p: { id?: string; semesterTitle?: string }) => p.id === data.activePeriodId,
+            (p: { id?: string; semesterTitle?: string }) => p.id === data.activeEvalPeriodId,
           )?.semesterTitle ?? null,
         )
+        setActivePeriodName(data.activeEvalPeriodName ?? null)
         if (active?.startDate) {
           const now = Date.now()
           const start = new Date(active.startDate).getTime()
@@ -191,6 +199,11 @@ export default function StudentEvaluationsPage() {
               Faculty Evaluations
               <span className="inline-block ml-2">📝</span>
             </h1>
+            {semesterName && (
+              <p className="text-xs text-tertiary mt-1">
+                Active period{activePeriodName ? `: ${activePeriodName}` : ""} · {semesterName}
+              </p>
+            )}
 
           </div>
         </div>
@@ -285,14 +298,22 @@ export default function StudentEvaluationsPage() {
                     setNavigatingId(null)
                   }
                 }}
-                disabled={navigatingId === item.evaluateeId}
-                className="card w-full p-4 bg-surface flex items-center justify-between hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99] transition-all duration-200 text-left"
+                disabled={navigatingId === item.evaluateeId || !item.eligible}
+                aria-disabled={!item.eligible}
+                className="card w-full p-4 bg-surface flex items-center justify-between hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99] transition-all duration-200 text-left cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold text-primary">{item.subjectName || item.subjectCode}</p>
                   <p className="text-xs text-tertiary mt-0.5">
                     {item.evaluateeName}{item.subjectCode ? ` · ${item.subjectCode}` : ""}
                   </p>
+                  {!item.eligible && (
+                    <span className="mt-1 inline-block text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded-full">
+                      {item.ineligibilityReason === "WRONG_TERM"
+                        ? `⚠️ Wrong term${item.mappingSemesterTitle ? ` (${item.mappingSemesterTitle})` : ""} — contact your admin`
+                        : "⚠️ Not enrolled — contact your admin"}
+                    </span>
+                  )}
                   <span
                     role="button"
                     tabIndex={0}
@@ -302,11 +323,9 @@ export default function StudentEvaluationsPage() {
                     className="mt-1 block text-[11px] text-red-500 hover:text-red-700 underline decoration-dotted underline-offset-2 opacity-60 hover:opacity-100 transition-opacity disabled:opacity-30 cursor-pointer"
                     style={disputingFsId === item.facultySubjectId ? { opacity: 0.3, pointerEvents: 'none' } : {}}
                   >
-                    {semesterName && (
-                      <span className="block text-[11px] italic font-normal text-tertiary no-underline">
-                        ({semesterName})
-                      </span>
-                    )}
+                    <span className="block text-[11px] italic font-normal text-tertiary no-underline">
+                      ({item.mappingSemesterTitle ?? "No term assigned"})
+                    </span>
                     {disputingFsId === item.facultySubjectId ? "Reporting..." : "Wrong faculty?"}
                   </span>
                 </div>
