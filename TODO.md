@@ -1,8 +1,8 @@
 # TODO — student CSV importer follow-ups
 
 Tracked 2026-10-09 for the next session. All production incidents are closed
-(504 timeout, 23505 duplicate key, silent cross-term loss); 326 tests / 26 files
-green (echo tests + modal + alarm done 2026-10-10, +2). What remains is reporting polish and containment — nothing is on fire.
+(504 timeout, 23505 duplicate key, silent cross-term loss); 329 tests / 26 files
+green (echo + meta + enriched tests done 2026-10-10, +3). What remains is reporting polish and containment — nothing is on fire.
 
 Gate for every item: `npx tsc --noEmit` → `npm run lint` → `npx vitest run`
 (baseline 280/20) → `npm run build`.
@@ -72,10 +72,27 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
   - **S2:** run one panel, confirm the **preview table survives its own run** (this is the
     deleted `setPreviewRows(null)` — invisible to tsc/lint/vitest/build), and that the
     ledger download covers exactly the panels that ran.
-  - **S3:** §3.4's Unassigned panel has **never rendered** — the 2026-1 file has zero
-    unresolvable codes (its ten department counts sum to exactly 28,096). Author a CSV
-    with one `department code` = `ZZZ`, one blank, and two blank emails; that exercises
-    the roll-up, the unresolved footnote, and both remove verbs.
+- **S3:** §3.4's Unassigned panel has **never rendered** — the 2026-1 file has zero
+  unresolvable codes (its ten department counts sum to exactly 28,096). Author a CSV
+  with one `department code` = `ZZZ`, one blank, and two blank emails; that exercises
+  the roll-up, the unresolved footnote, and both remove verbs.
+
+- [ ] **Run gate vs Needs Review (observed 2026-10-10, `/admin/data/student-import`).**
+  Each panel's Run reads disabled whenever Needs Review ≠ 0. Two readings, different fixes:
+  (a) correct behavior — every such panel also holds blocked rows, or no active semester
+  is set (the gate is `!semesterId || blockedCount > 0`; amber-only panels are runnable
+  by design, flagged rows importing with a note) → no code change, close with a comment;
+  (b) gate overreach — amber-only panels are observed disabled → narrow `disabled` to
+  blocked-only AND surface the reason inline (today it's a tooltip only, effectively
+  invisible). First check on sighting: red "No active semester" note present? blocked
+  rows in those panels, or amber only?
+
+- [ ] **PROOF — F1 invalid-details modal (no new code).** Produce one Step 6 conflict
+  (two faculties, one slot): modal table names subject, section, requested and holder;
+  overlay-click + X dismiss; inline invalid lists unchanged; Step 2 volume table renders.
+- [ ] **PROOF — drift alarm live fire (staging/scratch file only).** Flip the active
+  semester mid-panel-run: expect the mid-run message naming both terms with the ledger
+  still committed. No gate covers this path — only a live flip proves it.
 
 ## Queued (proposed order — reorder freely)
 

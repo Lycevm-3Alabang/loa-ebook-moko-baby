@@ -45,6 +45,13 @@ export interface FacultySubjectImportResult {
 export interface DepartmentStepInvalid {
   key: string
   reason: string
+  /** Human context for modal tables (mappings "Already assigned" only, for now). */
+  detail?: {
+    subjectCode: string
+    section: string
+    facultyEmail: string
+    ownerEmail: string
+  }
 }
 
 export interface DepartmentStepResult {
@@ -416,6 +423,8 @@ export async function importMappingsStep(
     faculty_id: string
     subject_id: string
     section_id: string
+    subjectCode: string
+    sectionLabel: string
     semesterId?: string | null
     rowNum: number
     email: string
@@ -444,7 +453,7 @@ export async function importMappingsStep(
         invalid.push({ key: `${subjectCode}|${sectionProgram}-${sectionName}`, reason: `No faculty assigned to ${subjectCode} in ${sectionProgram}-${sectionName}` })
         return
       }
-      candidates.push({ faculty_id: dummyId, subject_id, section_id, semesterId: semesterId ?? null, rowNum, email: DUMMY_FACULTY_EMAIL })
+      candidates.push({ faculty_id: dummyId, subject_id, section_id, subjectCode, sectionLabel: `${sectionProgram}-${sectionName}`, semesterId: semesterId ?? null, rowNum, email: DUMMY_FACULTY_EMAIL })
       return
     }
     const faculty_id = maps.facultyUserMap[emailRaw]
@@ -452,7 +461,7 @@ export async function importMappingsStep(
       invalid.push({ key: emailRaw, reason: `Faculty ${emailRaw} not found` })
       return
     }
-    candidates.push({ faculty_id, subject_id, section_id, semesterId: semesterId ?? null, rowNum, email: emailRaw })
+    candidates.push({ faculty_id, subject_id, section_id, subjectCode, sectionLabel: `${sectionProgram}-${sectionName}`, semesterId: semesterId ?? null, rowNum, email: emailRaw })
   })
 
   const existingSlots = semesterId
@@ -475,7 +484,10 @@ export async function importMappingsStep(
     }
   }
 
-  // In-memory partition — classify before any write attempt
+  // In-memory partition — classify before any write attempt.
+  // Conflicts are collected, not pushed: the owner emails resolve in one
+  // batched read below, then every invalid lands with full human detail.
+  const conflicts: { item: Candidate; ownerId: string }[] = []
   const newItems: Candidate[] = []
   const updates: Candidate[] = [] // dummy → real
   for (const item of [...comboMap.values()]) {
@@ -488,10 +500,7 @@ export async function importMappingsStep(
     } else if (dummyId && found.faculty_id === dummyId && item.faculty_id !== dummyId) {
       updates.push(item) // dummy → real
     } else {
-      invalid.push({
-        key: `${item.subject_id}|${item.section_id}`,
-        reason: "Already assigned — not overwritten (existing load kept)",
-      })
+      conflicts.push({ item, ownerId: found.faculty_id })
     }
   }
 
@@ -531,10 +540,7 @@ export async function importMappingsStep(
             inserted++
             continue
           }
-          invalid.push({
-            key: `${item.subject_id}|${item.section_id}`,
-            reason: "Already assigned — not overwritten (existing load kept)",
-          })
+          conflicts.push({ item, ownerId: found.faculty_id })
         }
       } else {
         throw err
@@ -550,6 +556,32 @@ export async function importMappingsStep(
     await facultySubjectRepository.update(found.id, { faculty_id: item.faculty_id })
     existingByCombo.set(key, { id: found.id, faculty_id: item.faculty_id })
     inserted++
+  }
+
+  // Resolve every distinct current holder in one batched read. The file's
+  // own faculty (+ dummy) resolve free from the client-held map reversed
+  // here; only true outsiders cost the query. Unresolvable ids fall back to
+  // a truncated id — honest about what is unknown.
+  const emailByUserId = new Map<string, string>()
+  for (const [email, id] of Object.entries(maps.facultyUserMap)) {
+    if (!emailByUserId.has(id)) emailByUserId.set(id, email)
+  }
+  const unknownOwners = [...new Set(conflicts.map((c) => c.ownerId))].filter((id) => !emailByUserId.has(id))
+  if (unknownOwners.length > 0) {
+    const owners = await userRepository.listByIds(unknownOwners)
+    for (const u of owners) emailByUserId.set(u.id, u.email)
+  }
+  for (const { item, ownerId } of conflicts) {
+    invalid.push({
+      key: `${item.subject_id}|${item.section_id}`,
+      reason: "Already assigned — not overwritten (existing load kept)",
+      detail: {
+        subjectCode: item.subjectCode,
+        section: item.sectionLabel,
+        facultyEmail: item.email,
+        ownerEmail: emailByUserId.get(ownerId) ?? `${ownerId.slice(0, 8)}…`,
+      },
+    })
   }
 
   return { stepId: "mappings", status: "done", inserted, existing, invalid }
