@@ -1215,7 +1215,9 @@ describe("integration: real faculty CSV", () => {
     ;(factory.facultySubjectRepository.list as ReturnType<typeof vi.fn>).mockResolvedValue([])
   })
 
-  it("runs full pipeline and inserts all faculty + mappings", async () => {
+  it.skipIf(!fs.existsSync(path.resolve(process.cwd(), "faculty-import-test.csv")))(
+    "runs full pipeline and inserts all faculty + mappings",
+    async () => {
     const csv = readCsv("faculty-import-test.csv")
     const { rows, errors } = parseFacultySubjectCsv(csv)
     expect(errors).toHaveLength(0)
@@ -1298,5 +1300,7 @@ describe("integration: real faculty CSV", () => {
       facultyUserMap: step5.facultyUserMap,
     }, "sem-1")
     expect(step6.inserted + step6.existing).toBeGreaterThan(0)
-  }, 30000)
+    },
+    30000,
+  )
 })
