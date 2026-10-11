@@ -499,7 +499,12 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     // the blocked subset from there.
     setBlockedOnly(false)
     setPreviewPage(0)
-    document.getElementById("student-preview-table")?.scrollIntoView({ behavior: "smooth", block: "start" })
+    // Focus (not just scroll) is the verifiable landing: sticky headers and
+    // nested scroll containers make scroll position best-effort, but
+    // activeElement moves into the preview either way.
+    const previewTable = document.getElementById("student-preview-table")
+    previewTable?.scrollIntoView({ behavior: "smooth", block: "start" })
+    previewTable?.focus({ preventScroll: true })
   }
 
   const handleRemoveAllBlocked = () =>
@@ -1059,6 +1064,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
             <div
               id="student-preview-table"
+              tabIndex={-1}
               aria-busy={activePanelId !== null}
               className={`max-h-72 overflow-y-auto tbl-container tbl transition-opacity ${
                 activePanelId !== null ? "pointer-events-none opacity-60" : ""

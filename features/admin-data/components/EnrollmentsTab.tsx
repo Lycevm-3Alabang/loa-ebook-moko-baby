@@ -19,6 +19,9 @@ export function EnrollmentsTab() {
   const [search, setSearch] = useState("")
 
   const [showImport, setShowImport] = useState(false)
+  // Table-first slice C — collapse the main table while working an import.
+  // Default open: first paint is identical to today.
+  const [showTable, setShowTable] = useState(true)
 
   // ── Quick Add state ──────────────────────────────────────
   const [showQuickAdd, setShowQuickAdd] = useState(false)
@@ -185,7 +188,17 @@ export function EnrollmentsTab() {
       {/* ═══════════════════════════════════════════════════
           ENROLLMENT TABLE
          ═══════════════════════════════════════════════════ */}
-      <div className="card p-4 sm:p-6 space-y-4">
+      <div className="border border-default rounded-lg overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowTable((s) => !s)}
+          className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold text-secondary hover:bg-surface-dim/40 transition-colors"
+        >
+          <span>Enrollments</span>
+          <span className="text-tertiary">{showTable ? "▲" : "▼"}</span>
+        </button>
+        {showTable && (
+          <div className="border-t border-gray-200 dark:border-gray-800 px-4 pb-4 space-y-4">
         {hasNullSemesterId && (
           <div className="flex items-center gap-2 text-xs font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-2.5">
             <span>⚠️</span>
@@ -241,6 +254,8 @@ export function EnrollmentsTab() {
           </>
         )}
         {data && <p className="text-xs text-tertiary">{groupedStudents.length} student{groupedStudents.length !== 1 ? "s" : ""} ({data.length} enrollment{data.length !== 1 ? "s" : ""})</p>}
+          </div>
+        )}
       </div>
 
       {/* ── Enrolled Subjects Modal ─────────────────────────── */}
