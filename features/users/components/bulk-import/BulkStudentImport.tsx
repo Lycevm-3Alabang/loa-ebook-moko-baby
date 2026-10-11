@@ -963,6 +963,13 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                     const unpersisted = (panelLedgers[panel.id] ?? []).filter(
                       (l) => l.status !== "persisted" && l.status !== "already-persisted",
                     )
+                    // Strip chips mirror the table's three badges (counts only —
+                    // the table owns actions). Ready + Needs Review are known
+                    // pre-run; Duplicate appears once its ledger exists.
+                    const readyCount = panel.rows.filter((r) => !r.isBlocked && !r.isProblem).length
+                    const dupCount = (panelLedgers[panel.id] ?? []).filter(
+                      (l) => l.status === "already-persisted",
+                    ).length
                     const disabled = !semesterId || blocked || (activePanelId !== null && !isActive)
                     const disabledTitle = !semesterId
                       ? "Set an active semester before importing."
@@ -981,14 +988,16 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                         onRun={() => runPanel(panel)}
                         summary={
                           <>
-                            <p className="text-[11px] text-tertiary flex items-center gap-1.5">
+                            <p className="text-[11px] text-tertiary flex items-center gap-1.5 flex-wrap">
                               <span title={status} className={`inline-block w-2 h-2 rounded-full shrink-0 ${STATUS_DOT[status]}`} />
-                              <span>
-                                {panel.rows.length - panel.blockedCount} ready · {panel.problemCount} flagged · {panel.blockedCount} blocked
-                                {result && (
-                                  <> · {result.enrolled} resolved · {result.inserted} written · {result.skipped} skipped · {result.failed.length} failed</>
-                                )}
-                              </span>
+                              <span className="badge-emerald text-[10px]">Ready {readyCount}</span>
+                              <span className="badge-red text-[10px]">Needs Review {panel.rows.length - readyCount}</span>
+                              {dupCount > 0 && (
+                                <span className="badge-amber text-[10px]">Duplicate {dupCount}</span>
+                              )}
+                              {result && (
+                                <span className="text-tertiary">· {result.inserted} written · {result.skipped} skipped · {result.failed.length} failed</span>
+                              )}
                             </p>
                             {/* Only the Unassigned panel can carry these — the builder
                                 routes every null id there (pinned by
