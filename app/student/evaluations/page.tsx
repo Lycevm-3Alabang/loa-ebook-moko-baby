@@ -57,6 +57,7 @@ export default function StudentEvaluationsPage() {
   // filter, so cards are NOT all in the active term.
   const [semesterName, setSemesterName] = useState<string | null>(null)
   const [activePeriodName, setActivePeriodName] = useState<string | null>(null)
+  const [activeEvalPeriodId, setActiveEvalPeriodId] = useState<string | null>(null)
 
   function openEvalTab(id: string) {
     if (evalTabRef.current && !evalTabRef.current.closed) {
@@ -84,6 +85,7 @@ export default function StudentEvaluationsPage() {
           )?.semesterTitle ?? null,
         )
         setActivePeriodName(data.activeEvalPeriodName ?? null)
+        setActiveEvalPeriodId(data.activeEvalPeriodId ?? null)
         if (active?.startDate) {
           const now = Date.now()
           const start = new Date(active.startDate).getTime()
@@ -278,6 +280,9 @@ export default function StudentEvaluationsPage() {
         <div className="animate-fade-in" style={{ animationDelay: "0.2s" }}>
           <h2 className="text-sm font-bold text-primary mb-3 flex items-center gap-2">
             <span>⏳</span> Pending Evaluations
+            {activePeriodName && (
+              <span className="text-xs font-semibold text-tertiary">· {activePeriodName}</span>
+            )}
           </h2>
           <div className="space-y-2">
             {pending.map((item) => (
@@ -323,8 +328,12 @@ export default function StudentEvaluationsPage() {
                     className="mt-1 block text-[11px] text-red-500 hover:text-red-700 underline decoration-dotted underline-offset-2 opacity-60 hover:opacity-100 transition-opacity disabled:opacity-30 cursor-pointer"
                     style={disputingFsId === item.facultySubjectId ? { opacity: 0.3, pointerEvents: 'none' } : {}}
                   >
-                    <span className="block text-[11px] italic font-normal text-tertiary no-underline">
-                      ({item.mappingSemesterTitle ?? "No term assigned"})
+                    <span className="group relative mt-1 inline-block cursor-help">
+                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] font-bold text-tertiary dark:border-slate-600">?</span>
+                      <span className="pointer-events-none absolute bottom-full left-0 z-10 mb-1 hidden w-max max-w-56 whitespace-normal rounded-lg bg-slate-900 px-2 py-1 text-[11px] font-normal text-white shadow-lg group-hover:block dark:bg-slate-700">
+                        <span className="block">Semester: {item.mappingSemesterTitle ?? "No semester assigned"} ({item.mappingSemesterId ?? "none"})</span>
+                        <span className="block">Evaluation Period: {activePeriodName ?? "—"} ({activeEvalPeriodId ?? "—"})</span>
+                      </span>
                     </span>
                     {disputingFsId === item.facultySubjectId ? "Reporting..." : "Wrong faculty?"}
                   </span>
