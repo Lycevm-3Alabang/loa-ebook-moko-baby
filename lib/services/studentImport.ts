@@ -44,6 +44,11 @@ export interface StudentImportResult {
   termMismatch: { mappedTerms: string[]; activeTerm: string | null } | null
   parseErrors: { row: number; message: string }[]
   totalRows: number
+  // Echo of the semester this call resolved against — the client asserts
+  // unanimity across chunks (S-b drift alarm). Always set by the service.
+  semesterId: string | null
+  // Attached by the route (it holds the titled row); human name for the alarm.
+  semesterTitle?: string | null
 }
 
 export function parseStudentCsv(text: string): {
@@ -119,7 +124,7 @@ export async function importStudents(
   let skipped = 0
 
   if (rows.length === 0) {
-    return { created, enrolled, inserted: 0, skipped, failed, duplicateRows: [], alreadyPersisted: [], termMismatch: null, parseErrors: [], totalRows: 0 }
+    return { created, enrolled, inserted: 0, skipped, failed, duplicateRows: [], alreadyPersisted: [], termMismatch: null, parseErrors: [], totalRows: 0, semesterId }
   }
 
   const excelOffenderFor = (r: StudentCsvRow): string | null =>
@@ -346,6 +351,7 @@ export async function importStudents(
     termMismatch,
     parseErrors: [],
     totalRows: rows.length,
+    semesterId,
   }
 }
 

@@ -107,6 +107,7 @@ export async function POST(request: NextRequest) {
 
   const result = await importStudents(importRows, departmentId, semesterId)
   result.parseErrors = parseErrors
+  result.semesterTitle = activeSemesters[0].title
 
   if (isLast) {
     await logAuditEvent({
