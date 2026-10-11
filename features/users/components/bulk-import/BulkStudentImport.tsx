@@ -829,92 +829,6 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
               <span className="text-[11px] text-tertiary">{TEMPLATE_HEADERS}</span>
             </div>
 
-            <div className="flex items-center gap-3">
-              <p className="text-[11px] text-tertiary/70 italic">
-                <span className="badge-red not-italic">Red</span> cannot import &mdash; the ledger
-                shows the reason. <span className="badge-amber not-italic ml-1">Amber</span> imports,
-                but is flagged (unresolved department, new student). An unknown subject, section or
-                faculty is <span className="badge-red not-italic">red</span>, not amber &mdash; the
-                server rejects it.
-              </p>
-              <div className="ml-auto flex flex-wrap items-center gap-2">
-                <input
-                  value={query}
-                  onChange={(e) => { setQuery(e.target.value); setPreviewPage(0) }}
-                  placeholder="Search rows…"
-                  title="Search the loaded preview (name, email, subject, section, faculty, dept)"
-                  className="text-[11px] px-3 py-1 rounded-full border border-default bg-surface-hover text-secondary outline-none focus:border-gold-400 w-44"
-                />
-                <select
-                  value={issueFilter ?? ""}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setIssueFilter(v !== "" && (ISSUE_KEYS as readonly string[]).includes(v) ? (v as IssueKey) : null)
-                    setPreviewPage(0)
-                  }}
-                  title="Filter by issue type (composes with department, blocked, and search)"
-                  className="text-[11px] font-semibold px-2 py-1 rounded-full border border-default bg-surface-hover text-secondary outline-none"
-                >
-                  <option value="">All issues</option>
-                  {ISSUE_KEYS.map((k) => (
-                    <option key={k} value={k}>{ISSUE_LABELS[k]}</option>
-                  ))}
-                </select>
-                <select
-                  value={deptFilter ?? ""}
-                  onChange={(e) => { setDeptFilter(e.target.value || null); setPreviewPage(0) }}
-                  title="Filter the table by department (view only — runs always send the whole panel)"
-                  className="text-[11px] font-semibold px-2 py-1 rounded-full border border-default bg-surface-hover text-secondary outline-none"
-                >
-                  <option value="">All departments</option>
-                  {panels.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label} · {p.rows.length} rows{p.blockedCount > 0 ? ` · ${p.blockedCount} blocked` : ""}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => { setDeptFilter(null); setBlockedOnly(true); setPreviewPage(0) }}
-                  title="Show every blocked row in the file"
-                  className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
-                >
-                  Errors only
-                </button>
-                {deptBlockedCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => { setBlockedOnly((p) => !p); setPreviewPage(0) }}
-                    className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition-colors ${
-                      blockedOnly
-                        ? "bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-700 dark:text-red-300"
-                        : "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400"
-                    }`}
-                  >
-{blockedOnly ? "Show all rows" : `Show ${deptBlockedCount} blocked only`}
-                  </button>
-                )}
-                {shownBlockedRows.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => removeBlockedRows(shownBlockedRows)}
-                    title="Remove the blocked rows currently shown (view only — other departments untouched)"
-                    className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
-                  >
-                    Remove {shownBlockedRows.length} shown blocked
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {previewRows && previewRows.length > 0 && (
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-[11px] text-tertiary">
-                <span><span className="font-semibold text-secondary">{previewRows.length - blockedRows.length}</span> ready to import</span>
-                <span><span className="font-semibold text-amber-600">{fileProblemCount}</span> flagged &mdash; imports with a flag; an unknown subject, section or faculty fails that row</span>
-                <span><span className="font-semibold text-red-600">{blockedRows.length}</span> blocked (missing email, bad domain, Excel error)</span>
-              </div>
-            )}
-
             {/* §8 "Invalid-list volume": StepPanel renders invalid[] in a max-h-32 scroll, so
                 per-panel lists alone leave the admin scrolling ten boxes to learn whether
                 their file has blocked rows at all. This says BLOCKED — never "remaining" —
@@ -1059,6 +973,93 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                   the mappings belong to. Rows below fail with &ldquo;not assigned&rdquo; because of
                   this, not because of a typo.
                 </p>
+              </div>
+            )}
+
+            {/* Table tools live directly above the table they govern — never above the strip. */}
+            <div className="flex items-center gap-3">
+              <p className="text-[11px] text-tertiary/70 italic">
+                <span className="badge-red not-italic">Red</span> cannot import &mdash; the ledger
+                shows the reason. <span className="badge-amber not-italic ml-1">Amber</span> imports,
+                but is flagged (unresolved department, new student). An unknown subject, section or
+                faculty is <span className="badge-red not-italic">red</span>, not amber &mdash; the
+                server rejects it.
+              </p>
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                <input
+                  value={query}
+                  onChange={(e) => { setQuery(e.target.value); setPreviewPage(0) }}
+                  placeholder="Search rows…"
+                  title="Search the loaded preview (name, email, subject, section, faculty, dept)"
+                  className="text-[11px] px-3 py-1 rounded-full border border-default bg-surface-hover text-secondary outline-none focus:border-gold-400 w-44"
+                />
+                <select
+                  value={issueFilter ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setIssueFilter(v !== "" && (ISSUE_KEYS as readonly string[]).includes(v) ? (v as IssueKey) : null)
+                    setPreviewPage(0)
+                  }}
+                  title="Filter by issue type (composes with department, blocked, and search)"
+                  className="text-[11px] font-semibold px-2 py-1 rounded-full border border-default bg-surface-hover text-secondary outline-none"
+                >
+                  <option value="">All issues</option>
+                  {ISSUE_KEYS.map((k) => (
+                    <option key={k} value={k}>{ISSUE_LABELS[k]}</option>
+                  ))}
+                </select>
+                <select
+                  value={deptFilter ?? ""}
+                  onChange={(e) => { setDeptFilter(e.target.value || null); setPreviewPage(0) }}
+                  title="Filter the table by department (view only — runs always send the whole panel)"
+                  className="text-[11px] font-semibold px-2 py-1 rounded-full border border-default bg-surface-hover text-secondary outline-none"
+                >
+                  <option value="">All departments</option>
+                  {panels.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label} · {p.rows.length} rows{p.blockedCount > 0 ? ` · ${p.blockedCount} blocked` : ""}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => { setDeptFilter(null); setBlockedOnly(true); setPreviewPage(0) }}
+                  title="Show every blocked row in the file"
+                  className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
+                >
+                  Errors only
+                </button>
+                {deptBlockedCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setBlockedOnly((p) => !p); setPreviewPage(0) }}
+                    className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition-colors ${
+                      blockedOnly
+                        ? "bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-700 dark:text-red-300"
+                        : "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400"
+                    }`}
+                  >
+{blockedOnly ? "Show all rows" : `Show ${deptBlockedCount} blocked only`}
+                  </button>
+                )}
+                {shownBlockedRows.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => removeBlockedRows(shownBlockedRows)}
+                    title="Remove the blocked rows currently shown (view only — other departments untouched)"
+                    className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
+                  >
+                    Remove {shownBlockedRows.length} shown blocked
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {previewRows && previewRows.length > 0 && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-[11px] text-tertiary">
+                <span><span className="font-semibold text-secondary">{previewRows.length - blockedRows.length}</span> ready to import</span>
+                <span><span className="font-semibold text-amber-600">{fileProblemCount}</span> flagged &mdash; imports with a flag; an unknown subject, section or faculty fails that row</span>
+                <span><span className="font-semibold text-red-600">{blockedRows.length}</span> blocked (missing email, bad domain, Excel error)</span>
               </div>
             )}
 
