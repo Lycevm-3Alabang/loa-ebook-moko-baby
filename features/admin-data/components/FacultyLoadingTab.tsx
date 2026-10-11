@@ -15,6 +15,8 @@ import { FacultySubjectDetail } from "./FacultySubjectDetail"
 import type { DepartmentData, SemesterData } from "@/lib/types"
 import type { FacEnrollTab, FacViewTab, Subject, Section, FacultyMapping, Enrollment } from "./types"
 import { deriveCsvFlags, DUMMY_FACULTY_EMAIL_CLIENT, type CsvRow, type CsvRowWithFlags } from "./csv-helpers"
+import { distinctSections } from "@/lib/utils/distinct-sections"
+import { parseSectionIdentifier } from "@/lib/utils/parse-section-identifier"
 import { distinctFacultyUsers } from "@/lib/utils/distinct-faculty-users"
 import { cleanSubjectCode, isExcelErrorCell } from "@/lib/csv-utils"
 import { decodeCsvFile } from "./useChunkedImport"
@@ -411,20 +413,16 @@ function FacultyTab() {
     if (!step2Result) { setCsvError("Run Step 1 first — courses need the department map."); return }
     setStep3Running(true)
     try {
+      // Parse section column into { program } items using shared utility
+      const rawItems = csvRows.map((r) => parseSectionIdentifier((r.section || "").trim()))
       const seen = new Set<string>()
-      const pairs: { departmentCode: string; program: string }[] = []
-      for (const r of csvRows) {
-        const tSection = (r.section || "").trim()
-        const dashIdx = tSection.indexOf("-")
-        const spaceIdx = tSection.indexOf(" ")
-        const idx = dashIdx !== -1 ? dashIdx : spaceIdx
-        const program = idx === -1 ? "" : tSection.slice(0, idx).trim()
-        if (program.length === 0) continue
-        const departmentCode = (r.departmentCode || "").trim().toUpperCase()
-        const key = `${departmentCode}|${program}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        pairs.push({ departmentCode, program })
+      const items: { program: string; departmentCode: string }[] = []
+      for (const raw of rawItems) {
+        if (seen.has(raw.program)) continue
+        seen.add(raw.program)
+        // Use the departmentCode from the first row with this program
+        const r = csvRows.find((r) => parseSectionIdentifier((r.section || "").trim()).program === raw.program)
+        items.push({ program: raw.program, departmentCode: (r?.departmentCode || "").trim().toUpperCase() })
       }
       const res = await fetch("/api/import/faculties", {
         method: "POST",
@@ -433,7 +431,7 @@ function FacultyTab() {
           step: "courses",
           semesterId: activeSemesterId || null,
           fileId: `step3-${Date.now().toString(36)}`,
-          pairs,
+          pairs: items,
           deptCodeToId: step2Result.deptCodeToId,
         }),
       })
@@ -462,8 +460,8 @@ function FacultyTab() {
     if (!step3Result) { setCsvError("Run Step 2 first — sections need the course map."); return }
     setStep4Running(true)
     try {
-      const seen = new Set<string>()
-      const items: { name: string; program: string }[] = []
+      // Parse section column into { name, program } items
+      const rawItems: { name: string; program: string }[] = []
       for (const r of csvRows) {
         const tSection = (r.section || "").trim()
         const dashIdx = tSection.indexOf("-")
@@ -473,11 +471,11 @@ function FacultyTab() {
         // invalid (never inserted), per step-04 edge cases.
         const program = idx === -1 ? "" : tSection.slice(0, idx).trim()
         const name = idx === -1 ? tSection : tSection.slice(idx + 1).trim()
-        const key = `${name}|${program}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        items.push({ name, program })
+        rawItems.push({ name, program })
       }
+      // Deduplicate by ${name}|${program} using shared utility
+      const items = distinctSections(rawItems)
+      if (!items.length) { setStep4Running(false); return }
       const res = await fetch("/api/import/faculties", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -604,17 +602,13 @@ function FacultyTab() {
       const items: { subjectCode: string; sectionName: string; sectionProgram: string; facultyEmail: string }[] = []
       for (const r of csvRows) {
         const tSection = (r.section || "").trim()
-        const dashIdx = tSection.indexOf("-")
-        const spaceIdx = tSection.indexOf(" ")
-        const idx = dashIdx !== -1 ? dashIdx : spaceIdx
-        const program = idx === -1 ? "" : tSection.slice(0, idx).trim()
-        const name = idx === -1 ? tSection : tSection.slice(idx + 1).trim()
+        const { name: sectionName, program: sectionProgram } = parseSectionIdentifier(tSection)
         const subjectCode = (r.subjectCode || "").trim()
         const email = (r.email || "").toLowerCase().trim()
-        const key = `${subjectCode}|${name}|${program}|${email}`
+        const key = `${subjectCode}|${sectionName}|${sectionProgram}|${email}`
         if (seen.has(key)) continue
         seen.add(key)
-        items.push({ subjectCode, sectionName: name, sectionProgram: program, facultyEmail: email })
+        items.push({ subjectCode, sectionName, sectionProgram: sectionProgram, facultyEmail: email })
       }
 
       const CHUNK = 100
