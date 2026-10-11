@@ -9,6 +9,7 @@ import { buildDepartmentPanels, type DepartmentPanel } from "./department-panels
 import { applyCreatedUsers } from "./apply-created-users"
 import { panelStripStatus, type StripStatus } from "./panel-strip-status"
 import { ISSUE_KEYS, ISSUE_LABELS, matchesIssue, type IssueKey } from "./issue-filter"
+import { BLOCKED_CSV_FILENAME, buildBlockedCsv } from "./blocked-row-export"
 import { StepPanel } from "@/features/admin-data/components/FacultyImportStepper"
 
 // Domain rule is shared with the import service via lib/csv-utils — one list,
@@ -932,6 +933,14 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                     className="shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
                   >
                     Remove all {blockedRows.length} blocked
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => downloadBlob(buildBlockedCsv(blockedRows), BLOCKED_CSV_FILENAME)}
+                    title="Download every blocked row with its reason — fix outside and re-upload, or fix inline"
+                    className="shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-default text-secondary hover:bg-surface-dim transition-colors"
+                  >
+                    Download {blockedRows.length} blocked
                   </button>
                 </div>
               </div>
