@@ -14,10 +14,12 @@ interface FacultySubjectDetailProps {
 
 export function FacultySubjectDetail({ mapping, onClose }: FacultySubjectDetailProps) {
   const { data: allUsers } = useApiGet<{ users: { id: string; name: string; email: string; role: string; departmentId: string | null }[] }>("/api/admin/users")
-  const { data: enrollmentsData } = useApiGet<{ data: Enrollment[] }>("/api/data/evaluation-mappings?type=student")
 
   const { data: semestersData } = useApiGet<{ data: SemesterData[] }>("/api/semesters")
   const activeSemesterId = useMemo(() => semestersData?.data?.find((s) => s.isActive)?.id ?? "", [semestersData])
+
+  const studentKey = `/api/data/evaluation-mappings?type=student&facultySubjectId=${mapping.id}${activeSemesterId ? `&semesterId=${activeSemesterId}` : ""}`
+  const { data: enrollmentsData } = useApiGet<{ data: Enrollment[]; total?: number }>(studentKey)
 
   const faculties = useMemo(
     () => (allUsers?.users ?? []).filter((u) => (u.role.includes("FACULTY") || u.role.includes("DEAN")) && u.id !== "a0000000-0000-0000-0000-000000000001"),
@@ -68,7 +70,7 @@ export function FacultySubjectDetail({ mapping, onClose }: FacultySubjectDetailP
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Reassignment failed") }
       setReassignSuccess("Faculty reassigned! Students will see the new faculty on their next page load.")
       setReassignFacultyId(""); setReassignFacultySearch("")
-      invalidate("/api/data/evaluation-mappings?type=student")
+      invalidate(studentKey)
       invalidate("/api/data/evaluation-mappings?type=faculty")
       setTimeout(() => { onClose?.(); setReassignSuccess("") }, 2000)
     } catch (err) { setReassignError((err as Error).message) }
@@ -119,7 +121,7 @@ export function FacultySubjectDetail({ mapping, onClose }: FacultySubjectDetailP
     try {
       const res = await fetch(`/api/admin/student-enrollments/${enrollmentId}`, { method: "DELETE" })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Failed to remove student") }
-      invalidate("/api/data/evaluation-mappings?type=student")
+      invalidate(studentKey)
     } catch (err) { alert((err as Error).message) }
     finally { setRemovingEnrollmentId(null) }
   }
@@ -136,7 +138,7 @@ export function FacultySubjectDetail({ mapping, onClose }: FacultySubjectDetailP
         })
       ))
       setSelectedEnrollmentIds(new Set())
-      invalidate("/api/data/evaluation-mappings?type=student")
+      invalidate(studentKey)
     } catch (err) { alert((err as Error).message) }
     finally { setRemovingEnrollmentIds(null) }
   }
@@ -175,7 +177,7 @@ export function FacultySubjectDetail({ mapping, onClose }: FacultySubjectDetailP
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Failed to add student") }
       setAddStudentSuccess("Student added!")
       setAddStudentId(""); setAddStudentQuery("")
-      invalidate("/api/data/evaluation-mappings?type=student")
+      invalidate(studentKey)
       setTimeout(() => setAddStudentSuccess(""), 3000)
     } catch (err) { setAddStudentError((err as Error).message) }
     finally { setAddingStudent(false) }
@@ -318,7 +320,7 @@ export function FacultySubjectDetail({ mapping, onClose }: FacultySubjectDetailP
       {/* Enrolled Students */}
       <div className="border-t border-default pt-4">
         <h3 className="text-sm font-semibold text-secondary mb-2">
-          Enrolled Students ({enrolledStudents.length})
+          Enrolled Students ({studentFilter.trim() ? filteredEnrolled.length : (enrollmentsData?.total ?? enrolledStudents.length)})
         </h3>
         {enrolledStudents.length === 0 ? (
           <p className="text-xs text-tertiary text-center py-4">No enrolled students.</p>

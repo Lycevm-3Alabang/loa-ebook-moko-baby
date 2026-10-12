@@ -27,10 +27,12 @@ pending: slice-1
 | who-implements | Who implements Slice 1 (repository scope)? | B — Code it (agent writes after Apply, one file per turn) |
 | slice-1 | Apply Slice 1 (repository scope)? | Applied — listByFacultySubject + semester-aware countByFacultySubjectId (repo layer) |
 | slice-2 | Apply Slice 2 (route scope)? | Applied — scoped student branch with server total (route layer) |
+| slice-3 | Apply Slice 3 (UI scope)? | Applied — scoped studentKey + server-total header + scoped invalidates (UI layer) |
+| lint-offplan | FacultyLoadingTab lint (user-asked, out of plan scope)? | Applied — subjects/sections wrapped in useMemo; openFacultyProfile useCallback → plain fn (callers use inline arrows; compiler owns memoization) |
 
 ## Pending
 
-- slice-3: Slice 3 UI scope (starts only on your continue)
+- slice-4: Slice 4 proof/tests (starts only on your continue)
 
 ## Decisions
 

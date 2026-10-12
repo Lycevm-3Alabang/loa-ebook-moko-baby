@@ -242,8 +242,8 @@ function FacultyTab() {
   const { data: sectionsData } = useApiGet<{ data: Section[] }>("/api/data/evaluation-mappings?type=sections")
 
   const faculties = (allUsers?.users ?? []).filter((u) => (u.role.includes("FACULTY") || u.role.includes("DEAN")) && u.id !== "a0000000-0000-0000-0000-000000000001")
-  const subjects = subjectsData?.data ?? []
-  const sections = sectionsData?.data ?? []
+  const subjects = useMemo(() => subjectsData?.data ?? [], [subjectsData])
+  const sections = useMemo(() => sectionsData?.data ?? [], [sectionsData])
   const departments = allUsers?.departments ?? []
 
   const facultiesByDept = useMemo(() => {
@@ -835,7 +835,9 @@ function FacultyTab() {
 
   // Per-open refetch: faculty_subject rows for this faculty + active semester,
   // with headcount + semester title resolved server-side per row.
-  const openFacultyProfile = useCallback(async (facultyId: string, facultyName: string) => {
+  // Plain function (no useCallback): callers use inline arrows, and the React
+  // Compiler owns memoization — manual deps could not be preserved (see lint).
+  const openFacultyProfile = async (facultyId: string, facultyName: string) => {
     setSelectedFaculty({ id: facultyId, name: facultyName })
     setModalRows(null)
     setModalError("")
@@ -850,7 +852,7 @@ function FacultyTab() {
       setModalRows(json.data)
     } catch (err) { setModalError(err instanceof Error ? err.message : "Unknown error") }
     finally { setModalLoading(false) }
-  }, [activeSemesterId])
+  }
 
   return (
     <div className="space-y-6">
