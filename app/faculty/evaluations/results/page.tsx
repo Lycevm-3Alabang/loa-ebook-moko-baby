@@ -87,7 +87,7 @@ export default function FacultyEvaluationResultsPage() {
       </div>
 
       {isLocked && (
-        <LockedTab endpoint="/api/faculty/evaluation-results" message="Evaluation Results not ready" />
+        <LockedTab endpoint="/api/faculty/evaluation-results" message={subjectsError?.message || "Evaluation Results not ready"} />
       )}
 
       {!isLocked && loading && (
