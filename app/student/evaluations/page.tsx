@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from "react"
 import Skeleton from "@/components/ui/Skeleton"
 import { SkeletonCard } from "@/components/ui/Skeleton"
-import LockedTab from "@/components/ui/LockedTab"
 import ErrorState from "@/components/ui/ErrorState"
 import ErrorBoundary from "@/components/ui/ErrorBoundary"
 
@@ -227,8 +226,23 @@ export default function StudentEvaluationsPage() {
 
   if (lockedEndpoint) {
     return (
-      <div className="pb-12 px-5 pt-8">
-        <LockedTab endpoint={lockedEndpoint} />
+      <div className="w-full px-4 sm:px-6 pb-12">
+        <div className="card p-12 sm:p-16 bg-surface text-center animate-fade-in">
+          <div className="w-16 h-16 bg-gold-50 border border-gold-200 rounded-2xl flex items-center justify-center mx-auto mb-5">
+            <span className="text-3xl">📝</span>
+          </div>
+          <h2 className="text-lg font-bold text-primary mb-2">Evaluations unavailable</h2>
+          <p className="text-sm text-tertiary max-w-md mx-auto">
+            We couldn&apos;t load your evaluations right now. If the evaluation period hasn&apos;t opened yet,
+            check back later — otherwise contact your admin.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-5 text-xs font-semibold text-gold-600 bg-gold-50 dark:bg-gold-900/30 px-4 py-2 rounded-full"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     )
   }
