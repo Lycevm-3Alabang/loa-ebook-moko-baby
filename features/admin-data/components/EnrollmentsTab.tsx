@@ -114,6 +114,14 @@ export function EnrollmentsTab() {
   const [selectedStudentEnrollments, setSelectedStudentEnrollments] = useState<Enrollment[] | null>(null)
   const enrolledPagination = usePagination(selectedStudentEnrollments ?? [], 25)
 
+  // Minimum shimmer time so the skeleton reads on fast loads instead of
+  // flashing for a frame; slow loads stay on the gate below regardless.
+  const [skeletonReady, setSkeletonReady] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setSkeletonReady(true), 700)
+    return () => clearTimeout(t)
+  }, [])
+
   const hasNullSemesterId = data?.some((e) => !e.semesterId) ?? false
 
   return (
@@ -161,13 +169,13 @@ export function EnrollmentsTab() {
           </div>
         )}
         <SearchInput value={search} onChange={setSearch} placeholder="Search by student name, email, section, subject, or faculty..." />
-        {loading && !data ? (
+        {(loading && !data) || !skeletonReady ? (
           <SkeletonTable rows={4} cols={3} />
         ) : groupedStudents.length === 0 ? (
           <p className="text-xs text-tertiary text-center py-8">No enrollments found.</p>
         ) : (
           <>
-            <div className="desktop-only max-h-96 overflow-y-auto tbl-container tbl">
+            <div className="desktop-only max-h-96 overflow-y-auto tbl-container tbl animate-fade-in">
               <table>
                 <thead>
                   <tr>
@@ -189,7 +197,7 @@ export function EnrollmentsTab() {
                 </tbody>
               </table>
             </div>
-            <div className="mobile-only space-y-2">
+            <div className="mobile-only space-y-2 animate-fade-in">
               {paginatedItems.map((group) => (
                 <div key={group.student.id} className="p-4 rounded-xl bg-surface border border-default space-y-2">
                   <div className="flex items-start justify-between gap-2">
