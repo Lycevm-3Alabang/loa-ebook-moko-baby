@@ -69,7 +69,7 @@ export default function Step1StudentRoster({
                 <td className="text-[13px]">{deptCodeOf(s.departmentId)}</td>
                 <td>
                   {s.status === "new" ? (
-                    <span className="badge-emerald text-[10px]" title="Will be created by Ensure users">New</span>
+                    <span className="badge-emerald text-[10px]" title="Will be registered as a student record">New</span>
                   ) : s.status === "invalid" ? (
                     <span className="badge-red text-[10px]" title="Cannot be registered — fix in the Step 2 table">Invalid</span>
                   ) : (

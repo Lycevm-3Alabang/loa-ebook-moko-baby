@@ -136,8 +136,8 @@ export async function POST(request: NextRequest) {
       userId: (session!.user as Record<string, unknown>).id as string,
       action: "IMPORT_STUDENTS_ENSURE",
       details: fileId
-        ? `Ensured users (file ${fileId}): ${ensured.created.length} created, ${ensured.existing} existing, ${ensured.failed.length} failed`
-        : `Ensured users: ${ensured.created.length} created, ${ensured.existing} existing, ${ensured.failed.length} failed`,
+        ? `Ensured student records (file ${fileId}): ${ensured.created.length} created, ${ensured.existing} existing, ${ensured.failed.length} failed`
+        : `Ensured student records: ${ensured.created.length} created, ${ensured.existing} existing, ${ensured.failed.length} failed`,
     })
     const ensuredPublic = { created: ensured.created, existing: ensured.existing, failed: ensured.failed }
     return NextResponse.json({ ...ensuredPublic, semesterId, semesterTitle: activeSemesters[0].title, fileId })
