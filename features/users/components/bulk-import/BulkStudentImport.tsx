@@ -245,8 +245,8 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const [frozenDeptByEmail, setFrozenDeptByEmail] = useState<Map<string, string | null>>(new Map())
   const [fileRunId, setFileRunId] = useState("")
   const [sequenceError, setSequenceError] = useState("")
-  // Row-creating flag: explicit per file, reset on preview. Default off = today.
-  const [allowUnassigned, setAllowUnassigned] = useState(false)
+  // Row-creating flag: explicit per file, reset on preview. Starts on.
+  const [allowUnassigned, setAllowUnassigned] = useState(true)
   // Synchronous double-start guard: state hasn't flushed on rapid clicks.
   const seqRunningRef = useRef(false)
   // Same pre-flush race as the sequencer: two fast clicks, one POST.
@@ -490,7 +490,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     setStep1Status("idle")
     setStep1Result(null)
     setStep1Error("")
-    setAllowUnassigned(false)
+    setAllowUnassigned(true)
     setDeptFilter(null)
     setQuery("")
     setIssueFilter(null)
@@ -1321,13 +1321,12 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                     )
                   })()}
                   <label
-                    title="Blank-faculty rows for classes with no loading get a placeholder loading (created once per class) instead of failing. Off by default."
-                    className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-full border transition-colors ${!semesterId || step2Locked || activePanelId !== null ? "opacity-40 border-default text-tertiary" : "border-default text-secondary hover:bg-surface-dim"}`}
+                    title="Blank-faculty rows for classes with no loading get a placeholder loading (created once per class) instead of failing. On by default — uncheck to fail loudly instead. Applies to panels started after toggling."
+                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-default text-secondary hover:bg-surface-dim transition-colors"
                   >
                     <input
                       type="checkbox"
                       checked={allowUnassigned}
-                      disabled={!semesterId || step2Locked || activePanelId !== null}
                       onChange={(e) => setAllowUnassigned(e.target.checked)}
                       className="accent-yellow-600"
                     />
@@ -1725,7 +1724,6 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                                   r.isNewFaculty && "faculty not found",
                                   r.facultyNotAssigned && "faculty not assigned",
                                   r.isInvalidDepartment && "dept code unknown",
-                                  r.isNewStudent && "new student",
                                 ].filter(Boolean).join("; ")}
                               >
                                 Needs Review
