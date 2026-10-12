@@ -1,8 +1,8 @@
 # Ledger and Reason Codes
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Draft
-**Last Updated:** 2026-10-09
+**Last Updated:** 2026-10-12
 
 Sub-spec of [student-import-stepper.md](../student-import-stepper.md).
 
@@ -174,3 +174,10 @@ Order: source row ascending, so the ledger reads alongside the CSV in any viewer
 # Verification
 
 `npx tsc --noEmit` → `npm run lint` → `npx vitest run`.
+
+# Unassigned parking adds no code (2026-10-12)
+
+Rows enrolled under dummy-parked loadings are ordinary `persisted` rows — no new status, no
+new reason code. The parked *classes* are reported out-of-band (`parkedSlots` on the result,
+named in the enroll audit, counted in the scope line), precisely so the vocabulary above stays
+closed while the reassignment worklist stays visible.

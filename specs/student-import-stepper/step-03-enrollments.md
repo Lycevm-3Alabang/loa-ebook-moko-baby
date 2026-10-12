@@ -1,8 +1,8 @@
 # Step 3 — Enrollments
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Draft
-**Last Updated:** 2026-10-09
+**Last Updated:** 2026-10-12
 
 Sub-spec of [student-import-stepper.md](../student-import-stepper.md).
 
@@ -13,15 +13,28 @@ Sub-spec of [student-import-stepper.md](../student-import-stepper.md).
 The terminal step and the **only `O(rows)` step in the family**. Resolve each row to an existing
 student, subject, section and `faculty_subjects` mapping, then write the enrollment.
 
-Nothing is created here. Every unresolved prerequisite **fails the row** with a reason code — it
-is never invented on the fly.
+Nothing is created here — **except** the opt-out Unassigned-parking path below. Every other
+unresolved prerequisite **fails the row** with a reason code — it is never invented on the fly.
+
+# Step 2 ownership rule (shipped 2026-10-12)
+
+For a blank-faculty row, ownership resolves dummy-ward and the department code plays no role
+in the decision (resolution reads subject + section + term only):
+
+1. Slot exists (any owner) → enrol under it. Dummy-owned when truly unassigned, real-owned
+   when assigned. A blank cell never evicts a real owner.
+2. No slot + parking on → one dummy-owned loading per unique pair (active term), then enrol.
+3. No slot + parking off → `NO_FACULTY_ASSIGNED`; nothing created.
+
+Named-faculty rows always face all three gates (role, slot existence, ownership) and never
+touch the dummy path. `FACULTY_NOT_FOUND` is unreachable for blank rows by construction.
 
 # Position
 
 | | |
 |---|---|
-| Depends on | step 2 for the **same department** (`userMap`), and an active `semesterId` |
-| Produces | the enrollment rows; the ledger's `persisted` / `already-persisted` outcomes |
+| Depends on | step 2 Done-or-Skipped (soft gate) for the file, and an active `semesterId` |
+| Produces | the enrollment rows; the ledger's `persisted` / `already-persisted` outcomes; `parkedSlots` when parking |
 | Distinct values (2026-1) | 21,989 enrollments |
 
 # Request
@@ -30,14 +43,19 @@ The existing chunked shape, scoped to one department:
 
 ```ts
 POST /api/import/students
-{ step: "enrollments", semesterId, fileId, departmentCode,
+{ mode: "enroll", step1: "done" | "skipped", allowUnassigned: boolean,
   rows: { email, name, subjectCode, section, facultyEmail?, departmentId?, _originRow }[],
-  chunkIndex, totalChunks, isLast }
+  chunkIndex, totalChunks, fileId, isLast }
 ```
 
-`semesterId` is required (general spec §4.2). **Omitting `step` keeps the legacy composed path
-working** — that path is both the compatibility guarantee and the test safety net, exactly as in
-the faculty family (`faculty-import-stepper.md:110-131`).
+`mode: "enroll"` dispatches to `enrollStudentRows` (lookup-only, never creates).
+`step1` is carried into the enroll audit so a skipped Step 1 stays visible.
+`allowUnassigned` is strict-boolean, default false. Omitting `mode` keeps the legacy composed
+path working — that path is both the compatibility guarantee and the test safety net, exactly
+as in the faculty family (`faculty-import-stepper.md:110-131`).
+
+`semesterId` is derived server-side per request (active term, exactly one) and echoed back —
+chunks carry it, the route does not trust it. A mid-run flip is surfaced, never silently split.
 
 # Batched resolution — the main change
 
@@ -117,6 +135,26 @@ that cannot report its own write cannot satisfy `StepResult`
 (`faculty-import-stepper.md:83-85`). Both counters surface in the panel summary and in the
 department grid.
 
+# Unassigned parking, opt-out (shipped 2026-10-12)
+
+Step 2 header checkbox *"Park unmapped on Unassigned"*, on by default, reset per file,
+applies to panels started after toggling. When on, a pre-pass (after slot fetch, before the
+row loop — the loop itself is byte-identical) collects distinct valid pairs with blank faculty
+and no slot, resolves the placeholder account by `DUMMY_FACULTY_EMAIL`, and creates one
+dummy-owned loading per pair via a single `createMany` stamped with the active term. The
+created ids join the in-memory slot map, so rows enrol normally.
+
+- Blank-only, never-evict: created only where `resolveSlot` finds nothing; named rows and
+  real owners untouched. Legacy fallback rows need no creation.
+- No dummy account, or nothing created → rows fail `NO_FACULTY_ASSIGNED` as before. Typos
+  fail earlier (subject/section checks precede parking), so parking cannot mask bad codes.
+- Reported, not silent: `parkedSlots: { subjectCode, section }[]` on the result, named in the
+  enroll audit, counted in the scope line. Parked rows enrol as normal `persisted` ledger
+  lines — parking adds **no** reason code (ledger-reason-codes.md).
+- Local literal `UNASSIGNED_FACULTY_EMAIL` mirrors the canonical `DUMMY_FACULTY_EMAIL`
+  (`etlEvaluation.ts`) deliberately: importing that module pulls the live Supabase client into
+  the mocked test graph.
+
 # Classification rules
 
 | Outcome | Rule | Ledger status |
@@ -129,11 +167,21 @@ department grid.
 | Student not a user | absent from `userMap` | `invalid` (`STUDENT_NOT_FOUND`) |
 | Subject unknown | `subjects` miss | `invalid` (`SUBJECT_NOT_FOUND`) |
 | Section unknown | `sections` miss | `invalid` (`SECTION_NOT_FOUND`) |
-| Faculty email not a user | absent from the faculty map, or lacks FACULTY/DEAN/ADMIN | `invalid` (`FACULTY_NOT_FOUND`) |
-| Faculty not assigned to the slot | no mapping for `(subject, section, semester, faculty)` | `invalid` (`FACULTY_NOT_ASSIGNED`) |
-| Blank faculty, slot unresolvable | no mapping for `(subject, section, semester)` | `invalid` (`NO_FACULTY_ASSIGNED`) |
+| Faculty email not a user | named address absent from the faculty map, or lacks FACULTY/DEAN/ADMIN | `invalid` (`FACULTY_NOT_FOUND`) — named only; blank never reports this |
+| Faculty not assigned to the slot | no mapping for `(subject, section, semester, faculty)` | `invalid` (`FACULTY_NOT_ASSIGNED`) — named only |
+| Blank faculty, slot unresolvable, parking off | no mapping for `(subject, section, semester)` | `invalid` (`NO_FACULTY_ASSIGNED`) |
+| Blank faculty, slot unresolvable, parking on | one dummy-owned loading created per unique pair, then enrolled | `persisted` + `parkedSlots` entry |
 | Department code unresolvable | **not a rejection** — row enrolls, department stays `null` | `persisted` + flag `DEPARTMENT_UNRESOLVED` |
 | Department code ≠ section's department | **not a rejection** — the code wins | `persisted` + flag `DEPARTMENT_MISMATCH` |
+
+# Preview mirrors (shipped 2026-10-12)
+
+- Blank faculty email is never a preview flag (`isNewFaculty` is computed for non-blank
+  only) and blank cells render as informational "Unassigned Faculty" (blue, hover explains).
+  Named unknowns still flag and fail — the `no-teacher` facet now fires on named rows only.
+- `new-student` left the issue vocabulary (`issue-filter.ts`): newcomer status is Step 1's
+  business. The Will Create tooltip no longer names it; the `has-issues`/`no-issues` union
+  never included it.
 
 > **The last two are the D4 fix.** `BulkStudentImport.tsx:504` currently tells the admin amber rows
 > "import, or the server resolves it", and `:155-157` claims unknown subject/section/faculty "is
@@ -183,6 +231,12 @@ checked after that read. No `23505` handler is required.
 | legacy composed path unchanged | omitting `step` produces today's response shape |
 | missing `semesterId` | 400 before any repository call |
 | ledger closure | `rows = persisted + already-persisted + invalid` exactly |
+| allowUnassigned off | blank + no slot fails loud, creates nothing (`parkedSlots: []`) |
+| allowUnassigned on | one dummy loading per pair, rows enrol, `parkedSlots` names them |
+| allowUnassigned shared pair | two students, one pair → single `createMany` |
+| allowUnassigned named path | unknown mapping still `FACULTY_NOT_ASSIGNED`, no creation |
+| allowUnassigned missing dummy | falls back to loud `NO_FACULTY_ASSIGNED` |
+| allowUnassigned legacy slot | fallback resolves, no creation |
 
 # Verification
 

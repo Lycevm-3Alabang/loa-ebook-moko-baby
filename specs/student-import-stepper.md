@@ -1,8 +1,8 @@
 # Student Import Department Stepper — General Spec
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Draft
-**Last Updated:** 2026-10-09
+**Last Updated:** 2026-10-12
 
 Sub-spec family of [faculty-import-stepper.md](../faculty-import-stepper.md), which shares the
 `StepResult` contract, the client-held-map model and the `StepPanel` / `StepperTrace` primitives.
@@ -23,6 +23,13 @@ contract (`lib/__tests__/studentImport.test.ts:4-6, 113`;
 `specs/faculty-import-stepper.md:25`; `specs/seed-2026-1-etl.md:69-70`). A missing subject,
 section, faculty or mapping **fails the row**; it is never created here.
 
+**Exception, shipped 2026-10-12:** the opt-out Unassigned-parking path
+(`step-03-enrollments.md` §"Unassigned parking"). With the Step 2 checkbox on, a *valid*
+subject + *valid* section with no mapping and a blank faculty email gets one dummy-owned
+`faculty_subjects` row per unique pair (active term), then enrols normally. Named-faculty rows,
+real owners, and the legacy fallback are untouched; the parked pairs are reported
+(`parkedSlots`) and audited. Everything else on this page still holds.
+
 **Enrollment is genuinely `O(rows)`.** `faculty-import-stepper.md:59-61` contrasts this
 explicitly. Chunking is retained for step 3 and only step 3.
 
@@ -34,7 +41,7 @@ explicitly. Chunking is retained for step 3 and only step 3.
 |---|---|
 | **In scope** | `POST /api/import/students`, `GET /api/import/students/reference`, `lib/services/studentImport.ts`, `features/users/components/bulk-import/BulkStudentImport.tsx`, `features/admin-data/student-enrollment.repository.ts` |
 | **Out of scope** | The faculty importer (`etlEvaluation.ts`, `app/api/import/faculties/route.ts`) — Steps 2-6 Done, Step 7 in flight. The other five `Bulk*Import.tsx` components. Schema changes. |
-| **Not a goal** | Durable server-side jobs, rollback/undo, reordering departments, or a "run all" button. |
+| **Not a goal** | Durable server-side jobs, rollback/undo, or reordering departments. (Earlier revisions also excluded a "run all" button — shipped 2026-10-12 as Run-all / Run-remaining through the single panel writer, §5.) |
 
 ---
 
@@ -42,14 +49,15 @@ explicitly. Chunking is retained for step 3 and only step 3.
 
 | Step | ID | Scope | Request shape | Distinct values (2026-1) | Depends on |
 |---|---|---|---|---|---|
-| 1 | `upload` | file | none (client-side) | 0 | — |
-| 2 | `student-users` | per department | distinct-set | 3,302 emails / 10 departments | active semester |
-| 3 | `enrollments` | per department | chunked rows | 22,934 distinct `(student, subject, section)` tuples + semester | step 2 (same department) |
+| 1 | `upload` | file | none (client-side) | 0 | reference data loaded (upload gated, 2026-10-12) |
+| 2 | `student-users` | whole file, single run | distinct-set, one request | 3,302 emails | active semester |
+| 3 | `enrollments` | per department | chunked rows | 22,934 distinct `(student, subject, section)` tuples + semester | step 2 Done-or-Skipped (soft gate, 2026-10-12) |
 
-**Total for the 2026-1 file: ≈296 requests at 100-row chunks** — 10 departments × (1 user step +
-⌈rows/100⌉ enrollment chunks). Per-department enrollment chunks (measured): CAS 30 · CBA 26 ·
-CCA 14 · CCJ 24 · CCS 49 · COA 17 · COE 28 · COED 12 · CREM 3 · CTHM 83 = 286, plus 10 user
-steps.
+**Total for the 2026-1 file: ≈287 requests at 100-row chunks** — 1 whole-file user step +
+per-department enrollment chunks (measured): CAS 30 · CBA 26 ·
+CCA 14 · CCJ 24 · CCS 49 · COA 17 · COE 28 · COED 12 · CREM 3 · CTHM 83 = 286.
+(Supersedes the ≈296 estimate: the 10 per-department user steps collapsed into one
+single-run ensure, 2026-10-12.)
 
 ## 3.1 Departments are unordered, so the trace is not linear
 
@@ -59,8 +67,10 @@ ordering departments do not have, and there is no "current" department when any 
 
 **A department grid replaces the trace.** `StepPanel` is reused **unchanged** — its `disabled`
 chain in the faculty wizard encodes FK ordering, which departments do not have, so every panel is
-enabled from the start except by the shared blocked-row gate and a global running guard. This is
-a simpler and better-fitting use of the same component.
+enabled except by the shared blocked-row gate, the Step 2 Done-or-Skipped gate (2026-10-12), and
+a global running guard. This is
+a simpler and better-fitting use of the same component. Panels render in a responsive card
+grid (1 / 3 / 4 columns by viewport, 2026-10-12); the component itself is untouched.
 
 ## 3.2 Department is determined by the `department code` column
 
@@ -206,9 +216,12 @@ current `skipped` count is unusable.
               └───────────────────┘
 ```
 
-- Steps 2 and 3 are ordered **within** a department (users before enrollments — a real FK
-  dependency). Departments have no such dependency and may run in any order.
-- There is deliberately **no "run all" button** — per-department control is the point of the design.
+- Steps 2 and 3 are ordered **across the whole file** (users before enrollments — a real FK
+  dependency): Step 3 panels unlock on Step 2 Done-or-Skipped (soft gate — Skip is the
+  one-click override, 2026-10-12). Departments have no such dependency and may run in any order.
+- **Run-all / Run-remaining (shipped 2026-10-12)** loop the single panel writer, so both inherit
+  row-idempotency; first non-ok panel stops the sequence and finished panels keep their results.
+  Per-department control remains — the header buttons are conveniences, not a second path.
 - Stopping after any panel leaves a valid intermediate state; every panel is idempotent (§6).
 - Re-running a completed panel reports `inserted: 0`, `existing: N`. A panel never reached is
   `not-reached` in the grid.

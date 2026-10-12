@@ -401,6 +401,13 @@ Non-activated accounts must use the activation flow at `/activate`.
 - Updated `subjectRepository.upsertMany` with full update semantics — updates name when code exists but name differs
 - Includes download templates, success/failure CSV exports
 
+### Student Import Stepper (Two-Step)
+- Student CSV import is now two gated steps: **Step 1 — Ensure student records** (single-run registration with progress modal, idempotent re-check, failed-email CSV download, or Skip if already registered) then **Step 2 — Enrol** (per-department panels in a responsive grid, Run-all / Run-remaining, soft-gated on Done-or-Skipped).
+- New read-only distinct-students roster in Step 1 (New / Registered / Invalid, filter + paging); Step 2 preview table keeps inline editing and the merged import ledger.
+- **Park unmapped on Unassigned** checkbox (on by default, per file): blank-faculty rows for classes with no loading get a placeholder Unassigned Faculty loading (created once per class) instead of failing — uncheck to fail loudly. Parked classes are counted on screen and named in the audit log for later reassignment.
+- Blank faculty emails never flag as issues (shown as informational Unassigned Faculty); `new-student` left the Step 2 issue filter; single blocked-only toggle.
+- Upload waits for reference data (locked dropzone, Retry on failure) so a slow load can never silently collapse all panels into Unassigned.
+
 ### Student History Performance Improvements
 - Fixed UX flaw: Student history page had 5 sequential queries, no parallel execution
 - Changed from single-page fetch to 2-phase parallel: Wave 1 (user, appointments, evaluations), Wave 2 (faculty names, audit logs)

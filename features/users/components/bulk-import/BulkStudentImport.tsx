@@ -1334,7 +1334,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                   </label>
                 </div>
                 {sequenceError && <p className="text-[11px] font-semibold text-red-600">{sequenceError}</p>}
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-3 2xl:grid-cols-4 gap-2 items-start [&>*:only-child]:col-span-full">
                   {panels.map((panel) => {
                     const result = panelResults[panel.id]
                     const panelError = panelErrors[panel.id] ?? ""
@@ -1686,11 +1686,29 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                           />
                         </td>
                         <td>
-                          <input
-                            value={r.facultyEmail}
-                            onChange={(e) => handleFieldChange(r.row, "facultyEmail", e.target.value)}
-                            className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px]"
-                          />
+                          {r.facultyEmail.trim() === "" ? (
+                            <div className="flex flex-col gap-0.5">
+                              <span
+                                className="text-[13px] text-blue-600 dark:text-blue-300 border-b border-dotted border-current cursor-help"
+                                title="No faculty named — enrols under the class slot (Unassigned Faculty unless the class is assigned). Informational only, not an issue."
+                              >
+                                Unassigned Faculty
+                              </span>
+                              <input
+                                value={r.facultyEmail}
+                                onChange={(e) => handleFieldChange(r.row, "facultyEmail", e.target.value)}
+                                placeholder="placeholder@lyceumalabang.edu.ph"
+                                title="Faculty email — blank resolves to Unassigned Faculty unless the class is assigned"
+                                className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px] placeholder:text-tertiary/50"
+                              />
+                            </div>
+                          ) : (
+                            <input
+                              value={r.facultyEmail}
+                              onChange={(e) => handleFieldChange(r.row, "facultyEmail", e.target.value)}
+                              className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px]"
+                            />
+                          )}
                         </td>
                         <td>
                           <input
