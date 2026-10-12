@@ -9,6 +9,7 @@ import {
   facultySubjectRepository,
   subjectRepository,
 } from "@/lib/repositories/factory"
+import { EvaluationPeriodInactiveError } from "@/features/evaluation-results/evaluation-results.repository"
 import {
   computeCategoryAverages,
   computeGeneralRating,
@@ -39,6 +40,8 @@ export async function GET(
     const { searchParams } = new URL(request.url)
     const evaluationPeriodId = searchParams.get("evaluationPeriodId") || searchParams.get("semesterId")
     if (!evaluationPeriodId) return NextResponse.json({ error: "periodId is required" }, { status: 400 })
+
+    await evaluationResultRepository.assertPeriodIsActive(evaluationPeriodId)
 
     const facUsers = await userRepository.listByDepartment(departmentId)
     if (!facUsers || facUsers.length === 0) return NextResponse.json({ department: null, subjects: [] })
@@ -129,6 +132,9 @@ export async function GET(
       subjects: subjectsList,
     })
   } catch (e) {
+    if (e instanceof EvaluationPeriodInactiveError) {
+      return NextResponse.json({ error: e.message }, { status: e.status })
+    }
     console.error("Dean department evaluation results error:", e)
     return NextResponse.json({ error: "Failed to fetch department evaluation results" }, { status: 500 })
   }
