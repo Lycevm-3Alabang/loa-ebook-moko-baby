@@ -113,10 +113,75 @@ export function parseStudentCsv(text: string): {
   return { rows, errors }
 }
 
-export async function importStudents(
+export interface EnsureStudentUserInput {
+  email: string
+  name: string
+  departmentId?: string | null
+}
+
+export interface EnsureStudentUsersResult {
+  created: StudentImportResult["created"]
+  existing: number
+  failed: { email: string; reasonCode: ImportReasonCode; remark: string }[]
+  userMap: Map<string, { id: string; email: string; name: string; role: string }>
+}
+
+// Step 1 — the ONLY creator in the student importer. Deduped by email,
+// email validation enforced: blank / Excel-error / off-domain fail without
+// creating. First-wins for name/dept is the server guard for the direct-API
+// path; the client pre-resolves §3.3 first-row-wins before any POST.
+export async function ensureStudentUsers(
+  items: EnsureStudentUserInput[],
+  fallbackDepartmentId: string | null,
+): Promise<EnsureStudentUsersResult> {
+  const failed: EnsureStudentUsersResult["failed"] = []
+  const created: EnsureStudentUsersResult["created"] = []
+  const nameByEmail = new Map<string, string>()
+  const deptIdByEmail = new Map<string, string | null>()
+  const orderedEmails: string[] = []
+  for (const item of items) {
+    const email = (item.email || "").toLowerCase().trim()
+    if (!email) { failed.push({ email: item.email || "", reasonCode: "EMAIL_BLANK", remark: reasonRemarks("EMAIL_BLANK") }); continue }
+    if (isExcelErrorCell(email) || isExcelErrorCell((item.name || "").trim())) {
+      failed.push({ email, reasonCode: "EXCEL_ERROR_CELL", remark: reasonRemarks("EXCEL_ERROR_CELL", { column: "email" }) }); continue
+    }
+    if (!isAllowedStudentEmail(email)) {
+      failed.push({ email, reasonCode: "EMAIL_DOMAIN_NOT_ALLOWED", remark: reasonRemarks("EMAIL_DOMAIN_NOT_ALLOWED") }); continue
+    }
+    if (!deptIdByEmail.has(email)) {
+      orderedEmails.push(email)
+      nameByEmail.set(email, item.name || email.split("@")[0] || email)
+      deptIdByEmail.set(email, item.departmentId ?? fallbackDepartmentId ?? null)
+    }
+  }
+  if (orderedEmails.length === 0) return { created, existing: 0, failed, userMap: new Map() }
+  const userMap = await userRepository.findManyByEmail(orderedEmails)
+  const missing = orderedEmails.filter((e) => !userMap.has(e))
+  if (missing.length > 0) {
+    const createdUsers = await userRepository.createMany(
+      missing.map((email) => ({
+        email,
+        name: nameByEmail.get(email) || email.split("@")[0] || email,
+        role: "STUDENT",
+        departmentId: deptIdByEmail.get(email) ?? fallbackDepartmentId ?? null,
+      })),
+    )
+    for (const [, user] of createdUsers) {
+      created.push({ name: user.name, email: user.email, role: "STUDENT" })
+      userMap.set(user.email.toLowerCase(), user)
+    }
+  }
+  return { created, existing: orderedEmails.length - missing.length, failed, userMap }
+}
+
+// Step 2 — lookup-only enrolment. NEVER creates users: unknown emails fail
+// as STUDENT_NOT_FOUND (soft-gate override path). `created` is always [] —
+// attribution lives in Step 1.
+export async function enrollStudentRows(
   rows: StudentCsvRow[],
   departmentId: string | null,
   semesterId: string | null,
+  userMapOverride?: Map<string, { id: string; email: string; name: string; role: string }>,
 ): Promise<StudentImportResult> {
   const failed: StudentImportResult["failed"] = []
   const created: StudentImportResult["created"] = []
@@ -144,27 +209,20 @@ export async function importStudents(
   })
 
   const uniqueEmails = [...new Set(rows.filter((_, idx) => !excelInvalidIdx.has(idx)).map((r) => r.email.toLowerCase().trim()))].filter((e) => e.length > 0)
-  const userMap = await userRepository.findManyByEmail(uniqueEmails)
-  const missingEmails = uniqueEmails.filter((e) => !userMap.has(e))
-  if (missingEmails.length > 0) {
-    const nameByEmail = new Map(rows.map((r) => [r.email.toLowerCase().trim(), r.name]))
-    const deptIdByEmail = new Map<string, string | null>()
-    for (const r of rows) {
-      const key = r.email.toLowerCase().trim()
-      if (!deptIdByEmail.has(key)) deptIdByEmail.set(key, r.departmentId ?? departmentId ?? null)
+  // Lookup-only: never creates. Unknown emails fail as STUDENT_NOT_FOUND below.
+  // `departmentId` is unused here (users were stamped in Step 1); kept in the
+  // signature so callers pass the same triple through both steps.
+  void departmentId
+  let userMap: Map<string, { id: string; email: string; name: string; role: string }>
+  if (userMapOverride) {
+    userMap = new Map(userMapOverride)
+    const uncovered = uniqueEmails.filter((e) => !userMap.has(e))
+    if (uncovered.length > 0) {
+      const fresh = await userRepository.findManyByEmail(uncovered)
+      for (const [k, v] of fresh) userMap.set(k, v)
     }
-    const createdUsers = await userRepository.createMany(
-      missingEmails.map((email) => ({
-        email,
-        name: nameByEmail.get(email) || email.split("@")[0] || email,
-        role: "STUDENT",
-        departmentId: deptIdByEmail.get(email) ?? departmentId ?? null,
-      })),
-    )
-    for (const [, user] of createdUsers) {
-      created.push({ name: user.name, email: user.email, role: "STUDENT" })
-      userMap.set(user.email.toLowerCase(), user)
-    }
+  } else {
+    userMap = await userRepository.findManyByEmail(uniqueEmails)
   }
 
   const subjects = new Map<string, { id: string }>()
@@ -353,6 +411,23 @@ export async function importStudents(
     totalRows: rows.length,
     semesterId,
   }
+}
+
+// Compat — Step 1 + Step 2 in one call (pre-split auto-create behaviour).
+// Only the route's legacy single-shot path and existing tests use this;
+// new Step 2 callers use enrollStudentRows directly (never-creates).
+export async function importStudents(
+  rows: StudentCsvRow[],
+  departmentId: string | null,
+  semesterId: string | null,
+): Promise<StudentImportResult> {
+  const ensured = await ensureStudentUsers(
+    rows.map((r) => ({ email: r.email, name: r.name, departmentId: r.departmentId ?? departmentId })),
+    departmentId,
+  )
+  const enrolled = await enrollStudentRows(rows, departmentId, semesterId, ensured.userMap)
+  enrolled.created = ensured.created
+  return enrolled
 }
 
 export function getStudentCsvTemplate(): string {

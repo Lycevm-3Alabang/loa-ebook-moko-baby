@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { requireRole } from "@/lib/route-guard"
-import { parseStudentCsv, importStudents, getStudentCsvTemplate } from "@/lib/services/studentImport"
+import { parseStudentCsv, importStudents, ensureStudentUsers, enrollStudentRows, getStudentCsvTemplate } from "@/lib/services/studentImport"
 import { logAuditEvent } from "@/lib/services/audit"
 import { departmentRepository, semesterRepository } from "@/lib/repositories/factory"
 
@@ -49,6 +49,9 @@ export async function POST(request: NextRequest) {
   let totalChunks = 1
   let fileId: string | undefined = undefined
   let isLast = true
+  let mode: string | undefined = undefined
+  let step1Note = ""
+  let ensureItems: { email: string; name: string; departmentId?: string | null }[] | undefined = undefined
 
   const contentType = request.headers.get("content-type") || ""
 
@@ -59,28 +62,48 @@ export async function POST(request: NextRequest) {
     totalChunks = typeof body.totalChunks === "number" ? body.totalChunks : 1
     fileId = typeof body.fileId === "string" ? body.fileId : undefined
     isLast = body.isLast !== false
-    const rawRows = body.rows as { email: string; name?: string; subjectCode: string; section: string; facultyEmail?: string; departmentId?: string }[] | undefined
-    if (!rawRows || !Array.isArray(rawRows) || rawRows.length === 0) {
-      return NextResponse.json({ error: "Rows array is required" }, { status: 400 })
-    }
+    mode = typeof body.mode === "string" ? body.mode : undefined
+    const step1Raw = typeof body.step1 === "string" ? body.step1 : ""
+    step1Note = step1Raw === "skipped"
+      ? "; Step 1 skipped — students assumed registered"
+      : step1Raw === "done"
+        ? "; Step 1 done"
+        : ""
     if (bodyDeptId) {
       const dept = await departmentRepository.findById(bodyDeptId)
       if (dept) departmentId = bodyDeptId
     }
-    importRows = rawRows.map((r) => {
-      const idx = (r.section || "").indexOf("-")
-      const program = idx === -1 ? "" : r.section.slice(0, idx).trim()
-      const sectionName = idx === -1 ? r.section.trim() : r.section.slice(idx + 1).trim()
-      return {
-        email: r.email.toLowerCase().trim(),
-        name: r.name || "",
-        subjectCode: r.subjectCode.trim(),
-        sectionName,
-        sectionProgram: program,
-        facultyEmail: r.facultyEmail?.toLowerCase().trim() || undefined,
-        departmentId: r.departmentId || undefined,
+    if (mode === "ensure") {
+      const rawItems = body.items as { email: string; name?: string; departmentId?: string | null }[] | undefined
+      if (!rawItems || !Array.isArray(rawItems) || rawItems.length === 0) {
+        return NextResponse.json({ error: "Items array is required" }, { status: 400 })
       }
-    })
+      ensureItems = rawItems.map((r) => ({
+        email: (r.email || "").toLowerCase().trim(),
+        name: r.name || "",
+        departmentId: r.departmentId ?? undefined,
+      }))
+      importRows = []
+    } else {
+      const rawRows = body.rows as { email: string; name?: string; subjectCode: string; section: string; facultyEmail?: string; departmentId?: string }[] | undefined
+      if (!rawRows || !Array.isArray(rawRows) || rawRows.length === 0) {
+        return NextResponse.json({ error: "Rows array is required" }, { status: 400 })
+      }
+      importRows = rawRows.map((r) => {
+        const idx = (r.section || "").indexOf("-")
+        const program = idx === -1 ? "" : r.section.slice(0, idx).trim()
+        const sectionName = idx === -1 ? r.section.trim() : r.section.slice(idx + 1).trim()
+        return {
+          email: r.email.toLowerCase().trim(),
+          name: r.name || "",
+          subjectCode: r.subjectCode.trim(),
+          sectionName,
+          sectionProgram: program,
+          facultyEmail: r.facultyEmail?.toLowerCase().trim() || undefined,
+          departmentId: r.departmentId || undefined,
+        }
+      })
+    }
   } else {
     const formData = await request.formData()
     const file = formData.get("file") as File | null
@@ -105,17 +128,32 @@ export async function POST(request: NextRequest) {
     parseErrors = parsed.errors
   }
 
-  const result = await importStudents(importRows, departmentId, semesterId)
+  if (mode === "ensure") {
+    const ensured = await ensureStudentUsers(ensureItems ?? [], departmentId)
+    await logAuditEvent({
+      userId: (session!.user as Record<string, unknown>).id as string,
+      action: "IMPORT_STUDENTS_ENSURE",
+      details: fileId
+        ? `Ensured users (file ${fileId}): ${ensured.created.length} created, ${ensured.existing} existing, ${ensured.failed.length} failed`
+        : `Ensured users: ${ensured.created.length} created, ${ensured.existing} existing, ${ensured.failed.length} failed`,
+    })
+    const ensuredPublic = { created: ensured.created, existing: ensured.existing, failed: ensured.failed }
+    return NextResponse.json({ ...ensuredPublic, semesterId, semesterTitle: activeSemesters[0].title, fileId })
+  }
+
+  const result = mode === "enroll"
+    ? await enrollStudentRows(importRows, departmentId, semesterId)
+    : await importStudents(importRows, departmentId, semesterId)
   result.parseErrors = parseErrors
   result.semesterTitle = activeSemesters[0].title
 
   if (isLast) {
     await logAuditEvent({
       userId: (session!.user as Record<string, unknown>).id as string,
-      action: "IMPORT_STUDENTS",
+      action: mode === "enroll" ? "IMPORT_STUDENTS_ENROLL" : "IMPORT_STUDENTS",
       details: fileId
-        ? `Imported chunk ${chunkIndex + 1}/${totalChunks} (file ${fileId}): ${result.enrolled} enrollments (${result.failed.length} failed, ${result.parseErrors.length} parse errors)`
-        : `Imported ${result.enrolled} enrollments (${result.failed.length} failed, ${result.parseErrors.length} parse errors)`,
+        ? `Imported chunk ${chunkIndex + 1}/${totalChunks} (file ${fileId}): ${result.enrolled} enrollments (${result.failed.length} failed, ${result.parseErrors.length} parse errors)${step1Note}`
+        : `Imported ${result.enrolled} enrollments (${result.failed.length} failed, ${result.parseErrors.length} parse errors)${step1Note}`,
     })
   }
 

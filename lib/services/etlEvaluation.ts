@@ -1,7 +1,6 @@
 import { supabase } from "@/lib/supabase"
 import { userRepository, sectionRepository, subjectRepository, facultySubjectRepository, studentEnrollmentRepository, departmentRepository, departmentCourseRepository } from "@/lib/repositories/factory"
 import { cleanCell, cleanSubjectCode, isExcelErrorCell } from "@/lib/csv-utils"
-import { distinctSections } from "@/lib/utils/distinct-sections"
 import { distinctSubjectCodes } from "@/lib/utils/distinct-subjects"
 import { distinctFacultyUsers } from "@/lib/utils/distinct-faculty-users"
 
