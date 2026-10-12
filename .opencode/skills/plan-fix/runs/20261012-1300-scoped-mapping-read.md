@@ -5,8 +5,8 @@ repo: /home/nino-compyl/loa/loa-ebook-moko-baby
 calibration: {1: "C", 2: "A", 3: "A", 4: "D", 5: "B", 6: "C"}
 workflow: "D"
 decision: "Option A — Single-id read: findByIdWithEmbeds + route ?type=faculty&id= + scoped page key"
-status: implementing
-pending: slice-1
+status: done
+pending: none
 ---
 
 # Plan
@@ -24,10 +24,11 @@ pending: slice-1
 | slice-2 | Apply Slice 2 (route id param)? | Applied — single-id early-return with backfill + headcount (route layer) |
 | slice-3 | Apply Slice 3 (page scoped key)? | Applied — scoped SWR key, first-row mapping, useMemo import dropped (UI layer) |
 | slice-4 | Apply Slice 4 (proof/tests)? | Applied — single-id + missing-id faculty route tests (test layer) |
+| gates | Close-out gate (full vitest)? | GREEN user-reported: 31 files, 396 passed / 1 skipped (agent-verified nothing per H1) |
 
 ## Pending
 
-- none (all 4 slices applied; gates await user run per H1)
+- none
 
 ## Decisions
 
