@@ -10,6 +10,7 @@ import { applyCreatedUsers } from "./apply-created-users"
 import { panelStripStatus, type StripStatus } from "./panel-strip-status"
 import { ISSUE_KEYS, ISSUE_LABELS, matchesIssue, type IssueKey } from "./issue-filter"
 import { BLOCKED_CSV_FILENAME, buildBlockedCsv } from "./blocked-row-export"
+import Step1StudentRoster, { type Step1Student } from "./Step1StudentRoster"
 import { StepPanel } from "@/features/admin-data/components/FacultyImportStepper"
 
 // Domain rule is shared with the import service via lib/csv-utils — one list,
@@ -347,6 +348,33 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     }
     return unknown.size
   }, [previewRows, existingUsers, step1Status])
+
+  // Step 1 distinct roster: one row per email, first row wins (mirrors the
+  // server's ensure). Status reads live existingUsers, so Ensure's merge
+  // flips New → Registered with no extra wiring. Rendered by
+  // Step1StudentRoster (remounted per file via key={fileRunId}).
+  const step1Students = useMemo<Step1Student[]>(() => {
+    if (!previewRows) return []
+    const known = new Set(existingUsers.map((u) => u.email.toLowerCase().trim()))
+    const seen = new Set<string>()
+    const out: Step1Student[] = []
+    for (const r of previewRows) {
+      const email = r.email.toLowerCase().trim()
+      if (!email || seen.has(email)) continue
+      seen.add(email)
+      const invalid = isOffDomainEmail(r.email) || isExcelErrorCell(r.email.trim()) || isExcelErrorCell(r.name.trim())
+      out.push({
+        email,
+        name: r.name,
+        departmentId: frozenDeptByEmail.get(email) ?? undefined,
+        status: invalid ? "invalid" : known.has(email) ? "registered" : "new",
+      })
+    }
+    return out
+  }, [previewRows, existingUsers, frozenDeptByEmail])
+  // Frozen id → code for display. Departments are ~10 rows; linear find is fine.
+  const deptCodeOf = (id: string | null | undefined) =>
+    id ? existingDepartments.find((d) => d.id === id)?.code ?? "?" : "—"
 
   // Source-row numbers of the filtered panel, or null for the whole file.
   // Keyed by SOURCE row: `panels` holds copies, so object identity would
@@ -1131,6 +1159,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                     Undo skip
                   </button>
                 </div>
+              )}
+              {previewRows && (
+                <Step1StudentRoster key={fileRunId} students={step1Students} deptCodeOf={deptCodeOf} />
               )}
             </div>
 
