@@ -43,6 +43,7 @@ pending: none
 - Layering order for slices: Repository → Route Handler → UI (Controller/Service bypass preserved as-is for this route).
 - Gold paths read first: app/api/data/evaluation-mappings/route.ts, features/admin-data/faculty-subject.repository.ts, lib/repositories/factory.ts, lib/__tests__/evaluation-mappings-route.test.ts, app/admin/data/academic-infrastructure/faculty-enroll/[id]/page.tsx.
 - Proof command: npm test (extend evaluation-mappings-route.test.ts with single-id case).
+- Backfill spike audit (user-ran, read-only): 0 rows with faculty_subject_id IS NULL → no migration; null-drop hypothesis eliminated for this dataset.
 
 ## Scan
 

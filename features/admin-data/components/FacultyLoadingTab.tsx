@@ -237,7 +237,7 @@ function FacultyTab() {
       .catch(() => { })
   }, [])
 
-  const { data: allUsers } = useApiGet<{ users: { id: string; name: string; email: string; role: string; departmentId: string | null }[]; departments: DepartmentData[] }>("/api/admin/users")
+  const { data: allUsers, isLoading: usersLoading } = useApiGet<{ users: { id: string; name: string; email: string; role: string; departmentId: string | null }[]; departments: DepartmentData[] }>("/api/admin/users")
   const { data: subjectsData } = useApiGet<{ data: Subject[] }>("/api/data/evaluation-mappings?type=subjects")
   const { data: sectionsData } = useApiGet<{ data: Section[] }>("/api/data/evaluation-mappings?type=sections")
 
@@ -827,6 +827,10 @@ function FacultyTab() {
 
   const facultyPagination = usePagination(facultyRows, 25)
 
+  // Skeleton while the manual fetch or the SWR-fed faculty list is still
+  // warming; settled-and-empty falls through to "No faculty found."
+  const showTableSkeleton = (loading && !data) || (facultyRows.length === 0 && (loading || usersLoading))
+
   const [selectedFaculty, setSelectedFaculty] = useState<{ id: string; name: string } | null>(null)
   const [modalRows, setModalRows] = useState<FacultyMapping[] | null>(null)
   const [modalLoading, setModalLoading] = useState(false)
@@ -1415,7 +1419,7 @@ function FacultyTab() {
           </div>
         )}
         <SearchInput value={search} onChange={(v) => { setSearch(v) }} placeholder="Search by faculty name or email..." />
-        {loading && !data ? (
+        {showTableSkeleton ? (
           <SkeletonTable rows={4} cols={3} />
         ) : facultyRows.length === 0 ? (
           <p className="text-xs text-tertiary text-center py-8">No faculty found.</p>
