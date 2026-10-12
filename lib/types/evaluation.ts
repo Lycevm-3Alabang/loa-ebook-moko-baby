@@ -186,6 +186,7 @@ export interface FacultySubjectWithEmbeds extends FacultySubjectData {
   faculty: { id: string; name: string; email: string; departmentId: string | null } | null
   subject: { id: string; code: string; name: string } | null
   section: { id: string; name: string; program: string } | null
+  semester: { id: string; title: string } | null
 }
 
 export interface FacultySubjectWithSubjectsSections {
@@ -409,9 +410,10 @@ export interface ISectionRepository {
 
 export interface IFacultySubjectRepository {
   list(filters?: { faculty_id?: string; section_id?: string; semesterId?: string }): Promise<FacultySubjectData[]>
-  listAllWithEmbeds(): Promise<FacultySubjectWithEmbeds[]>
+  listAllWithEmbeds(filters?: { semesterId?: string; facultyId?: string }): Promise<FacultySubjectWithEmbeds[]>
   replaceBySection(section_id: string, items: { faculty_id: string; subject_id: string; semesterId?: string | null }[]): Promise<void>
   findById(id: string): Promise<FacultySubjectData | null>
+  findByIdWithEmbeds(id: string): Promise<FacultySubjectWithEmbeds | null>
   create(data: { faculty_id: string; subject_id: string; section_id: string; semesterId?: string | null }): Promise<FacultySubjectData>
   createMany(items: { faculty_id: string; subject_id: string; section_id: string; semesterId?: string | null }[]): Promise<FacultySubjectData[]>
   update(id: string, data: Partial<FacultySubjectData>): Promise<FacultySubjectData>
@@ -435,9 +437,11 @@ export interface IStudentEnrollmentRepository {
   deleteById(id: string): Promise<void>
   getDistinctFaculty(student_id: string, semesterId?: string): Promise<string[]>
   countBySectionIds(sectionIds: string[]): Promise<Record<string, number>>
-  listAllWithEmbeds(): Promise<StudentEnrollmentWithEmbeds[]>
+  countByFacultySubjectIds(ids: string[], semesterId?: string): Promise<Record<string, number>>
+  listAllWithEmbeds(filters?: { semesterId?: string }): Promise<StudentEnrollmentWithEmbeds[]>
+  listByFacultySubject(facultySubjectId: string, semesterId?: string): Promise<StudentEnrollmentWithEmbeds[]>
   countBySemesterId(semesterId: string): Promise<number>
-  countByFacultySubjectId(facultySubjectId: string): Promise<number>
+  countByFacultySubjectId(facultySubjectId: string, semesterId?: string): Promise<number>
   getFacultySubjectsByStudent(student_id: string, faculty_id: string, semesterId: string): Promise<{ id: string; code: string; title: string }[]>
 }
 

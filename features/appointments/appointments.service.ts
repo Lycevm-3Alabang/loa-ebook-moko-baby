@@ -90,6 +90,16 @@ export async function resolveCreator(creatorId: string) {
   return creator
 }
 
+export async function assertUsersAssignable(userIds: string[]) {
+  const unique = [...new Set(userIds.filter(Boolean))]
+  if (unique.length === 0) return
+  const users = await Promise.all(unique.map((id) => userRepository.findById(id)))
+  const blocked = users.find((u) => u && (u.isDisabled || u.deletedAt))
+  if (blocked) {
+    throw new Error(`User ${blocked.name} (${blocked.email}) is disabled or deleted and cannot be assigned to appointments`)
+  }
+}
+
 export function resolveMeetingType(creatorRole: string, inputMeetingType?: "CONSULTATION"): "CONSULTATION" {
   if (hasRole(creatorRole, "STUDENT")) return "CONSULTATION"
   return inputMeetingType || "CONSULTATION"

@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useApiGet } from "@/lib/api/client"
 import { usePagination, Paginator } from "@/components/ui/Paginator"
 import { SkeletonTable } from "@/components/ui/Skeleton"
@@ -35,32 +35,83 @@ export function EnrollmentsTab() {
   const [formSaving, setFormSaving] = useState(false)
   const [formError, setFormError] = useState("")
   const [formSuccess, setFormSuccess] = useState("")
+  const [formFsSearch, setFormFsSearch] = useState("")
+  const [fsDropdownOpen, setFsDropdownOpen] = useState(false)
+  const fsDropdownRef = useRef<HTMLDivElement>(null)
+  const [studentSearch, setStudentSearch] = useState("")
+  const [studentDropdownOpen, setStudentDropdownOpen] = useState(false)
+  const studentDropdownRef = useRef<HTMLDivElement>(null)
+
+  const { data: semestersData } = useApiGet<{ data: SemesterData[] }>("/api/semesters")
+  const activeSemesterId = useMemo(() => semestersData?.data?.find((s) => s.isActive)?.id ?? "", [semestersData])
 
   const fetchData = useCallback(async (isRefresh?: boolean) => {
     if (isRefresh) { setLoading(true); setError("") }
     try {
-      const res = await fetch("/api/data/evaluation-mappings?type=student")
-      if (res.status === 403) { setLocked("/api/data/evaluation-mappings?type=student"); return }
+      const url = activeSemesterId
+        ? `/api/data/evaluation-mappings?type=student&semesterId=${activeSemesterId}`
+        : "/api/data/evaluation-mappings?type=student"
+      const res = await fetch(url)
+      if (res.status === 403) { setLocked(url); return }
       if (!res.ok) throw new Error("Failed to load student enrollments")
       const json = await res.json()
       setData(json.data)
     } catch (err) { setError(err instanceof Error ? err.message : "Unknown error") }
     finally { setLoading(false) }
-  }, [])
+  }, [activeSemesterId])
 
-  useEffect(() => { Promise.resolve().then(() => fetchData()) }, [fetchData])
-
-  const { data: semestersData } = useApiGet<{ data: SemesterData[] }>("/api/semesters")
-  const activeSemesterId = useMemo(() => semestersData?.data?.find((s) => s.isActive)?.id ?? "", [semestersData])
+  useEffect(() => {
+    // Semesters drive the fetch URL — wait for them so mount fires one
+    // scoped request instead of bare-then-scoped.
+    if (semestersData === undefined) return
+    Promise.resolve().then(() => fetchData())
+  }, [fetchData, semestersData])
 
   const { data: fsData } = useApiGet<{ data: FacultyMapping[] }>("/api/data/evaluation-mappings?type=faculty")
   const facultySubjects = fsData?.data ?? []
 
+  const filteredFacultySubjects = useMemo(() => {
+    if (!formFsSearch.trim()) return facultySubjects
+    const q = formFsSearch.toLowerCase()
+    return facultySubjects.filter((fs) =>
+      `${fs.section.program} ${fs.section.name} ${fs.subject.code} ${fs.subject.name} ${fs.faculty.name}`.toLowerCase().includes(q)
+    )
+  }, [facultySubjects, formFsSearch])
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (fsDropdownRef.current && !fsDropdownRef.current.contains(e.target as Node)) {
+        setFsDropdownOpen(false)
+      }
+      if (studentDropdownRef.current && !studentDropdownRef.current.contains(e.target as Node)) {
+        setStudentDropdownOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
+
+  const { data: usersData } = useApiGet<{ users: { id: string; name: string; email: string; role: string; isDisabled: boolean }[] }>("/api/admin/users")
+  const students = useMemo(() => (usersData?.users ?? []).filter((u) => u.role.includes("STUDENT") && !u.isDisabled), [usersData])
+
+  const filteredStudents = useMemo(() => {
+    if (!studentSearch.trim()) return students
+    const q = studentSearch.toLowerCase()
+    return students.filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+  }, [students, studentSearch])
+
   // ── Quick Add handlers ───────────────────────────────────
+
+  const closeQuickAdd = () => {
+    setShowQuickAdd(false)
+    setFormFsId(""); setFormFsSearch("")
+    setFormName(""); setFormEmail(""); setStudentSearch("")
+    setFormError(""); setFsDropdownOpen(false); setStudentDropdownOpen(false)
+  }
 
   const handleQuickAdd = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formName || !formEmail || !formFsId) return
+    if (!formFsId || !formName || !formEmail) { setFormError("Select a subject and a student from the lists."); return }
     setFormSaving(true); setFormError(""); setFormSuccess("")
     try {
       const res = await fetch("/api/admin/student-enrollments", {
@@ -69,7 +120,7 @@ export function EnrollmentsTab() {
         body: JSON.stringify({ name: formName, email: formEmail, faculty_subject_id: formFsId, semesterId: activeSemesterId || null }),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Failed to add enrollment") }
-      setFormName(""); setFormEmail(""); setShowQuickAdd(false)
+      closeQuickAdd()
       setFormSuccess("Enrollment added!")
       setTimeout(() => setFormSuccess(""), 3000)
       fetchData(true)
@@ -77,7 +128,7 @@ export function EnrollmentsTab() {
     finally { setFormSaving(false) }
   }
 
-  const filtered = data?.filter((m) => {
+  const filtered = useMemo(() => data?.filter((m) => {
     if (!search) return true
     const q = search.toLowerCase()
     return (
@@ -88,7 +139,7 @@ export function EnrollmentsTab() {
       (m.faculty_subject?.subject.name ?? "").toLowerCase().includes(q) ||
       (m.faculty_subject?.faculty.name ?? "").toLowerCase().includes(q)
     )
-  })
+  }), [data, search])
 
   const groupedStudents = useMemo(() => {
     const map = new Map<string, { student: Enrollment["student"]; enrollments: Enrollment[] }>()
@@ -105,6 +156,14 @@ export function EnrollmentsTab() {
 
   const [selectedStudentEnrollments, setSelectedStudentEnrollments] = useState<Enrollment[] | null>(null)
   const enrolledPagination = usePagination(selectedStudentEnrollments ?? [], 25)
+
+  // Minimum shimmer time so the skeleton reads on fast loads instead of
+  // flashing for a frame; slow loads stay on the gate below regardless.
+  const [skeletonReady, setSkeletonReady] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setSkeletonReady(true), 700)
+    return () => clearTimeout(t)
+  }, [])
 
   const hasNullSemesterId = data?.some((e) => !e.semesterId) ?? false
 
@@ -153,35 +212,35 @@ export function EnrollmentsTab() {
           </div>
         )}
         <SearchInput value={search} onChange={setSearch} placeholder="Search by student name, email, section, subject, or faculty..." />
-        {loading && !data ? (
+        {(loading && !data) || !skeletonReady ? (
           <SkeletonTable rows={4} cols={3} />
         ) : groupedStudents.length === 0 ? (
           <p className="text-xs text-tertiary text-center py-8">No enrollments found.</p>
         ) : (
           <>
-            <div className="desktop-only max-h-96 overflow-y-auto tbl-container tbl">
+            <div className="desktop-only max-h-96 overflow-y-auto tbl-container tbl animate-fade-in">
               <table>
                 <thead>
                   <tr>
                     <th>Student</th>
-                    <th>Email</th>
+                    <th>Enrolled Subjects</th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paginatedItems.map((group) => (
                     <tr key={group.student.id}>
-                      <td className="font-medium text-secondary">{group.student.name}</td>
-                      <td className="text-tertiary">{group.student.email}</td>
+                      <td className="font-medium text-secondary">{group.student.name} <span className="font-normal text-tertiary">({group.student.email})</span></td>
+                      <td className="text-secondary">{group.enrollments.length}</td>
                       <td>
-                         <IosButton variant="plain" size="xs" onClick={() => setSelectedStudentEnrollments(group.enrollments)}>View Enrolled Subjects</IosButton>
+                         <IosButton variant="plain" size="xs" onClick={() => setSelectedStudentEnrollments(group.enrollments)}>View Enrolments</IosButton>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <div className="mobile-only space-y-2">
+            <div className="mobile-only space-y-2 animate-fade-in">
               {paginatedItems.map((group) => (
                 <div key={group.student.id} className="p-4 rounded-xl bg-surface border border-default space-y-2">
                   <div className="flex items-start justify-between gap-2">
@@ -191,7 +250,7 @@ export function EnrollmentsTab() {
                     </div>
                     <div className="shrink-0 text-right">
                       <span className="text-xs font-semibold text-secondary">{group.enrollments.length} Subject{group.enrollments.length !== 1 ? "s" : ""}</span>
-                      <IosButton variant="plain" size="xs" onClick={() => setSelectedStudentEnrollments(group.enrollments)}>(View)</IosButton>
+                      <IosButton variant="plain" size="xs" onClick={() => setSelectedStudentEnrollments(group.enrollments)}>View Enrolments</IosButton>
                     </div>
                   </div>
                 </div>
@@ -288,11 +347,11 @@ export function EnrollmentsTab() {
 
       {/* ── Quick Add Modal ─────────────────────────── */}
       {showQuickAdd && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 sm:pt-20 bg-black/60" onClick={() => setShowQuickAdd(false)}>
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 sm:pt-20 bg-black/60" onClick={closeQuickAdd}>
           <div className="bg-white dark:bg-surface-dim rounded-2xl w-full max-w-2xl mx-4 shadow-2xl border border-default overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-default">
               <p className="text-sm font-bold text-secondary">Quick Add Single Student</p>
-              <IosButton variant="gray" size="xs" onClick={() => setShowQuickAdd(false)}>
+              <IosButton variant="gray" size="xs" onClick={closeQuickAdd}>
                 <svg className="w-4 h-4 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -304,31 +363,78 @@ export function EnrollmentsTab() {
               <form onSubmit={handleQuickAdd} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-tertiary mb-1">Faculty-Subject</label>
-                  <select
-                    value={formFsId}
-                    onChange={(e) => setFormFsId(e.target.value)}
-                    className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    required
-                  >
-                    <option value="">Select subject...</option>
-                    {facultySubjects.map((fs) => (
-                      <option key={fs.id} value={fs.id}>
-                        {fs.section.program} {fs.section.name} - {fs.subject.code} : {fs.subject.name} ({fs.faculty.name})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-tertiary mb-1">Student Name</label>
-                    <input type="text" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="e.g. Juan Dela Cruz" className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" required />
+                  <div className="relative" ref={fsDropdownRef}>
+                    <input
+                      type="text"
+                      value={formFsSearch}
+                      onChange={(e) => { setFormFsSearch(e.target.value); setFormFsId(""); setFsDropdownOpen(true) }}
+                      onFocus={() => setFsDropdownOpen(true)}
+                      placeholder="Type to search subjects..."
+                      className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      autoComplete="off"
+                      required
+                    />
+                    {fsDropdownOpen && filteredFacultySubjects.length > 0 && (
+                      <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                        {filteredFacultySubjects.map((fs) => (
+                          <button
+                            key={fs.id}
+                            type="button"
+                            onClick={() => { setFormFsId(fs.id); setFormFsSearch(`${fs.section.program} ${fs.section.name} - ${fs.subject.code} : ${fs.subject.name} (${fs.faculty.name})`); setFsDropdownOpen(false) }}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-hover transition-colors ${formFsId === fs.id ? "bg-amber-50 dark:bg-amber-900/20 font-semibold" : ""}`}
+                          >
+                            <span className="font-medium text-primary">{fs.section.program} {fs.section.name} - {fs.subject.code} : {fs.subject.name}</span>
+                            <span className="text-tertiary ml-1 text-xs">({fs.faculty.name})</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {fsDropdownOpen && formFsSearch.trim() && filteredFacultySubjects.length === 0 && (
+                      <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl">
+                        <p className="text-xs text-tertiary text-center py-3">No subjects found.</p>
+                      </div>
+                    )}
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-tertiary mb-1">Student Email</label>
-                    <input type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} placeholder="e.g. juan@example.com" className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" required />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-tertiary mb-1">Student</label>
+                  <div className="relative" ref={studentDropdownRef}>
+                    <input
+                      type="text"
+                      value={studentSearch}
+                      onChange={(e) => { setStudentSearch(e.target.value); setFormName(""); setFormEmail(""); setStudentDropdownOpen(true) }}
+                      onFocus={() => setStudentDropdownOpen(true)}
+                      placeholder="Type to search students..."
+                      className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      autoComplete="off"
+                      required
+                    />
+                    {studentDropdownOpen && filteredStudents.length > 0 && (
+                      <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                        {filteredStudents.map((u) => (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => { setFormName(u.name); setFormEmail(u.email); setStudentSearch(`${u.name} (${u.email})`); setStudentDropdownOpen(false) }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-surface-hover transition-colors"
+                          >
+                            <span className="font-medium text-primary">{u.name}</span>
+                            <span className="text-tertiary ml-1 text-xs">({u.email})</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {studentDropdownOpen && studentSearch.trim() && filteredStudents.length === 0 && (
+                      <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl">
+                        <p className="text-xs text-tertiary text-center py-3">No students found.</p>
+                      </div>
+                    )}
                   </div>
                 </div>
-                <IosButton type="submit" loading={formSaving} disabled={!activeSemesterId} variant="primary">Add Enrollment</IosButton>
+                <div className="flex items-center justify-end gap-2">
+                  <IosButton type="button" variant="gray" onClick={closeQuickAdd}>Cancel</IosButton>
+                  <IosButton type="submit" loading={formSaving} disabled={!activeSemesterId} variant="primary">Add Enrollment</IosButton>
+                </div>
               </form>
             </div>
           </div>

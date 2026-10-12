@@ -297,6 +297,18 @@ export async function bulkUpsertUsers(
     }
 
     if (existing) {
+      if (existing.deletedAt) {
+        failures.push({
+          name: r.name,
+          email,
+          role: r.role,
+          department: r.department || "",
+          program: r.program || "",
+          employeeNo: r.employeeNo || "",
+          remark: "Account is deleted — restore it before importing",
+        })
+        continue
+      }
       toUpdate.push({ existingId: existing.id, ...base })
     } else {
       toCreate.push(base)

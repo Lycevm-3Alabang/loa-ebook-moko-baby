@@ -5,15 +5,14 @@ import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { useApiGet } from "@/lib/api/client"
 import { usePagination, Paginator } from "@/components/ui/Paginator"
-import { SkeletonTable } from "@/components/ui/Skeleton"
+import Skeleton, { SkeletonTable } from "@/components/ui/Skeleton"
 import IosButton from "@/components/ui/IosButton"
 import LockedTab from "@/components/ui/LockedTab"
 import { StepperTrace, StepPanel } from "./FacultyImportStepper"
 import { SegmentedControl, SearchInput } from "./shared"
 import { EnrollmentsTab } from "./EnrollmentsTab"
-import { FacultySubjectDetail } from "./FacultySubjectDetail"
 import type { DepartmentData, SemesterData } from "@/lib/types"
-import type { FacEnrollTab, FacViewTab, Subject, Section, FacultyMapping, Enrollment } from "./types"
+import type { FacEnrollTab, Subject, Section, FacultyMapping } from "./types"
 import { deriveCsvFlags, DUMMY_FACULTY_EMAIL_CLIENT, type CsvRow, type CsvRowWithFlags } from "./csv-helpers"
 import { distinctSections } from "@/lib/utils/distinct-sections"
 import { parseSectionIdentifier } from "@/lib/utils/parse-section-identifier"
@@ -65,13 +64,19 @@ function FacultyTab() {
   const [facultySearch, setFacultySearch] = useState("")
   const [facultyDropdownOpen, setFacultyDropdownOpen] = useState(false)
   const facultyDropdownRef = useRef<HTMLDivElement>(null)
+  const [subjectSearch, setSubjectSearch] = useState("")
+  const [subjectDropdownOpen, setSubjectDropdownOpen] = useState(false)
+  const subjectDropdownRef = useRef<HTMLDivElement>(null)
+  const [sectionSearch, setSectionSearch] = useState("")
+  const [sectionDropdownOpen, setSectionDropdownOpen] = useState(false)
+  const sectionDropdownRef = useRef<HTMLDivElement>(null)
   const [formSaving, setFormSaving] = useState(false)
   const [formError, setFormError] = useState("")
   const [formSuccess, setFormSuccess] = useState("")
 
   const tableRef = useRef<HTMLDivElement>(null)
   const [showImport, setShowImport] = useState(false)
-  const [showAddForm, setShowAddForm] = useState(true)
+  const [showCreateModal, setShowCreateModal] = useState(false)
 
   // ── CSV Import state ──────────────────────────────────────
   const csvFileRef = useRef<HTMLInputElement>(null)
@@ -194,25 +199,32 @@ function FacultyTab() {
 
   // ── Department filter ────────────────────────────────────
   const [deptFilter, setDeptFilter] = useState("all")
-  const [currentUserDept, setCurrentUserDept] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+
+  const { data: semestersData } = useApiGet<{ data: SemesterData[] }>("/api/semesters")
+  const activeSemesterId = useMemo(() => semestersData?.data?.find((s) => s.isActive)?.id ?? "", [semestersData])
 
   const fetchData = useCallback(async (isRefresh?: boolean) => {
     if (isRefresh) { setLoading(true); setError("") }
     try {
-      const res = await fetch("/api/data/evaluation-mappings?type=faculty")
-      if (res.status === 403) { setLocked("/api/data/evaluation-mappings?type=faculty"); return }
+      const url = activeSemesterId
+        ? `/api/data/evaluation-mappings?type=faculty&semesterId=${activeSemesterId}`
+        : "/api/data/evaluation-mappings?type=faculty"
+      const res = await fetch(url)
+      if (res.status === 403) { setLocked(url); return }
       if (!res.ok) throw new Error("Failed to load faculty-subject mappings")
       const json = await res.json()
       setData(json.data)
     } catch (err) { setError(err instanceof Error ? err.message : "Unknown error") }
     finally { setLoading(false) }
-  }, [])
+  }, [activeSemesterId])
 
-  useEffect(() => { Promise.resolve().then(() => fetchData()) }, [fetchData])
-
-  const { data: semestersData } = useApiGet<{ data: SemesterData[] }>("/api/semesters")
-  const activeSemesterId = useMemo(() => semestersData?.data?.find((s) => s.isActive)?.id ?? "", [semestersData])
+  useEffect(() => {
+    // Semesters drive the fetch URL — wait for them so mount fires one
+    // scoped request instead of bare-then-scoped (the post-load reload).
+    if (semestersData === undefined) return
+    Promise.resolve().then(() => fetchData())
+  }, [fetchData, semestersData])
 
   // Get current user info for department restriction
   useEffect(() => {
@@ -223,7 +235,6 @@ function FacultyTab() {
           const isAdm = j.user.role?.split("|").includes("ADMIN")
           setIsAdmin(isAdm)
           if (!isAdm && j.user.departmentId) {
-            setCurrentUserDept(j.user.departmentId)
             setDeptFilter(j.user.departmentId)
           }
         }
@@ -231,15 +242,13 @@ function FacultyTab() {
       .catch(() => { })
   }, [])
 
-  const { data: allUsers } = useApiGet<{ users: { id: string; name: string; email: string; role: string; departmentId: string | null }[]; departments: DepartmentData[] }>("/api/admin/users")
+  const { data: allUsers, isLoading: usersLoading } = useApiGet<{ users: { id: string; name: string; email: string; role: string; departmentId: string | null }[]; departments: DepartmentData[] }>("/api/admin/users")
   const { data: subjectsData } = useApiGet<{ data: Subject[] }>("/api/data/evaluation-mappings?type=subjects")
   const { data: sectionsData } = useApiGet<{ data: Section[] }>("/api/data/evaluation-mappings?type=sections")
 
-  const { data: enrollmentsData } = useApiGet<{ data: Enrollment[] }>("/api/data/evaluation-mappings?type=student")
-
   const faculties = (allUsers?.users ?? []).filter((u) => (u.role.includes("FACULTY") || u.role.includes("DEAN")) && u.id !== "a0000000-0000-0000-0000-000000000001")
-  const subjects = subjectsData?.data ?? []
-  const sections = sectionsData?.data ?? []
+  const subjects = useMemo(() => subjectsData?.data ?? [], [subjectsData])
+  const sections = useMemo(() => sectionsData?.data ?? [], [sectionsData])
   const departments = allUsers?.departments ?? []
 
   const facultiesByDept = useMemo(() => {
@@ -256,26 +265,55 @@ function FacultyTab() {
     ? faculties.find((f) => f.id === formFaculty)?.name ?? ""
     : ""
 
-  const enrollmentCountByFsId = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const e of enrollmentsData?.data ?? []) {
-      if (e.faculty_subject_id) {
-        map.set(e.faculty_subject_id, (map.get(e.faculty_subject_id) ?? 0) + 1)
-      }
-    }
-    return map
-  }, [enrollmentsData])
+  const filteredSubjects = useMemo(() => {
+    if (!subjectSearch) return subjects
+    const q = subjectSearch.toLowerCase()
+    return subjects.filter((s) => s.code.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
+  }, [subjects, subjectSearch])
 
-  const [selectedSsMapping, setSelectedSsMapping] = useState<FacultyMapping | null>(null)
+  const selectedSubjectLabel = formSubject
+    ? (() => { const s = subjects.find((x) => x.id === formSubject); return s ? `${s.code} - ${s.name}` : "" })()
+    : ""
 
-  const closeSubjectSectionModal = () => {
-    setSelectedSsMapping(null)
+  const filteredSections = useMemo(() => {
+    if (!sectionSearch) return sections
+    const q = sectionSearch.toLowerCase()
+    return sections.filter((s) => s.program.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
+  }, [sections, sectionSearch])
+
+  const selectedSectionLabel = formSection
+    ? (() => { const s = sections.find((x) => x.id === formSection); return s ? `${s.program} - ${s.name}` : "" })()
+    : ""
+
+  const resetCreateForm = () => {
+    setFormFaculty("")
+    setFormSubject("")
+    setFormSection("")
+    setFacultySearch("")
+    setSubjectSearch("")
+    setSectionSearch("")
+    setFacultyDropdownOpen(false)
+    setSubjectDropdownOpen(false)
+    setSectionDropdownOpen(false)
+    setFormError("")
+    setFormSuccess("")
+  }
+
+  const closeCreateModal = () => {
+    setShowCreateModal(false)
+    resetCreateForm()
   }
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (facultyDropdownRef.current && !facultyDropdownRef.current.contains(e.target as Node)) {
         setFacultyDropdownOpen(false)
+      }
+      if (subjectDropdownRef.current && !subjectDropdownRef.current.contains(e.target as Node)) {
+        setSubjectDropdownOpen(false)
+      }
+      if (sectionDropdownRef.current && !sectionDropdownRef.current.contains(e.target as Node)) {
+        setSectionDropdownOpen(false)
       }
     }
     document.addEventListener("mousedown", handleClickOutside)
@@ -765,66 +803,73 @@ function FacultyTab() {
     if (csvFileRef.current) csvFileRef.current.value = ""
   }
 
-  const hasNullSemesterId = data?.some((m) => !m.semesterId) ?? false
-
-  const isDummyMapping = (m: FacultyMapping) =>
-    m.faculty.email.toLowerCase().trim() === DUMMY_FACULTY_EMAIL_CLIENT
-
-  const byDept = data?.filter((m) => {
-    if (deptFilter === "all") return true
-    if (deptFilter === "unassigned") return isDummyMapping(m)
-    if (isDummyMapping(m)) return false
-    return m.faculty.departmentId === deptFilter
-  }) ?? []
-
-  const filtered = byDept.filter((m) => {
-    if (!search) return true
-    const q = search.toLowerCase()
-    return (
-      m.faculty.name.toLowerCase().includes(q) ||
-      m.faculty.email.toLowerCase().includes(q) ||
-      m.subject.code.toLowerCase().includes(q) ||
-      m.subject.name.toLowerCase().includes(q) ||
-      `${m.section.program}-${m.section.name}`.toLowerCase().includes(q)
-    )
-  })
-
-  const [viewTab, setViewTab] = useState<FacViewTab>("by_faculty")
-
-  const groupedFaculty = useMemo(() => {
-    const map = new Map<string, { faculty: FacultyMapping["faculty"]; mappings: FacultyMapping[] }>()
-    for (const m of filtered) {
-      if (!map.has(m.faculty.id)) {
-        map.set(m.faculty.id, { faculty: m.faculty, mappings: [] })
-      }
-      map.get(m.faculty.id)!.mappings.push(m)
+  // ── Faculty-only rows (active semester): all faculty left-joined with mappings ──
+  const mappingsByFacultyId = useMemo(() => {
+    const map = new Map<string, FacultyMapping[]>()
+    for (const m of data ?? []) {
+      const list = map.get(m.faculty.id)
+      if (list) list.push(m)
+      else map.set(m.faculty.id, [m])
     }
-    return Array.from(map.values())
-  }, [filtered])
+    return map
+  }, [data])
 
-  const flatData = useMemo(() => {
-    return [...filtered].sort((a, b) => {
-      const c = a.subject.code.localeCompare(b.subject.code)
-      if (c !== 0) return c
-      const secA = `${a.section.program}-${a.section.name}`
-      const secB = `${b.section.program}-${b.section.name}`
-      return secA.localeCompare(secB)
-    })
-  }, [filtered])
+  const facultyRows = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return faculties
+      .filter((f) => {
+        if (f.email.toLowerCase().trim() === DUMMY_FACULTY_EMAIL_CLIENT) return false
+        if (deptFilter !== "all" && f.departmentId !== deptFilter) return false
+        if (q && !f.name.toLowerCase().includes(q) && !f.email.toLowerCase().includes(q)) return false
+        return true
+      })
+      .map((faculty) => ({
+        faculty,
+        mappings: mappingsByFacultyId.get(faculty.id) ?? [],
+      }))
+      .sort((a, b) => a.faculty.name.localeCompare(b.faculty.name))
+  }, [faculties, mappingsByFacultyId, deptFilter, search])
 
-  const { page, totalPages, pageSize, paginatedItems, setPage, setPageSize } = usePagination(groupedFaculty, 25)
-  const ssPagination = usePagination(flatData, 25)
+  const facultyPagination = usePagination(facultyRows, 25)
 
-  const [selectedFacultyLoad, setSelectedFacultyLoad] = useState<FacultyMapping[] | null>(null)
-  const facultyLoadPagination = usePagination(selectedFacultyLoad ?? [], 25)
+  // Skeleton while the manual fetch or the SWR-fed faculty list is still
+  // warming; settled-and-empty falls through to "No faculty found."
+  const showTableSkeleton = (loading && !data) || (facultyRows.length === 0 && (loading || usersLoading))
 
-  const hasUnassigned = data?.some((m) => isDummyMapping(m)) ?? false
+  // Minimum shimmer time so the skeleton reads on fast loads instead of
+  // flashing for a frame; slow loads stay on the gate above regardless.
+  const [skeletonReady, setSkeletonReady] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setSkeletonReady(true), 700)
+    return () => clearTimeout(t)
+  }, [])
 
-  const deptPills = [
-    { id: "all", label: "All" },
-    ...(hasUnassigned ? [{ id: "unassigned", label: "Unassigned" }] : []),
-    ...departments.map((d) => ({ id: d.id, label: d.name })),
-  ]
+  const [selectedFaculty, setSelectedFaculty] = useState<{ id: string; name: string } | null>(null)
+  const [modalRows, setModalRows] = useState<FacultyMapping[] | null>(null)
+  const [modalLoading, setModalLoading] = useState(false)
+  const [modalError, setModalError] = useState("")
+  const modalPagination = usePagination(modalRows ?? [], 25)
+
+  // Per-open refetch: faculty_subject rows for this faculty + active semester,
+  // with headcount + semester title resolved server-side per row.
+  // Plain function (no useCallback): callers use inline arrows, and the React
+  // Compiler owns memoization — manual deps could not be preserved (see lint).
+  const openFacultyProfile = async (facultyId: string, facultyName: string) => {
+    setSelectedFaculty({ id: facultyId, name: facultyName })
+    setModalRows(null)
+    setModalError("")
+    setModalLoading(true)
+    try {
+      const params = new URLSearchParams({ type: "faculty", facultyId })
+      if (activeSemesterId) params.set("semesterId", activeSemesterId)
+      const res = await fetch(`/api/data/evaluation-mappings?${params.toString()}`)
+      if (res.status === 403) throw new Error("Access denied for faculty loading.")
+      if (!res.ok) throw new Error("Failed to load faculty profile")
+      const json = await res.json()
+      setModalRows(json.data)
+    } catch (err) { setModalError(err instanceof Error ? err.message : "Unknown error") }
+    finally { setModalLoading(false) }
+  }
 
   return (
     <div className="space-y-6">
@@ -1367,220 +1412,49 @@ function FacultyTab() {
         )}
       </div>
 
-      <div className="border border-default rounded-lg overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setShowAddForm((s) => !s)}
-          className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold text-secondary hover:bg-surface-dim/40 transition-colors"
-        >
-          <span>Faculty Loading</span>
-          <span className="text-tertiary">{showAddForm ? "▲" : "▼"}</span>
-        </button>
-        {showAddForm && (
-          <div className="border-t border-default px-3 pb-3">
-            <form onSubmit={handleAdd} className="space-y-4 pt-3">
-              {formError && <p className="text-xs font-medium text-red-600 bg-red-50 p-2 rounded">{formError}</p>}
-              {formSuccess && <p className="text-xs font-medium text-green-600 bg-green-50 p-2 rounded">{formSuccess}</p>}
-              {!activeSemesterId && <p className="text-xs font-medium text-amber-600 bg-amber-50 dark:bg-amber-900/20 p-2 rounded flex items-center gap-2"><span>⚠️</span> No active semester. Set one as active before adding faculty load entries.</p>}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-tertiary mb-1">Department</label>
-                  <select value={formDept} onChange={(e) => { setFormDept(e.target.value); setFormFaculty(""); setFacultySearch("") }} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400">
-                    <option value="all">All Departments</option>
-                    {departments.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
-                  </select>
-                </div>
-                <div className="relative">
-                  <label className="block text-xs font-semibold text-tertiary mb-1">Faculty</label>
-                  <input
-                    value={facultySearch || selectedFacultyName}
-                    onChange={(e) => { setFacultySearch(e.target.value); setFormFaculty(""); setFacultyDropdownOpen(true) }}
-                    onFocus={() => setFacultyDropdownOpen(true)}
-                    placeholder="Search faculty..."
-                    className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    required
-                    autoComplete="off"
-                  />
-                  {facultyDropdownOpen && (
-                    <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl max-h-52 overflow-y-auto">
-                      {filteredFaculties.length === 0 ? (
-                        <p className="text-xs text-tertiary text-center py-4">No faculty found</p>
-                      ) : (
-                        filteredFaculties.map((f) => (
-                          <button
-                            key={f.id}
-                            type="button"
-                            onClick={() => { setFormFaculty(f.id); setFacultySearch(""); setFacultyDropdownOpen(false) }}
-                            className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-hover transition-colors ${formFaculty === f.id ? "bg-amber-50 dark:bg-amber-900/20 font-semibold" : ""}`}
-                          >
-                            <span className="text-primary">{f.name}</span>
-                            <span className="text-tertiary ml-1 text-xs">{f.email}</span>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-tertiary mb-1">Subject</label>
-                  <select value={formSubject} onChange={(e) => { setFormSubject(e.target.value) }} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" required>
-                    <option value="">Select subject...</option>
-                    {subjects.map((s) => (<option key={s.id} value={s.id}>{s.code} - {s.name}</option>))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-tertiary mb-1">Section</label>
-                  <select value={formSection} onChange={(e) => { setFormSection(e.target.value) }} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" required>
-                    <option value="">Select section...</option>
-                    {sections.map((s) => (<option key={s.id} value={s.id}>{s.program} - {s.name}</option>))}
-                  </select>
-                </div>
-              </div>
-              <div className="pt-2"><IosButton type="submit" loading={formSaving} disabled={!activeSemesterId} variant="primary">Create Faculty Load Entry</IosButton></div>
-            </form>
-          </div>
-        )}
-      </div>
-
       {/* Department Filter */}
       <div className="card p-4 sm:p-6 bg-surface space-y-3">
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
-          {deptPills.map((pill) => {
-            const active = deptFilter === pill.id
-            return (
-              <button
-                key={pill.id}
-                onClick={() => {
-                  if (!isAdmin && pill.id !== currentUserDept && pill.id !== "unassigned") return
-                  setDeptFilter(pill.id)
-                }}
-                disabled={!isAdmin && pill.id !== currentUserDept && pill.id !== "unassigned"}
-                className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${active
-                  ? "bg-amber-500 text-white border-amber-500 shadow-sm"
-                  : "bg-surface text-tertiary border-default hover:border-amber-300 hover:text-secondary"
-                  } disabled:opacity-40 disabled:cursor-not-allowed`}
-              >
-                {pill.label}
-              </button>
-            )
-          })}
+        <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+          <div className="flex-1">
+            <label className="block text-xs font-semibold text-tertiary mb-1">Department</label>
+            <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} disabled={!isAdmin} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-60">
+              <option value="all">All Departments</option>
+              {departments.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
+            </select>
+          </div>
+          <IosButton variant="primary" size="sm" onClick={() => setShowCreateModal(true)}>+ Add Faculty Load</IosButton>
         </div>
 
-        <div className="flex items-center gap-2">
-          {[
-            { key: "by_faculty" as FacViewTab, label: "By Faculty" },
-            { key: "by_subject_section" as FacViewTab, label: "By Subject & Section" },
-          ].map((pill) => {
-            const active = viewTab === pill.key
-            return (
-              <button
-                key={pill.key}
-                onClick={() => setViewTab(pill.key)}
-                className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${active
-                    ? "bg-amber-500 text-white border-amber-500 shadow-sm"
-                    : "bg-surface text-tertiary border-default hover:border-amber-300 hover:text-secondary"
-                  }`}
-              >
-                {pill.label}
-              </button>
-            )
-          })}
-        </div>
-
-        {hasNullSemesterId && (
+        {!activeSemesterId && (
           <div className="flex items-center gap-2 text-xs font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-2.5">
             <span>⚠️</span>
-            <span>Some mappings are missing semesterId — affected faculty will not appear in student evaluations.</span>
+            <span>No active semester. Load counts will update once a semester is active.</span>
           </div>
         )}
-        <SearchInput value={search} onChange={(v) => { setSearch(v) }} placeholder={viewTab === "by_faculty" ? "Search by faculty name, email, subject code, or section..." : "Search by subject code, subject name, section, or faculty..."} />
-        {loading && !data ? (
-          <SkeletonTable rows={4} cols={viewTab === "by_faculty" ? 4 : 6} />
-        ) : filtered.length === 0 ? (
-          <p className="text-xs text-tertiary text-center py-8">No mappings found.</p>
-        ) : viewTab === "by_faculty" ? (
-          <>
-            <div ref={tableRef} className="desktop-only max-h-96 overflow-y-auto tbl-container tbl">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Faculty</th>
-                    <th>Email</th>
-
-                    <th>Headcount</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedItems.map((group) => {
-                    const headcount = group.mappings.reduce((sum, m) => sum + (enrollmentCountByFsId.get(m.id) ?? 0), 0)
-                    return (
-                      <tr key={group.faculty.id}>
-                        <td className="font-medium text-secondary">{group.faculty.name}</td>
-                        <td className="text-tertiary">{group.faculty.email}</td>
-
-                        <td>
-                          <span className="font-semibold text-secondary">{headcount}</span>
-                        </td>
-                        <td>
-                          <IosButton variant="plain" size="xs" onClick={() => setSelectedFacultyLoad(group.mappings)}>View Class Load</IosButton>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div className="mobile-only space-y-2">
-              {paginatedItems.map((group) => {
-                const headcount = group.mappings.reduce((sum, m) => sum + (enrollmentCountByFsId.get(m.id) ?? 0), 0)
-                return (
-                  <div key={group.faculty.id} className="p-4 rounded-xl bg-surface border border-default space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-bold text-primary truncate">{group.faculty.name}</p>
-                        <p className="text-xs text-tertiary truncate">{group.faculty.email}</p>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <span className="text-xs font-semibold text-secondary">{group.mappings.length} Subject{group.mappings.length !== 1 ? "s" : ""}</span>
-                        <span className="block text-xs text-tertiary">{headcount} Student{headcount !== 1 ? "s" : ""}</span>
-                        <IosButton variant="plain" size="xs" onClick={() => setSelectedFacultyLoad(group.mappings)}>View</IosButton>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <Paginator page={page} totalPages={totalPages} pageSize={pageSize} totalItems={groupedFaculty.length} setPage={setPage} setPageSize={setPageSize} />
-          </>
+        <SearchInput value={search} onChange={(v) => { setSearch(v) }} placeholder="Search by faculty name or email..." />
+        {showTableSkeleton || !skeletonReady ? (
+          <SkeletonTable rows={4} cols={3} />
+        ) : facultyRows.length === 0 ? (
+          <p className="text-xs text-tertiary text-center py-8">No faculty found.</p>
         ) : (
           <>
-            <div className="desktop-only max-h-96 overflow-y-auto tbl-container tbl">
+            <div ref={tableRef} className="desktop-only max-h-96 overflow-y-auto tbl-container tbl animate-fade-in">
               <table>
                 <thead>
                   <tr>
-                    <th>Subject Code</th>
-                    <th>Subject Name</th>
-                    <th>Section</th>
                     <th>Faculty</th>
-                    <th>Email</th>
-                    <th className="text-center">Headcount</th>
+                    <th className="text-center">Load Count</th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {ssPagination.paginatedItems.map((m) => {
-                    const hc = enrollmentCountByFsId.get(m.id) ?? 0
+                  {facultyPagination.paginatedItems.map((row) => {
                     return (
-                      <tr key={m.id}>
-                        <td className="font-mono text-xs font-semibold text-secondary">{m.subject.code}</td>
-                        <td className="text-secondary">{m.subject.name}</td>
-                        <td className="text-secondary">{m.section.program}-{m.section.name}</td>
-                        <td className="font-medium text-secondary">{m.faculty.name}</td>
-                        <td className="text-tertiary">{m.faculty.email}</td>
-                        <td className="text-center font-semibold text-secondary">{hc}</td>
+                      <tr key={row.faculty.id}>
+                        <td className="font-medium text-secondary">{row.faculty.name} <span className="text-tertiary font-normal">({row.faculty.email})</span></td>
+                        <td className="text-center font-semibold text-secondary">{row.mappings.length}</td>
                         <td>
-                          <IosButton variant="plain" size="xs" onClick={() => setSelectedSsMapping(m)}>Edit</IosButton>
+                          <IosButton variant="plain" size="xs" onClick={() => openFacultyProfile(row.faculty.id, row.faculty.name)} disabled={row.mappings.length === 0}>View Loading Profile</IosButton>
                         </td>
                       </tr>
                     )
@@ -1588,103 +1462,206 @@ function FacultyTab() {
                 </tbody>
               </table>
             </div>
-            <div className="mobile-only space-y-2">
-              {ssPagination.paginatedItems.map((m) => {
-                const hc = enrollmentCountByFsId.get(m.id) ?? 0
+            <div className="mobile-only space-y-2 animate-fade-in">
+              {facultyPagination.paginatedItems.map((row) => {
                 return (
-                  <div key={m.id} className="p-4 rounded-xl bg-surface border border-default">
+                  <div key={row.faculty.id} className="p-4 rounded-xl bg-surface border border-default space-y-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-bold text-primary truncate">{m.subject.code} - {m.subject.name}</p>
-                        <p className="text-xs text-tertiary truncate">{m.section.program}-{m.section.name}</p>
-                        <p className="text-xs text-secondary truncate mt-1">{m.faculty.name}</p>
-                        <p className="text-xs text-tertiary truncate">{m.faculty.email}</p>
+                        <p className="text-sm font-bold text-primary truncate">{row.faculty.name}</p>
+                        <p className="text-xs text-tertiary truncate">({row.faculty.email})</p>
                       </div>
-                      <div className="shrink-0 text-right flex flex-col items-end gap-1">
-                        <span className="text-xs font-semibold text-secondary">{hc} student{hc !== 1 ? "s" : ""}</span>
-                        <IosButton variant="plain" size="xs" onClick={() => setSelectedSsMapping(m)}>Edit</IosButton>
+                      <div className="shrink-0 text-right">
+                        <span className="text-xs font-semibold text-secondary">{row.mappings.length} Subject{row.mappings.length !== 1 ? "s" : ""}</span>
+                        <IosButton variant="plain" size="xs" onClick={() => openFacultyProfile(row.faculty.id, row.faculty.name)} disabled={row.mappings.length === 0}>View Loading Profile</IosButton>
                       </div>
                     </div>
                   </div>
                 )
               })}
             </div>
-            <Paginator page={ssPagination.page} totalPages={ssPagination.totalPages} pageSize={ssPagination.pageSize} totalItems={flatData.length} setPage={ssPagination.setPage} setPageSize={ssPagination.setPageSize} />
+            <Paginator page={facultyPagination.page} totalPages={facultyPagination.totalPages} pageSize={facultyPagination.pageSize} totalItems={facultyRows.length} setPage={facultyPagination.setPage} setPageSize={facultyPagination.setPageSize} />
           </>
         )}
-        {data && (
+        {facultyRows && (
           <p className="text-xs text-tertiary">
-            {viewTab === "by_faculty"
-              ? `${groupedFaculty.length} facult${groupedFaculty.length !== 1 ? "ies" : "y"} (${filtered.length} mapping${filtered.length !== 1 ? "s" : ""})`
-              : `${flatData.length} record${flatData.length !== 1 ? "s" : ""}`
-            }
-            {deptFilter !== "all" ? ` (${byDept.length} in department)` : ""}
+            {`${facultyRows.length} facult${facultyRows.length !== 1 ? "ies" : "y"} (${(data ?? []).length} active loads)`}
           </p>
         )}
       </div>
 
-      {/* ── Subject-Section Detail Modal ────────────────────── */}
-      {selectedSsMapping && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-8 sm:pt-12 bg-black/60" onClick={closeSubjectSectionModal}>
-          <div className="bg-white dark:bg-surface-dim rounded-2xl w-full max-w-4xl mx-4 shadow-2xl border border-default overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      {/* ── Create Faculty Load Modal ─────────────────────── */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-8 sm:pt-12 bg-black/60" onClick={closeCreateModal}>
+          <div className="bg-white dark:bg-surface-dim rounded-2xl w-full max-w-2xl mx-4 shadow-2xl border border-default overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-default">
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-secondary truncate">{selectedSsMapping.subject.code} - {selectedSsMapping.subject.name}</p>
-                <p className="text-xs text-tertiary truncate">{selectedSsMapping.section.program}-{selectedSsMapping.section.name} · {selectedSsMapping.faculty.name}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Link
-                  href={`/admin/data/academic-infrastructure/faculty-enroll/${selectedSsMapping.id}`}
-                  className="text-xs text-amber-600 hover:text-amber-700 font-semibold flex items-center gap-1"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                  </svg>
-                  Edit in page
-                </Link>
-                <IosButton variant="gray" size="xs" onClick={closeSubjectSectionModal}>
-                  <svg className="w-4 h-4 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </IosButton>
-              </div>
+              <p className="text-sm font-bold text-secondary">Create Faculty Load Entry</p>
+              <IosButton variant="gray" size="xs" onClick={closeCreateModal}>
+                <svg className="w-4 h-4 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </IosButton>
             </div>
-            <div className="p-4 max-h-[80vh] overflow-y-auto">
-              <FacultySubjectDetail mapping={selectedSsMapping} onClose={() => { setSelectedSsMapping(null); fetchData(true) }} />
+            <div className="p-4 sm:p-6 max-h-[80vh] overflow-y-auto">
+              <form onSubmit={handleAdd} className="space-y-4">
+                {formError && <p className="text-xs font-medium text-red-600 bg-red-50 p-2 rounded">{formError}</p>}
+                {formSuccess && <p className="text-xs font-medium text-green-600 bg-green-50 p-2 rounded">{formSuccess}</p>}
+                {!activeSemesterId && <p className="text-xs font-medium text-amber-600 bg-amber-50 dark:bg-amber-900/20 p-2 rounded flex items-center gap-2"><span>⚠️</span> No active semester. Set one as active before adding faculty load entries.</p>}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-tertiary mb-1">Department</label>
+                    <select value={formDept} onChange={(e) => { setFormDept(e.target.value); setFormFaculty(""); setFacultySearch("") }} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                      <option value="all">All Departments</option>
+                      {departments.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
+                    </select>
+                  </div>
+                  <div className="relative" ref={facultyDropdownRef}>
+                    <label className="block text-xs font-semibold text-tertiary mb-1">Faculty</label>
+                    <input
+                      value={facultySearch || selectedFacultyName}
+                      onChange={(e) => { setFacultySearch(e.target.value); setFormFaculty(""); setFacultyDropdownOpen(true) }}
+                      onFocus={() => setFacultyDropdownOpen(true)}
+                      placeholder="Search faculty..."
+                      className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      required
+                      autoComplete="off"
+                    />
+                    {facultyDropdownOpen && (
+                      <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl max-h-52 overflow-y-auto">
+                        {filteredFaculties.length === 0 ? (
+                          <p className="text-xs text-tertiary text-center py-4">No faculty found</p>
+                        ) : (
+                          filteredFaculties.map((f) => (
+                            <button
+                              key={f.id}
+                              type="button"
+                              onClick={() => { setFormFaculty(f.id); setFacultySearch(""); setFacultyDropdownOpen(false) }}
+                              className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-hover transition-colors ${formFaculty === f.id ? "bg-amber-50 dark:bg-amber-900/20 font-semibold" : ""}`}
+                            >
+                              <span className="text-primary">{f.name}</span>
+                              <span className="text-tertiary ml-1 text-xs">{f.email}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="relative" ref={subjectDropdownRef}>
+                    <label className="block text-xs font-semibold text-tertiary mb-1">Subject</label>
+                    <input
+                      value={subjectSearch || selectedSubjectLabel}
+                      onChange={(e) => { setSubjectSearch(e.target.value); setFormSubject(""); setSubjectDropdownOpen(true) }}
+                      onFocus={() => setSubjectDropdownOpen(true)}
+                      placeholder="Search subject..."
+                      className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      required
+                      autoComplete="off"
+                    />
+                    {subjectDropdownOpen && (
+                      <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl max-h-52 overflow-y-auto">
+                        {filteredSubjects.length === 0 ? (
+                          <p className="text-xs text-tertiary text-center py-4">No subject found</p>
+                        ) : (
+                          filteredSubjects.map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => { setFormSubject(s.id); setSubjectSearch(""); setSubjectDropdownOpen(false) }}
+                              className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-hover transition-colors ${formSubject === s.id ? "bg-amber-50 dark:bg-amber-900/20 font-semibold" : ""}`}
+                            >
+                              <span className="text-primary">{s.code}</span>
+                              <span className="text-tertiary ml-1 text-xs">- {s.name}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="relative" ref={sectionDropdownRef}>
+                    <label className="block text-xs font-semibold text-tertiary mb-1">Section</label>
+                    <input
+                      value={sectionSearch || selectedSectionLabel}
+                      onChange={(e) => { setSectionSearch(e.target.value); setFormSection(""); setSectionDropdownOpen(true) }}
+                      onFocus={() => setSectionDropdownOpen(true)}
+                      placeholder="Search section..."
+                      className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      required
+                      autoComplete="off"
+                    />
+                    {sectionDropdownOpen && (
+                      <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl max-h-52 overflow-y-auto">
+                        {filteredSections.length === 0 ? (
+                          <p className="text-xs text-tertiary text-center py-4">No section found</p>
+                        ) : (
+                          filteredSections.map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => { setFormSection(s.id); setSectionSearch(""); setSectionDropdownOpen(false) }}
+                              className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-hover transition-colors ${formSection === s.id ? "bg-amber-50 dark:bg-amber-900/20 font-semibold" : ""}`}
+                            >
+                              <span className="text-primary">{s.program}</span>
+                              <span className="text-tertiary ml-1 text-xs">- {s.name}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="pt-2 flex items-center gap-2">
+                  <IosButton type="submit" loading={formSaving} disabled={!activeSemesterId} variant="primary">Create Faculty Load Entry</IosButton>
+                  <IosButton variant="plain" size="sm" type="button" onClick={closeCreateModal}>Cancel</IosButton>
+                </div>
+              </form>
             </div>
           </div>
         </div>
       )}
 
       {/* ── Faculty Load Modal ─────────────────────────────── */}
-      {selectedFacultyLoad && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 sm:pt-20 bg-black/60" onClick={() => setSelectedFacultyLoad(null)}>
+      {selectedFaculty && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 sm:pt-20 bg-black/60" onClick={() => setSelectedFaculty(null)}>
           <div className="bg-white dark:bg-surface-dim rounded-2xl w-full max-w-2xl mx-4 shadow-2xl border border-default overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-default">
               <div className="min-w-0">
-                <p className="text-sm font-bold text-secondary truncate">{selectedFacultyLoad[0].faculty.name}</p>
-                <p className="text-xs text-tertiary truncate">{selectedFacultyLoad.length} subject load{selectedFacultyLoad.length !== 1 ? "s" : ""}</p>
+                <p className="text-sm font-bold text-secondary truncate">{selectedFaculty.name}</p>
+                {modalLoading ? (
+                  <Skeleton variant="text" className="w-28" />
+                ) : (
+                  <p className="text-xs text-tertiary truncate">
+                    {modalRows ? `${modalRows.length} subject load${modalRows.length !== 1 ? "s" : ""}` : "Loading..."}
+                  </p>
+                )}
               </div>
-              <IosButton variant="gray" size="xs" onClick={() => setSelectedFacultyLoad(null)}>
+              <IosButton variant="gray" size="xs" onClick={() => setSelectedFaculty(null)}>
                 <svg className="w-4 h-4 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </IosButton>
             </div>
             <div className="p-4 max-h-[60vh] overflow-y-auto tbl">
+              {modalLoading ? (
+                <SkeletonTable rows={3} cols={6} />
+              ) : modalError ? (
+                <p className="text-xs font-medium text-red-600">{modalError}</p>
+              ) : !modalRows || modalRows.length === 0 ? (
+                <p className="text-xs text-tertiary text-center py-8">No active loads.</p>
+              ) : (
+              <>
               <table className="desktop-only">
                 <thead>
                   <tr>
                     <th className="w-8">#</th>
                     <th>Subject</th>
                     <th>Section</th>
-                    <th className="text-center">HeadCount</th>
+                    <th>Semester</th>
+                    <th className="text-center">Headcount</th>
                     <th className="w-20 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {facultyLoadPagination.paginatedItems.map((m, i) => {
-                    const hc = enrollmentCountByFsId.get(m.id) ?? 0
+                  {modalPagination.paginatedItems.map((m, i) => {
                     return (
                       <tr key={m.id}>
                         <td className="text-tertiary">{i + 1}</td>
@@ -1693,10 +1670,8 @@ function FacultyTab() {
                           <span className="text-tertiary ml-1">- {m.subject.name}</span>
                         </td>
                         <td className="text-secondary">{m.section.program}-{m.section.name}</td>
-                        <td className="text-center font-semibold text-secondary">
-                          {hc}
-                          {!m.semesterId && <span className="ml-1.5 text-[10px] font-semibold text-amber-600 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-0.5 rounded-full">no semester</span>}
-                        </td>
+                        <td className="text-tertiary">{m.semester?.title ?? "—"}</td>
+                        <td className="text-center font-semibold text-secondary">{m.headcount ?? 0}</td>
                         <td className="text-center">
                           <Link href={`/admin/data/academic-infrastructure/faculty-enroll/${m.id}`} className="text-xs text-amber-600 hover:text-amber-700 font-semibold">Edit</Link>
                         </td>
@@ -1706,25 +1681,30 @@ function FacultyTab() {
                 </tbody>
               </table>
               <div className="mobile-only space-y-1.5">
-                {facultyLoadPagination.paginatedItems.map((m, i) => {
-                  const hc = enrollmentCountByFsId.get(m.id) ?? 0
+                {modalPagination.paginatedItems.map((m, i) => {
                   return (
                     <div key={m.id} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-surface-hover/50 text-xs">
                       <span className="text-tertiary font-mono w-5 shrink-0 text-right">{i + 1}</span>
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold text-secondary truncate">{m.subject.code} - {m.subject.name}</p>
-                        <p className="text-tertiary truncate">{m.section.program}-{m.section.name}</p>
+                        <p className="text-tertiary truncate">{m.section.program}-{m.section.name} · {m.semester?.title ?? "—"}</p>
                       </div>
-                      <span className="shrink-0 text-right text-xs font-semibold text-secondary">{hc} student{hc !== 1 ? "s" : ""}{!m.semesterId && <span className="ml-1 text-[10px] font-semibold text-amber-600">⚠️</span>}</span>
+                      <span className="shrink-0 text-right text-xs font-semibold text-secondary">{m.headcount ?? 0} student{(m.headcount ?? 0) !== 1 ? "s" : ""}</span>
                       <Link href={`/admin/data/academic-infrastructure/faculty-enroll/${m.id}`} className="shrink-0 text-xs text-amber-600 hover:text-amber-700 font-semibold ml-1">Edit</Link>
                     </div>
                   )
                 })}
               </div>
+              </>
+              )}
             </div>
             <div className="flex items-center justify-between px-6 py-3 border-t border-default bg-surface-dim text-xs text-tertiary">
-              <span>{selectedFacultyLoad.length} subject load{selectedFacultyLoad.length !== 1 ? "s" : ""}</span>
-              <Paginator page={facultyLoadPagination.page} totalPages={facultyLoadPagination.totalPages} pageSize={facultyLoadPagination.pageSize} totalItems={selectedFacultyLoad.length} setPage={facultyLoadPagination.setPage} setPageSize={facultyLoadPagination.setPageSize} showSizeSelector={false} />
+              {modalLoading ? (
+                <Skeleton variant="text" className="w-28" />
+              ) : (
+                <span>{modalRows ? `${modalRows.length} subject load${modalRows.length !== 1 ? "s" : ""}` : "…"}</span>
+              )}
+              <Paginator page={modalPagination.page} totalPages={modalPagination.totalPages} pageSize={modalPagination.pageSize} totalItems={modalRows?.length ?? 0} setPage={modalPagination.setPage} setPageSize={modalPagination.setPageSize} showSizeSelector={false} />
             </div>
           </div>
         </div>
