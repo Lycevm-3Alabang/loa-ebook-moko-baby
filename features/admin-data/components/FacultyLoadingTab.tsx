@@ -180,13 +180,13 @@ function FacultyTab() {
 
   const csvVisibleRows = csvRows
     ? csvRows.filter((r) => {
-        if (csvInvalidValueFilter) return r.isInvalidValue
-        if (csvInvalidDeptFilter) return r.isInvalidDept
-        if (csvProblemFilter && csvBlockedFilter) return r.isNewSubject || r.isNewSection || r.isNewTeacher || r.isUnassignedFaculty || r.isInvalidDept || r.isInvalidValue || r.isExistingMapping
-        if (csvProblemFilter) return r.isNewSubject || r.isNewSection || r.isNewTeacher || r.isUnassignedFaculty
-        if (csvBlockedFilter) return r.isExistingMapping
-        return true
-      })
+      if (csvInvalidValueFilter) return r.isInvalidValue
+      if (csvInvalidDeptFilter) return r.isInvalidDept
+      if (csvProblemFilter && csvBlockedFilter) return r.isNewSubject || r.isNewSection || r.isNewTeacher || r.isUnassignedFaculty || r.isInvalidDept || r.isInvalidValue || r.isExistingMapping
+      if (csvProblemFilter) return r.isNewSubject || r.isNewSection || r.isNewTeacher || r.isUnassignedFaculty
+      if (csvBlockedFilter) return r.isExistingMapping
+      return true
+    })
     : []
 
   const TEMPLATE_HEADERS = "faculty email, name, section, subject code, subject name, department code"
@@ -637,7 +637,7 @@ function FacultyTab() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               step: "mappings",
-              semesterId: activeSemesterId || null,
+              semesterId: activeSemesterId,
               fileId,
               chunkIndex: i,
               totalChunks: chunks.length,
@@ -841,7 +841,7 @@ function FacultyTab() {
           <span>Importer: Faculty Loading</span>
           <span className="text-tertiary">{showImport ? "▲" : "▼"}</span>
         </button>
-      {showImport && (
+        {showImport && (
           <div className="border-t border-gray-200 dark:border-gray-800 px-4 pb-4 space-y-4">
             {!activeSemesterId && (
               <div className="flex items-center gap-2 text-xs font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-2.5">
@@ -850,524 +850,520 @@ function FacultyTab() {
               </div>
             )}
             <div className="space-y-4">
-            {!csvRows && (
-              <div className="space-y-5">
-                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 rounded-xl px-4 py-3">
-                  <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1">CSV Format Hints</p>
-                  <ul className="text-[11px] text-blue-600/80 dark:text-blue-300/70 space-y-0.5">
-                    <li><strong>Section</strong> column must use format: <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">PROGRAM-SECTION</code> or <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">PROGRAM SECTION</code> (e.g., <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">BSIT-32A3</code> or <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">BSIT 32A3</code>)</li>
-                    <li><strong>Subject code</strong> must match an existing subject or a new one will be created.</li>
-                    <li><strong>Department code</strong> must match an existing department (e.g., <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">CCS</code>).</li>
-                    <li><strong>Faculty email</strong> must end with <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">...@lyceumalabang.edu.ph</code> — foreign-domain rows are excluded and listed under Wrong Uploads. Blank emails are assigned to <strong>Unassigned Faculty</strong> (placeholder).</li>
-                    <li>Re-importing the same <strong>subject code + section</strong> with a real faculty email <strong>replaces the placeholder</strong> automatically. Re-importing over a real teacher does not replace — it reports <strong>Already loaded</strong>.</li>
-                    <li>Large files upload in <strong>100-row chunks</strong> with progress — stay on this page until done.</li>
-                    <li>Re-uploading the same file maps <strong>0 new rows</strong> (idempotent).</li>
-                  </ul>
-                </div>
-                <div
-                  onClick={() => csvFileRef.current?.click()}
-                  className="flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-2xl bg-surface-dim/30 hover:bg-surface-dim/60 cursor-pointer transition-colors"
-                >
-                  <div className="w-12 h-12 rounded-full bg-gold-100 dark:bg-gold-900/40 flex items-center justify-center">
-                    <svg className="w-6 h-6 text-gold-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                    </svg>
+              {!csvRows && (
+                <div className="space-y-5">
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 rounded-xl px-4 py-3">
+                    <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1">CSV Format Hints</p>
+                    <ul className="text-[11px] text-blue-600/80 dark:text-blue-300/70 space-y-0.5">
+                      <li><strong>Section</strong> column must use format: <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">PROGRAM-SECTION</code> or <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">PROGRAM SECTION</code> (e.g., <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">BSIT-32A3</code> or <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">BSIT 32A3</code>)</li>
+                      <li><strong>Subject code</strong> must match an existing subject or a new one will be created.</li>
+                      <li><strong>Department code</strong> must match an existing department (e.g., <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">CCS</code>).</li>
+                      <li><strong>Faculty email</strong> must end with <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">...@lyceumalabang.edu.ph</code> — foreign-domain rows are excluded and listed under Wrong Uploads. Blank emails are assigned to <strong>Unassigned Faculty</strong> (placeholder).</li>
+                      <li>Re-importing the same <strong>subject code + section</strong> with a real faculty email <strong>replaces the placeholder</strong> automatically. Re-importing over a real teacher does not replace — it reports <strong>Already loaded</strong>.</li>
+                      <li>Large files upload in <strong>100-row chunks</strong> with progress — stay on this page until done.</li>
+                      <li>Re-uploading the same file maps <strong>0 new rows</strong> (idempotent).</li>
+                    </ul>
                   </div>
-                  <p className="text-sm font-semibold text-secondary">Tap to choose a CSV file</p>
-                  <p className="text-xs text-tertiary">Headers: <code className="bg-surface-dim px-1.5 py-0.5 rounded text-[10px]">{TEMPLATE_HEADERS}</code></p>
-                  <input
-                    ref={csvFileRef}
-                    type="file"
-                    accept=".csv"
-                    className="hidden"
-                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCsvFile(f) }}
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => downloadBlob(`${TEMPLATE_HEADERS}\n${TEMPLATE_SAMPLE}`, "faculty-import-template.csv")}
-                  className="w-full flex items-center justify-center gap-2 text-xs font-semibold px-4 py-2.5 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
-                >
-                  <svg className="w-4 h-4 text-gold-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  Download Sample Template (.csv)
-                </button>
-
-                {csvError && <p className="text-xs font-medium text-red-600 text-center">{csvError}</p>}
-              </div>
-            )}
-            {csvRows && csvRows.length > 0 && (
-              <div className="flex flex-col h-full min-h-[24rem]">
-                {step7Running && step7Progress && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 cursor-wait" role="dialog" aria-modal="true" aria-label="Building faculty loading">
-                    <div className="bg-white dark:bg-surface-dim rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl max-w-md w-full mx-4">
-                      <div className="w-10 h-10 border-4 border-gold-600 border-t-transparent rounded-full animate-spin" />
-                      <p className="text-sm font-semibold text-secondary">Building faculty loading...</p>
-                      <p className="text-xs text-tertiary">
-                        {step7Progress.doneRows}/{step7Progress.totalRows} slots ({step7Progress.doneChunks}/{step7Progress.totalChunks} chunks)
-                      </p>
-                      <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5">
-                        <div
-                          className="bg-gold-500 h-2.5 rounded-full transition-all"
-                          style={{ width: `${Math.min(100, Math.round((step7Progress.doneRows / step7Progress.totalRows) * 100))}%` }}
-                        />
-                      </div>
-                      {step7Progress.history.length > 0 && (
-                        <div className="w-full max-h-28 overflow-y-auto rounded-lg border border-default px-3 py-2 space-y-0.5 text-left">
-                          {step7Progress.history.map((h) => (
-                            <p key={h.chunkIndex} className="text-[11px] text-tertiary">
-                              {h.ok
-                                ? `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → saved ${h.saved}, skipped ${h.skipped}, issues ${h.issues}`
-                                : `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → failed`}
-                            </p>
-                          ))}
-                        </div>
-                      )}
-                      <p className="text-[11px] text-tertiary/70 text-center">Stay on this page until done — re-running is safe and reports existing.</p>
+                  <div
+                    onClick={() => csvFileRef.current?.click()}
+                    className="flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-2xl bg-surface-dim/30 hover:bg-surface-dim/60 cursor-pointer transition-colors"
+                  >
+                    <div className="w-12 h-12 rounded-full bg-gold-100 dark:bg-gold-900/40 flex items-center justify-center">
+                      <svg className="w-6 h-6 text-gold-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                      </svg>
                     </div>
+                    <p className="text-sm font-semibold text-secondary">Tap to choose a CSV file</p>
+                    <p className="text-xs text-tertiary">Headers: <code className="bg-surface-dim px-1.5 py-0.5 rounded text-[10px]">{TEMPLATE_HEADERS}</code></p>
+                    <input
+                      ref={csvFileRef}
+                      type="file"
+                      accept=".csv"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCsvFile(f) }}
+                    />
                   </div>
-                )}
-                <div className="flex-1 space-y-3 overflow-hidden">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-semibold text-secondary">
-                      {csvVisibleRows.length} row{csvVisibleRows.length !== 1 ? "s" : ""}
-                      {csvProblemFilter && ` (filtered)`}
-                    </h4>
-                    <span className="text-[11px] text-tertiary">{TEMPLATE_HEADERS}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
+
+                  <button
+                    type="button"
+                    onClick={() => downloadBlob(`${TEMPLATE_HEADERS}\n${TEMPLATE_SAMPLE}`, "faculty-import-template.csv")}
+                    className="w-full flex items-center justify-center gap-2 text-xs font-semibold px-4 py-2.5 rounded-xl border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-gold-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download Sample Template (.csv)
+                  </button>
+
+                  {csvError && <p className="text-xs font-medium text-red-600 text-center">{csvError}</p>}
+                </div>
+              )}
+              {csvRows && csvRows.length > 0 && (
+                <div className="flex flex-col h-full min-h-[24rem]">
+                  {step7Running && step7Progress && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 cursor-wait" role="dialog" aria-modal="true" aria-label="Building faculty loading">
+                      <div className="bg-white dark:bg-surface-dim rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl max-w-md w-full mx-4">
+                        <div className="w-10 h-10 border-4 border-gold-600 border-t-transparent rounded-full animate-spin" />
+                        <p className="text-sm font-semibold text-secondary">Building faculty loading...</p>
+                        <p className="text-xs text-tertiary">
+                          {step7Progress.doneRows}/{step7Progress.totalRows} slots ({step7Progress.doneChunks}/{step7Progress.totalChunks} chunks)
+                        </p>
+                        <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5">
+                          <div
+                            className="bg-gold-500 h-2.5 rounded-full transition-all"
+                            style={{ width: `${Math.min(100, Math.round((step7Progress.doneRows / step7Progress.totalRows) * 100))}%` }}
+                          />
+                        </div>
+                        {step7Progress.history.length > 0 && (
+                          <div className="w-full max-h-28 overflow-y-auto rounded-lg border border-default px-3 py-2 space-y-0.5 text-left">
+                            {step7Progress.history.map((h) => (
+                              <p key={h.chunkIndex} className="text-[11px] text-tertiary">
+                                {h.ok
+                                  ? `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → saved ${h.saved}, skipped ${h.skipped}, issues ${h.issues}`
+                                  : `Chunk ${h.chunkIndex + 1}: ${h.rows} rows → failed`}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-[11px] text-tertiary/70 text-center">Stay on this page until done — re-running is safe and reports existing.</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex-1 space-y-3 overflow-hidden">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-secondary">
+                        {csvVisibleRows.length} row{csvVisibleRows.length !== 1 ? "s" : ""}
+                        {csvProblemFilter && ` (filtered)`}
+                      </h4>
+                      <span className="text-[11px] text-tertiary">{TEMPLATE_HEADERS}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
                       <p className="text-[11px] text-tertiary/70 italic">
                         <span className="badge-red not-italic">Red</span> items are skipped with remarks (Already loaded is idempotent; invalid rows land in Wrong Uploads).
                         <span className="badge-amber not-italic ml-1">Amber</span> items will be newly created.
                       </p>
-                    <div className="ml-auto flex items-center gap-2">
-                      {blockedCsvRows.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => { setCsvBlockedFilter((p) => !p); setCsvPreviewPage(0) }}
-                          className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition-colors ${
-                            csvBlockedFilter
-                              ? "bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-700 dark:text-red-300"
-                              : "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400"
-                          }`}
-                        >
-                          {csvBlockedFilter ? "Show all rows" : `Show ${blockedCsvRows.length} already-loaded only`}
-                        </button>
-                      )}
-                      {unimportableCsvRows.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={handleCsvRemoveBlocked}
-                          className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
-                        >
-                          {`Remove ${unimportableCsvRows.length} unimportable (${blockedCsvRows.length} loaded · ${invalidDeptRows.length} dept · ${invalidValueRows.length} invalid)`}
-                        </button>
-                      )}
-                      {csvProblemRows.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => { setCsvProblemFilter((p) => !p); setCsvPreviewPage(0) }}
-                          className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition-colors ${
-                            csvProblemFilter
-                              ? "bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300"
-                              : "border-amber-300 text-amber-600 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400"
-                          }`}
-                        >
-                          {csvProblemFilter ? "Show all rows" : `Show ${csvProblemRows.length} to-create only`}
-                        </button>
-                      )}
-                      {invalidDeptRows.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => { setCsvInvalidDeptFilter((p) => !p); setCsvPreviewPage(0) }}
-                          className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition-colors ${
-                            csvInvalidDeptFilter
-                              ? "bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-700 dark:text-red-300"
-                              : "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400"
-                          }`}
-                        >
-                          {csvInvalidDeptFilter ? "Show all rows" : `Show ${invalidDeptRows.length} invalid dept only`}
-                        </button>
-                      )}
-                      {invalidValueRows.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => { setCsvInvalidValueFilter((p) => !p); setCsvPreviewPage(0) }}
-                          className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition-colors ${
-                            csvInvalidValueFilter
-                              ? "bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-700 dark:text-red-300"
-                              : "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400"
-                          }`}
-                        >
-                          {csvInvalidValueFilter ? "Show all rows" : `Show ${invalidValueRows.length} invalid value only`}
-                        </button>
-                      )}
+                      <div className="ml-auto flex items-center gap-2">
+                        {blockedCsvRows.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => { setCsvBlockedFilter((p) => !p); setCsvPreviewPage(0) }}
+                            className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition-colors ${csvBlockedFilter
+                                ? "bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-700 dark:text-red-300"
+                                : "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400"
+                              }`}
+                          >
+                            {csvBlockedFilter ? "Show all rows" : `Show ${blockedCsvRows.length} already-loaded only`}
+                          </button>
+                        )}
+                        {unimportableCsvRows.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleCsvRemoveBlocked}
+                            className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
+                          >
+                            {`Remove ${unimportableCsvRows.length} unimportable (${blockedCsvRows.length} loaded · ${invalidDeptRows.length} dept · ${invalidValueRows.length} invalid)`}
+                          </button>
+                        )}
+                        {csvProblemRows.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => { setCsvProblemFilter((p) => !p); setCsvPreviewPage(0) }}
+                            className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition-colors ${csvProblemFilter
+                                ? "bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300"
+                                : "border-amber-300 text-amber-600 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400"
+                              }`}
+                          >
+                            {csvProblemFilter ? "Show all rows" : `Show ${csvProblemRows.length} to-create only`}
+                          </button>
+                        )}
+                        {invalidDeptRows.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => { setCsvInvalidDeptFilter((p) => !p); setCsvPreviewPage(0) }}
+                            className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition-colors ${csvInvalidDeptFilter
+                                ? "bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-700 dark:text-red-300"
+                                : "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400"
+                              }`}
+                          >
+                            {csvInvalidDeptFilter ? "Show all rows" : `Show ${invalidDeptRows.length} invalid dept only`}
+                          </button>
+                        )}
+                        {invalidValueRows.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => { setCsvInvalidValueFilter((p) => !p); setCsvPreviewPage(0) }}
+                            className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition-colors ${csvInvalidValueFilter
+                                ? "bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-700 dark:text-red-300"
+                                : "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400"
+                              }`}
+                          >
+                            {csvInvalidValueFilter ? "Show all rows" : `Show ${invalidValueRows.length} invalid value only`}
+                          </button>
+                        )}
+                      </div>
                     </div>
+                    {csvRows && csvRows.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {unimportableCsvRows.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const head = [...TEMPLATE_HEADERS.split(", "), "reason"]
+                              const lines = unimportableCsvRows.map((r) => {
+                                const reason = r.isInvalidValue
+                                  ? "Invalid value (Excel error)"
+                                  : r.isInvalidDept
+                                    ? "Invalid dept code"
+                                    : "Already loaded"
+                                return [r.email, r.name, r.section, r.subjectCode, r.subjectName, r.departmentCode, reason].map(escapePreviewCell).join(",")
+                              })
+                              downloadBlob([head.map(escapePreviewCell).join(","), ...lines].join("\n"), "faculty-blocked-rows.csv")
+                            }}
+                            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
+                          >
+                            Download blocked ({unimportableCsvRows.length})
+                          </button>
+                        )}
+                        {readyCsvRows.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const lines = readyCsvRows.map((r) =>
+                                [r.email, r.name, r.section, r.subjectCode, r.subjectName, r.departmentCode].map(escapePreviewCell).join(","),
+                              )
+                              downloadBlob([TEMPLATE_HEADERS, ...lines].join("\n"), "faculty-valid-rows.csv")
+                            }}
+                            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
+                          >
+                            Download valid ({readyCsvRows.length})
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {csvError && <p className="text-xs font-medium text-red-600">{csvError}</p>}
+                    <div className="max-h-72 overflow-y-auto tbl-container tbl">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th className="w-8">#</th>
+                            <th>Faculty</th>
+                            <th>Subject</th>
+                            <th>Section</th>
+                            <th>Dept</th>
+                            <th>Will Create</th>
+                            <th className="w-12"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(csvVisibleRows.slice(csvPreviewPage * PREVIEW_PAGE_SIZE, (csvPreviewPage + 1) * PREVIEW_PAGE_SIZE)).map((row, i) => {
+                            const absIdx = csvPreviewPage * PREVIEW_PAGE_SIZE + i
+                            return (
+                              <tr key={`${csvPreviewPage}-${i}`}>
+                                <td className="text-tertiary">{absIdx + 1}</td>
+                                <td className="text-secondary text-[13px] whitespace-nowrap">
+                                  {row.name} <span className="text-tertiary">({row.email})</span>
+                                </td>
+                                <td className="text-secondary text-[13px] whitespace-nowrap">
+                                  {row.subjectName} <span className="text-tertiary">({row.subjectCode})</span>
+                                </td>
+                                <td>
+                                  <input
+                                    value={row.section}
+                                    onChange={(e) => handleCsvFieldChange(absIdx, "section", e.target.value)}
+
+                                    className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px] disabled:opacity-60"
+                                  />
+                                </td>
+                                <td>
+                                  <input
+                                    value={row.departmentCode}
+                                    onChange={(e) => handleCsvFieldChange(absIdx, "departmentCode", e.target.value)}
+
+                                    className={`w-16 bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px] uppercase disabled:opacity-60 ${row.isInvalidDept ? "text-red-600" : ""}`}
+                                  />
+                                </td>
+                                <td className="whitespace-nowrap">
+                                  <div className="flex flex-wrap gap-1">
+                                    {row.isInvalidValue && <span className="badge-red">Invalid value</span>}
+                                    {!row.isInvalidValue && row.isInvalidDept && <span className="badge-red">Dept code</span>}
+                                    {!row.isInvalidValue && !row.isInvalidDept && row.isNewSubject && <span className="badge-amber">Subject</span>}
+                                    {!row.isInvalidValue && !row.isInvalidDept && row.isNewSection && <span className="badge-amber">Section</span>}
+                                    {!row.isInvalidValue && !row.isInvalidDept && row.isNewTeacher && <span className="badge-amber">Teacher</span>}
+                                    {!row.isInvalidValue && !row.isInvalidDept && row.isUnassignedFaculty && <span className="badge-amber">Unassigned</span>}
+                                    {!row.isInvalidValue && !row.isNewSubject && !row.isNewSection && !row.isNewTeacher && !row.isUnassignedFaculty && !row.isInvalidDept && row.isExistingMapping && <span className="badge-red">Already loaded</span>}
+                                    {!row.isInvalidValue && !row.isNewSubject && !row.isNewSection && !row.isNewTeacher && !row.isUnassignedFaculty && !row.isInvalidDept && !row.isExistingMapping && <span className="badge-emerald">Faculty Loading Only</span>}
+                                  </div>
+                                </td>
+                                <td className="text-center">
+                                  <button
+                                    type="button"
+
+                                    onClick={() => handleCsvRowRemove(absIdx)}
+                                    className="w-7 h-7 flex items-center justify-center rounded-full bg-red-50 dark:bg-red-900/20 text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                    title="Remove row"
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {Math.ceil(csvVisibleRows.length / PREVIEW_PAGE_SIZE) > 1 && (
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-tertiary">
+                          Page {csvPreviewPage + 1} of {Math.ceil(csvVisibleRows.length / PREVIEW_PAGE_SIZE)}
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={csvPreviewPage === 0}
+                            onClick={() => setCsvPreviewPage((p) => p - 1)}
+                            className="px-4 py-1.5 bg-surface-dim text-secondary rounded-full text-xs font-semibold hover:bg-surface-dim/70 disabled:opacity-40 transition-colors"
+                          >
+                            Prev
+                          </button>
+                          <button
+                            type="button"
+                            disabled={(csvPreviewPage >= Math.ceil(csvVisibleRows.length / PREVIEW_PAGE_SIZE) - 1)}
+                            onClick={() => setCsvPreviewPage((p) => p + 1)}
+                            className="px-4 py-1.5 bg-surface-dim text-secondary rounded-full text-xs font-semibold hover:bg-surface-dim/70 disabled:opacity-40 transition-colors"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   {csvRows && csvRows.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {unimportableCsvRows.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const head = [...TEMPLATE_HEADERS.split(", "), "reason"]
-                            const lines = unimportableCsvRows.map((r) => {
-                              const reason = r.isInvalidValue
-                                ? "Invalid value (Excel error)"
-                                : r.isInvalidDept
-                                  ? "Invalid dept code"
-                                  : "Already loaded"
-                              return [r.email, r.name, r.section, r.subjectCode, r.subjectName, r.departmentCode, reason].map(escapePreviewCell).join(",")
-                            })
-                            downloadBlob([head.map(escapePreviewCell).join(","), ...lines].join("\n"), "faculty-blocked-rows.csv")
-                          }}
-                          className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
-                        >
-                          Download blocked ({unimportableCsvRows.length})
-                        </button>
-                      )}
-                      {readyCsvRows.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const lines = readyCsvRows.map((r) =>
-                              [r.email, r.name, r.section, r.subjectCode, r.subjectName, r.departmentCode].map(escapePreviewCell).join(","),
-                            )
-                            downloadBlob([TEMPLATE_HEADERS, ...lines].join("\n"), "faculty-valid-rows.csv")
-                          }}
-                          className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-default bg-surface-hover hover:bg-surface-dim transition-colors"
-                        >
-                          Download valid ({readyCsvRows.length})
-                        </button>
-                      )}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-[11px] text-tertiary">
+                      <span><span className="font-semibold text-secondary">{readyCsvRows.length}</span> ready to upload</span>
+                      <span><span className="font-semibold text-amber-600">{csvProblemRows.length}</span> to create (incl. {unassignedCsvRows.length} unassigned)</span>
+                      <span><span className="font-semibold text-red-600">{blockedCsvRows.length}</span> already loaded</span>
+                      <span><span className="font-semibold text-red-600">{invalidCsvRows.length}</span> invalid ({invalidDeptRows.length} dept · {invalidValueRows.length} value)</span>
                     </div>
                   )}
-                  {csvError && <p className="text-xs font-medium text-red-600">{csvError}</p>}
-                  <div className="max-h-72 overflow-y-auto tbl-container tbl">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th className="w-8">#</th>
-                          <th>Faculty</th>
-                          <th>Subject</th>
-                          <th>Section</th>
-                          <th>Dept</th>
-                          <th>Will Create</th>
-                          <th className="w-12"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(csvVisibleRows.slice(csvPreviewPage * PREVIEW_PAGE_SIZE, (csvPreviewPage + 1) * PREVIEW_PAGE_SIZE)).map((row, i) => {
-                          const absIdx = csvPreviewPage * PREVIEW_PAGE_SIZE + i
-                          return (
-                            <tr key={`${csvPreviewPage}-${i}`}>
-                              <td className="text-tertiary">{absIdx + 1}</td>
-                              <td className="text-secondary text-[13px] whitespace-nowrap">
-                                {row.name} <span className="text-tertiary">({row.email})</span>
-                              </td>
-                              <td className="text-secondary text-[13px] whitespace-nowrap">
-                                {row.subjectName} <span className="text-tertiary">({row.subjectCode})</span>
-                              </td>
-                              <td>
-                                <input
-                                  value={row.section}
-                                  onChange={(e) => handleCsvFieldChange(absIdx, "section", e.target.value)}
-                                 
-                                  className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px] disabled:opacity-60"
-                                />
-                              </td>
-                              <td>
-                                <input
-                                  value={row.departmentCode}
-                                  onChange={(e) => handleCsvFieldChange(absIdx, "departmentCode", e.target.value)}
-                                 
-                                  className={`w-16 bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px] uppercase disabled:opacity-60 ${row.isInvalidDept ? "text-red-600" : ""}`}
-                                />
-                              </td>
-                              <td className="whitespace-nowrap">
-                                <div className="flex flex-wrap gap-1">
-                                  {row.isInvalidValue && <span className="badge-red">Invalid value</span>}
-                                  {!row.isInvalidValue && row.isInvalidDept && <span className="badge-red">Dept code</span>}
-                                  {!row.isInvalidValue && !row.isInvalidDept && row.isNewSubject && <span className="badge-amber">Subject</span>}
-                                  {!row.isInvalidValue && !row.isInvalidDept && row.isNewSection && <span className="badge-amber">Section</span>}
-                                  {!row.isInvalidValue && !row.isInvalidDept && row.isNewTeacher && <span className="badge-amber">Teacher</span>}
-                                  {!row.isInvalidValue && !row.isInvalidDept && row.isUnassignedFaculty && <span className="badge-amber">Unassigned</span>}
-                                  {!row.isInvalidValue && !row.isNewSubject && !row.isNewSection && !row.isNewTeacher && !row.isUnassignedFaculty && !row.isInvalidDept && row.isExistingMapping && <span className="badge-red">Already loaded</span>}
-                                  {!row.isInvalidValue && !row.isNewSubject && !row.isNewSection && !row.isNewTeacher && !row.isUnassignedFaculty && !row.isInvalidDept && !row.isExistingMapping && <span className="badge-emerald">Faculty Loading Only</span>}
-                                </div>
-                              </td>
-                              <td className="text-center">
-                                <button
-                                  type="button"
-                                 
-                                  onClick={() => handleCsvRowRemove(absIdx)}
-                                  className="w-7 h-7 flex items-center justify-center rounded-full bg-red-50 dark:bg-red-900/20 text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                                  title="Remove row"
-                                >
-                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  {Math.ceil(csvVisibleRows.length / PREVIEW_PAGE_SIZE) > 1 && (
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-tertiary">
-                        Page {csvPreviewPage + 1} of {Math.ceil(csvVisibleRows.length / PREVIEW_PAGE_SIZE)}
-                      </p>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          disabled={csvPreviewPage === 0}
-                          onClick={() => setCsvPreviewPage((p) => p - 1)}
-                          className="px-4 py-1.5 bg-surface-dim text-secondary rounded-full text-xs font-semibold hover:bg-surface-dim/70 disabled:opacity-40 transition-colors"
-                        >
-                          Prev
-                        </button>
-                        <button
-                          type="button"
-                          disabled={(csvPreviewPage >= Math.ceil(csvVisibleRows.length / PREVIEW_PAGE_SIZE) - 1)}
-                          onClick={() => setCsvPreviewPage((p) => p + 1)}
-                          className="px-4 py-1.5 bg-surface-dim text-secondary rounded-full text-xs font-semibold hover:bg-surface-dim/70 disabled:opacity-40 transition-colors"
-                        >
-                          Next
-                        </button>
-                      </div>
-                    </div>
+                  {csvRows && csvRows.length > 0 && (
+                    <StepperTrace
+                      steps={IMPORT_STEPS}
+                      doneCount={(step2Result ? 1 : 0) + (step3Result ? 1 : 0) + (step4Result ? 1 : 0) + (step5Result ? 1 : 0) + (step6Result ? 1 : 0) + (step7Result ? 1 : 0)}
+                      footnote={`Step ${(step7Result ? 6 : step6Result ? 5 : step5Result ? 4 : step4Result ? 3 : step3Result ? 2 : step2Result ? 1 : 0) + 1} of 6.`}
+                    />
                   )}
-                </div>
-                {csvRows && csvRows.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-[11px] text-tertiary">
-                    <span><span className="font-semibold text-secondary">{readyCsvRows.length}</span> ready to upload</span>
-                    <span><span className="font-semibold text-amber-600">{csvProblemRows.length}</span> to create (incl. {unassignedCsvRows.length} unassigned)</span>
-                    <span><span className="font-semibold text-red-600">{blockedCsvRows.length}</span> already loaded</span>
-                    <span><span className="font-semibold text-red-600">{invalidCsvRows.length}</span> invalid ({invalidDeptRows.length} dept · {invalidValueRows.length} value)</span>
-                  </div>
-                )}
-                {csvRows && csvRows.length > 0 && (
-                  <StepperTrace
-                    steps={IMPORT_STEPS}
-                    doneCount={(step2Result ? 1 : 0) + (step3Result ? 1 : 0) + (step4Result ? 1 : 0) + (step5Result ? 1 : 0) + (step6Result ? 1 : 0) + (step7Result ? 1 : 0)}
-                    footnote={`Step ${(step7Result ? 6 : step6Result ? 5 : step5Result ? 4 : step4Result ? 3 : step3Result ? 2 : step2Result ? 1 : 0) + 1} of 6.`}
-                  />
-                )}
-                {csvRows && csvRows.length > 0 && (
-                  <StepPanel
-                    title="Step 1 — Departments"
-                    runLabel="Run Step 1"
-                    runningLabel="Running Step 1…"
-                    running={step2Running}
-                    disabled={!activeSemesterId}
-                    onRun={handleStep2Departments}
-                    summary={
-                      step2Result ? (
-                        <p className="text-[11px] text-tertiary">
-                          {csvRows.length} rows · {new Set(csvRows.map((r) => (r.departmentCode || "").trim().toUpperCase())).size} distinct in file ·{" "}
-                          <span className="font-semibold text-emerald-600">{step2Result.inserted}</span> inserted ·{" "}
-                          <span className="font-semibold text-blue-600">{step2Result.existing}</span> existing ·{" "}
-                          <span className="font-semibold text-red-600">{step2Result.invalid.length}</span> invalid
-                        </p>
-                      ) : (
-                        <p className="text-[11px] text-tertiary">
-                          {csvRows.length} rows · {new Set(csvRows.map((r) => (r.departmentCode || "").trim().toUpperCase())).size} distinct codes in file — run Step 2 to resolve.
-                        </p>
-                      )
-                    }
-                    invalid={step2Result?.invalid ?? []}
-                    invalidKeyPrefix="step2"
-                    confirmTitle="Run Step 1 — Departments?"
-                    confirmMessage={`Resolve ${new Set(csvRows.map((r) => (r.departmentCode || "").trim().toUpperCase())).size} distinct department codes across ${csvRows.length} rows. Missing departments are created; re-running reports inserted 0.`}
-                  />
-                )}
-                {csvRows && csvRows.length > 0 && (
-                  <StepPanel
-                    title="Step 2 — Courses"
-                    runLabel="Run Step 2"
-                    runningLabel="Running Step 2…"
-                    running={step3Running}
-                    disabled={!activeSemesterId || !step2Result}
-                    disabledTitle={!step2Result ? "Run Step 1 first" : undefined}
-                    onRun={handleStep3Courses}
-                    summary={
-                      step3Result ? (
-                        <p className="text-[11px] text-tertiary">
-                          {csvRows.length} rows · {Object.keys(step3Result.programToCourseId).length + step3Result.invalid.length} distinct pairs in file ·{" "}
-                          <span className="font-semibold text-emerald-600">{step3Result.inserted}</span> inserted ·{" "}
-                          <span className="font-semibold text-blue-600">{step3Result.existing}</span> existing ·{" "}
-                          <span className="font-semibold text-red-600">{step3Result.invalid.length}</span> invalid
-                        </p>
-                      ) : (
-                        <p className="text-[11px] text-tertiary">
-                          {step2Result ? "Ready — run Step 2 to resolve course pairs." : "Run Step 1 first — courses need the department map."}
-                        </p>
-                      )
-                    }
-                    invalid={step3Result?.invalid ?? []}
-                    invalidKeyPrefix="step3-inv"
-                    confirmTitle="Run Step 2 — Courses?"
-                    confirmMessage="Resolve distinct program pairs against their departments. Missing courses are created visibly marked; re-running reports inserted 0."
-                  >
-                    {step3Result && step3Result.invalid.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setInvalidModal("step2")}
-                        className="text-[11px] font-semibold text-secondary hover:underline"
-                      >
-                        View {step3Result.invalid.length} invalid
-                      </button>
-                    )}
-                    {step3Result && Object.keys(step3Result.programToCourseId).length > 0 && (
-                      <div className="max-h-32 overflow-y-auto space-y-0.5">
-                        {Object.keys(step3Result.programToCourseId).sort().map((program) => (
-                          <p key={`step3-${program}`} className="text-[11px] text-secondary">
-                            {program} <span className="text-tertiary">— resolved</span>
+                  {csvRows && csvRows.length > 0 && (
+                    <StepPanel
+                      title="Step 1 — Departments"
+                      runLabel="Run Step 1"
+                      runningLabel="Running Step 1…"
+                      running={step2Running}
+                      disabled={!activeSemesterId}
+                      onRun={handleStep2Departments}
+                      summary={
+                        step2Result ? (
+                          <p className="text-[11px] text-tertiary">
+                            {csvRows.length} rows · {new Set(csvRows.map((r) => (r.departmentCode || "").trim().toUpperCase())).size} distinct in file ·{" "}
+                            <span className="font-semibold text-emerald-600">{step2Result.inserted}</span> inserted ·{" "}
+                            <span className="font-semibold text-blue-600">{step2Result.existing}</span> existing ·{" "}
+                            <span className="font-semibold text-red-600">{step2Result.invalid.length}</span> invalid
                           </p>
-                        ))}
-                      </div>
-                    )}
-                  </StepPanel>
-                )}
-                {csvRows && csvRows.length > 0 && (
-                  <StepPanel
-                    title="Step 3 — Sections"
-                    runLabel="Run Step 3"
-                    runningLabel="Running Step 3…"
-                    running={step4Running}
-                    disabled={!activeSemesterId || !step3Result}
-                    disabledTitle={!step3Result ? "Run Step 2 first" : undefined}
-                    onRun={handleStep4Sections}
-                    summary={
-                      step4Result ? (
-                        <p className="text-[11px] text-tertiary">
-                          {csvRows.length} rows · {Object.keys(step4Result.sectionKeyToId).length + step4Result.invalid.length} distinct sections in file ·{" "}
-                          <span className="font-semibold text-emerald-600">{step4Result.inserted}</span> inserted ·{" "}
-                          <span className="font-semibold text-blue-600">{step4Result.existing}</span> existing ·{" "}
-                          <span className="font-semibold text-red-600">{step4Result.invalid.length}</span> invalid
-                        </p>
-                      ) : (
-                        <p className="text-[11px] text-tertiary">
-                          {step3Result ? "Ready — run Step 3 to resolve sections." : "Run Step 2 first — sections need the course map."}
-                        </p>
-                      )
-                    }
-                    invalid={step4Result?.invalid ?? []}
-                    invalidKeyPrefix="step4-inv"
-                    confirmTitle="Run Step 3 — Sections?"
-                    confirmMessage="Resolve distinct sections against their courses. Sections whose program has no course are flagged, never inserted; re-running reports inserted 0."
-                  />
-                )}
-                {csvRows && csvRows.length > 0 && (
-                  <StepPanel
-                    title="Step 4 — Subjects"
-                    runLabel="Run Step 4"
-                    runningLabel="Running Step 4…"
-                    running={step5Running}
-                    disabled={!activeSemesterId || !step4Result}
-                    disabledTitle={!step4Result ? "Run Step 3 first" : undefined}
-                    onRun={handleStep5Subjects}
-                    summary={
-                      step5Result ? (
-                        <p className="text-[11px] text-tertiary">
-                          {csvRows.length} rows · {Object.keys(step5Result.subjectCodeToId).length + step5Result.invalid.length} distinct subjects in file ·{" "}
-                          <span className="font-semibold text-emerald-600">{step5Result.inserted}</span> inserted ·{" "}
-                          <span className="font-semibold text-blue-600">{step5Result.existing}</span> existing ·{" "}
-                          <span className="font-semibold text-red-600">{step5Result.invalid.length}</span> invalid
-                        </p>
-                      ) : (
-                        <p className="text-[11px] text-tertiary">
-                          {step4Result ? "Ready — run Step 4 to resolve subjects." : "Run Step 3 first — subjects follow convention order."}
-                        </p>
-                      )
-                    }
-                    invalid={step5Result?.invalid ?? []}
-                    invalidKeyPrefix="step5-inv"
-                    confirmTitle="Run Step 4 — Subjects?"
-                    confirmMessage="Resolve distinct subject codes. Missing subjects are created with name = code; re-running reports inserted 0."
-                  />
-                )}
-                {csvRows && csvRows.length > 0 && (
-                  <StepPanel
-                    title="Step 5 — Faculty users"
-                    runLabel="Run Step 5"
-                    runningLabel="Running Step 5…"
-                    running={step6Running}
-                    disabled={!activeSemesterId || !step5Result}
-                    disabledTitle={!step2Result ? "Run Step 1 first" : !step5Result ? "Run Step 4 first" : undefined}
-                    onRun={handleStep6FacultyUsers}
-                    summary={
-                      step6Result ? (
-                        <p className="text-[11px] text-tertiary">
-                          {csvRows.length} rows · {Object.keys(step6Result.facultyUserMap).length + step6Result.invalid.length} distinct faculty in file ·{" "}
-                          <span className="font-semibold text-emerald-600">{step6Result.inserted}</span> inserted ·{" "}
-                          <span className="font-semibold text-blue-600">{step6Result.existing}</span> existing ·{" "}
-                          <span className="font-semibold text-red-600">{step6Result.invalid.length}</span> invalid
-                        </p>
-                      ) : (
-                        <p className="text-[11px] text-tertiary">
-                          {step5Result ? "Ready — run Step 5 to create missing faculty." : "Run Step 4 first — faculty users follow convention order."}
-                        </p>
-                      )
-                    }
-                    invalid={step6Result?.invalid ?? []}
-                    invalidKeyPrefix="step6-inv"
-                    confirmTitle="Run Step 5 — Faculty users?"
-                    confirmMessage="Create missing faculty (role FACULTY) with their department. Off-domain emails are flagged, never created; the unassigned placeholder stays dept-agnostic; re-running reports inserted 0."
-                  />
-                )}
-                {csvRows && csvRows.length > 0 && (
-                  <StepPanel
-                    title="Step 6 — Faculty Loading"
-                    runLabel="Run Step 6"
-                    runningLabel="Running Step 6…"
-                    running={step7Running}
-                    disabled={!activeSemesterId || !step4Result || !step5Result || !step6Result}
-                    disabledTitle={!step4Result ? "Run Step 3 first" : !step5Result ? "Run Step 4 first" : !step6Result ? "Run Step 5 first" : undefined}
-                    onRun={handleStep7Mappings}
-                    summary={
-                      step7Result ? (
-                        <p className="text-[11px] text-tertiary">
-                          {csvRows.length} rows · {step7Result.inserted + step7Result.existing + step7Result.invalid.length} distinct slots in file ·{" "}
-                          <span className="font-semibold text-emerald-600">{step7Result.inserted}</span> inserted ·{" "}
-                          <span className="font-semibold text-blue-600">{step7Result.existing}</span> existing ·{" "}
-                          <span className="font-semibold text-red-600">{step7Result.invalid.length}</span> invalid
-                        </p>
-                      ) : (
-                        <p className="text-[11px] text-tertiary">
-                          {step6Result ? "Ready — run Step 6 to build faculty loading." : "Run Step 5 first — mappings need the faculty map."}
-                        </p>
-                      )
-                    }
-                    invalid={step7Result?.invalid ?? []}
-                    invalidKeyPrefix="step7-inv"
-                    confirmTitle="Run Step 6 — Faculty Loading?"
-                    confirmMessage="Build 903 faculty-loading slots from resolved subjects, sections and faculty. Dummy-held slots are reassigned to the real teacher; slots held by a different real teacher are refused, never overwritten; re-running reports inserted 0."
-                  >
-                    {step7Result && step7Result.invalid.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setInvalidModal("step6")}
-                        className="text-[11px] font-semibold text-secondary hover:underline"
-                      >
-                        View {step7Result.invalid.length} invalid
-                      </button>
-                    )}
-                  </StepPanel>
-                )}
-                <div className="sticky bottom-0 pt-2 pb-1 bg-white dark:bg-surface-dim flex justify-center">
-                  <IosButton variant="plain" size="sm" type="button" onClick={handleCsvReset}>Cancel</IosButton>
+                        ) : (
+                          <p className="text-[11px] text-tertiary">
+                            {csvRows.length} rows · {new Set(csvRows.map((r) => (r.departmentCode || "").trim().toUpperCase())).size} distinct codes in file — run Step 2 to resolve.
+                          </p>
+                        )
+                      }
+                      invalid={step2Result?.invalid ?? []}
+                      invalidKeyPrefix="step2"
+                      confirmTitle="Run Step 1 — Departments?"
+                      confirmMessage={`Resolve ${new Set(csvRows.map((r) => (r.departmentCode || "").trim().toUpperCase())).size} distinct department codes across ${csvRows.length} rows. Missing departments are created; re-running reports inserted 0.`}
+                    />
+                  )}
+                  {csvRows && csvRows.length > 0 && (
+                    <StepPanel
+                      title="Step 2 — Courses"
+                      runLabel="Run Step 2"
+                      runningLabel="Running Step 2…"
+                      running={step3Running}
+                      disabled={!activeSemesterId || !step2Result}
+                      disabledTitle={!step2Result ? "Run Step 1 first" : undefined}
+                      onRun={handleStep3Courses}
+                      summary={
+                        step3Result ? (
+                          <p className="text-[11px] text-tertiary">
+                            {csvRows.length} rows · {Object.keys(step3Result.programToCourseId).length + step3Result.invalid.length} distinct pairs in file ·{" "}
+                            <span className="font-semibold text-emerald-600">{step3Result.inserted}</span> inserted ·{" "}
+                            <span className="font-semibold text-blue-600">{step3Result.existing}</span> existing ·{" "}
+                            <span className="font-semibold text-red-600">{step3Result.invalid.length}</span> invalid
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-tertiary">
+                            {step2Result ? "Ready — run Step 2 to resolve course pairs." : "Run Step 1 first — courses need the department map."}
+                          </p>
+                        )
+                      }
+                      invalid={step3Result?.invalid ?? []}
+                      invalidKeyPrefix="step3-inv"
+                      confirmTitle="Run Step 2 — Courses?"
+                      confirmMessage="Resolve distinct program pairs against their departments. Missing courses are created visibly marked; re-running reports inserted 0."
+                    >
+                      {step3Result && step3Result.invalid.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setInvalidModal("step2")}
+                          className="text-[11px] font-semibold text-secondary hover:underline"
+                        >
+                          View {step3Result.invalid.length} invalid
+                        </button>
+                      )}
+                      {step3Result && Object.keys(step3Result.programToCourseId).length > 0 && (
+                        <div className="max-h-32 overflow-y-auto space-y-0.5">
+                          {Object.keys(step3Result.programToCourseId).sort().map((program) => (
+                            <p key={`step3-${program}`} className="text-[11px] text-secondary">
+                              {program} <span className="text-tertiary">— resolved</span>
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </StepPanel>
+                  )}
+                  {csvRows && csvRows.length > 0 && (
+                    <StepPanel
+                      title="Step 3 — Sections"
+                      runLabel="Run Step 3"
+                      runningLabel="Running Step 3…"
+                      running={step4Running}
+                      disabled={!activeSemesterId || !step3Result}
+                      disabledTitle={!step3Result ? "Run Step 2 first" : undefined}
+                      onRun={handleStep4Sections}
+                      summary={
+                        step4Result ? (
+                          <p className="text-[11px] text-tertiary">
+                            {csvRows.length} rows · {Object.keys(step4Result.sectionKeyToId).length + step4Result.invalid.length} distinct sections in file ·{" "}
+                            <span className="font-semibold text-emerald-600">{step4Result.inserted}</span> inserted ·{" "}
+                            <span className="font-semibold text-blue-600">{step4Result.existing}</span> existing ·{" "}
+                            <span className="font-semibold text-red-600">{step4Result.invalid.length}</span> invalid
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-tertiary">
+                            {step3Result ? "Ready — run Step 3 to resolve sections." : "Run Step 2 first — sections need the course map."}
+                          </p>
+                        )
+                      }
+                      invalid={step4Result?.invalid ?? []}
+                      invalidKeyPrefix="step4-inv"
+                      confirmTitle="Run Step 3 — Sections?"
+                      confirmMessage="Resolve distinct sections against their courses. Sections whose program has no course are flagged, never inserted; re-running reports inserted 0."
+                    />
+                  )}
+                  {csvRows && csvRows.length > 0 && (
+                    <StepPanel
+                      title="Step 4 — Subjects"
+                      runLabel="Run Step 4"
+                      runningLabel="Running Step 4…"
+                      running={step5Running}
+                      disabled={!activeSemesterId || !step4Result}
+                      disabledTitle={!step4Result ? "Run Step 3 first" : undefined}
+                      onRun={handleStep5Subjects}
+                      summary={
+                        step5Result ? (
+                          <p className="text-[11px] text-tertiary">
+                            {csvRows.length} rows · {Object.keys(step5Result.subjectCodeToId).length + step5Result.invalid.length} distinct subjects in file ·{" "}
+                            <span className="font-semibold text-emerald-600">{step5Result.inserted}</span> inserted ·{" "}
+                            <span className="font-semibold text-blue-600">{step5Result.existing}</span> existing ·{" "}
+                            <span className="font-semibold text-red-600">{step5Result.invalid.length}</span> invalid
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-tertiary">
+                            {step4Result ? "Ready — run Step 4 to resolve subjects." : "Run Step 3 first — subjects follow convention order."}
+                          </p>
+                        )
+                      }
+                      invalid={step5Result?.invalid ?? []}
+                      invalidKeyPrefix="step5-inv"
+                      confirmTitle="Run Step 4 — Subjects?"
+                      confirmMessage="Resolve distinct subject codes. Missing subjects are created with name = code; re-running reports inserted 0."
+                    />
+                  )}
+                  {csvRows && csvRows.length > 0 && (
+                    <StepPanel
+                      title="Step 5 — Faculty users"
+                      runLabel="Run Step 5"
+                      runningLabel="Running Step 5…"
+                      running={step6Running}
+                      disabled={!activeSemesterId || !step5Result}
+                      disabledTitle={!step2Result ? "Run Step 1 first" : !step5Result ? "Run Step 4 first" : undefined}
+                      onRun={handleStep6FacultyUsers}
+                      summary={
+                        step6Result ? (
+                          <p className="text-[11px] text-tertiary">
+                            {csvRows.length} rows · {Object.keys(step6Result.facultyUserMap).length + step6Result.invalid.length} distinct faculty in file ·{" "}
+                            <span className="font-semibold text-emerald-600">{step6Result.inserted}</span> inserted ·{" "}
+                            <span className="font-semibold text-blue-600">{step6Result.existing}</span> existing ·{" "}
+                            <span className="font-semibold text-red-600">{step6Result.invalid.length}</span> invalid
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-tertiary">
+                            {step5Result ? "Ready — run Step 5 to create missing faculty." : "Run Step 4 first — faculty users follow convention order."}
+                          </p>
+                        )
+                      }
+                      invalid={step6Result?.invalid ?? []}
+                      invalidKeyPrefix="step6-inv"
+                      confirmTitle="Run Step 5 — Faculty users?"
+                      confirmMessage="Create missing faculty (role FACULTY) with their department. Off-domain emails are flagged, never created; the unassigned placeholder stays dept-agnostic; re-running reports inserted 0."
+                    />
+                  )}
+                  {csvRows && csvRows.length > 0 && (
+                    <StepPanel
+                      title="Step 6 — Faculty Loading"
+                      runLabel="Run Step 6"
+                      runningLabel="Running Step 6…"
+                      running={step7Running}
+                      disabled={!activeSemesterId || !step4Result || !step5Result || !step6Result}
+                      disabledTitle={!step4Result ? "Run Step 3 first" : !step5Result ? "Run Step 4 first" : !step6Result ? "Run Step 5 first" : undefined}
+                      onRun={handleStep7Mappings}
+                      summary={
+                        step7Result ? (
+                          <p className="text-[11px] text-tertiary">
+                            {csvRows.length} rows · {step7Result.inserted + step7Result.existing + step7Result.invalid.length} distinct slots in file ·{" "}
+                            <span className="font-semibold text-emerald-600">{step7Result.inserted}</span> inserted ·{" "}
+                            <span className="font-semibold text-blue-600">{step7Result.existing}</span> existing ·{" "}
+                            <span className="font-semibold text-red-600">{step7Result.invalid.length}</span> invalid
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-tertiary">
+                            {step6Result ? "Ready — run Step 6 to build faculty loading." : "Run Step 5 first — mappings need the faculty map."}
+                          </p>
+                        )
+                      }
+                      invalid={step7Result?.invalid ?? []}
+                      invalidKeyPrefix="step7-inv"
+                      confirmTitle="Run Step 6 — Faculty Loading?"
+                      confirmMessage="Build 903 faculty-loading slots from resolved subjects, sections and faculty. Dummy-held slots are reassigned to the real teacher; slots held by a different real teacher are refused, never overwritten; re-running reports inserted 0."
+                    >
+                      {step7Result && step7Result.invalid.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setInvalidModal("step6")}
+                          className="text-[11px] font-semibold text-secondary hover:underline"
+                        >
+                          View {step7Result.invalid.length} invalid
+                        </button>
+                      )}
+                    </StepPanel>
+                  )}
+                  <div className="sticky bottom-0 pt-2 pb-1 bg-white dark:bg-surface-dim flex justify-center">
+                    <IosButton variant="plain" size="sm" type="button" onClick={handleCsvReset}>Cancel</IosButton>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
+            </div>
           </div>
-        </div>
         )}
       </div>
 
@@ -1381,68 +1377,68 @@ function FacultyTab() {
           <span className="text-tertiary">{showAddForm ? "▲" : "▼"}</span>
         </button>
         {showAddForm && (
-        <div className="border-t border-default px-3 pb-3">
-          <form onSubmit={handleAdd} className="space-y-4 pt-3">
-            {formError && <p className="text-xs font-medium text-red-600 bg-red-50 p-2 rounded">{formError}</p>}
-            {formSuccess && <p className="text-xs font-medium text-green-600 bg-green-50 p-2 rounded">{formSuccess}</p>}
-            {!activeSemesterId && <p className="text-xs font-medium text-amber-600 bg-amber-50 dark:bg-amber-900/20 p-2 rounded flex items-center gap-2"><span>⚠️</span> No active semester. Set one as active before adding faculty load entries.</p>}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-tertiary mb-1">Department</label>
-                <select value={formDept} onChange={(e) => { setFormDept(e.target.value); setFormFaculty(""); setFacultySearch("") }} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400">
-                  <option value="all">All Departments</option>
-                  {departments.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
-                </select>
+          <div className="border-t border-default px-3 pb-3">
+            <form onSubmit={handleAdd} className="space-y-4 pt-3">
+              {formError && <p className="text-xs font-medium text-red-600 bg-red-50 p-2 rounded">{formError}</p>}
+              {formSuccess && <p className="text-xs font-medium text-green-600 bg-green-50 p-2 rounded">{formSuccess}</p>}
+              {!activeSemesterId && <p className="text-xs font-medium text-amber-600 bg-amber-50 dark:bg-amber-900/20 p-2 rounded flex items-center gap-2"><span>⚠️</span> No active semester. Set one as active before adding faculty load entries.</p>}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-tertiary mb-1">Department</label>
+                  <select value={formDept} onChange={(e) => { setFormDept(e.target.value); setFormFaculty(""); setFacultySearch("") }} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                    <option value="all">All Departments</option>
+                    {departments.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
+                  </select>
+                </div>
+                <div className="relative">
+                  <label className="block text-xs font-semibold text-tertiary mb-1">Faculty</label>
+                  <input
+                    value={facultySearch || selectedFacultyName}
+                    onChange={(e) => { setFacultySearch(e.target.value); setFormFaculty(""); setFacultyDropdownOpen(true) }}
+                    onFocus={() => setFacultyDropdownOpen(true)}
+                    placeholder="Search faculty..."
+                    className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    required
+                    autoComplete="off"
+                  />
+                  {facultyDropdownOpen && (
+                    <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl max-h-52 overflow-y-auto">
+                      {filteredFaculties.length === 0 ? (
+                        <p className="text-xs text-tertiary text-center py-4">No faculty found</p>
+                      ) : (
+                        filteredFaculties.map((f) => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => { setFormFaculty(f.id); setFacultySearch(""); setFacultyDropdownOpen(false) }}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-hover transition-colors ${formFaculty === f.id ? "bg-amber-50 dark:bg-amber-900/20 font-semibold" : ""}`}
+                          >
+                            <span className="text-primary">{f.name}</span>
+                            <span className="text-tertiary ml-1 text-xs">{f.email}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-tertiary mb-1">Subject</label>
+                  <select value={formSubject} onChange={(e) => { setFormSubject(e.target.value) }} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" required>
+                    <option value="">Select subject...</option>
+                    {subjects.map((s) => (<option key={s.id} value={s.id}>{s.code} - {s.name}</option>))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-tertiary mb-1">Section</label>
+                  <select value={formSection} onChange={(e) => { setFormSection(e.target.value) }} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" required>
+                    <option value="">Select section...</option>
+                    {sections.map((s) => (<option key={s.id} value={s.id}>{s.program} - {s.name}</option>))}
+                  </select>
+                </div>
               </div>
-              <div className="relative">
-                <label className="block text-xs font-semibold text-tertiary mb-1">Faculty</label>
-                <input
-                  value={facultySearch || selectedFacultyName}
-                  onChange={(e) => { setFacultySearch(e.target.value); setFormFaculty(""); setFacultyDropdownOpen(true) }}
-                  onFocus={() => setFacultyDropdownOpen(true)}
-                  placeholder="Search faculty..."
-                  className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
-                  required
-                  autoComplete="off"
-                />
-                {facultyDropdownOpen && (
-                  <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl max-h-52 overflow-y-auto">
-                    {filteredFaculties.length === 0 ? (
-                      <p className="text-xs text-tertiary text-center py-4">No faculty found</p>
-                    ) : (
-                      filteredFaculties.map((f) => (
-                        <button
-                          key={f.id}
-                          type="button"
-                          onClick={() => { setFormFaculty(f.id); setFacultySearch(""); setFacultyDropdownOpen(false) }}
-                          className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-hover transition-colors ${formFaculty === f.id ? "bg-amber-50 dark:bg-amber-900/20 font-semibold" : ""}`}
-                        >
-                          <span className="text-primary">{f.name}</span>
-                          <span className="text-tertiary ml-1 text-xs">{f.email}</span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-tertiary mb-1">Subject</label>
-                <select value={formSubject} onChange={(e) => { setFormSubject(e.target.value) }} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" required>
-                  <option value="">Select subject...</option>
-                  {subjects.map((s) => (<option key={s.id} value={s.id}>{s.code} - {s.name}</option>))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-tertiary mb-1">Section</label>
-                <select value={formSection} onChange={(e) => { setFormSection(e.target.value) }} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" required>
-                  <option value="">Select section...</option>
-                  {sections.map((s) => (<option key={s.id} value={s.id}>{s.program} - {s.name}</option>))}
-                </select>
-              </div>
-            </div>
-            <div className="pt-2"><IosButton type="submit" loading={formSaving} disabled={!activeSemesterId} variant="primary">Create Faculty Load Entry</IosButton></div>
-          </form>
-        </div>
+              <div className="pt-2"><IosButton type="submit" loading={formSaving} disabled={!activeSemesterId} variant="primary">Create Faculty Load Entry</IosButton></div>
+            </form>
+          </div>
         )}
       </div>
 
@@ -1460,8 +1456,8 @@ function FacultyTab() {
                 }}
                 disabled={!isAdmin && pill.id !== currentUserDept && pill.id !== "unassigned"}
                 className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${active
-                    ? "bg-amber-500 text-white border-amber-500 shadow-sm"
-                    : "bg-surface text-tertiary border-default hover:border-amber-300 hover:text-secondary"
+                  ? "bg-amber-500 text-white border-amber-500 shadow-sm"
+                  : "bg-surface text-tertiary border-default hover:border-amber-300 hover:text-secondary"
                   } disabled:opacity-40 disabled:cursor-not-allowed`}
               >
                 {pill.label}
@@ -1480,11 +1476,10 @@ function FacultyTab() {
               <button
                 key={pill.key}
                 onClick={() => setViewTab(pill.key)}
-                className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-                  active
+                className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${active
                     ? "bg-amber-500 text-white border-amber-500 shadow-sm"
                     : "bg-surface text-tertiary border-default hover:border-amber-300 hover:text-secondary"
-                }`}
+                  }`}
               >
                 {pill.label}
               </button>
@@ -1511,7 +1506,7 @@ function FacultyTab() {
                   <tr>
                     <th>Faculty</th>
                     <th>Email</th>
-                  
+
                     <th>Headcount</th>
                     <th>Action</th>
                   </tr>
@@ -1523,7 +1518,7 @@ function FacultyTab() {
                       <tr key={group.faculty.id}>
                         <td className="font-medium text-secondary">{group.faculty.name}</td>
                         <td className="text-tertiary">{group.faculty.email}</td>
-        
+
                         <td>
                           <span className="font-semibold text-secondary">{headcount}</span>
                         </td>
@@ -1720,8 +1715,8 @@ function FacultyTab() {
                         <p className="font-semibold text-secondary truncate">{m.subject.code} - {m.subject.name}</p>
                         <p className="text-tertiary truncate">{m.section.program}-{m.section.name}</p>
                       </div>
-                        <span className="shrink-0 text-right text-xs font-semibold text-secondary">{hc} student{hc !== 1 ? "s" : ""}{!m.semesterId && <span className="ml-1 text-[10px] font-semibold text-amber-600">⚠️</span>}</span>
-                        <Link href={`/admin/data/academic-infrastructure/faculty-enroll/${m.id}`} className="shrink-0 text-xs text-amber-600 hover:text-amber-700 font-semibold ml-1">Edit</Link>
+                      <span className="shrink-0 text-right text-xs font-semibold text-secondary">{hc} student{hc !== 1 ? "s" : ""}{!m.semesterId && <span className="ml-1 text-[10px] font-semibold text-amber-600">⚠️</span>}</span>
+                      <Link href={`/admin/data/academic-infrastructure/faculty-enroll/${m.id}`} className="shrink-0 text-xs text-amber-600 hover:text-amber-700 font-semibold ml-1">Edit</Link>
                     </div>
                   )
                 })}
