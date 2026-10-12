@@ -4,11 +4,19 @@ const mockRequireAdmin = vi.hoisted(() => vi.fn())
 const mockListAllWithEmbeds = vi.hoisted(() => vi.fn())
 const mockCountByFacultySubjectIds = vi.hoisted(() => vi.fn())
 const mockSemesterList = vi.hoisted(() => vi.fn())
+const mockListStudentByFs = vi.hoisted(() => vi.fn())
+const mockCountByFs = vi.hoisted(() => vi.fn())
+const mockListAllStudentEmbeds = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/route-guard", () => ({ requireAdmin: mockRequireAdmin }))
 vi.mock("@/lib/repositories/factory", () => ({
   facultySubjectRepository: { listAllWithEmbeds: mockListAllWithEmbeds },
-  studentEnrollmentRepository: { countByFacultySubjectIds: mockCountByFacultySubjectIds },
+  studentEnrollmentRepository: {
+    countByFacultySubjectIds: mockCountByFacultySubjectIds,
+    listByFacultySubject: mockListStudentByFs,
+    countByFacultySubjectId: mockCountByFs,
+    listAllWithEmbeds: mockListAllStudentEmbeds,
+  },
   semesterRepository: { list: mockSemesterList },
   subjectRepository: {},
   sectionRepository: {},
@@ -88,5 +96,61 @@ describe("GET /api/data/evaluation-mappings?type=faculty", () => {
     expect(body.data[1].headcount).toBe(0)
     // Semester resolved from the database per row, never assumed active.
     expect(body.data[0].semester).toEqual({ id: "sem-1", title: "2026-1" })
+  })
+})
+
+describe("GET /api/data/evaluation-mappings?type=student", () => {
+  const ENROLL = (overrides = {}) => ({
+    id: "e1",
+    semesterId: "sem-1",
+    student: { id: "stu-1", name: "Ana Santos", email: "ana@lyceumalabang.edu.ph" },
+    section: { id: "sec-1", name: "32A3", program: "BSIT" },
+    faculty_subject: { id: "fs-1" },
+    ...overrides,
+  })
+
+  it("returns scoped list + server total when facultySubjectId + semesterId", async () => {
+    mockRequireAdmin.mockResolvedValue(null)
+    mockListStudentByFs.mockResolvedValue([ENROLL()])
+    mockCountByFs.mockResolvedValue(1)
+
+    const res = await GET(mockRequest("?type=student&facultySubjectId=fs-1&semesterId=sem-1") as never)
+
+    expect(res.status).toBe(200)
+    expect(mockListStudentByFs).toHaveBeenCalledWith("fs-1", "sem-1")
+    expect(mockCountByFs).toHaveBeenCalledWith("fs-1", "sem-1")
+
+    const body = await res.json()
+    expect(body.data).toHaveLength(1)
+    expect(body.data[0].faculty_subject_id).toBe("fs-1")
+    expect(body.total).toBe(1)
+  })
+
+  it("scopes by faculty_subject without semester filter when semesterId absent", async () => {
+    mockRequireAdmin.mockResolvedValue(null)
+    mockListStudentByFs.mockResolvedValue([ENROLL()])
+    mockCountByFs.mockResolvedValue(1)
+
+    const res = await GET(mockRequest("?type=student&facultySubjectId=fs-1") as never)
+
+    expect(res.status).toBe(200)
+    expect(mockListStudentByFs).toHaveBeenCalledWith("fs-1", undefined)
+    expect(mockCountByFs).toHaveBeenCalledWith("fs-1", undefined)
+    expect((await res.json()).total).toBe(1)
+  })
+
+  it("keeps legacy bulk behavior without facultySubjectId", async () => {
+    mockRequireAdmin.mockResolvedValue(null)
+    mockListAllStudentEmbeds.mockResolvedValue([ENROLL(), ENROLL({ id: "e2" })])
+
+    const res = await GET(mockRequest("?type=student") as never)
+
+    expect(res.status).toBe(200)
+    expect(mockListStudentByFs).not.toHaveBeenCalled()
+    expect(mockCountByFs).not.toHaveBeenCalled()
+
+    const body = await res.json()
+    expect(body.data).toHaveLength(2)
+    expect(body.total).toBe(2)
   })
 })
