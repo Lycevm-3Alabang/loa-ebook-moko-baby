@@ -282,9 +282,9 @@ export default function StudentEvaluationsPage() {
                 🔒
               </div>
               <div>
-                <p className="text-sm font-bold text-primary">Evaluation period is not open</p>
+                <p className="text-sm font-bold text-primary">Nothing to see here</p>
                 <p className="text-xs text-tertiary mt-1">
-                  The evaluation period has not started yet or has already closed. You&apos;ll be able to submit your evaluations once the window opens.
+                  {activePeriodName ? `${activePeriodName}` : "No active evaluation period"}{semesterName ? ` · ${semesterName}` : ""} is not open right now. Start and Continue are hidden until the window opens.
                 </p>
               </div>
             </div>
@@ -348,7 +348,7 @@ export default function StudentEvaluationsPage() {
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ evaluateeId: item.evaluateeId, facultySubjectId: item.facultySubjectId }),
                       })
-                      if (res.status === 403) { setLockedEndpoint("/api/evaluations"); setNavigatingId(null); return }
+                      if (res.status === 403) { setDisputeMessage("Nothing to see here — still not eligible for this subject. Refresh the list or contact your admin."); setNavigatingId(null); return }
                       const data = await res.json()
                       if (data.evaluation?.id) { openEvalTab(data.evaluation.id); setNavigatingId(null) }
                   } catch {
@@ -376,8 +376,8 @@ export default function StudentEvaluationsPage() {
                   {!item.eligible && (
                     <span className="mt-1 inline-block text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded-full">
                       {item.ineligibilityReason === "WRONG_TERM"
-                        ? `⚠️ Wrong term${item.mappingSemesterTitle ? ` (${item.mappingSemesterTitle})` : ""} — contact your admin`
-                        : "⚠️ Not enrolled — contact your admin"}
+                        ? `Nothing to see here — mapped to ${item.mappingSemesterTitle ?? "another term"}, period expects ${semesterName ?? activePeriodName ?? "active term"}`
+                        : "Nothing to see here — no enrollment record for this subject"}
                     </span>
                   )}
                   <span
@@ -389,7 +389,7 @@ export default function StudentEvaluationsPage() {
                     className="mt-1 block text-[11px] text-red-500 hover:text-red-700 underline decoration-dotted underline-offset-2 opacity-60 hover:opacity-100 transition-opacity disabled:opacity-30 cursor-pointer"
                     style={disputingFsId === item.facultySubjectId ? { opacity: 0.3, pointerEvents: 'none' } : {}}
                   >
-                    {disputingFsId === item.facultySubjectId ? "Reporting..." : "Wrong faculty?"}
+                    {disputingFsId === item.facultySubjectId ? "Reporting..." : "Wrong faculty? Report to admin (admins only)"}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 ml-3">
@@ -533,7 +533,7 @@ export default function StudentEvaluationsPage() {
                       className="mt-1 block text-[11px] text-red-500 hover:text-red-700 underline decoration-dotted underline-offset-2 opacity-60 hover:opacity-100 transition-opacity disabled:opacity-30 cursor-pointer"
                       style={disputingFsId === ev.facultySubjectId ? { opacity: 0.3, pointerEvents: 'none' } : {}}
                     >
-                      {disputingFsId === ev.facultySubjectId ? "Reporting..." : "Wrong faculty?"}
+                      {disputingFsId === ev.facultySubjectId ? "Reporting..." : "Wrong faculty? Report to admin (admins only)"}
                     </span>
                   ) : null}
                 </div>
@@ -559,9 +559,9 @@ export default function StudentEvaluationsPage() {
           <div className="w-16 h-16 bg-gold-50 border border-gold-200 rounded-2xl flex items-center justify-center mx-auto mb-5">
             <span className="text-3xl">📝</span>
           </div>
-          <h2 className="text-lg font-bold text-primary mb-2">No pending evaluations</h2>
+          <h2 className="text-lg font-bold text-primary mb-2">Nothing to see here</h2>
           <p className="text-sm text-tertiary max-w-md mx-auto">
-            You don&apos;t have any pending evaluations right now. Check back when new evaluation periods open.
+            No subjects to evaluate{activePeriodName ? ` in ${activePeriodName}` : ""}{semesterName ? ` · ${semesterName}` : ""} right now.
           </p>
         </div>
       )}

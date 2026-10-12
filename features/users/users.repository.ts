@@ -151,13 +151,15 @@ export const userRepository: IUserRepository = {
 
   async listByRole(role, options) {
     try {
-      let query = supabase.from("users").select(USER_SELECT).eq("userrole.roleName", role)
+      const SELECT_INNER = USER_SELECT.replace("userrole(roleName)", "userrole!inner(roleName)")
+      let query = supabase.from("users").select(SELECT_INNER).eq("userrole.roleName", role)
       if (!options?.includeDeleted) {
         query = query.is("deletedAt", null)
       }
       const { data, error } = await query
       if (error) throw error
-      return toUsersWithRoles(data)
+      const withRoles = toUsersWithRoles(data)
+      return withRoles.filter((u) => u.role.split("|").includes(role))
     } catch (err) {
       if (isMissingUserrole(err as QueryError)) {
         console.warn("[repo] userrole table not found — listByRole returns empty")
