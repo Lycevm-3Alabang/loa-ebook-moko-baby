@@ -193,6 +193,28 @@ export const studentEnrollmentRepository: IStudentEnrollmentRepository = {
     }, {})
   },
 
+  async countByFacultySubjectIds(ids, semesterId?) {
+    if (ids.length === 0) return {}
+    // PostgREST encodes `.in()` into the request URL — chunk so a large id
+    // set never builds an oversized filter (400). Same 100-row batching
+    // convention as the importers. Counts are tallied in the application.
+    const CHUNK = 100
+    const merged: Record<string, number> = {}
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      let q = supabase
+        .from("student_enrollments")
+        .select("faculty_subject_id")
+        .in("faculty_subject_id", ids.slice(i, i + CHUNK))
+      if (semesterId) q = q.eq("semesterId", semesterId) as typeof q
+      const { data, error } = await q
+      if (error) throw error
+      for (const r of data || []) {
+        if (r.faculty_subject_id) merged[r.faculty_subject_id] = (merged[r.faculty_subject_id] || 0) + 1
+      }
+    }
+    return merged
+  },
+
   async listAllWithEmbeds() {
     const { data, error } = await supabase
       .from("student_enrollments")
@@ -210,6 +232,15 @@ export const studentEnrollmentRepository: IStudentEnrollmentRepository = {
       `)
     if (error) throw error
     return (data || []) as unknown as StudentEnrollmentWithEmbeds[]
+  },
+
+  async countByFacultySubjectId(facultySubjectId: string) {
+    const { count, error } = await supabase
+      .from("student_enrollments")
+      .select("id", { count: "exact", head: true })
+      .eq("faculty_subject_id", facultySubjectId)
+    if (error) throw error
+    return count ?? 0
   },
 
   async countBySemesterId(semesterId) {

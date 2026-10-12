@@ -18,6 +18,8 @@ export interface FacultyMapping {
   faculty: { id: string; name: string; email: string; departmentId: string | null }
   subject: { id: string; code: string; name: string }
   section: { id: string; name: string; program: string }
+  semester?: { id: string; title: string } | null
+  headcount?: number
 }
 
 export interface Enrollment {

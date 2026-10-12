@@ -144,3 +144,62 @@ describe("addEnrollments — scoped idempotency read", () => {
     ).rejects.toThrow("DB error")
   })
 })
+
+// ── Headcount per faculty_subject, tallied in the application ───
+
+describe("countByFacultySubjectIds", () => {
+  it("tallies enrollments per faculty_subject and ignores NULL keys", async () => {
+    const chain = chainable({
+      data: [
+        { faculty_subject_id: "fs-1" },
+        { faculty_subject_id: "fs-1" },
+        { faculty_subject_id: "fs-2" },
+        { faculty_subject_id: null },
+      ],
+      error: null,
+    })
+    mockSupabase.from.mockReturnValueOnce(chain)
+
+    const counts = await studentEnrollmentRepository.countByFacultySubjectIds(["fs-1", "fs-2"], "sem-1")
+
+    expect(counts).toEqual({ "fs-1": 2, "fs-2": 1 })
+    expect(chain.select).toHaveBeenCalledWith("faculty_subject_id")
+    expect(chain.in).toHaveBeenCalledWith("faculty_subject_id", ["fs-1", "fs-2"])
+    expect(chain.eq).toHaveBeenCalledWith("semesterId", "sem-1")
+  })
+
+  it("skips the semester filter when none is given", async () => {
+    const chain = chainable({ data: [], error: null })
+    mockSupabase.from.mockReturnValueOnce(chain)
+
+    await studentEnrollmentRepository.countByFacultySubjectIds(["fs-1"])
+
+    expect(chain.eq).not.toHaveBeenCalledWith("semesterId", expect.anything())
+  })
+
+  it("makes no database call for empty input", async () => {
+    const counts = await studentEnrollmentRepository.countByFacultySubjectIds([])
+
+    expect(counts).toEqual({})
+    expect(mockSupabase.from).not.toHaveBeenCalled()
+  })
+
+  it("chunks large id sets so no single `in=(...)` filter is oversized", async () => {
+    const chains: ReturnType<typeof chainable>[] = []
+    mockSupabase.from.mockImplementation(() => {
+      const chain = chainable({ data: [], error: null })
+      chains.push(chain)
+      return chain
+    })
+    const ids = Array.from({ length: 250 }, (_, i) => `fs-${i}`)
+
+    const counts = await studentEnrollmentRepository.countByFacultySubjectIds(ids, "sem-1")
+
+    expect(counts).toEqual({})
+    expect(mockSupabase.from).toHaveBeenCalledTimes(3)
+    expect(chains).toHaveLength(3)
+    expect(chains[0].in).toHaveBeenCalledWith("faculty_subject_id", ids.slice(0, 100))
+    expect(chains[1].in).toHaveBeenCalledWith("faculty_subject_id", ids.slice(100, 200))
+    expect(chains[2].in).toHaveBeenCalledWith("faculty_subject_id", ids.slice(200, 250))
+  })
+})
