@@ -91,8 +91,8 @@ export function EnrollmentsTab() {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  const { data: usersData } = useApiGet<{ users: { id: string; name: string; email: string; role: string }[] }>("/api/admin/users")
-  const students = useMemo(() => (usersData?.users ?? []).filter((u) => u.role.includes("STUDENT")), [usersData])
+  const { data: usersData } = useApiGet<{ users: { id: string; name: string; email: string; role: string; isDisabled: boolean }[] }>("/api/admin/users")
+  const students = useMemo(() => (usersData?.users ?? []).filter((u) => u.role.includes("STUDENT") && !u.isDisabled), [usersData])
 
   const filteredStudents = useMemo(() => {
     if (!studentSearch.trim()) return students
