@@ -438,8 +438,9 @@ export interface IStudentEnrollmentRepository {
   countBySectionIds(sectionIds: string[]): Promise<Record<string, number>>
   countByFacultySubjectIds(ids: string[], semesterId?: string): Promise<Record<string, number>>
   listAllWithEmbeds(): Promise<StudentEnrollmentWithEmbeds[]>
+  listByFacultySubject(facultySubjectId: string, semesterId?: string): Promise<StudentEnrollmentWithEmbeds[]>
   countBySemesterId(semesterId: string): Promise<number>
-  countByFacultySubjectId(facultySubjectId: string): Promise<number>
+  countByFacultySubjectId(facultySubjectId: string, semesterId?: string): Promise<number>
   getFacultySubjectsByStudent(student_id: string, faculty_id: string, semesterId: string): Promise<{ id: string; code: string; title: string }[]>
 }
 

@@ -234,11 +234,35 @@ export const studentEnrollmentRepository: IStudentEnrollmentRepository = {
     return (data || []) as unknown as StudentEnrollmentWithEmbeds[]
   },
 
-  async countByFacultySubjectId(facultySubjectId: string) {
-    const { count, error } = await supabase
+  async listByFacultySubject(facultySubjectId: string, semesterId?: string) {
+    let q = supabase
+      .from("student_enrollments")
+      .select(`
+        id,
+        "semesterId",
+        student:student_id (id, name, email),
+        section:section_id (id, name, program),
+        faculty_subject:faculty_subject_id (
+          id,
+          faculty:faculty_id (id, name, email),
+          subject:subject_id (id, code, name),
+          section:section_id (id, name, program)
+        )
+      `)
+      .eq("faculty_subject_id", facultySubjectId)
+    if (semesterId) q = q.eq("semesterId", semesterId) as typeof q
+    const { data, error } = await q
+    if (error) throw error
+    return (data || []) as unknown as StudentEnrollmentWithEmbeds[]
+  },
+
+  async countByFacultySubjectId(facultySubjectId: string, semesterId?: string) {
+    let q = supabase
       .from("student_enrollments")
       .select("id", { count: "exact", head: true })
       .eq("faculty_subject_id", facultySubjectId)
+    if (semesterId) q = q.eq("semesterId", semesterId) as typeof q
+    const { count, error } = await q
     if (error) throw error
     return count ?? 0
   },
