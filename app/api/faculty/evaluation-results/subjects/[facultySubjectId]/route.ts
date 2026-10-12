@@ -37,7 +37,7 @@ export async function GET(
 
     const visRow = await evaluationResultRepository.getVisibilityMap(evaluationPeriodId)
     if (!visRow.get(userId)) {
-      return NextResponse.json({ error: "Evaluation results are not visible yet" }, { status: 403 })
+      return NextResponse.json({ error: "Results for this period are still hidden — ask your DEAN or ADMIN to enable them" }, { status: 403 })
     }
 
     const facultyUser = await userRepository.findById(userId)
@@ -46,6 +46,9 @@ export async function GET(
     const fsMatch = await facultySubjectRepository.findById(facultySubjectId)
     if (!fsMatch) {
       return NextResponse.json({ error: "Faculty-subject not found" }, { status: 404 })
+    }
+    if (fsMatch.faculty_id !== userId) {
+      return NextResponse.json({ error: "This subject belongs to another faculty member" }, { status: 403 })
     }
 
     const subject = await subjectRepository.findById(fsMatch.subject_id)
@@ -57,7 +60,7 @@ export async function GET(
     }
 
     const evals = await evaluationRepository.listSubmittedByPeriodAndEvaluateeAndFS(evaluationPeriodId, userId, facultySubjectId)
-    if (evals.length === 0) return NextResponse.json({ error: "No evaluations found" }, { status: 404 })
+    if (evals.length === 0) return NextResponse.json({ error: `No submitted evaluations yet for ${subject?.code ?? "this subject"} in this period` }, { status: 404 })
 
     const evaluationIds = evals.map((e) => e.id)
 

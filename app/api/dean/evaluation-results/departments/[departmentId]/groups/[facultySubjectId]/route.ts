@@ -33,7 +33,7 @@ export async function GET(
 
   const { departmentId, facultySubjectId } = await params
   if (departmentId !== dept.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return NextResponse.json({ error: `You manage ${dept.name} — tried to open ${departmentId}` }, { status: 403 })
   }
 
   try {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useCallback } from "react"
+import { useState, useMemo, useCallback, useEffect } from "react"
 import { useParams, useSearchParams } from "next/navigation"
 import Skeleton from "@/components/ui/Skeleton"
 import LockedTab from "@/components/ui/LockedTab"
@@ -47,14 +47,23 @@ export default function DeanDepartmentDetailPage() {
 
   const [search, setSearch] = useState("")
   const [pdfMode, setPdfMode] = useState<"per_subject" | "per_faculty">("per_subject")
+  const [visibilityMap, setVisibilityMap] = useState<Record<string, boolean>>({})
+  const [toggling, setToggling] = useState(false)
 
-  const { data: resultsData, error: resultsError } = useApiGet<{ department: DepartmentInfo; subjects: SubjectRow[] }>(
+  const { data: resultsData, error: resultsError } = useApiGet<{ department: DepartmentInfo; subjects: SubjectRow[]; visibilityMap: Record<string, boolean> }>(
     evaluationPeriodId ? `/api/dean/evaluation-results/departments/${encodeURIComponent(departmentId)}?evaluationPeriodId=${encodeURIComponent(evaluationPeriodId)}` : null,
   )
   const department = resultsData?.department ?? null
   const subjects = useMemo(() => resultsData?.subjects ?? [], [resultsData])
   const isLocked = !!resultsError && !!evaluationPeriodId
   const loading = !resultsData && !resultsError && !!evaluationPeriodId
+
+  useEffect(() => {
+    const map = resultsData?.visibilityMap ?? {}
+    if (Object.keys(map).length > 0 && Object.keys(visibilityMap).length === 0) {
+      Promise.resolve().then(() => setVisibilityMap(map))
+    }
+  }, [resultsData, visibilityMap])
 
   const deptMetrics = useMemo(() => {
     if (subjects.length === 0) return null
@@ -110,6 +119,47 @@ export default function DeanDepartmentDetailPage() {
       overallSentiment,
     }
   }, [subjects])
+
+  const toggleVisibility = useCallback(async (facultyId: string, visible: boolean) => {
+    if (toggling) return
+    const prev = visibilityMap[facultyId]
+    setVisibilityMap((m) => ({ ...m, [facultyId]: visible }))
+    setToggling(true)
+    try {
+      const res = await fetch("/api/dean/evaluation-results/visibility", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ evaluationPeriodId, facultyIds: [facultyId], visible }),
+      })
+      if (!res.ok) setVisibilityMap((m) => ({ ...m, [facultyId]: prev }))
+    } catch {
+      setVisibilityMap((m) => ({ ...m, [facultyId]: prev }))
+    } finally {
+      setToggling(false)
+    }
+  }, [evaluationPeriodId, toggling, visibilityMap])
+
+  const bulkSetVisibility = useCallback(async (visible: boolean) => {
+    if (toggling) return
+    const facultyIds = [...new Set(subjects.map((s) => s.facultyId))]
+    const prev = { ...visibilityMap }
+    const update: Record<string, boolean> = {}
+    for (const id of facultyIds) update[id] = visible
+    setVisibilityMap((m) => ({ ...m, ...update }))
+    setToggling(true)
+    try {
+      const res = await fetch("/api/dean/evaluation-results/visibility", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ evaluationPeriodId, facultyIds, visible }),
+      })
+      if (!res.ok) setVisibilityMap(prev)
+    } catch {
+      setVisibilityMap(prev)
+    } finally {
+      setToggling(false)
+    }
+  }, [evaluationPeriodId, subjects, toggling, visibilityMap])
 
   const handleDeptPdf = useCallback(() => {
     if (!department || subjects.length === 0) return
@@ -246,6 +296,9 @@ export default function DeanDepartmentDetailPage() {
             evaluationPeriodId={evaluationPeriodId}
             search={search}
             onSearchChange={setSearch}
+            visibilityMap={visibilityMap}
+            onVisibilityChange={toggleVisibility}
+            onBulkVisibilityChange={bulkSetVisibility}
             basePath="/dean/evaluations/results"
           />
         </>

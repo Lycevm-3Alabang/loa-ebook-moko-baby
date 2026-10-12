@@ -37,9 +37,10 @@ export async function GET(
     await evaluationResultRepository.assertPeriodIsActive(evaluationPeriodId)
 
     const deanId = (session.user as Record<string, unknown>).id as string
+    const deanDept = await departmentRepository.findByDeanId(deanId)
     const deptAccess = await departmentRepository.findById(departmentId)
     if (!deptAccess || deptAccess.deanId !== deanId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+      return NextResponse.json({ error: `You manage ${deanDept?.name ?? "your department"} — tried to open ${departmentId}` }, { status: 403 })
     }
 
     const faculty = await userRepository.findById(facultyId)

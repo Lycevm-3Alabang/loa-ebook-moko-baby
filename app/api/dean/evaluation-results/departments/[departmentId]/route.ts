@@ -33,7 +33,7 @@ export async function GET(
 
   const { departmentId } = await params
   if (departmentId !== dept.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return NextResponse.json({ error: `You manage ${dept.name} — tried to open ${departmentId}` }, { status: 403 })
   }
 
   try {
@@ -51,7 +51,7 @@ export async function GET(
     const visMap = await evaluationResultRepository.getVisibilityMap(evaluationPeriodId)
     const anyVisible = facIds.some((id) => visMap.get(id))
     if (!anyVisible) {
-      return NextResponse.json({ error: "Evaluation results are not visible yet" }, { status: 403 })
+      return NextResponse.json({ error: `ADMIN hasn't released results for ${dept.name} yet` }, { status: 403 })
     }
 
     const facNameMap = new Map(facUsers.map((u) => [u.id, u]))
@@ -127,9 +127,15 @@ export async function GET(
       })
     }
 
+    const visibilityMap: Record<string, boolean> = {}
+    for (const item of subjectsList) {
+      visibilityMap[item.facultyId as string] = visMap.get(item.facultyId as string) ?? false
+    }
+
     return NextResponse.json({
       department: dept ?? null,
       subjects: subjectsList,
+      visibilityMap,
     })
   } catch (e) {
     if (e instanceof EvaluationPeriodInactiveError) {
