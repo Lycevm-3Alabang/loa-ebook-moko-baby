@@ -187,4 +187,19 @@ describe("GET /api/data/evaluation-mappings?type=student", () => {
     expect(body.data).toHaveLength(2)
     expect(body.total).toBe(2)
   })
+
+  it("scopes the bulk student list by semesterId when only semesterId is given", async () => {
+    mockRequireAdmin.mockResolvedValue(null)
+    mockListAllStudentEmbeds.mockResolvedValue([ENROLL(), ENROLL({ id: "e2" })])
+
+    const res = await GET(mockRequest("?type=student&semesterId=sem-1") as never)
+
+    expect(res.status).toBe(200)
+    expect(mockListAllStudentEmbeds).toHaveBeenCalledWith({ semesterId: "sem-1" })
+    expect(mockListStudentByFs).not.toHaveBeenCalled()
+
+    const body = await res.json()
+    expect(body.data).toHaveLength(2)
+    expect(body.total).toBe(2)
+  })
 })

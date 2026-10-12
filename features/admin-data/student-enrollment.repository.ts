@@ -215,8 +215,8 @@ export const studentEnrollmentRepository: IStudentEnrollmentRepository = {
     return merged
   },
 
-  async listAllWithEmbeds() {
-    const { data, error } = await supabase
+  async listAllWithEmbeds(filters?: { semesterId?: string }) {
+    let q = supabase
       .from("student_enrollments")
       .select(`
         id,
@@ -230,6 +230,8 @@ export const studentEnrollmentRepository: IStudentEnrollmentRepository = {
           section:section_id (id, name, program)
         )
       `)
+    if (filters?.semesterId) q = q.eq("semesterId", filters.semesterId) as typeof q
+    const { data, error } = await q
     if (error) throw error
     return (data || []) as unknown as StudentEnrollmentWithEmbeds[]
   },

@@ -76,7 +76,9 @@ export async function GET(request: NextRequest) {
         facultySubjectId,
         semesterId || undefined,
       )
-      : await studentEnrollmentRepository.listAllWithEmbeds()
+      : await studentEnrollmentRepository.listAllWithEmbeds(
+        semesterId ? { semesterId } : undefined,
+      )
     const enriched = data.map((r) => ({
       ...r,
       faculty_subject_id: r.faculty_subject?.id ?? null,
