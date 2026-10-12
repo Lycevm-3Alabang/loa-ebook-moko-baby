@@ -208,6 +208,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   }
   const [previewError, setPreviewError] = useState("")
   const [referenceError, setReferenceError] = useState("")
+  // Readiness gate for upload: success-only. Stays false on failure (Retry
+  // path) so an early preview can never stamp rows against empty arrays.
+  const [referenceLoaded, setReferenceLoaded] = useState(false)
   // True blocked-only (red rows), dept-scoped by deptRows. Replaces the old
   // problems view: amber rows badge in place and need no separate view.
   const [blockedOnly, setBlockedOnly] = useState(false)
@@ -310,6 +313,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
   const fetchReferenceData = useCallback(async () => {
     setReferenceError("")
+    setReferenceLoaded(false)
     try {
       const res = await fetch("/api/import/students/reference")
       if (!res.ok) {
@@ -330,6 +334,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       setExistingFacultySubjects(d.facultySubjects || [])
       setExistingDepartments((d.departments || []).map((c: { code: string; id: string }) => ({ code: c.code, id: c.id })))
       setExistingDepartmentCourses(new Map((d.departmentCourses || []).map((c: { id: string; code: string }) => [c.id, c.code])))
+      setReferenceLoaded(true)
     } catch {
       setReferenceError("Could not load import reference data. Row flags may be inaccurate.")
     }
@@ -471,6 +476,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   }, [existingDepartments])
 
   const handlePreview = async () => {
+    if (!referenceLoaded) { setPreviewError("Reference data is still loading — wait a moment and try again."); return }
     setPreviewError("")
     // A new file is a new grid: no panel from the previous file may survive it.
     setPanelResults({})
@@ -693,7 +699,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         body: JSON.stringify({ mode: "ensure", items, fileId: fileRunId || undefined }),
       })
       const data = await res.json().catch(() => ({})) as { created?: { name: string; email: string; role: string }[]; existing?: number; failed?: { email: string; remark: string }[]; error?: string }
-      if (!res.ok) { setStep1Status("idle"); setStep1Error(data.error || "Could not ensure users."); return }
+      if (!res.ok) { setStep1Status("idle"); setStep1Error(data.error || "Could not ensure student records."); return }
       const created = data.created ?? []
       setStep1Result({ created, existing: data.existing ?? 0, failed: data.failed ?? [] })
       setStep1Status("done")
@@ -992,7 +998,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="bg-white dark:bg-surface-dim rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl">
             <div className="w-10 h-10 border-4 border-gold-600 border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm font-semibold text-secondary">Ensuring users…</p>
+            <p className="text-sm font-semibold text-secondary">Ensuring student records…</p>
             <p className="text-xs text-tertiary">Deduping emails and registering new students.</p>
             <p className="text-[11px] text-tertiary/70">Stay on this page until done — re-pressing Ensure afterwards re-checks without duplicating.</p>
           </div>
@@ -1054,8 +1060,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
           </div>
 
           <div
-            onClick={() => fileRef.current?.click()}
-            className="flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-2xl bg-surface-dim/30 hover:bg-surface-dim/60 cursor-pointer transition-colors"
+            onClick={() => { if (referenceLoaded) fileRef.current?.click() }}
+            aria-disabled={!referenceLoaded}
+            className={`flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-2xl bg-surface-dim/30 transition-colors ${referenceLoaded ? "hover:bg-surface-dim/60 cursor-pointer" : "opacity-50 cursor-wait"}`}
           >
             <div className="w-12 h-12 rounded-full bg-gold-100 dark:bg-gold-900/40 flex items-center justify-center">
               <svg className="w-6 h-6 text-gold-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -1063,12 +1070,16 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
               </svg>
             </div>
             <p className="text-sm font-semibold text-secondary">Tap to choose a CSV file</p>
+            {!referenceLoaded && !referenceError && (
+              <p className="text-xs text-tertiary">Loading reference data…</p>
+            )}
             <p className="text-xs text-tertiary">Headers: <code className="bg-surface-dim px-1.5 py-0.5 rounded text-[10px]">{TEMPLATE_HEADERS}</code></p>
             <input
               ref={fileRef}
               type="file"
               accept=".csv"
               className="hidden"
+              disabled={!referenceLoaded}
               onChange={handlePreview}
             />
           </div>
@@ -1089,6 +1100,13 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-xl px-4 py-3">
               <p className="text-xs font-semibold text-red-700 dark:text-red-300">Reference data unavailable</p>
               <p className="text-[11px] text-red-600/80 dark:text-red-300/70">{referenceError}</p>
+              <button
+                type="button"
+                onClick={() => fetchReferenceData()}
+                className="mt-2 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
+              >
+                Retry
+              </button>
             </div>
           )}
         </div>
@@ -1107,7 +1125,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
               <button type="button" onClick={() => scrollToStep("step1-ensure")}
                 className="font-semibold text-secondary hover:underline">
-                1 Ensure users
+                1 Ensure student records
               </button>
               <span className="text-tertiary">
                 {step1Status === "done" && step1Result
@@ -1163,7 +1181,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             {/* Step 1 — ensure users before any enrolment runs. */}
             <div id="step1-ensure" className="rounded-xl border border-default bg-surface-dim/40 px-4 py-3 space-y-2">
               <p className="text-xs font-semibold text-secondary">
-                Step 1 — Ensure users
+                Step 1 — Ensure student records
                 {previewRows && (
                   <span className="font-normal text-tertiary"> · {step1Students.length} distinct students from {previewRows.length} rows</span>
                 )}
@@ -1173,7 +1191,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                 <div className="flex flex-wrap items-center gap-2">
                   <button type="button" onClick={runStep1} disabled={activePanelId !== null}
                     className="text-[11px] font-semibold px-3 py-1.5 rounded-full bg-gold-600 text-white hover:bg-gold-700 disabled:opacity-40 transition-colors">
-                    Ensure users
+                    Ensure student records
                   </button>
                   <button type="button" onClick={skipStep1} disabled={activePanelId !== null}
                     title="Record that students are already registered — enrolment failures stay visible per row"
@@ -1243,7 +1261,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             {step2Locked && (
               <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/20 px-4 py-3">
                 <p className="text-[11px] text-amber-700 dark:text-amber-300">
-                  Step 2 is waiting — Ensure users in Step 1, or Skip if students are already registered. Panels unlock on Done or Skipped.
+                  Step 2 is waiting — Ensure student records in Step 1, or Skip if students are already registered. Panels unlock on Done or Skipped.
                 </p>
               </div>
             )}
@@ -1326,7 +1344,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                     const disabledTitle = !semesterId
                       ? "Set an active semester before importing."
                       : step2Locked
-                        ? "Run Step 1 (Ensure users) or Skip it first — Step 2 enrols only registered students."
+                        ? "Run Step 1 (Ensure student records) or Skip it first — Step 2 enrols only registered students."
                         : blocked
                           ? `${panel.blockedCount} blocked row${panel.blockedCount !== 1 ? "s" : ""} — remove them, or fix the values in the table below.`
                           : undefined
