@@ -543,16 +543,21 @@ export default function EditAccessGroupPage() {
                                     const effective = isApiEffective(row.path, apiPath)
                                     const overrideState = isApiOverridden(row.path, apiPath)
                                     const sharedWith = getSharedPages(apiPath, row.path)
+                                    // Neutral APIs follow the parent (disabled with it off);
+                                    // explicit ON/OFF overrides stay editable so they can be cleared.
+                                    const apiEditable = pageOn || overrideState !== null
                                     return (
                                       <label
                                         key={apiPath}
-                                        className="flex items-center gap-2 py-0.5 rounded cursor-pointer text-xs group"
+                                        className={`flex items-center gap-2 py-0.5 rounded cursor-pointer text-xs group ${
+                                          !apiEditable ? "opacity-40 pointer-events-none" : ""
+                                        }`}
                                       >
                                         <input
                                           type="checkbox"
                                           checked={effective}
                                           onChange={() => toggleApiOverride(row.path, apiPath)}
-                                          disabled={readOnly}
+                                          disabled={!apiEditable || readOnly}
                                           className={`rounded border-strong text-amber-600 focus:ring-amber-500 ${
                                             overrideState === "granted" ? "ring-2 ring-amber-400" : ""
                                           } ${overrideState === "denied" ? "opacity-50" : ""}`}
