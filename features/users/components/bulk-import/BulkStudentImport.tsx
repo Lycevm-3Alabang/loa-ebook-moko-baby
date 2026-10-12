@@ -52,6 +52,7 @@ interface ImportResult {
   skipped: number
   failed: { row: number; email: string; subjectCode: string; section: string; remark: string; reasonCode: ImportReasonCode }[]
   duplicateRows: { row: number; email: string; subjectCode: string; section: string; reasonCode: ImportReasonCode; remark: string }[]
+  parkedSlots: { subjectCode: string; section: string }[]
   alreadyPersisted: { row: number; email: string; subjectCode: string; section: string; reasonCode: ImportReasonCode }[]
   parseErrors: { row: number; message: string }[]
   totalRows: number
@@ -99,6 +100,7 @@ function aggregatePanelResults(results: ImportResult[]): ImportResult | null {
     skipped: results.reduce((s, r) => s + r.skipped, 0),
     failed: results.flatMap((r) => r.failed),
     duplicateRows: results.flatMap((r) => r.duplicateRows),
+    parkedSlots: results.flatMap((r) => r.parkedSlots ?? []),
     alreadyPersisted: results.flatMap((r) => r.alreadyPersisted),
     parseErrors: results.flatMap((r) => r.parseErrors),
     totalRows: results.reduce((s, r) => s + r.totalRows, 0),
@@ -243,6 +245,8 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const [frozenDeptByEmail, setFrozenDeptByEmail] = useState<Map<string, string | null>>(new Map())
   const [fileRunId, setFileRunId] = useState("")
   const [sequenceError, setSequenceError] = useState("")
+  // Row-creating flag: explicit per file, reset on preview. Default off = today.
+  const [allowUnassigned, setAllowUnassigned] = useState(false)
   // Synchronous double-start guard: state hasn't flushed on rapid clicks.
   const seqRunningRef = useRef(false)
   // Same pre-flush race as the sequencer: two fast clicks, one POST.
@@ -486,6 +490,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     setStep1Status("idle")
     setStep1Result(null)
     setStep1Error("")
+    setAllowUnassigned(false)
     setDeptFilter(null)
     setQuery("")
     setIssueFilter(null)
@@ -500,7 +505,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       const { section: sec, isNewSection } = resolveSection(r.section)
       const isNewSubject = !existingSubjects.some((s) => s.code === r.subjectCode)
       const fe = r.facultyEmail.toLowerCase().trim()
-      const isNewFaculty = !existingFacultyUsers.some((u) => u.email === fe)
+      const isNewFaculty = fe !== "" && !existingFacultyUsers.some((u) => u.email === fe)
       const isNewStudent = !existingUsers.some((u) => u.email === r.email.toLowerCase().trim())
       const { departmentId: resolvedDepartmentId, isInvalid: isInvalidDepartment } = resolveDepartment(r.departmentCode)
       let facultyNotAssigned = false
@@ -542,7 +547,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       updated.isNewSubject = !existingSubjects.some((s) => s.code === updated.subjectCode)
       updated.isNewSection = isNewSection
       const fe = updated.facultyEmail.toLowerCase().trim()
-      updated.isNewFaculty = !existingFacultyUsers.some((u) => u.email === fe)
+      updated.isNewFaculty = fe !== "" && !existingFacultyUsers.some((u) => u.email === fe)
       updated.isNewStudent = !existingUsers.some((u) => u.email === updated.email.toLowerCase().trim())
       const dept = resolveDepartment(updated.departmentCode)
       updated.isInvalidDepartment = dept.isInvalid
@@ -758,6 +763,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
           body: JSON.stringify({
             mode: "enroll",
             step1: step1Status,
+            allowUnassigned,
             semesterId,
             rows: chunk,
             chunkIndex: meta.chunkIndex,
@@ -872,6 +878,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             ? [{ row: r.row, email: r.email, subjectCode: r.subjectCode, section: r.section, reasonCode: "ALREADY_PERSISTED" as const }]
             : [],
         ),
+        parkedSlots: results.flatMap((r) => r.parkedSlots ?? []),
         parseErrors: results.flatMap((r) => r.parseErrors ?? []),
         totalRows: rows.length,
         // Any chunk reporting a mismatch means this panel's rows are against the wrong term.
@@ -1313,6 +1320,19 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                       </button>
                     )
                   })()}
+                  <label
+                    title="Blank-faculty rows for classes with no loading get a placeholder loading (created once per class) instead of failing. Off by default."
+                    className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-full border transition-colors ${!semesterId || step2Locked || activePanelId !== null ? "opacity-40 border-default text-tertiary" : "border-default text-secondary hover:bg-surface-dim"}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={allowUnassigned}
+                      disabled={!semesterId || step2Locked || activePanelId !== null}
+                      onChange={(e) => setAllowUnassigned(e.target.checked)}
+                      className="accent-yellow-600"
+                    />
+                    Park unmapped on Unassigned
+                  </label>
                 </div>
                 {sequenceError && <p className="text-[11px] font-semibold text-red-600">{sequenceError}</p>}
                 <div className="space-y-2">
@@ -1802,7 +1822,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             {/* Every number below covers the panels that RAN, not the file. Naming
                 the scope is the whole point — a partial run is a normal state. */}
             <p className="text-xs font-semibold text-secondary">
-              {ranPanelCount} of {panels.length} panel{panels.length !== 1 ? "s" : ""} run · {aggregateResult.totalRows} rows sent · {aggregateResult.enrolled} resolved · {aggregateResult.inserted} newly written · {aggregateResult.skipped} skipped (already enrolled) · {aggregateResult.failed.length} failed
+              {ranPanelCount} of {panels.length} panel{panels.length !== 1 ? "s" : ""} run · {aggregateResult.totalRows} rows sent · {aggregateResult.enrolled} resolved · {aggregateResult.inserted} newly written · {aggregateResult.skipped} skipped (already enrolled) · {aggregateResult.failed.length} failed{aggregateResult.parkedSlots.length > 0 && ` · ${aggregateResult.parkedSlots.length} parked on Unassigned`}
             </p>
             <p className="text-[11px] text-tertiary">
               Seed 2026-1 reference: 3,302 students · 21,989 enrollments. Re-running a panel should enroll 0 and skip all (idempotent).
