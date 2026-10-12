@@ -188,8 +188,10 @@ export function EnrollmentsTab() {
         </div>
       )}
 
-      {/* ── Quick Add — modal (form lives below, beside the subjects modal) ── */}
-      <IosButton variant="primary" onClick={() => setShowQuickAdd(true)}>+ Quick Add Single Student</IosButton>
+      {/* ── Quick Add — mirrors the "+ Add Faculty Load" row: right-aligned, same style ── */}
+      <div className="flex justify-end">
+        <IosButton variant="primary" size="sm" onClick={() => setShowQuickAdd(true)}>+ Quick Add Single Student</IosButton>
+      </div>
 
       {/* ═══════════════════════════════════════════════════
           ENROLLMENT TABLE
