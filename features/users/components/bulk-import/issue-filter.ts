@@ -4,7 +4,6 @@ import { isAllowedStudentEmail } from "@/lib/csv-utils"
 export const ISSUE_KEYS = [
   "invalid-email",
   "no-teacher",
-  "new-student",
   "unknown-subject",
   "unknown-section",
   "unknown-faculty",
@@ -18,7 +17,6 @@ export type IssueKey = (typeof ISSUE_KEYS)[number]
 export const ISSUE_LABELS: Record<IssueKey, string> = {
   "invalid-email": "Invalid email",
   "no-teacher": "No teacher",
-  "new-student": "New student",
   "unknown-subject": "Unknown subject",
   "unknown-section": "Unknown section",
   "unknown-faculty": "Unknown faculty",
@@ -43,12 +41,13 @@ const emailMissing = (v: string) => v.trim().length === 0
 const emailOffDomain = (v: string) => v.trim().length > 0 && !isAllowedStudentEmail(v)
 
 /**
- * Whether a row has ANY issue — the union of every granular key EXCEPT
- * new-student (a new student is the normal insert candidate, not an issue;
- * only Duplicate, a run outcome, overrules it) plus the invalid-value
- * catch-all (an Excel error in a non-email cell matches no granular key but
- * is still an issue). `no-issues` is its exact negation, so the Ready badge
- * and the dropdown can never disagree.
+ * Whether a row has ANY issue — the union of every granular key plus the
+ * invalid-value catch-all (an Excel error in a non-email cell matches no
+ * granular key but is still an issue). `no-issues` is its exact negation, so
+ * the Ready badge and the dropdown can never disagree.
+ *
+ * New students are deliberately absent from this vocabulary: registration is
+ * Step 1's business, and a newcomer is never a Step 2 issue.
  */
 export function hasIssue(row: IssueRowLike): boolean {
   return (
@@ -69,8 +68,6 @@ export function matchesIssue(row: IssueRowLike, issue: IssueKey): boolean {
       return emailMissing(row.email) || emailOffDomain(row.email)
     case "no-teacher":
       return row.facultyNotAssigned || row.isNewFaculty
-    case "new-student":
-      return row.isNewStudent
     case "unknown-subject":
       return row.isNewSubject
     case "unknown-section":
