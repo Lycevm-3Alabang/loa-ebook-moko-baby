@@ -26,16 +26,14 @@ describe("matchesIssue", () => {
   })
 
   it("matches the remaining flags one to one", () => {
-    expect(matchesIssue({ ...clean, isNewStudent: true }, "new-student")).toBe(true)
     expect(matchesIssue({ ...clean, isNewSubject: true }, "unknown-subject")).toBe(true)
     expect(matchesIssue({ ...clean, isNewSection: true }, "unknown-section")).toBe(true)
     expect(matchesIssue({ ...clean, isNewFaculty: true }, "unknown-faculty")).toBe(true)
     expect(matchesIssue({ ...clean, isInvalidDepartment: true }, "dept-unknown")).toBe(true)
-    expect(matchesIssue(clean, "new-student")).toBe(false)
   })
 
   it("covers every key with a label", () => {
-    expect(ISSUE_KEYS).toHaveLength(9)
+    expect(ISSUE_KEYS).toHaveLength(8)
     for (const key of ISSUE_KEYS) expect(ISSUE_LABELS[key].length).toBeGreaterThan(0)
   })
 
@@ -51,8 +49,8 @@ describe("matchesIssue", () => {
     expect(hasIssue(newcomer)).toBe(false)
     expect(matchesIssue(newcomer, "no-issues")).toBe(true)
     expect(matchesIssue(newcomer, "has-issues")).toBe(false)
-    // ...yet the informational key still finds them
-    expect(matchesIssue(newcomer, "new-student")).toBe(true)
+    // ...and no granular key claims them
+    expect(ISSUE_KEYS.every((k) => !matchesIssue(newcomer, k))).toBe(true)
   })
 
   it("counts an invalid-value-only row as an issue (the precision case)", () => {
