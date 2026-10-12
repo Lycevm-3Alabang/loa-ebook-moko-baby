@@ -77,7 +77,7 @@ export function EnrollmentsTab() {
     finally { setFormSaving(false) }
   }
 
-  const filtered = data?.filter((m) => {
+  const filtered = useMemo(() => data?.filter((m) => {
     if (!search) return true
     const q = search.toLowerCase()
     return (
@@ -88,7 +88,7 @@ export function EnrollmentsTab() {
       (m.faculty_subject?.subject.name ?? "").toLowerCase().includes(q) ||
       (m.faculty_subject?.faculty.name ?? "").toLowerCase().includes(q)
     )
-  })
+  }), [data, search])
 
   const groupedStudents = useMemo(() => {
     const map = new Map<string, { student: Enrollment["student"]; enrollments: Enrollment[] }>()

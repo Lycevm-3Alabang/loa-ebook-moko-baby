@@ -25,6 +25,7 @@ pending: none
 | slice-2 | Apply Slice 2 (modal chrome)? | Applied — header/footer shimmer while modalLoading, valid nesting (UI layer) |
 | gates | Close-out gate (tsc + eslint + suite)? | GREEN user-reported (agent-verified nothing per H1) |
 | fix-double-fetch | Post-load reload (user-reported, off-plan defect)? | Applied — effect gated on semestersData; one scoped fetch per mount |
+| fix-enrollments-memo | EnrollmentsTab regroup jank (user-asked "same")? | Applied — filtered memoized on [data, search]; table gate + modal already sound, untouched |
 
 ## Pending
 
