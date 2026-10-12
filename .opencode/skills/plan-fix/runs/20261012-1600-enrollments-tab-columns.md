@@ -22,6 +22,7 @@ pending: none
 | who-implements | Who implements Slice 1? | B — Code it |
 | slice-1 | Apply Slice 1 (desktop columns + mobile wording)? | Applied — UI-only column swap in EnrollmentsTab.tsx |
 | close | Continue with nothing pending? | Closed — single-slice plan complete, no further slices |
+| verify | npm test result? | GREEN (user-reported) |
 
 ## Pending
 
