@@ -5,8 +5,8 @@ repo: /home/nino-compyl/loa/loa-ebook-moko-baby
 calibration: {1: "C", 2: "A", 3: "A", 4: "D", 5: "B", 6: "C"}
 workflow: "D"
 decision: "Option A — Scope the read: pass semesterId/faculty_subject scope through evaluation-mappings route to existing repository counts; header uses server count"
-status: implementing
-pending: slice-1
+status: done
+pending: none
 ---
 
 # Plan
@@ -30,6 +30,7 @@ pending: slice-1
 | slice-3 | Apply Slice 3 (UI scope)? | Applied — scoped studentKey + server-total header + scoped invalidates (UI layer) |
 | lint-offplan | FacultyLoadingTab lint (user-asked, out of plan scope)? | Applied — subjects/sections wrapped in useMemo; openFacultyProfile useCallback → plain fn (callers use inline arrows; compiler owns memoization) |
 | slice-4 | Apply Slice 4 (proof/tests)? | Applied — student scoped/bulk route tests (test layer) |
+| gates | Close-out gate (tsc + route tests)? | GREEN user-reported (agent-verified nothing per H1) |
 
 ## Pending
 
