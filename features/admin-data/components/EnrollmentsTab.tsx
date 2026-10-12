@@ -180,17 +180,17 @@ export function EnrollmentsTab() {
                 <thead>
                   <tr>
                     <th>Student</th>
-                    <th>Email</th>
+                    <th>Enrolled Subjects</th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paginatedItems.map((group) => (
                     <tr key={group.student.id}>
-                      <td className="font-medium text-secondary">{group.student.name}</td>
-                      <td className="text-tertiary">{group.student.email}</td>
+                      <td className="font-medium text-secondary">{group.student.name} <span className="font-normal text-tertiary">({group.student.email})</span></td>
+                      <td className="text-secondary">{group.enrollments.length}</td>
                       <td>
-                         <IosButton variant="plain" size="xs" onClick={() => setSelectedStudentEnrollments(group.enrollments)}>View Enrolled Subjects</IosButton>
+                         <IosButton variant="plain" size="xs" onClick={() => setSelectedStudentEnrollments(group.enrollments)}>View Enrolments</IosButton>
                       </td>
                     </tr>
                   ))}
@@ -207,7 +207,7 @@ export function EnrollmentsTab() {
                     </div>
                     <div className="shrink-0 text-right">
                       <span className="text-xs font-semibold text-secondary">{group.enrollments.length} Subject{group.enrollments.length !== 1 ? "s" : ""}</span>
-                      <IosButton variant="plain" size="xs" onClick={() => setSelectedStudentEnrollments(group.enrollments)}>(View)</IosButton>
+                      <IosButton variant="plain" size="xs" onClick={() => setSelectedStudentEnrollments(group.enrollments)}>View Enrolments</IosButton>
                     </div>
                   </div>
                 </div>
