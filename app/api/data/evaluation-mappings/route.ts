@@ -52,12 +52,25 @@ export async function GET(request: NextRequest) {
   }
 
   if (type === "student") {
-    const data = await studentEnrollmentRepository.listAllWithEmbeds()
+    const facultySubjectId = searchParams.get("facultySubjectId")
+    const semesterId = searchParams.get("semesterId")
+    const data = facultySubjectId
+      ? await studentEnrollmentRepository.listByFacultySubject(
+        facultySubjectId,
+        semesterId || undefined,
+      )
+      : await studentEnrollmentRepository.listAllWithEmbeds()
     const enriched = data.map((r) => ({
       ...r,
       faculty_subject_id: r.faculty_subject?.id ?? null,
     }))
-    return NextResponse.json({ data: enriched })
+    const total = facultySubjectId
+      ? await studentEnrollmentRepository.countByFacultySubjectId(
+        facultySubjectId,
+        semesterId || undefined,
+      )
+      : enriched.length
+    return NextResponse.json({ data: enriched, total })
   }
 
   if (type === "subjects") {

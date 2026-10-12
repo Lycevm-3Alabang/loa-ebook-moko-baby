@@ -26,10 +26,11 @@ pending: slice-1
 | handoff | Run implement-fix with it? | A — Yes, load implement-fix on this file (no slice starts yet) |
 | who-implements | Who implements Slice 1 (repository scope)? | B — Code it (agent writes after Apply, one file per turn) |
 | slice-1 | Apply Slice 1 (repository scope)? | Applied — listByFacultySubject + semester-aware countByFacultySubjectId (repo layer) |
+| slice-2 | Apply Slice 2 (route scope)? | Applied — scoped student branch with server total (route layer) |
 
 ## Pending
 
-- slice-2: Slice 2 route scope (starts only on your continue)
+- slice-3: Slice 3 UI scope (starts only on your continue)
 
 ## Decisions
 
