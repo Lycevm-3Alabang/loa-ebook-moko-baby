@@ -1,8 +1,8 @@
 # Step 2 — Student Users
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Draft
-**Last Updated:** 2026-10-09
+**Last Updated:** 2026-10-12
 
 Sub-spec of [student-import-stepper.md](../student-import-stepper.md).
 
@@ -24,19 +24,20 @@ panel claiming otherwise would be inventing behaviour the service does not have.
 |---|---|
 | Depends on | an active `semesterId` (general spec §4.2) — **not** on other departments |
 | Produces | `userMap: Map<email, id>` consumed by step 3, and merged client-side into reference state |
-| Distinct values (2026-1) | 3,302 emails across 10 departments |
+| Distinct values (2026-1) | 3,302 emails across 10 departments, **one whole-file request** (shipped 2026-10-12; supersedes per-department items) |
+| Gates | step 3 panels unlock on Done-or-Skipped (soft gate — Skip is the override) |
 
 # Request
 
 ```ts
 POST /api/import/students
-{ step: "student-users", semesterId, fileId, departmentCode, items: { email, name, departmentId }[] }
+{ mode: "ensure", items: { email, name, departmentId }[], fileId }
 ```
 
-`items` is the **distinct email set of one department's rows**. `departmentId` is sent per item,
-not as a single envelope value, because the Unassigned panel (`general spec` §3.4) legitimately
-passes `null` while every named department passes an id — and because the client has already
-resolved it (see below).
+Single-run for the whole file — no chunking (`createMany` pages at 200 server-side).
+`mode: "ensure"` dispatches to `ensureStudentUsers`; the legacy modeless path keeps the old
+composed behaviour for compatibility. `departmentId` is sent per item (Unassigned rows
+legitimately pass `null`); the envelope value is the fallback only.
 
 The route **rejects the request with 400** when `semesterId` is absent or does not resolve.
 Enforcement table at general spec §4.2.
@@ -148,6 +149,35 @@ inserts `userrole`, logs `BULK_CREATE_USERS`. No workflow, no message. Created r
 `passwordHash: NULL, hasLoggedInBefore: false` and activate later by pull
 (`app/api/auth/activate/route.ts`). Rationale at general spec §12 — a 3,302-message blast would
 deliver links already dead against the 15-minute expiry at `activate/route.ts:26`.
+
+# Run UX (shipped 2026-10-12)
+
+One press for the whole file. While running, a blocking modal (spinner, stay-on-page note)
+covers the page; a ref guard plus disabled buttons make rapid double-clicks send exactly one
+POST, and `beforeunload` is armed for the run. Re-pressing afterwards re-runs the same
+request and reports `inserted: 0` — idempotent by construction (find-first), never a duplicate.
+
+**Skip** records the assertion "students assumed registered" (client state, `skipped`). It is
+distinct from Done everywhere it matters: the first enroll audit carries
+`; Step 1 skipped — students assumed registered`, and unknown emails fail per row as
+`STUDENT_NOT_FOUND`, never auto-created.
+
+# Distinct roster (shipped 2026-10-12)
+
+The Step 1 section shows a read-only roster (`Step1StudentRoster.tsx`): one row per distinct
+email (first row wins name + frozen department), status New / Registered / Invalid derived live
+from reference state, with name/email filter and 50/page paging. Edits live in the Step 2
+table; Re-check re-derives. The roster remounts per file (`key={fileRunId}`), which is its
+reset mechanism.
+
+# Readiness gate (shipped 2026-10-12)
+
+Upload is locked until the reference fetch resolves (`referenceLoaded`, success-only): dimmed
+dropzone, disabled file input, "Loading reference data…" line, and a `handlePreview` guard as
+defense in depth. A failed fetch shows Retry instead of bricking the page. Rationale: a
+preview stamped against empty arrays nulls every resolution and collapses the file into one
+Unassigned panel with no error — observed on staging with the 2026-1 file (28,096 rows,
+zero resolved). Regression-locked by `lib/__tests__/bulkStudentImportGate.test.tsx`.
 
 # Tests required
 

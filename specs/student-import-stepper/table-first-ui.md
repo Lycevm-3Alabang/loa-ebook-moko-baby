@@ -1,7 +1,7 @@
 # Table-First Import UI — Slim Execution Strip + Filterable Work Table
 
-**Version:** 1.0
-**Status:** Approved 2026-10-10
+**Version:** 1.1
+**Status:** Approved 2026-10-10, amended 2026-10-12
 **Parent:** [student-import-stepper.md](../student-import-stepper.md) (C3 family)
 
 Supersedes the unapproved *Panel blocked-row details* draft (2026-10-10): per-card
@@ -35,8 +35,11 @@ paths.
    ledger closure math is untouched. This is the bright line against
    filter-driven execution (rejected direction C).
 2. **`StepPanel` is untouched.** It is a Done artifact shared with the faculty
-   importer. The strip reuses it with `invalid={[]}` and a compact `summary`;
-   slimming is layout (list, not 3-col card grid), not a new component.
+   importer. The strip reuses it with `invalid={[]}` and a compact `summary`.
+   Panels render in a responsive grid (1 / 3 / 4 columns by viewport, 2026-10-12;
+   a lone panel spans full width) — layout only, not a new component. This
+   supersedes the "list, not 3-col card grid" direction in the original approval:
+   density won on wide screens, behavior is unchanged.
 3. **Blocked-gate unchanged.** A strip row holding blocked rows still cannot Run
    (`BulkStudentImport.tsx:791-798` logic as-is).
 4. **No server change.** Route, service, ledger, reason vocabulary all untouched.

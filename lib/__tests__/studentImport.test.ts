@@ -19,13 +19,14 @@ vi.mock("@/lib/repositories/factory", () => ({
     findBySubjectSectionAndFaculty: vi.fn(),
     findBySubjectAndSection: vi.fn(),
     findManyBySubjectSectionIds: vi.fn(),
+    createMany: vi.fn(),
   },
   studentEnrollmentRepository: {
     addEnrollments: vi.fn(),
   },
 }))
 
-import { importStudents } from "@/lib/services/studentImport"
+import { importStudents, enrollStudentRows } from "@/lib/services/studentImport"
 import { reasonRemarks } from "@/lib/csv-utils"
 import * as factory from "@/lib/repositories/factory"
 
@@ -36,6 +37,10 @@ const FACULTY = { id: "user-1", email: "juan@lyceumalabang.edu.ph", name: "Juan"
 const MAPPING = { id: "fs-1", subject_id: SUBJ.id, section_id: SEC.id, faculty_id: FACULTY.id }
 
 const STUDENT_EMAIL = "keith@itmlyceumalabang.onmicrosoft.com"
+const DUMMY = { id: "user-dummy", email: "placeholder@lyceumalabang.edu.ph", name: "Unassigned Faculty", role: "FACULTY" }
+const STUDENT = { id: "stu-1", email: STUDENT_EMAIL, name: "Keith", role: "STUDENT" }
+const ANA_EMAIL = "ana@itmlyceumalabang.onmicrosoft.com"
+const ANA = { id: "stu-2", email: ANA_EMAIL, name: "Ana", role: "STUDENT" }
 
 function baseStudentRow(overrides: Partial<{
   email: string; name: string; subjectCode: string; sectionName: string;
@@ -60,10 +65,15 @@ function arrangeTables(options: {
   section?: { id: string; name: string; program: string } | null
   namedMapping?: { id: string } | null
   slotMapping?: { id: string } | null
+  omitDummy?: boolean
   facultyUsers?: Map<string, { id: string; email: string; name: string; role: string }>
 } = {}) {
   const students = options.students ?? new Map()
-  const facultyUsers = options.facultyUsers ?? new Map([[FACULTY.email.toLowerCase(), FACULTY]])
+  const facultyUsers = options.facultyUsers ?? new Map([
+    [FACULTY.email.toLowerCase(), FACULTY],
+    [DUMMY.email.toLowerCase(), DUMMY],
+  ])
+  if (options.omitDummy) facultyUsers.delete(DUMMY.email.toLowerCase())
   const created = new Map<string, { id: string; email: string; name: string; role: string }>()
 
   ;(factory.subjectRepository.findByCode as ReturnType<typeof vi.fn>)
@@ -102,6 +112,9 @@ function arrangeTables(options: {
       if (!subjectIds.includes(SUBJ.id) || !sectionIds.includes(SEC.id)) return []
       return [{ id: MAPPING.id, subject_id: SUBJ.id, section_id: SEC.id, faculty_id: FACULTY.id, semesterId: null }]
     })
+  ;(factory.facultySubjectRepository.createMany as ReturnType<typeof vi.fn>)
+    .mockImplementation(async (items: { faculty_id: string; subject_id: string; section_id: string; semesterId: string | null }[]) =>
+      items.map((it, i) => ({ id: `fs-new-${i + 1}`, subject_id: it.subject_id, section_id: it.section_id, faculty_id: it.faculty_id, semesterId: it.semesterId ?? null })))
   ;(factory.studentEnrollmentRepository.addEnrollments as ReturnType<typeof vi.fn>)
     .mockResolvedValue({ inserted: 0, skipped: 0, skippedItems: [] })
 
@@ -589,5 +602,97 @@ describe("importStudents — semester echo", () => {
     const result = await importStudents([], null, null)
 
     expect(result.semesterId).toBeNull()
+  })
+})
+
+// ═══ allowUnassigned: park-if-missing on the dummy ═══
+
+describe("enrollStudentRows — allowUnassigned parks missing slots on the dummy", () => {
+  const blankRow = () => baseStudentRow({ facultyEmail: undefined })
+  const seededStudents = () => new Map([[STUDENT_EMAIL, STUDENT]])
+
+  it("off by default: blank faculty with no slot fails loud, creates nothing", async () => {
+    arrangeTables({ students: seededStudents(), subject: SUBJ, section: SEC })
+
+    const result = await enrollStudentRows([blankRow()], null, null)
+
+    expect(result.failed[0].reasonCode).toBe("NO_FACULTY_ASSIGNED")
+    expect(result.parkedSlots).toEqual([])
+    expect(factory.facultySubjectRepository.createMany).not.toHaveBeenCalled()
+  })
+
+  it("on: creates one dummy loading and enrols under it", async () => {
+    arrangeTables({ students: seededStudents(), subject: SUBJ, section: SEC })
+
+    const result = await enrollStudentRows([blankRow()], null, "sem-2026-1", undefined, { allowUnassigned: true })
+
+    expect(result.enrolled).toBe(1)
+    expect(result.failed).toHaveLength(0)
+    expect(factory.facultySubjectRepository.createMany).toHaveBeenCalledTimes(1)
+    expect(factory.facultySubjectRepository.createMany).toHaveBeenCalledWith([
+      expect.objectContaining({ faculty_id: DUMMY.id, subject_id: SUBJ.id, section_id: SEC.id, semesterId: "sem-2026-1" }),
+    ])
+    expect(result.parkedSlots).toEqual([{ subjectCode: "CS101", section: "BSIE-41M2" }])
+    expect(factory.studentEnrollmentRepository.addEnrollments).toHaveBeenCalledWith([
+      expect.objectContaining({ faculty_subject_id: "fs-new-1", semesterId: "sem-2026-1" }),
+    ])
+  })
+
+  it("on: two students sharing one pair create the loading once", async () => {
+    arrangeTables({
+      students: new Map([[STUDENT_EMAIL, STUDENT], [ANA_EMAIL, ANA]]),
+      subject: SUBJ,
+      section: SEC,
+    })
+
+    const result = await enrollStudentRows(
+      [blankRow(), baseStudentRow({ email: ANA_EMAIL, name: "Ana", facultyEmail: undefined })],
+      null, null, undefined, { allowUnassigned: true },
+    )
+
+    expect(result.enrolled).toBe(2)
+    expect(factory.facultySubjectRepository.createMany).toHaveBeenCalledTimes(1)
+    expect(result.parkedSlots).toHaveLength(1)
+  })
+
+  it("on: named-faculty path is untouched — missing mapping still fails", async () => {
+    arrangeTables({ students: seededStudents(), subject: SUBJ, section: SEC })
+
+    const result = await enrollStudentRows([baseStudentRow()], null, null, undefined, { allowUnassigned: true })
+
+    expect(result.failed[0].reasonCode).toBe("FACULTY_NOT_ASSIGNED")
+    expect(factory.facultySubjectRepository.createMany).not.toHaveBeenCalled()
+  })
+
+  it("on: missing dummy user falls back to loud failure", async () => {
+    arrangeTables({ students: seededStudents(), subject: SUBJ, section: SEC, omitDummy: true })
+
+    const result = await enrollStudentRows([blankRow()], null, null, undefined, { allowUnassigned: true })
+
+    expect(result.failed[0].reasonCode).toBe("NO_FACULTY_ASSIGNED")
+    expect(factory.facultySubjectRepository.createMany).not.toHaveBeenCalled()
+  })
+
+  it("on: legacy fallback slot means no creation", async () => {
+    arrangeTables({ students: seededStudents(), subject: SUBJ, section: SEC, slotMapping: MAPPING })
+
+    const result = await enrollStudentRows([blankRow()], null, null, undefined, { allowUnassigned: true })
+
+    expect(result.enrolled).toBe(1)
+    expect(result.parkedSlots).toEqual([])
+    expect(factory.facultySubjectRepository.createMany).not.toHaveBeenCalled()
+  })
+
+  it("blank faculty never reports FACULTY_NOT_FOUND — slot or NO_FACULTY_ASSIGNED only", async () => {
+    arrangeTables({ students: seededStudents(), subject: SUBJ, section: SEC })
+
+    const off = await enrollStudentRows([blankRow()], null, null)
+    const on = await enrollStudentRows([blankRow()], null, null, undefined, { allowUnassigned: true })
+
+    for (const result of [off, on]) {
+      expect(result.failed.map((f) => f.reasonCode)).not.toContain("FACULTY_NOT_FOUND")
+    }
+    expect(off.failed[0].reasonCode).toBe("NO_FACULTY_ASSIGNED")
+    expect(on.enrolled).toBe(1)
   })
 })

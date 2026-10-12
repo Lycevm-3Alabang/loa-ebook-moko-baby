@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
-import { cleanCell, isExcelErrorCell, parseCsvRows, isAllowedStudentEmail, type ImportReasonCode } from "@/lib/csv-utils"
+import { cleanCell, escapeCsvCell, isExcelErrorCell, parseCsvRows, isAllowedStudentEmail, type ImportReasonCode } from "@/lib/csv-utils"
 import { useChunkedImport, decodeCsvFile, withRetryHints, type ChunkMeta } from "@/features/admin-data/components/useChunkedImport"
 import { buildImportLedger, assertLedgerClosure, ledgerToCsv, type LedgerRow } from "./import-ledger"
 import { computeDepartmentGrouping } from "./department-grouping"
@@ -10,6 +10,7 @@ import { applyCreatedUsers } from "./apply-created-users"
 import { panelStripStatus, type StripStatus } from "./panel-strip-status"
 import { ISSUE_KEYS, ISSUE_LABELS, matchesIssue, type IssueKey } from "./issue-filter"
 import { BLOCKED_CSV_FILENAME, buildBlockedCsv } from "./blocked-row-export"
+import Step1StudentRoster, { type Step1Student } from "./Step1StudentRoster"
 import { StepPanel } from "@/features/admin-data/components/FacultyImportStepper"
 
 // Domain rule is shared with the import service via lib/csv-utils — one list,
@@ -51,6 +52,7 @@ interface ImportResult {
   skipped: number
   failed: { row: number; email: string; subjectCode: string; section: string; remark: string; reasonCode: ImportReasonCode }[]
   duplicateRows: { row: number; email: string; subjectCode: string; section: string; reasonCode: ImportReasonCode; remark: string }[]
+  parkedSlots: { subjectCode: string; section: string }[]
   alreadyPersisted: { row: number; email: string; subjectCode: string; section: string; reasonCode: ImportReasonCode }[]
   parseErrors: { row: number; message: string }[]
   totalRows: number
@@ -98,6 +100,7 @@ function aggregatePanelResults(results: ImportResult[]): ImportResult | null {
     skipped: results.reduce((s, r) => s + r.skipped, 0),
     failed: results.flatMap((r) => r.failed),
     duplicateRows: results.flatMap((r) => r.duplicateRows),
+    parkedSlots: results.flatMap((r) => r.parkedSlots ?? []),
     alreadyPersisted: results.flatMap((r) => r.alreadyPersisted),
     parseErrors: results.flatMap((r) => r.parseErrors),
     totalRows: results.reduce((s, r) => s + r.totalRows, 0),
@@ -116,6 +119,26 @@ function downloadBlob(csv: string, filename: string) {
   a.download = filename
   a.click()
   URL.revokeObjectURL(url)
+}
+
+const STEP1_FAILED_CSV_FILENAME = "step1-failed-emails.csv"
+
+// One line per email (first wins): the server classifies per item, so a
+// non-deduped caller can report one address twice. Fix outside and re-run
+// Step 1 — re-check is idempotent.
+function buildStep1FailedCsv(
+  failed: { email: string; remark: string }[],
+  nameByEmail: Map<string, string>,
+): string {
+  const seen = new Set<string>()
+  const lines = ["email,name,reason"]
+  for (const f of failed) {
+    const key = (f.email || "").toLowerCase().trim()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    lines.push([f.email, nameByEmail.get(key) ?? "", f.remark].map(escapeCsvCell).join(","))
+  }
+  return lines.join("\n")
 }
 
 function parseClientCsv(text: string): { rows: StudentCsvRow[]; error?: string } {
@@ -187,6 +210,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   }
   const [previewError, setPreviewError] = useState("")
   const [referenceError, setReferenceError] = useState("")
+  // Readiness gate for upload: success-only. Stays false on failure (Retry
+  // path) so an early preview can never stamp rows against empty arrays.
+  const [referenceLoaded, setReferenceLoaded] = useState(false)
   // True blocked-only (red rows), dept-scoped by deptRows. Replaces the old
   // problems view: amber rows badge in place and need no separate view.
   const [blockedOnly, setBlockedOnly] = useState(false)
@@ -210,6 +236,21 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const [panelResults, setPanelResults] = useState<Record<string, ImportResult>>({})
   const [panelLedgers, setPanelLedgers] = useState<Record<string, LedgerRow[]>>({})
   const [panelErrors, setPanelErrors] = useState<Record<string, string>>({})
+  // Step 1 — single-run user ensure. Done-or-Skipped gates Step 2 (next slice).
+  const [step1Status, setStep1Status] = useState<"idle" | "running" | "done" | "skipped">("idle")
+  const [step1Result, setStep1Result] = useState<{ created: { name: string; email: string; role: string }[]; existing: number; failed: { email: string; remark: string }[] } | null>(null)
+  const [step1Error, setStep1Error] = useState("")
+  // §3.3 freeze: first row in file order wins, snapshotted at preview. Never
+  // re-derived — inline edits and panel runs read this, not the live memo.
+  const [frozenDeptByEmail, setFrozenDeptByEmail] = useState<Map<string, string | null>>(new Map())
+  const [fileRunId, setFileRunId] = useState("")
+  const [sequenceError, setSequenceError] = useState("")
+  // Row-creating flag: explicit per file, reset on preview. Starts on.
+  const [allowUnassigned, setAllowUnassigned] = useState(true)
+  // Synchronous double-start guard: state hasn't flushed on rapid clicks.
+  const seqRunningRef = useRef(false)
+  // Same pre-flush race as the sequencer: two fast clicks, one POST.
+  const ensureRunningRef = useRef(false)
   const { isRunning: chunkRunning, progress: chunkProgress, history: chunkHistory, run: runChunks, cancel: cancelChunks } =
     useChunkedImport<PreviewRow, ImportResult>()
 
@@ -276,6 +317,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
   const fetchReferenceData = useCallback(async () => {
     setReferenceError("")
+    setReferenceLoaded(false)
     try {
       const res = await fetch("/api/import/students/reference")
       if (!res.ok) {
@@ -296,6 +338,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       setExistingFacultySubjects(d.facultySubjects || [])
       setExistingDepartments((d.departments || []).map((c: { code: string; id: string }) => ({ code: c.code, id: c.id })))
       setExistingDepartmentCourses(new Map((d.departmentCourses || []).map((c: { id: string; code: string }) => [c.id, c.code])))
+      setReferenceLoaded(true)
     } catch {
       setReferenceError("Could not load import reference data. Row flags may be inaccurate.")
     }
@@ -304,13 +347,13 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   useEffect(() => { Promise.resolve().then(() => fetchReferenceData()) }, [fetchReferenceData])
 
   useEffect(() => {
-    if (activePanelId === null) return
+    if (activePanelId === null && step1Status !== "running") return
     const guard = (e: BeforeUnloadEvent) => {
       e.preventDefault()
     }
     window.addEventListener("beforeunload", guard)
     return () => window.removeEventListener("beforeunload", guard)
-  }, [activePanelId])
+  }, [activePanelId, step1Status])
 
   const blockedRows = useMemo(() => {
     if (!previewRows) return []
@@ -320,6 +363,49 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   // Drives the §8 roll-up's headline and its per-panel breakdown. Derived — no
   // state that could drift from `panels`.
   const blockedPanels = useMemo(() => panels.filter((p) => p.blockedCount > 0), [panels])
+
+  // Step 2 gate: Done-or-Skipped. idle/running locks every panel; Skip is the
+  // one-click override (soft gate — nothing beyond this is hard-blocked).
+  const step2Locked = step1Status !== "done" && step1Status !== "skipped"
+  // Distinct unknown emails the preview still holds (post-Step-1 merge) — the
+  // warn count for the skipped banner. Capped scan: distinct set, one pass.
+  const skippedUnknownCount = useMemo(() => {
+    if (!previewRows || step1Status !== "skipped") return 0
+    const known = new Set(existingUsers.map((u) => u.email.toLowerCase().trim()))
+    const unknown = new Set<string>()
+    for (const r of previewRows) {
+      const k = r.email.toLowerCase().trim()
+      if (k && !known.has(k)) unknown.add(k)
+    }
+    return unknown.size
+  }, [previewRows, existingUsers, step1Status])
+
+  // Step 1 distinct roster: one row per email, first row wins (mirrors the
+  // server's ensure). Status reads live existingUsers, so Ensure's merge
+  // flips New → Registered with no extra wiring. Rendered by
+  // Step1StudentRoster (remounted per file via key={fileRunId}).
+  const step1Students = useMemo<Step1Student[]>(() => {
+    if (!previewRows) return []
+    const known = new Set(existingUsers.map((u) => u.email.toLowerCase().trim()))
+    const seen = new Set<string>()
+    const out: Step1Student[] = []
+    for (const r of previewRows) {
+      const email = r.email.toLowerCase().trim()
+      if (!email || seen.has(email)) continue
+      seen.add(email)
+      const invalid = isOffDomainEmail(r.email) || isExcelErrorCell(r.email.trim()) || isExcelErrorCell(r.name.trim())
+      out.push({
+        email,
+        name: r.name,
+        departmentId: frozenDeptByEmail.get(email) ?? undefined,
+        status: invalid ? "invalid" : known.has(email) ? "registered" : "new",
+      })
+    }
+    return out
+  }, [previewRows, existingUsers, frozenDeptByEmail])
+  // Frozen id → code for display. Departments are ~10 rows; linear find is fine.
+  const deptCodeOf = (id: string | null | undefined) =>
+    id ? existingDepartments.find((d) => d.id === id)?.code ?? "?" : "—"
 
   // Source-row numbers of the filtered panel, or null for the whole file.
   // Keyed by SOURCE row: `panels` holds copies, so object identity would
@@ -394,12 +480,17 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   }, [existingDepartments])
 
   const handlePreview = async () => {
+    if (!referenceLoaded) { setPreviewError("Reference data is still loading — wait a moment and try again."); return }
     setPreviewError("")
     // A new file is a new grid: no panel from the previous file may survive it.
     setPanelResults({})
     setPanelLedgers({})
     setPanelErrors({})
     setRemovedRows([])
+    setStep1Status("idle")
+    setStep1Result(null)
+    setStep1Error("")
+    setAllowUnassigned(true)
     setDeptFilter(null)
     setQuery("")
     setIssueFilter(null)
@@ -414,7 +505,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       const { section: sec, isNewSection } = resolveSection(r.section)
       const isNewSubject = !existingSubjects.some((s) => s.code === r.subjectCode)
       const fe = r.facultyEmail.toLowerCase().trim()
-      const isNewFaculty = !existingFacultyUsers.some((u) => u.email === fe)
+      const isNewFaculty = fe !== "" && !existingFacultyUsers.some((u) => u.email === fe)
       const isNewStudent = !existingUsers.some((u) => u.email === r.email.toLowerCase().trim())
       const { departmentId: resolvedDepartmentId, isInvalid: isInvalidDepartment } = resolveDepartment(r.departmentCode)
       let facultyNotAssigned = false
@@ -433,6 +524,11 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       return { ...r, isNewSubject, isNewSection, isNewFaculty, facultyNotAssigned, isNewStudent, isInvalidDepartment, isInvalidValue, resolvedDepartmentId }
     })
     setPreviewRows(withFlags)
+    setFrozenDeptByEmail(computeDepartmentGrouping(withFlags))
+    setStep1Status("idle")
+    setStep1Result(null)
+    setStep1Error("")
+    setFileRunId(`students-${Date.now().toString(36)}`)
     setPreviewPage(0)
     setHighlightRow(null)
   }
@@ -451,7 +547,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       updated.isNewSubject = !existingSubjects.some((s) => s.code === updated.subjectCode)
       updated.isNewSection = isNewSection
       const fe = updated.facultyEmail.toLowerCase().trim()
-      updated.isNewFaculty = !existingFacultyUsers.some((u) => u.email === fe)
+      updated.isNewFaculty = fe !== "" && !existingFacultyUsers.some((u) => u.email === fe)
       updated.isNewStudent = !existingUsers.some((u) => u.email === updated.email.toLowerCase().trim())
       const dept = resolveDepartment(updated.departmentCode)
       updated.isInvalidDepartment = dept.isInvalid
@@ -526,6 +622,11 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const handleRemoveBlockedIn = (panel: DepartmentPanel<PanelRow>) =>
     removeBlockedRows(panel.rows.filter((r) => r.isBlocked))
 
+  // Step indicator jumps. Scroll-only: gating stays functional, never navigational.
+  const scrollToStep = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
+
   // Strip → table bridge. Filter-only: run scope is untouched (pinned §3.1).
   const viewPanelRows = (panel: DepartmentPanel<PanelRow>) => {
     setDeptFilter(panel.id)
@@ -584,10 +685,56 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const handleRemoveAllBlocked = () =>
     removeBlockedRows(previewRows?.filter(isBlockedPreviewRow) ?? [])
 
+  // Step 1 — one press for the whole file. Items are the distinct email set
+  // with frozen departments; the server enforces blank/off-domain/Excel-error
+  // as failures without creating.
+  const runStep1 = async () => {
+    if (!previewRows || ensureRunningRef.current || step1Status === "running" || activePanelId !== null) return
+    ensureRunningRef.current = true
+    setStep1Status("running")
+    setStep1Error("")
+    try {
+      const seen = new Set<string>()
+      const items = previewRows
+        .filter((r) => { const k = r.email.toLowerCase().trim(); if (!k || seen.has(k)) return false; seen.add(k); return true })
+        .map((r) => ({ email: r.email, name: r.name, departmentId: frozenDeptByEmail.get(r.email.toLowerCase().trim()) ?? undefined }))
+      const res = await fetch("/api/import/students", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "ensure", items, fileId: fileRunId || undefined }),
+      })
+      const data = await res.json().catch(() => ({})) as { created?: { name: string; email: string; role: string }[]; existing?: number; failed?: { email: string; remark: string }[]; error?: string }
+      if (!res.ok) { setStep1Status("idle"); setStep1Error(data.error || "Could not ensure student records."); return }
+      const created = data.created ?? []
+      setStep1Result({ created, existing: data.existing ?? 0, failed: data.failed ?? [] })
+      setStep1Status("done")
+      if (created.length > 0) {
+        setExistingUsers((prev) => applyCreatedUsers(prev, [], created).existingUsers)
+        setPreviewRows((prev) => (prev ? applyCreatedUsers([], prev, created).previewRows : prev))
+      }
+    } catch {
+      setStep1Status("idle")
+      setStep1Error("Could not reach the server. Please check your connection and try again.")
+    } finally {
+      ensureRunningRef.current = false
+    }
+  }
+
+  // Skip = recorded assertion "students assumed registered". Distinct from Done:
+  // the first enroll audit carries step1:skipped so bypass stays visible.
+  const skipStep1 = () => {
+    if (step1Status === "running" || activePanelId !== null) return
+    setStep1Error("")
+    setStep1Result(null)
+    setStep1Status("skipped")
+  }
+
   // One panel, one run. The chunk offsets stay panel-local, so buildImportLedger's
   // `payload[meta.rowOffset + i]` still resolves against the rows it was sent.
-  const runPanel = async (panel: DepartmentPanel<PanelRow>) => {
-    if (!previewRows || activePanelId !== null) return
+  type PanelOutcome = { status: "ok" | "error" | "cancelled"; terms: Map<string, string | null> }
+  const emptyTerms = () => new Map<string, string | null>()
+  const runPanel = async (panel: DepartmentPanel<PanelRow>): Promise<PanelOutcome> => {
+    if (!previewRows || activePanelId !== null) return { status: "cancelled", terms: emptyTerms() }
     // Declared out here, not inside the try: the catch block below reports through
     // it too, and a block-scoped const would be invisible there.
     const fail = (message: string) => setPanelErrors((prev) => ({ ...prev, [panel.id]: message }))
@@ -602,9 +749,10 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         section: r.section,
         facultyEmail: r.facultyEmail || undefined,
         // §3.3: users.departmentId is the STUDENT's department — first row in
-        // file order — never this row's own code. The row's own value stays on
+        // file order — never this row's own code. Frozen at preview; the live
+        // memo is fallback only. The row's own value stays on
         // resolvedDepartmentId, and it is what grouped this panel (§3.2).
-        departmentId: studentDepartmentByEmail.get(r.email.toLowerCase().trim()) ?? undefined,
+        departmentId: (frozenDeptByEmail.size > 0 ? frozenDeptByEmail.get(r.email.toLowerCase().trim()) : studentDepartmentByEmail.get(r.email.toLowerCase().trim())) ?? undefined,
         _originRow: r.row,
       }))
       const postChunk = async (chunk: typeof payload, meta: ChunkMeta, signal: AbortSignal) => {
@@ -613,6 +761,9 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
           headers: { "Content-Type": "application/json" },
           signal,
           body: JSON.stringify({
+            mode: "enroll",
+            step1: step1Status,
+            allowUnassigned,
             semesterId,
             rows: chunk,
             chunkIndex: meta.chunkIndex,
@@ -650,7 +801,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         onChunkResult: (_r, meta) => { resultMetas.push(meta) },
         summarizeResult: (r) => ({ saved: r.enrolled ?? 0, skipped: r.skipped ?? 0, issues: (r.failed?.length ?? 0) + (r.parseErrors?.length ?? 0) }),
       })
-      if (cancelled) { fail(`Import cancelled after ${results.length} chunks — retry this panel to resume`); return }
+      if (cancelled) { fail(`Import cancelled after ${results.length} chunks — retry this panel to resume`); return { status: "cancelled", terms: emptyTerms() } }
       // Dead-chunk rows are TRANSPORT_ERROR rows inside the ledger now — the
       // separate window math that used to live here is gone.
       // The ledger is built FIRST — one entry per input CSV row, in source order.
@@ -727,6 +878,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             ? [{ row: r.row, email: r.email, subjectCode: r.subjectCode, section: r.section, reasonCode: "ALREADY_PERSISTED" as const }]
             : [],
         ),
+        parkedSlots: results.flatMap((r) => r.parkedSlots ?? []),
         parseErrors: results.flatMap((r) => r.parseErrors ?? []),
         totalRows: rows.length,
         // Any chunk reporting a mismatch means this panel's rows are against the wrong term.
@@ -744,6 +896,12 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
         setExistingUsers((prev) => applyCreatedUsers(prev, [], aggregated.created).existingUsers)
         setPreviewRows((prev) => (prev ? applyCreatedUsers([], prev, aggregated.created).previewRows : prev))
       }
+      // Terms built once, before any post-run return, so every path reports them.
+      const terms = new Map<string, string | null>()
+      for (const r of results) {
+        const id = r.semesterId ?? ""
+        if (!terms.has(id)) terms.set(id, r.semesterTitle ?? null)
+      }
       if (!ledgerClosed) {
         // Name where every accounted row went — invalid (incl. failed and
         // transport), duplicates, removed — so this reads as bookkeeping,
@@ -753,26 +911,21 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
           `Panel books don't close: accounted ${ledger.length} of ${rows.length} rows ` +
           `(${counted("persisted")} saved, ${counted("already-persisted")} already saved, ` +
           `${counted("invalid")} invalid, ${counted("removed")} removed)${closureDetail}. ` +
-          `Nothing was lost — ${aggregated.enrolled} rows are already saved. Press Run again to resume.`,
+           `Nothing was lost — ${aggregated.enrolled} rows are already saved. Press Run again to resume.`,
         )
-        return
+        return { status: "error", terms }
       }
       // S-b — the route re-derives the active semester per request, so a
       // mid-run flip splits one panel across two terms while every gate
       // stays green. The echo makes it loud instead of silent. Results and
       // ledger above are committed regardless — this never destroys truth.
-      const terms = new Map<string, string | null>()
-      for (const r of results) {
-        const id = r.semesterId ?? ""
-        if (!terms.has(id)) terms.set(id, r.semesterTitle ?? null)
-      }
       if (terms.size > 1) {
         const names = [...terms].map(([id, title]) => title ?? (id === "" ? "unknown term" : id))
         fail(
           `Semester changed mid-run (${names.join(" → ")}). ${aggregated.enrolled} rows are saved across terms — ` +
-          `the ledger shows every row. Finish under one active semester, then remove the stray term's rows manually.`,
+           `the ledger shows every row. Finish under one active semester, then remove the stray term's rows manually.`,
         )
-        return
+        return { status: "error", terms }
       }
       if (stoppedEarly || failedChunks.length > 0) {
         // Every chunk failing with the SAME message is systematic — a config
@@ -784,16 +937,44 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             ? `${aggregated.failed.length} row${aggregated.failed.length !== 1 ? "s" : ""} not imported — ${reasons[0]}`
             : `${aggregated.failed.length} rows from failed chunks recorded as failures — nothing was lost, ${aggregated.enrolled} rows are already saved. Press Run again to resume.`
         )
-        return
+        return { status: "error", terms }
       }
+      return { status: "ok", terms }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         fail("Import cancelled — completed chunks are persisted. Press Run again to resume.")
-        return
+        return { status: "cancelled", terms: emptyTerms() }
       }
       fail("Could not reach the server. Please check your connection and try again.")
+      return { status: "error", terms: emptyTerms() }
     } finally {
       setActivePanelId(null)
+    }
+  }
+
+  // One writer, looped: both header buttons funnel through runPanel, so both
+  // inherit row-idempotency. First non-ok stops the sequence; panels that ran
+  // keep their results/ledgers (partial completion is normal).
+  const runSequence = async (list: DepartmentPanel<PanelRow>[]) => {
+    if (seqRunningRef.current || activePanelId !== null || step2Locked) return
+    seqRunningRef.current = true
+    setSequenceError("")
+    try {
+      const seqTerms = new Map<string, string | null>()
+      for (const panel of list) {
+        const outcome = await runPanel(panel)
+        for (const [k, v] of outcome.terms) if (!seqTerms.has(k)) seqTerms.set(k, v)
+        if (outcome.status !== "ok") break
+      }
+      if (seqTerms.size > 1) {
+        const names = [...seqTerms].map(([id, title]) => title ?? (id === "" ? "unknown term" : id))
+        setSequenceError(
+          `Semester changed mid-sequence (${names.join(" → ")}). Done panels are saved across terms — ` +
+          `finish under one active semester, then remove the stray term's rows manually.`,
+        )
+      }
+    } finally {
+      seqRunningRef.current = false
     }
   }
 
@@ -805,6 +986,12 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     setPreviewPage(0)
     setPreviewError("")
     setReferenceError("")
+    setStep1Status("idle")
+    setStep1Result(null)
+    setStep1Error("")
+    setFrozenDeptByEmail(new Map())
+    setFileRunId("")
+    setSequenceError("")
     if (fileRef.current) fileRef.current.value = ""
   }
 
@@ -814,12 +1001,22 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
   return (
     <>
+      {step1Status === "running" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-white dark:bg-surface-dim rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl">
+            <div className="w-10 h-10 border-4 border-gold-600 border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm font-semibold text-secondary">Ensuring student records…</p>
+            <p className="text-xs text-tertiary">Deduping emails and registering new students.</p>
+            <p className="text-[11px] text-tertiary/70">Stay on this page until done — re-pressing Ensure afterwards re-checks without duplicating.</p>
+          </div>
+        </div>
+      )}
       {activePanelId !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="bg-white dark:bg-surface-dim rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl">
             <div className="w-10 h-10 border-4 border-gold-600 border-t-transparent rounded-full animate-spin" />
             <p className="text-sm font-semibold text-secondary">
-              Importing {panels.find((p) => p.id === activePanelId)?.label ?? "enrollments"}...
+              Enrolling {panels.find((p) => p.id === activePanelId)?.label ?? "enrollments"}...
             </p>
             <p className="text-xs text-tertiary">
               {chunkProgress.totalRows > 0
@@ -864,14 +1061,15 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
               <li><strong>Faculty email</strong> must be an existing faculty/dean user assigned to that subject+section.</li>
               <li><strong>Department code</strong> must match an existing department (e.g., <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">CCS</code>).</li>
               <li><strong>Student email</strong> must end with <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">...@lyceumalabang.edu.ph</code> or <code className="bg-blue-100/60 dark:bg-blue-800/40 px-1 rounded">...@itmlyceumalabang.onmicrosoft.com</code> — blank or foreign-domain rows are excluded into Failures.</li>
-              <li>Large files upload in <strong>500-row chunks</strong> with progress — stay on this page until done.</li>
+              <li>Large files upload in <strong>100-row chunks</strong> with progress — stay on this page until done.</li>
               <li>Re-uploading the same file enrolls <strong>0 new rows</strong> (already-enrolled rows are skipped).</li>
             </ul>
           </div>
 
           <div
-            onClick={() => fileRef.current?.click()}
-            className="flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-2xl bg-surface-dim/30 hover:bg-surface-dim/60 cursor-pointer transition-colors"
+            onClick={() => { if (referenceLoaded) fileRef.current?.click() }}
+            aria-disabled={!referenceLoaded}
+            className={`flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-2xl bg-surface-dim/30 transition-colors ${referenceLoaded ? "hover:bg-surface-dim/60 cursor-pointer" : "opacity-50 cursor-wait"}`}
           >
             <div className="w-12 h-12 rounded-full bg-gold-100 dark:bg-gold-900/40 flex items-center justify-center">
               <svg className="w-6 h-6 text-gold-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -879,12 +1077,16 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
               </svg>
             </div>
             <p className="text-sm font-semibold text-secondary">Tap to choose a CSV file</p>
+            {!referenceLoaded && !referenceError && (
+              <p className="text-xs text-tertiary">Loading reference data…</p>
+            )}
             <p className="text-xs text-tertiary">Headers: <code className="bg-surface-dim px-1.5 py-0.5 rounded text-[10px]">{TEMPLATE_HEADERS}</code></p>
             <input
               ref={fileRef}
               type="file"
               accept=".csv"
               className="hidden"
+              disabled={!referenceLoaded}
               onChange={handlePreview}
             />
           </div>
@@ -905,6 +1107,13 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-xl px-4 py-3">
               <p className="text-xs font-semibold text-red-700 dark:text-red-300">Reference data unavailable</p>
               <p className="text-[11px] text-red-600/80 dark:text-red-300/70">{referenceError}</p>
+              <button
+                type="button"
+                onClick={() => fetchReferenceData()}
+                className="mt-2 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
+              >
+                Retry
+              </button>
             </div>
           )}
         </div>
@@ -919,6 +1128,25 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                 {(blockedOnly || deptFilter || issueFilter || dupOnly || query.trim().length > 0) && ` (filtered)`}
               </h4>
               <span className="text-[11px] text-tertiary">{TEMPLATE_HEADERS}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+              <button type="button" onClick={() => scrollToStep("step1-ensure")}
+                className="font-semibold text-secondary hover:underline">
+                1 Ensure student records
+              </button>
+              <span className="text-tertiary">
+                {step1Status === "done" && step1Result
+                  ? `done · ${step1Result.created.length} created · ${step1Result.existing} existing`
+                  : step1Status === "skipped" ? "skipped" : step1Status === "running" ? "running…" : "todo"}
+              </span>
+              <span className="text-tertiary">→</span>
+              <button type="button" onClick={() => scrollToStep("step2-enrol")}
+                className="font-semibold text-secondary hover:underline">
+                2 Enrol
+              </button>
+              <span className="text-tertiary">
+                {step2Locked ? "waiting" : `${ranPanelCount} of ${panels.length} panels run`}
+              </span>
             </div>
 
             {/* §8 "Invalid-list volume": StepPanel renders invalid[] in a max-h-32 scroll, so
@@ -957,8 +1185,110 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
               </div>
             )}
 
+            {/* Step 1 — ensure users before any enrolment runs. */}
+            <div id="step1-ensure" className="rounded-xl border border-default bg-surface-dim/40 px-4 py-3 space-y-2">
+              <p className="text-xs font-semibold text-secondary">
+                Step 1 — Ensure student records
+                {previewRows && (
+                  <span className="font-normal text-tertiary"> · {step1Students.length} distinct students from {previewRows.length} rows</span>
+                )}
+              </p>
+              <p className="text-[11px] text-tertiary/70">Registered department follows first row wins — the stamp Step 2 enrols with.</p>
+              {step1Status === "idle" && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" onClick={runStep1} disabled={activePanelId !== null}
+                    className="text-[11px] font-semibold px-3 py-1.5 rounded-full bg-gold-600 text-white hover:bg-gold-700 disabled:opacity-40 transition-colors">
+                    Ensure student records
+                  </button>
+                  <button type="button" onClick={skipStep1} disabled={activePanelId !== null}
+                    title="Record that students are already registered — enrolment failures stay visible per row"
+                    className="text-[11px] font-semibold px-3 py-1.5 rounded-full border border-default text-secondary hover:bg-surface-dim disabled:opacity-40 transition-colors">
+                    Skip (assume registered)
+                  </button>
+                  {step1Error && <p className="text-[11px] text-red-600 w-full">{step1Error}</p>}
+                </div>
+              )}
+              {step1Status === "done" && step1Result && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[11px] text-tertiary">
+                    {step1Result.created.length} created · {step1Result.existing} existing · {step1Result.failed.length} failed
+                  </p>
+                  <button type="button" onClick={runStep1} disabled={activePanelId !== null}
+                    title="Re-check every email — idempotent, writes nothing twice"
+                    className="text-[11px] font-semibold text-secondary hover:underline disabled:opacity-40">
+                    Re-check
+                  </button>
+                  {step1Result.failed.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const names = new Map(step1Students.map((s) => [s.email.toLowerCase().trim(), s.name]))
+                        downloadBlob(buildStep1FailedCsv(step1Result.failed, names), STEP1_FAILED_CSV_FILENAME)
+                      }}
+                      title="Download the failed emails with reasons — fix outside and re-check Step 1"
+                      className="text-[11px] font-semibold text-secondary hover:underline disabled:opacity-40"
+                    >
+                      Download {step1Result.failed.length} failed
+                    </button>
+                  )}
+                  {step1Result.failed.length > 0 && (
+                    <p className="text-[11px] text-amber-600 w-full">{step1Result.failed.length} emails need fixing — they will fail as STUDENT_NOT_FOUND in Step 2, never auto-created.</p>
+                  )}
+                  {(step1Result.created.length > 0 || step1Result.failed.length > 0) && (
+                    <details className="w-full text-[11px] text-tertiary">
+                      <summary className="cursor-pointer font-semibold text-secondary hover:underline">
+                        User summary ({step1Result.created.length} created · {step1Result.failed.length} failed)
+                      </summary>
+                      <div className="max-h-32 overflow-y-auto space-y-0.5 pt-1">
+                        {step1Result.created.map((u) => (
+                          <p key={u.email}>+ {u.name} ({u.email})</p>
+                        ))}
+                        {step1Result.failed.map((f) => (
+                          <p key={f.email} className="text-amber-600">! {f.email} — {f.remark}</p>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              )}
+              {step1Status === "skipped" && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[11px] text-amber-600">Skipped — students assumed registered. Unknown emails will fail per row, never auto-created.</p>
+                  <button type="button" onClick={() => setStep1Status("idle")}
+                    className="text-[11px] font-semibold text-secondary hover:underline">
+                    Undo skip
+                  </button>
+                </div>
+              )}
+              {previewRows && (
+                <Step1StudentRoster key={fileRunId} students={step1Students} deptCodeOf={deptCodeOf} />
+              )}
+            </div>
+
+            {step2Locked && (
+              <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/20 px-4 py-3">
+                <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                  Step 2 is waiting — Ensure student records in Step 1, or Skip if students are already registered. Panels unlock on Done or Skipped.
+                </p>
+              </div>
+            )}
+            {step1Status === "done" && (step1Result?.failed.length ?? 0) > 0 && (
+              <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/20 px-4 py-3">
+                <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                  {step1Result?.failed.length}  emails aren&apos;t registered — they&apos;ll fail per row as STUDENT_NOT_FOUND, never auto-created. Re-check Step 1 after fixing, or run and work the ledger.
+                </p>
+              </div>
+            )}
+            {step1Status === "skipped" && (
+              <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/20 px-4 py-3">
+                <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                  Step 1 skipped — students assumed registered{skippedUnknownCount > 0 && <>; {skippedUnknownCount} unknown email{skippedUnknownCount !== 1 ? "s" : ""} will fail per row, never auto-created</>}.
+                </p>
+              </div>
+            )}
+
             {panels.length > 0 && (
-              <div className="space-y-2">
+              <div id="step2-enrol" className="space-y-2">
                 <p className="text-[11px] text-tertiary/70">
                   {panels.length} department{panels.length !== 1 ? "s" : ""} in this file — run them independently, in any
                   order. A re-run skips rows already saved, so nothing is written twice.
@@ -966,7 +1296,45 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                     <span className="text-red-600 font-semibold"> No active semester — every panel is disabled.</span>
                   )}
                 </p>
-                <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => runSequence(panels)}
+                    disabled={!semesterId || step2Locked || activePanelId !== null}
+                    title="Re-check every panel through the single panel writer — idempotent, writes nothing twice"
+                    className="text-[11px] font-semibold px-3 py-1.5 rounded-full bg-gold-600 text-white hover:bg-gold-700 disabled:opacity-40 transition-colors"
+                  >
+                    Run all (re-check everything)
+                  </button>
+                  {(() => {
+                    const remaining = panels.filter((p) => !(p.id in panelLedgers))
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => runSequence(remaining)}
+                        disabled={!semesterId || step2Locked || activePanelId !== null || remaining.length === 0}
+                        title="Skip panels that already ran"
+                        className="text-[11px] font-semibold px-3 py-1.5 rounded-full border border-default text-secondary hover:bg-surface-dim disabled:opacity-40 transition-colors"
+                      >
+                        Run remaining ({remaining.length} left)
+                      </button>
+                    )
+                  })()}
+                  <label
+                    title="Blank-faculty rows for classes with no loading get a placeholder loading (created once per class) instead of failing. On by default — uncheck to fail loudly instead. Applies to panels started after toggling."
+                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-default text-secondary hover:bg-surface-dim transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={allowUnassigned}
+                      onChange={(e) => setAllowUnassigned(e.target.checked)}
+                      className="accent-yellow-600"
+                    />
+                    Park unmapped on Unassigned
+                  </label>
+                </div>
+                {sequenceError && <p className="text-[11px] font-semibold text-red-600">{sequenceError}</p>}
+                <div className="grid grid-cols-1 md:grid-cols-3 2xl:grid-cols-4 gap-2 items-start [&>*:only-child]:col-span-full">
                   {panels.map((panel) => {
                     const result = panelResults[panel.id]
                     const panelError = panelErrors[panel.id] ?? ""
@@ -991,12 +1359,14 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                     const dupCount = (panelLedgers[panel.id] ?? []).filter(
                       (l) => l.status === "already-persisted",
                     ).length
-                    const disabled = !semesterId || blocked || (activePanelId !== null && !isActive)
+                    const disabled = !semesterId || blocked || step2Locked || (activePanelId !== null && !isActive)
                     const disabledTitle = !semesterId
                       ? "Set an active semester before importing."
-                      : blocked
-                        ? `${panel.blockedCount} blocked row${panel.blockedCount !== 1 ? "s" : ""} — remove them, or fix the values in the table below.`
-                        : undefined
+                      : step2Locked
+                        ? "Run Step 1 (Ensure student records) or Skip it first — Step 2 enrols only registered students."
+                        : blocked
+                          ? `${panel.blockedCount} blocked row${panel.blockedCount !== 1 ? "s" : ""} — remove them, or fix the values in the table below.`
+                          : undefined
                     return (
                       <StepPanel
                         key={panel.id}
@@ -1218,14 +1588,6 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                     </option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  onClick={() => { setBlockedOnly(true); setPreviewPage(0) }}
-                  title="Show the blocked rows in the current view"
-                  className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
-                >
-                  Errors only
-                </button>
                 {(deptFilter || issueFilter || dupOnly || query.trim().length > 0 || blockedOnly) && (
                   <button
                     type="button"
@@ -1324,11 +1686,29 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                           />
                         </td>
                         <td>
-                          <input
-                            value={r.facultyEmail}
-                            onChange={(e) => handleFieldChange(r.row, "facultyEmail", e.target.value)}
-                            className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px]"
-                          />
+                          {r.facultyEmail.trim() === "" ? (
+                            <div className="flex flex-col gap-0.5">
+                              <span
+                                className="text-[13px] text-blue-600 dark:text-blue-300 border-b border-dotted border-current cursor-help"
+                                title="No faculty named — enrols under the class slot (Unassigned Faculty unless the class is assigned). Informational only, not an issue."
+                              >
+                                Unassigned Faculty
+                              </span>
+                              <input
+                                value={r.facultyEmail}
+                                onChange={(e) => handleFieldChange(r.row, "facultyEmail", e.target.value)}
+                                placeholder="placeholder@lyceumalabang.edu.ph"
+                                title="Faculty email — blank resolves to Unassigned Faculty unless the class is assigned"
+                                className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px] placeholder:text-tertiary/50"
+                              />
+                            </div>
+                          ) : (
+                            <input
+                              value={r.facultyEmail}
+                              onChange={(e) => handleFieldChange(r.row, "facultyEmail", e.target.value)}
+                              className="w-full bg-surface-dim/50 border border-transparent focus:border-gold-400 rounded-lg px-2 py-1.5 outline-none text-[13px]"
+                            />
+                          )}
                         </td>
                         <td>
                           <input
@@ -1362,7 +1742,6 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                                   r.isNewFaculty && "faculty not found",
                                   r.facultyNotAssigned && "faculty not assigned",
                                   r.isInvalidDepartment && "dept code unknown",
-                                  r.isNewStudent && "new student",
                                 ].filter(Boolean).join("; ")}
                               >
                                 Needs Review
@@ -1437,13 +1816,13 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
       {aggregateResult && !previewOnly && (
         <div className="space-y-5">
           <div className="grid grid-cols-2 gap-3">
-            <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl p-5 text-center">
-              <p className="text-2xl font-bold text-emerald-600">{aggregateResult.created.length}</p>
-              <p className="text-[11px] font-semibold text-emerald-700/70 dark:text-emerald-300/70">Users Created</p>
-            </div>
             <div className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-5 text-center">
               <p className="text-2xl font-bold text-blue-600">{aggregateResult.enrolled}</p>
               <p className="text-[11px] font-semibold text-blue-700/70 dark:text-blue-300/70">Enrollments Resolved</p>
+            </div>
+            <div className="bg-amber-50 dark:bg-amber-900/20 rounded-2xl p-5 text-center">
+              <p className="text-2xl font-bold text-amber-600">{aggregateResult.failed.length}</p>
+              <p className="text-[11px] font-semibold text-amber-700/70 dark:text-amber-300/70">Import Failures</p>
             </div>
           </div>
 
@@ -1451,7 +1830,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             {/* Every number below covers the panels that RAN, not the file. Naming
                 the scope is the whole point — a partial run is a normal state. */}
             <p className="text-xs font-semibold text-secondary">
-              {ranPanelCount} of {panels.length} panel{panels.length !== 1 ? "s" : ""} run · {aggregateResult.totalRows} rows sent · {aggregateResult.enrolled} resolved · {aggregateResult.inserted} newly written · {aggregateResult.skipped} skipped (already enrolled) · {aggregateResult.failed.length} failed
+              {ranPanelCount} of {panels.length} panel{panels.length !== 1 ? "s" : ""} run · {aggregateResult.totalRows} rows sent · {aggregateResult.enrolled} resolved · {aggregateResult.inserted} newly written · {aggregateResult.skipped} skipped (already enrolled) · {aggregateResult.failed.length} failed{aggregateResult.parkedSlots.length > 0 && ` · ${aggregateResult.parkedSlots.length} parked on Unassigned`}
             </p>
             <p className="text-[11px] text-tertiary">
               Seed 2026-1 reference: 3,302 students · 21,989 enrollments. Re-running a panel should enroll 0 and skip all (idempotent).

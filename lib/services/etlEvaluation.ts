@@ -1,6 +1,8 @@
 import { supabase } from "@/lib/supabase"
 import { userRepository, sectionRepository, subjectRepository, facultySubjectRepository, studentEnrollmentRepository, departmentRepository, departmentCourseRepository } from "@/lib/repositories/factory"
 import { cleanCell, cleanSubjectCode, isExcelErrorCell } from "@/lib/csv-utils"
+import { distinctSubjectCodes } from "@/lib/utils/distinct-subjects"
+import { distinctFacultyUsers } from "@/lib/utils/distinct-faculty-users"
 
 function parseSectionIdentifier(raw: string): { name: string; program: string } {
   const dashIdx = raw.indexOf("-")
@@ -253,20 +255,8 @@ export async function importSubjectsStep(
   const invalid: DepartmentStepInvalid[] = []
   const subjectCodeToId: Record<string, string> = {}
 
-  const seen = new Set<string>()
-  const distinct: string[] = []
-  for (const raw of items) {
-    const code = (raw ?? "").trim()
-    // Blank codes are filtered client-side per spec (not applicable);
-    // skip defensively without an invalid entry.
-    if (code.length === 0) continue
-    if (seen.has(code)) continue
-    seen.add(code)
-    distinct.push(code)
-  }
-
-  // Must NOT case-fold: cs101 vs CS101 must stay distinct per spec edge case.
-  const subjectItems = distinct.map((code) => ({ code, name: code }))
+  const uniqueSubjectCodes = distinctSubjectCodes(items)
+  const subjectItems = uniqueSubjectCodes.map((code) => ({ code, name: code }))
 
   const { data, created } = await subjectRepository.upsertMany(subjectItems)
   for (const [code, row] of data) {
@@ -313,19 +303,7 @@ export async function importFacultyUsersStep(
   const invalid: DepartmentStepInvalid[] = []
   const facultyUserMap: Record<string, string> = {}
 
-  const seen = new Set<string>()
-  const distinct: FacultyUserStepItem[] = []
-  for (const raw of items) {
-    const email = (raw?.email ?? "").toLowerCase().trim()
-    const key = email.length === 0 ? DUMMY_FACULTY_EMAIL : email
-    if (seen.has(key)) continue
-    seen.add(key)
-    distinct.push({
-      email: key,
-      name: key === DUMMY_FACULTY_EMAIL ? "Unassigned Faculty" : (raw?.name ?? ""),
-      departmentCode: (raw?.departmentCode ?? "").trim().toUpperCase(),
-    })
-  }
+  const distinct = distinctFacultyUsers(items, DUMMY_FACULTY_EMAIL)
 
   const mappable: FacultyUserStepItem[] = []
   for (const item of distinct) {
