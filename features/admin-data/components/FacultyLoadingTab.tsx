@@ -13,7 +13,7 @@ import { SegmentedControl, SearchInput } from "./shared"
 import { EnrollmentsTab } from "./EnrollmentsTab"
 import { FacultySubjectDetail } from "./FacultySubjectDetail"
 import type { DepartmentData, SemesterData } from "@/lib/types"
-import type { FacEnrollTab, FacViewTab, Subject, Section, FacultyMapping, Enrollment } from "./types"
+import type { FacEnrollTab, FacViewTab, Subject, Section, FacultyMapping } from "./types"
 import { deriveCsvFlags, DUMMY_FACULTY_EMAIL_CLIENT, type CsvRow, type CsvRowWithFlags } from "./csv-helpers"
 import { distinctSections } from "@/lib/utils/distinct-sections"
 import { parseSectionIdentifier } from "@/lib/utils/parse-section-identifier"
@@ -235,8 +235,6 @@ function FacultyTab() {
   const { data: subjectsData } = useApiGet<{ data: Subject[] }>("/api/data/evaluation-mappings?type=subjects")
   const { data: sectionsData } = useApiGet<{ data: Section[] }>("/api/data/evaluation-mappings?type=sections")
 
-  const { data: enrollmentsData } = useApiGet<{ data: Enrollment[] }>("/api/data/evaluation-mappings?type=student")
-
   const faculties = (allUsers?.users ?? []).filter((u) => (u.role.includes("FACULTY") || u.role.includes("DEAN")) && u.id !== "a0000000-0000-0000-0000-000000000001")
   const subjects = subjectsData?.data ?? []
   const sections = sectionsData?.data ?? []
@@ -255,16 +253,6 @@ function FacultyTab() {
   const selectedFacultyName = formFaculty
     ? faculties.find((f) => f.id === formFaculty)?.name ?? ""
     : ""
-
-  const enrollmentCountByFsId = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const e of enrollmentsData?.data ?? []) {
-      if (e.faculty_subject_id) {
-        map.set(e.faculty_subject_id, (map.get(e.faculty_subject_id) ?? 0) + 1)
-      }
-    }
-    return map
-  }, [enrollmentsData])
 
   const [selectedSsMapping, setSelectedSsMapping] = useState<FacultyMapping | null>(null)
 
@@ -1495,7 +1483,7 @@ function FacultyTab() {
         )}
         <SearchInput value={search} onChange={(v) => { setSearch(v) }} placeholder={viewTab === "by_faculty" ? "Search by faculty name, email, subject code, or section..." : "Search by subject code, subject name, section, or faculty..."} />
         {loading && !data ? (
-          <SkeletonTable rows={4} cols={viewTab === "by_faculty" ? 4 : 6} />
+          <SkeletonTable rows={4} cols={viewTab === "by_faculty" ? 3 : 6} />
         ) : filtered.length === 0 ? (
           <p className="text-xs text-tertiary text-center py-8">No mappings found.</p>
         ) : viewTab === "by_faculty" ? (
@@ -1506,24 +1494,17 @@ function FacultyTab() {
                   <tr>
                     <th>Faculty</th>
                     <th>Email</th>
-
-                    <th>Headcount</th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paginatedItems.map((group) => {
-                    const headcount = group.mappings.reduce((sum, m) => sum + (enrollmentCountByFsId.get(m.id) ?? 0), 0)
                     return (
                       <tr key={group.faculty.id}>
                         <td className="font-medium text-secondary">{group.faculty.name}</td>
                         <td className="text-tertiary">{group.faculty.email}</td>
-
                         <td>
-                          <span className="font-semibold text-secondary">{headcount}</span>
-                        </td>
-                        <td>
-                          <IosButton variant="plain" size="xs" onClick={() => setSelectedFacultyLoad(group.mappings)}>View Class Load</IosButton>
+                          <IosButton variant="plain" size="xs" onClick={() => setSelectedFacultyLoad(group.mappings)}>View Loading</IosButton>
                         </td>
                       </tr>
                     )
@@ -1533,7 +1514,6 @@ function FacultyTab() {
             </div>
             <div className="mobile-only space-y-2">
               {paginatedItems.map((group) => {
-                const headcount = group.mappings.reduce((sum, m) => sum + (enrollmentCountByFsId.get(m.id) ?? 0), 0)
                 return (
                   <div key={group.faculty.id} className="p-4 rounded-xl bg-surface border border-default space-y-2">
                     <div className="flex items-start justify-between gap-2">
@@ -1543,7 +1523,6 @@ function FacultyTab() {
                       </div>
                       <div className="shrink-0 text-right">
                         <span className="text-xs font-semibold text-secondary">{group.mappings.length} Subject{group.mappings.length !== 1 ? "s" : ""}</span>
-                        <span className="block text-xs text-tertiary">{headcount} Student{headcount !== 1 ? "s" : ""}</span>
                         <IosButton variant="plain" size="xs" onClick={() => setSelectedFacultyLoad(group.mappings)}>View</IosButton>
                       </div>
                     </div>
@@ -1564,13 +1543,11 @@ function FacultyTab() {
                     <th>Section</th>
                     <th>Faculty</th>
                     <th>Email</th>
-                    <th className="text-center">Headcount</th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {ssPagination.paginatedItems.map((m) => {
-                    const hc = enrollmentCountByFsId.get(m.id) ?? 0
                     return (
                       <tr key={m.id}>
                         <td className="font-mono text-xs font-semibold text-secondary">{m.subject.code}</td>
@@ -1578,7 +1555,6 @@ function FacultyTab() {
                         <td className="text-secondary">{m.section.program}-{m.section.name}</td>
                         <td className="font-medium text-secondary">{m.faculty.name}</td>
                         <td className="text-tertiary">{m.faculty.email}</td>
-                        <td className="text-center font-semibold text-secondary">{hc}</td>
                         <td>
                           <IosButton variant="plain" size="xs" onClick={() => setSelectedSsMapping(m)}>Edit</IosButton>
                         </td>
@@ -1590,7 +1566,6 @@ function FacultyTab() {
             </div>
             <div className="mobile-only space-y-2">
               {ssPagination.paginatedItems.map((m) => {
-                const hc = enrollmentCountByFsId.get(m.id) ?? 0
                 return (
                   <div key={m.id} className="p-4 rounded-xl bg-surface border border-default">
                     <div className="flex items-start justify-between gap-2">
@@ -1601,7 +1576,6 @@ function FacultyTab() {
                         <p className="text-xs text-tertiary truncate">{m.faculty.email}</p>
                       </div>
                       <div className="shrink-0 text-right flex flex-col items-end gap-1">
-                        <span className="text-xs font-semibold text-secondary">{hc} student{hc !== 1 ? "s" : ""}</span>
                         <IosButton variant="plain" size="xs" onClick={() => setSelectedSsMapping(m)}>Edit</IosButton>
                       </div>
                     </div>
@@ -1678,13 +1652,11 @@ function FacultyTab() {
                     <th className="w-8">#</th>
                     <th>Subject</th>
                     <th>Section</th>
-                    <th className="text-center">HeadCount</th>
                     <th className="w-20 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {facultyLoadPagination.paginatedItems.map((m, i) => {
-                    const hc = enrollmentCountByFsId.get(m.id) ?? 0
                     return (
                       <tr key={m.id}>
                         <td className="text-tertiary">{i + 1}</td>
@@ -1692,9 +1664,7 @@ function FacultyTab() {
                           <span className="font-medium text-secondary">{m.subject.code}</span>
                           <span className="text-tertiary ml-1">- {m.subject.name}</span>
                         </td>
-                        <td className="text-secondary">{m.section.program}-{m.section.name}</td>
-                        <td className="text-center font-semibold text-secondary">
-                          {hc}
+                        <td className="text-secondary">{m.section.program}-{m.section.name}
                           {!m.semesterId && <span className="ml-1.5 text-[10px] font-semibold text-amber-600 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-0.5 rounded-full">no semester</span>}
                         </td>
                         <td className="text-center">
@@ -1707,7 +1677,6 @@ function FacultyTab() {
               </table>
               <div className="mobile-only space-y-1.5">
                 {facultyLoadPagination.paginatedItems.map((m, i) => {
-                  const hc = enrollmentCountByFsId.get(m.id) ?? 0
                   return (
                     <div key={m.id} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-surface-hover/50 text-xs">
                       <span className="text-tertiary font-mono w-5 shrink-0 text-right">{i + 1}</span>
@@ -1715,7 +1684,7 @@ function FacultyTab() {
                         <p className="font-semibold text-secondary truncate">{m.subject.code} - {m.subject.name}</p>
                         <p className="text-tertiary truncate">{m.section.program}-{m.section.name}</p>
                       </div>
-                      <span className="shrink-0 text-right text-xs font-semibold text-secondary">{hc} student{hc !== 1 ? "s" : ""}{!m.semesterId && <span className="ml-1 text-[10px] font-semibold text-amber-600">⚠️</span>}</span>
+                      {!m.semesterId && <span className="shrink-0 text-right text-xs font-semibold text-amber-600">⚠️</span>}
                       <Link href={`/admin/data/academic-infrastructure/faculty-enroll/${m.id}`} className="shrink-0 text-xs text-amber-600 hover:text-amber-700 font-semibold ml-1">Edit</Link>
                     </div>
                   )
