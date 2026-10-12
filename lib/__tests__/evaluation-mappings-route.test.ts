@@ -5,12 +5,16 @@ const mockListAllWithEmbeds = vi.hoisted(() => vi.fn())
 const mockCountByFacultySubjectIds = vi.hoisted(() => vi.fn())
 const mockSemesterList = vi.hoisted(() => vi.fn())
 const mockListStudentByFs = vi.hoisted(() => vi.fn())
+const mockFindByIdWithEmbeds = vi.hoisted(() => vi.fn())
 const mockCountByFs = vi.hoisted(() => vi.fn())
 const mockListAllStudentEmbeds = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/route-guard", () => ({ requireAdmin: mockRequireAdmin }))
 vi.mock("@/lib/repositories/factory", () => ({
-  facultySubjectRepository: { listAllWithEmbeds: mockListAllWithEmbeds },
+  facultySubjectRepository: {
+    listAllWithEmbeds: mockListAllWithEmbeds,
+    findByIdWithEmbeds: mockFindByIdWithEmbeds,
+  },
   studentEnrollmentRepository: {
     countByFacultySubjectIds: mockCountByFacultySubjectIds,
     listByFacultySubject: mockListStudentByFs,
@@ -96,6 +100,36 @@ describe("GET /api/data/evaluation-mappings?type=faculty", () => {
     expect(body.data[1].headcount).toBe(0)
     // Semester resolved from the database per row, never assumed active.
     expect(body.data[0].semester).toEqual({ id: "sem-1", title: "2026-1" })
+  })
+
+  it("returns one enriched mapping for ?type=faculty&id=", async () => {
+    mockRequireAdmin.mockResolvedValue(null)
+    mockFindByIdWithEmbeds.mockResolvedValue(ROW({ semester: null }))
+    mockCountByFacultySubjectIds.mockResolvedValue({ m1: 12 })
+    mockSemesterList.mockResolvedValue([{ id: "sem-1", title: "2026-1" }])
+
+    const res = await GET(mockRequest("?type=faculty&id=m1") as never)
+
+    expect(res.status).toBe(200)
+    expect(mockFindByIdWithEmbeds).toHaveBeenCalledWith("m1")
+    expect(mockListAllWithEmbeds).not.toHaveBeenCalled()
+
+    const body = await res.json()
+    expect(body.data).toHaveLength(1)
+    expect(body.data[0].headcount).toBe(12)
+    expect(body.data[0].semester).toEqual({ id: "sem-1", title: "2026-1" })
+  })
+
+  it("returns empty data when the id does not exist", async () => {
+    mockRequireAdmin.mockResolvedValue(null)
+    mockFindByIdWithEmbeds.mockResolvedValue(null)
+
+    const res = await GET(mockRequest("?type=faculty&id=missing") as never)
+
+    expect(res.status).toBe(200)
+    expect(mockCountByFacultySubjectIds).not.toHaveBeenCalled()
+    expect(mockSemesterList).not.toHaveBeenCalled()
+    expect((await res.json()).data).toEqual([])
   })
 })
 

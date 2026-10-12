@@ -59,6 +59,35 @@ export const facultySubjectRepository: IFacultySubjectRepository = {
     return data as FacultySubjectData
   },
 
+  async findByIdWithEmbeds(id: string) {
+    const build = (withSemester: boolean) => supabase
+      .from("faculty_subjects")
+      .select(`
+        id,
+        faculty_id,
+        subject_id,
+        section_id,
+        "semesterId",
+        faculty:faculty_id (id, name, email, "departmentId"),
+        subject:subject_id (id, code, name),
+        section:section_id (id, name, program)
+        ${withSemester ? ',semester:"semesterId" (id, title)' : ""}
+      `)
+      .eq("id", id)
+      .maybeSingle()
+    let { data, error } = await build(true)
+    if (error && error.code === "PGRST201") {
+      // Same camelCase "semesterId" FK miss as the bulk read — retry without
+      // the semester embed; the route backfills titles from semesters table.
+      ;({ data, error } = await build(false))
+    }
+    if (error) {
+      if (error.code === "PGRST116") return null
+      throw error
+    }
+    return (data ?? null) as unknown as FacultySubjectWithEmbeds | null
+  },
+
   async create(fields) {
     const { data, error } = await supabase.from("faculty_subjects").insert(fields).select("*").single()
     if (error) throw error

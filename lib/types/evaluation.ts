@@ -413,6 +413,7 @@ export interface IFacultySubjectRepository {
   listAllWithEmbeds(filters?: { semesterId?: string; facultyId?: string }): Promise<FacultySubjectWithEmbeds[]>
   replaceBySection(section_id: string, items: { faculty_id: string; subject_id: string; semesterId?: string | null }[]): Promise<void>
   findById(id: string): Promise<FacultySubjectData | null>
+  findByIdWithEmbeds(id: string): Promise<FacultySubjectWithEmbeds | null>
   create(data: { faculty_id: string; subject_id: string; section_id: string; semesterId?: string | null }): Promise<FacultySubjectData>
   createMany(items: { faculty_id: string; subject_id: string; section_id: string; semesterId?: string | null }[]): Promise<FacultySubjectData[]>
   update(id: string, data: Partial<FacultySubjectData>): Promise<FacultySubjectData>

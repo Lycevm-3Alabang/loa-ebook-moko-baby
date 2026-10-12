@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { useApiGet } from "@/lib/api/client"
 import { usePagination, Paginator } from "@/components/ui/Paginator"
-import { SkeletonTable } from "@/components/ui/Skeleton"
+import Skeleton, { SkeletonTable } from "@/components/ui/Skeleton"
 import IosButton from "@/components/ui/IosButton"
 import LockedTab from "@/components/ui/LockedTab"
 import { StepperTrace, StepPanel } from "./FacultyImportStepper"
@@ -237,7 +237,7 @@ function FacultyTab() {
       .catch(() => { })
   }, [])
 
-  const { data: allUsers } = useApiGet<{ users: { id: string; name: string; email: string; role: string; departmentId: string | null }[]; departments: DepartmentData[] }>("/api/admin/users")
+  const { data: allUsers, isLoading: usersLoading } = useApiGet<{ users: { id: string; name: string; email: string; role: string; departmentId: string | null }[]; departments: DepartmentData[] }>("/api/admin/users")
   const { data: subjectsData } = useApiGet<{ data: Subject[] }>("/api/data/evaluation-mappings?type=subjects")
   const { data: sectionsData } = useApiGet<{ data: Section[] }>("/api/data/evaluation-mappings?type=sections")
 
@@ -827,6 +827,10 @@ function FacultyTab() {
 
   const facultyPagination = usePagination(facultyRows, 25)
 
+  // Skeleton while the manual fetch or the SWR-fed faculty list is still
+  // warming; settled-and-empty falls through to "No faculty found."
+  const showTableSkeleton = (loading && !data) || (facultyRows.length === 0 && (loading || usersLoading))
+
   const [selectedFaculty, setSelectedFaculty] = useState<{ id: string; name: string } | null>(null)
   const [modalRows, setModalRows] = useState<FacultyMapping[] | null>(null)
   const [modalLoading, setModalLoading] = useState(false)
@@ -1415,7 +1419,7 @@ function FacultyTab() {
           </div>
         )}
         <SearchInput value={search} onChange={(v) => { setSearch(v) }} placeholder="Search by faculty name or email..." />
-        {loading && !data ? (
+        {showTableSkeleton ? (
           <SkeletonTable rows={4} cols={3} />
         ) : facultyRows.length === 0 ? (
           <p className="text-xs text-tertiary text-center py-8">No faculty found.</p>
@@ -1609,7 +1613,13 @@ function FacultyTab() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-default">
               <div className="min-w-0">
                 <p className="text-sm font-bold text-secondary truncate">{selectedFaculty.name}</p>
-                <p className="text-xs text-tertiary truncate">{modalRows ? `${modalRows.length} subject load${modalRows.length !== 1 ? "s" : ""}` : "Loading..."}</p>
+                {modalLoading ? (
+                  <Skeleton variant="text" className="w-28" />
+                ) : (
+                  <p className="text-xs text-tertiary truncate">
+                    {modalRows ? `${modalRows.length} subject load${modalRows.length !== 1 ? "s" : ""}` : "Loading..."}
+                  </p>
+                )}
               </div>
               <IosButton variant="gray" size="xs" onClick={() => setSelectedFaculty(null)}>
                 <svg className="w-4 h-4 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1676,7 +1686,11 @@ function FacultyTab() {
               )}
             </div>
             <div className="flex items-center justify-between px-6 py-3 border-t border-default bg-surface-dim text-xs text-tertiary">
-              <span>{modalRows ? `${modalRows.length} subject load${modalRows.length !== 1 ? "s" : ""}` : "…"}</span>
+              {modalLoading ? (
+                <Skeleton variant="text" className="w-28" />
+              ) : (
+                <span>{modalRows ? `${modalRows.length} subject load${modalRows.length !== 1 ? "s" : ""}` : "…"}</span>
+              )}
               <Paginator page={modalPagination.page} totalPages={modalPagination.totalPages} pageSize={modalPagination.pageSize} totalItems={modalRows?.length ?? 0} setPage={modalPagination.setPage} setPageSize={modalPagination.setPageSize} showSizeSelector={false} />
             </div>
           </div>
