@@ -409,7 +409,7 @@ export interface ISectionRepository {
 
 export interface IFacultySubjectRepository {
   list(filters?: { faculty_id?: string; section_id?: string; semesterId?: string }): Promise<FacultySubjectData[]>
-  listAllWithEmbeds(): Promise<FacultySubjectWithEmbeds[]>
+  listAllWithEmbeds(semesterId?: string): Promise<FacultySubjectWithEmbeds[]>
   replaceBySection(section_id: string, items: { faculty_id: string; subject_id: string; semesterId?: string | null }[]): Promise<void>
   findById(id: string): Promise<FacultySubjectData | null>
   create(data: { faculty_id: string; subject_id: string; section_id: string; semesterId?: string | null }): Promise<FacultySubjectData>

@@ -11,9 +11,8 @@ import LockedTab from "@/components/ui/LockedTab"
 import { StepperTrace, StepPanel } from "./FacultyImportStepper"
 import { SegmentedControl, SearchInput } from "./shared"
 import { EnrollmentsTab } from "./EnrollmentsTab"
-import { FacultySubjectDetail } from "./FacultySubjectDetail"
 import type { DepartmentData, SemesterData } from "@/lib/types"
-import type { FacEnrollTab, FacViewTab, Subject, Section, FacultyMapping } from "./types"
+import type { FacEnrollTab, Subject, Section, FacultyMapping } from "./types"
 import { deriveCsvFlags, DUMMY_FACULTY_EMAIL_CLIENT, type CsvRow, type CsvRowWithFlags } from "./csv-helpers"
 import { distinctSections } from "@/lib/utils/distinct-sections"
 import { parseSectionIdentifier } from "@/lib/utils/parse-section-identifier"
@@ -197,22 +196,25 @@ function FacultyTab() {
   const [currentUserDept, setCurrentUserDept] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
 
+  const { data: semestersData } = useApiGet<{ data: SemesterData[] }>("/api/semesters")
+  const activeSemesterId = useMemo(() => semestersData?.data?.find((s) => s.isActive)?.id ?? "", [semestersData])
+
   const fetchData = useCallback(async (isRefresh?: boolean) => {
     if (isRefresh) { setLoading(true); setError("") }
     try {
-      const res = await fetch("/api/data/evaluation-mappings?type=faculty")
-      if (res.status === 403) { setLocked("/api/data/evaluation-mappings?type=faculty"); return }
+      const url = activeSemesterId
+        ? `/api/data/evaluation-mappings?type=faculty&semesterId=${activeSemesterId}`
+        : "/api/data/evaluation-mappings?type=faculty"
+      const res = await fetch(url)
+      if (res.status === 403) { setLocked(url); return }
       if (!res.ok) throw new Error("Failed to load faculty-subject mappings")
       const json = await res.json()
       setData(json.data)
     } catch (err) { setError(err instanceof Error ? err.message : "Unknown error") }
     finally { setLoading(false) }
-  }, [])
+  }, [activeSemesterId])
 
   useEffect(() => { Promise.resolve().then(() => fetchData()) }, [fetchData])
-
-  const { data: semestersData } = useApiGet<{ data: SemesterData[] }>("/api/semesters")
-  const activeSemesterId = useMemo(() => semestersData?.data?.find((s) => s.isActive)?.id ?? "", [semestersData])
 
   // Get current user info for department restriction
   useEffect(() => {
@@ -253,12 +255,6 @@ function FacultyTab() {
   const selectedFacultyName = formFaculty
     ? faculties.find((f) => f.id === formFaculty)?.name ?? ""
     : ""
-
-  const [selectedSsMapping, setSelectedSsMapping] = useState<FacultyMapping | null>(null)
-
-  const closeSubjectSectionModal = () => {
-    setSelectedSsMapping(null)
-  }
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -753,64 +749,40 @@ function FacultyTab() {
     if (csvFileRef.current) csvFileRef.current.value = ""
   }
 
-  const hasNullSemesterId = data?.some((m) => !m.semesterId) ?? false
-
-  const isDummyMapping = (m: FacultyMapping) =>
-    m.faculty.email.toLowerCase().trim() === DUMMY_FACULTY_EMAIL_CLIENT
-
-  const byDept = data?.filter((m) => {
-    if (deptFilter === "all") return true
-    if (deptFilter === "unassigned") return isDummyMapping(m)
-    if (isDummyMapping(m)) return false
-    return m.faculty.departmentId === deptFilter
-  }) ?? []
-
-  const filtered = byDept.filter((m) => {
-    if (!search) return true
-    const q = search.toLowerCase()
-    return (
-      m.faculty.name.toLowerCase().includes(q) ||
-      m.faculty.email.toLowerCase().includes(q) ||
-      m.subject.code.toLowerCase().includes(q) ||
-      m.subject.name.toLowerCase().includes(q) ||
-      `${m.section.program}-${m.section.name}`.toLowerCase().includes(q)
-    )
-  })
-
-  const [viewTab, setViewTab] = useState<FacViewTab>("by_faculty")
-
-  const groupedFaculty = useMemo(() => {
-    const map = new Map<string, { faculty: FacultyMapping["faculty"]; mappings: FacultyMapping[] }>()
-    for (const m of filtered) {
-      if (!map.has(m.faculty.id)) {
-        map.set(m.faculty.id, { faculty: m.faculty, mappings: [] })
-      }
-      map.get(m.faculty.id)!.mappings.push(m)
+  // ── Faculty-only rows (active semester): all faculty left-joined with mappings ──
+  const mappingsByFacultyId = useMemo(() => {
+    const map = new Map<string, FacultyMapping[]>()
+    for (const m of data ?? []) {
+      const list = map.get(m.faculty.id)
+      if (list) list.push(m)
+      else map.set(m.faculty.id, [m])
     }
-    return Array.from(map.values())
-  }, [filtered])
+    return map
+  }, [data])
 
-  const flatData = useMemo(() => {
-    return [...filtered].sort((a, b) => {
-      const c = a.subject.code.localeCompare(b.subject.code)
-      if (c !== 0) return c
-      const secA = `${a.section.program}-${a.section.name}`
-      const secB = `${b.section.program}-${b.section.name}`
-      return secA.localeCompare(secB)
-    })
-  }, [filtered])
+  const facultyRows = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return faculties
+      .filter((f) => {
+        if (f.email.toLowerCase().trim() === DUMMY_FACULTY_EMAIL_CLIENT) return false
+        if (deptFilter !== "all" && f.departmentId !== deptFilter) return false
+        if (q && !f.name.toLowerCase().includes(q) && !f.email.toLowerCase().includes(q)) return false
+        return true
+      })
+      .map((faculty) => ({
+        faculty,
+        mappings: mappingsByFacultyId.get(faculty.id) ?? [],
+      }))
+      .sort((a, b) => a.faculty.name.localeCompare(b.faculty.name))
+  }, [faculties, mappingsByFacultyId, deptFilter, search])
 
-  const { page, totalPages, pageSize, paginatedItems, setPage, setPageSize } = usePagination(groupedFaculty, 25)
-  const ssPagination = usePagination(flatData, 25)
+  const facultyPagination = usePagination(facultyRows, 25)
 
   const [selectedFacultyLoad, setSelectedFacultyLoad] = useState<FacultyMapping[] | null>(null)
   const facultyLoadPagination = usePagination(selectedFacultyLoad ?? [], 25)
 
-  const hasUnassigned = data?.some((m) => isDummyMapping(m)) ?? false
-
   const deptPills = [
     { id: "all", label: "All" },
-    ...(hasUnassigned ? [{ id: "unassigned", label: "Unassigned" }] : []),
     ...departments.map((d) => ({ id: d.id, label: d.name })),
   ]
 
@@ -1439,10 +1411,10 @@ function FacultyTab() {
               <button
                 key={pill.id}
                 onClick={() => {
-                  if (!isAdmin && pill.id !== currentUserDept && pill.id !== "unassigned") return
+                  if (!isAdmin && pill.id !== currentUserDept) return
                   setDeptFilter(pill.id)
                 }}
-                disabled={!isAdmin && pill.id !== currentUserDept && pill.id !== "unassigned"}
+                disabled={!isAdmin && pill.id !== currentUserDept}
                 className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${active
                   ? "bg-amber-500 text-white border-amber-500 shadow-sm"
                   : "bg-surface text-tertiary border-default hover:border-amber-300 hover:text-secondary"
@@ -1454,57 +1426,36 @@ function FacultyTab() {
           })}
         </div>
 
-        <div className="flex items-center gap-2">
-          {[
-            { key: "by_faculty" as FacViewTab, label: "By Faculty" },
-            { key: "by_subject_section" as FacViewTab, label: "By Subject & Section" },
-          ].map((pill) => {
-            const active = viewTab === pill.key
-            return (
-              <button
-                key={pill.key}
-                onClick={() => setViewTab(pill.key)}
-                className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${active
-                    ? "bg-amber-500 text-white border-amber-500 shadow-sm"
-                    : "bg-surface text-tertiary border-default hover:border-amber-300 hover:text-secondary"
-                  }`}
-              >
-                {pill.label}
-              </button>
-            )
-          })}
-        </div>
-
-        {hasNullSemesterId && (
+        {!activeSemesterId && (
           <div className="flex items-center gap-2 text-xs font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-2.5">
             <span>⚠️</span>
-            <span>Some mappings are missing semesterId — affected faculty will not appear in student evaluations.</span>
+            <span>No active semester. Load counts will update once a semester is active.</span>
           </div>
         )}
-        <SearchInput value={search} onChange={(v) => { setSearch(v) }} placeholder={viewTab === "by_faculty" ? "Search by faculty name, email, subject code, or section..." : "Search by subject code, subject name, section, or faculty..."} />
+        <SearchInput value={search} onChange={(v) => { setSearch(v) }} placeholder="Search by faculty name or email..." />
         {loading && !data ? (
-          <SkeletonTable rows={4} cols={viewTab === "by_faculty" ? 3 : 6} />
-        ) : filtered.length === 0 ? (
-          <p className="text-xs text-tertiary text-center py-8">No mappings found.</p>
-        ) : viewTab === "by_faculty" ? (
+          <SkeletonTable rows={4} cols={3} />
+        ) : facultyRows.length === 0 ? (
+          <p className="text-xs text-tertiary text-center py-8">No faculty found.</p>
+        ) : (
           <>
             <div ref={tableRef} className="desktop-only max-h-96 overflow-y-auto tbl-container tbl">
               <table>
                 <thead>
                   <tr>
                     <th>Faculty</th>
-                    <th>Email</th>
+                    <th className="text-center">Load Count</th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedItems.map((group) => {
+                  {facultyPagination.paginatedItems.map((row) => {
                     return (
-                      <tr key={group.faculty.id}>
-                        <td className="font-medium text-secondary">{group.faculty.name}</td>
-                        <td className="text-tertiary">{group.faculty.email}</td>
+                      <tr key={row.faculty.id}>
+                        <td className="font-medium text-secondary">{row.faculty.name} <span className="text-tertiary font-normal">({row.faculty.email})</span></td>
+                        <td className="text-center font-semibold text-secondary">{row.mappings.length}</td>
                         <td>
-                          <IosButton variant="plain" size="xs" onClick={() => setSelectedFacultyLoad(group.mappings)}>View Loading</IosButton>
+                          <IosButton variant="plain" size="xs" onClick={() => setSelectedFacultyLoad(row.mappings)}>View Loading Profile</IosButton>
                         </td>
                       </tr>
                     )
@@ -1513,122 +1464,32 @@ function FacultyTab() {
               </table>
             </div>
             <div className="mobile-only space-y-2">
-              {paginatedItems.map((group) => {
+              {facultyPagination.paginatedItems.map((row) => {
                 return (
-                  <div key={group.faculty.id} className="p-4 rounded-xl bg-surface border border-default space-y-2">
+                  <div key={row.faculty.id} className="p-4 rounded-xl bg-surface border border-default space-y-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-bold text-primary truncate">{group.faculty.name}</p>
-                        <p className="text-xs text-tertiary truncate">{group.faculty.email}</p>
+                        <p className="text-sm font-bold text-primary truncate">{row.faculty.name}</p>
+                        <p className="text-xs text-tertiary truncate">({row.faculty.email})</p>
                       </div>
                       <div className="shrink-0 text-right">
-                        <span className="text-xs font-semibold text-secondary">{group.mappings.length} Subject{group.mappings.length !== 1 ? "s" : ""}</span>
-                        <IosButton variant="plain" size="xs" onClick={() => setSelectedFacultyLoad(group.mappings)}>View</IosButton>
+                        <span className="text-xs font-semibold text-secondary">{row.mappings.length} Subject{row.mappings.length !== 1 ? "s" : ""}</span>
+                        <IosButton variant="plain" size="xs" onClick={() => setSelectedFacultyLoad(row.mappings)}>View Loading Profile</IosButton>
                       </div>
                     </div>
                   </div>
                 )
               })}
             </div>
-            <Paginator page={page} totalPages={totalPages} pageSize={pageSize} totalItems={groupedFaculty.length} setPage={setPage} setPageSize={setPageSize} />
-          </>
-        ) : (
-          <>
-            <div className="desktop-only max-h-96 overflow-y-auto tbl-container tbl">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Subject Code</th>
-                    <th>Subject Name</th>
-                    <th>Section</th>
-                    <th>Faculty</th>
-                    <th>Email</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ssPagination.paginatedItems.map((m) => {
-                    return (
-                      <tr key={m.id}>
-                        <td className="font-mono text-xs font-semibold text-secondary">{m.subject.code}</td>
-                        <td className="text-secondary">{m.subject.name}</td>
-                        <td className="text-secondary">{m.section.program}-{m.section.name}</td>
-                        <td className="font-medium text-secondary">{m.faculty.name}</td>
-                        <td className="text-tertiary">{m.faculty.email}</td>
-                        <td>
-                          <IosButton variant="plain" size="xs" onClick={() => setSelectedSsMapping(m)}>Edit</IosButton>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div className="mobile-only space-y-2">
-              {ssPagination.paginatedItems.map((m) => {
-                return (
-                  <div key={m.id} className="p-4 rounded-xl bg-surface border border-default">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-bold text-primary truncate">{m.subject.code} - {m.subject.name}</p>
-                        <p className="text-xs text-tertiary truncate">{m.section.program}-{m.section.name}</p>
-                        <p className="text-xs text-secondary truncate mt-1">{m.faculty.name}</p>
-                        <p className="text-xs text-tertiary truncate">{m.faculty.email}</p>
-                      </div>
-                      <div className="shrink-0 text-right flex flex-col items-end gap-1">
-                        <IosButton variant="plain" size="xs" onClick={() => setSelectedSsMapping(m)}>Edit</IosButton>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <Paginator page={ssPagination.page} totalPages={ssPagination.totalPages} pageSize={ssPagination.pageSize} totalItems={flatData.length} setPage={ssPagination.setPage} setPageSize={ssPagination.setPageSize} />
+            <Paginator page={facultyPagination.page} totalPages={facultyPagination.totalPages} pageSize={facultyPagination.pageSize} totalItems={facultyRows.length} setPage={facultyPagination.setPage} setPageSize={facultyPagination.setPageSize} />
           </>
         )}
-        {data && (
+        {facultyRows && (
           <p className="text-xs text-tertiary">
-            {viewTab === "by_faculty"
-              ? `${groupedFaculty.length} facult${groupedFaculty.length !== 1 ? "ies" : "y"} (${filtered.length} mapping${filtered.length !== 1 ? "s" : ""})`
-              : `${flatData.length} record${flatData.length !== 1 ? "s" : ""}`
-            }
-            {deptFilter !== "all" ? ` (${byDept.length} in department)` : ""}
+            {`${facultyRows.length} facult${facultyRows.length !== 1 ? "ies" : "y"} (${(data ?? []).length} active loads)`}
           </p>
         )}
       </div>
-
-      {/* ── Subject-Section Detail Modal ────────────────────── */}
-      {selectedSsMapping && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-8 sm:pt-12 bg-black/60" onClick={closeSubjectSectionModal}>
-          <div className="bg-white dark:bg-surface-dim rounded-2xl w-full max-w-4xl mx-4 shadow-2xl border border-default overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-default">
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-secondary truncate">{selectedSsMapping.subject.code} - {selectedSsMapping.subject.name}</p>
-                <p className="text-xs text-tertiary truncate">{selectedSsMapping.section.program}-{selectedSsMapping.section.name} · {selectedSsMapping.faculty.name}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Link
-                  href={`/admin/data/academic-infrastructure/faculty-enroll/${selectedSsMapping.id}`}
-                  className="text-xs text-amber-600 hover:text-amber-700 font-semibold flex items-center gap-1"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                  </svg>
-                  Edit in page
-                </Link>
-                <IosButton variant="gray" size="xs" onClick={closeSubjectSectionModal}>
-                  <svg className="w-4 h-4 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </IosButton>
-              </div>
-            </div>
-            <div className="p-4 max-h-[80vh] overflow-y-auto">
-              <FacultySubjectDetail mapping={selectedSsMapping} onClose={() => { setSelectedSsMapping(null); fetchData(true) }} />
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Faculty Load Modal ─────────────────────────────── */}
       {selectedFacultyLoad && (
@@ -1636,7 +1497,7 @@ function FacultyTab() {
           <div className="bg-white dark:bg-surface-dim rounded-2xl w-full max-w-2xl mx-4 shadow-2xl border border-default overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-default">
               <div className="min-w-0">
-                <p className="text-sm font-bold text-secondary truncate">{selectedFacultyLoad[0].faculty.name}</p>
+                <p className="text-sm font-bold text-secondary truncate">{selectedFacultyLoad[0]?.faculty.name ?? "Faculty load"}</p>
                 <p className="text-xs text-tertiary truncate">{selectedFacultyLoad.length} subject load{selectedFacultyLoad.length !== 1 ? "s" : ""}</p>
               </div>
               <IosButton variant="gray" size="xs" onClick={() => setSelectedFacultyLoad(null)}>

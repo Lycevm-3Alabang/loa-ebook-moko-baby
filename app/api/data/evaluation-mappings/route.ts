@@ -15,7 +15,8 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get("type")
 
   if (type === "faculty") {
-    const data = await facultySubjectRepository.listAllWithEmbeds()
+    const semesterId = searchParams.get("semesterId")
+    const data = await facultySubjectRepository.listAllWithEmbeds(semesterId || undefined)
 
     const sectionIds = [...new Set(data.map((r) => r.section?.id).filter(Boolean))] as string[]
     const counts = await studentEnrollmentRepository.countBySectionIds(sectionIds)

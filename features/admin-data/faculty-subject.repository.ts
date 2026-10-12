@@ -12,8 +12,8 @@ export const facultySubjectRepository: IFacultySubjectRepository = {
     return data as FacultySubjectData[]
   },
 
-  async listAllWithEmbeds() {
-    const { data, error } = await supabase
+  async listAllWithEmbeds(semesterId?: string) {
+    let q = supabase
       .from("faculty_subjects")
       .select(`
         id,
@@ -25,6 +25,8 @@ export const facultySubjectRepository: IFacultySubjectRepository = {
         subject:subject_id (id, code, name),
         section:section_id (id, name, program)
       `)
+    if (semesterId) q = q.eq("semesterId", semesterId) as typeof q
+    const { data, error } = await q
     if (error) throw error
     return (data || []) as unknown as FacultySubjectWithEmbeds[]
   },
