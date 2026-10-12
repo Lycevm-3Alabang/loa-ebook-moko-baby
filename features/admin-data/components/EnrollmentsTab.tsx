@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useApiGet } from "@/lib/api/client"
 import { usePagination, Paginator } from "@/components/ui/Paginator"
 import { SkeletonTable } from "@/components/ui/Skeleton"
@@ -35,6 +35,9 @@ export function EnrollmentsTab() {
   const [formSaving, setFormSaving] = useState(false)
   const [formError, setFormError] = useState("")
   const [formSuccess, setFormSuccess] = useState("")
+  const [formFsSearch, setFormFsSearch] = useState("")
+  const [fsDropdownOpen, setFsDropdownOpen] = useState(false)
+  const fsDropdownRef = useRef<HTMLDivElement>(null)
 
   const { data: semestersData } = useApiGet<{ data: SemesterData[] }>("/api/semesters")
   const activeSemesterId = useMemo(() => semestersData?.data?.find((s) => s.isActive)?.id ?? "", [semestersData])
@@ -64,6 +67,24 @@ export function EnrollmentsTab() {
   const { data: fsData } = useApiGet<{ data: FacultyMapping[] }>("/api/data/evaluation-mappings?type=faculty")
   const facultySubjects = fsData?.data ?? []
 
+  const filteredFacultySubjects = useMemo(() => {
+    if (!formFsSearch.trim()) return facultySubjects
+    const q = formFsSearch.toLowerCase()
+    return facultySubjects.filter((fs) =>
+      `${fs.section.program} ${fs.section.name} ${fs.subject.code} ${fs.subject.name} ${fs.faculty.name}`.toLowerCase().includes(q)
+    )
+  }, [facultySubjects, formFsSearch])
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (fsDropdownRef.current && !fsDropdownRef.current.contains(e.target as Node)) {
+        setFsDropdownOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
+
   // ── Quick Add handlers ───────────────────────────────────
 
   const handleQuickAdd = async (e: React.FormEvent) => {
@@ -77,7 +98,7 @@ export function EnrollmentsTab() {
         body: JSON.stringify({ name: formName, email: formEmail, faculty_subject_id: formFsId, semesterId: activeSemesterId || null }),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Failed to add enrollment") }
-      setFormName(""); setFormEmail(""); setShowQuickAdd(false)
+      setFormFsId(""); setFormFsSearch(""); setFormName(""); setFormEmail(""); setShowQuickAdd(false)
       setFormSuccess("Enrollment added!")
       setTimeout(() => setFormSuccess(""), 3000)
       fetchData(true)
@@ -320,19 +341,38 @@ export function EnrollmentsTab() {
               <form onSubmit={handleQuickAdd} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-tertiary mb-1">Faculty-Subject</label>
-                  <select
-                    value={formFsId}
-                    onChange={(e) => setFormFsId(e.target.value)}
-                    className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    required
-                  >
-                    <option value="">Select subject...</option>
-                    {facultySubjects.map((fs) => (
-                      <option key={fs.id} value={fs.id}>
-                        {fs.section.program} {fs.section.name} - {fs.subject.code} : {fs.subject.name} ({fs.faculty.name})
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative" ref={fsDropdownRef}>
+                    <input
+                      type="text"
+                      value={formFsSearch}
+                      onChange={(e) => { setFormFsSearch(e.target.value); setFormFsId(""); setFsDropdownOpen(true) }}
+                      onFocus={() => setFsDropdownOpen(true)}
+                      placeholder="Type to search subjects..."
+                      className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      autoComplete="off"
+                      required
+                    />
+                    {fsDropdownOpen && filteredFacultySubjects.length > 0 && (
+                      <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                        {filteredFacultySubjects.map((fs) => (
+                          <button
+                            key={fs.id}
+                            type="button"
+                            onClick={() => { setFormFsId(fs.id); setFormFsSearch(`${fs.section.program} ${fs.section.name} - ${fs.subject.code} : ${fs.subject.name} (${fs.faculty.name})`); setFsDropdownOpen(false) }}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-hover transition-colors ${formFsId === fs.id ? "bg-amber-50 dark:bg-amber-900/20 font-semibold" : ""}`}
+                          >
+                            <span className="font-medium text-primary">{fs.section.program} {fs.section.name} - {fs.subject.code} : {fs.subject.name}</span>
+                            <span className="text-tertiary ml-1 text-xs">({fs.faculty.name})</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {fsDropdownOpen && formFsSearch.trim() && filteredFacultySubjects.length === 0 && (
+                      <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl">
+                        <p className="text-xs text-tertiary text-center py-3">No subjects found.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
