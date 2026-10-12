@@ -22,10 +22,11 @@ pending: slice-1
 | who-implements | Who implements Slice 1 (findByIdWithEmbeds)? | B — Code it (agent writes after Apply, one file per turn) |
 | slice-1 | Apply Slice 1 (repository findByIdWithEmbeds)? | Applied — findByIdWithEmbeds + interface (repo layer) |
 | slice-2 | Apply Slice 2 (route id param)? | Applied — single-id early-return with backfill + headcount (route layer) |
+| slice-3 | Apply Slice 3 (page scoped key)? | Applied — scoped SWR key, first-row mapping, useMemo import dropped (UI layer) |
 
 ## Pending
 
-- slice-3: Slice 3 page scoped key (starts only on your continue)
+- slice-4: Slice 4 proof/tests (starts only on your continue)
 
 ## Decisions
 

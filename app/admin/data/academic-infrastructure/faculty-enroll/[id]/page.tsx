@@ -1,7 +1,6 @@
 "use client"
 
 import { useParams } from "next/navigation"
-import { useMemo } from "react"
 import Link from "next/link"
 import { useApiGet } from "@/lib/api/client"
 import { FacultySubjectDetail } from "@/features/admin-data/components/FacultySubjectDetail"
@@ -11,12 +10,11 @@ export default function FacultySubjectDetailPage() {
   const params = useParams()
   const id = params.id as string
 
-  const { data, error, isLoading } = useApiGet<{ data: FacultyMapping[] }>("/api/data/evaluation-mappings?type=faculty")
+  const { data, error, isLoading } = useApiGet<{ data: FacultyMapping[] }>(
+    `/api/data/evaluation-mappings?type=faculty&id=${id}`,
+  )
 
-  const mapping = useMemo(() => {
-    if (!data?.data) return null
-    return data.data.find((m) => m.id === id) ?? null
-  }, [data, id])
+  const mapping = data?.data?.[0] ?? null
 
   if (isLoading) return <div className="p-6 text-center text-sm text-tertiary">Loading...</div>
   if (error) return <div className="p-6 text-center text-sm text-red-600">Failed to load data.</div>
