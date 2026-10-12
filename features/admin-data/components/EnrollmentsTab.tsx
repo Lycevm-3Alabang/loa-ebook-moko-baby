@@ -36,22 +36,30 @@ export function EnrollmentsTab() {
   const [formError, setFormError] = useState("")
   const [formSuccess, setFormSuccess] = useState("")
 
+  const { data: semestersData } = useApiGet<{ data: SemesterData[] }>("/api/semesters")
+  const activeSemesterId = useMemo(() => semestersData?.data?.find((s) => s.isActive)?.id ?? "", [semestersData])
+
   const fetchData = useCallback(async (isRefresh?: boolean) => {
     if (isRefresh) { setLoading(true); setError("") }
     try {
-      const res = await fetch("/api/data/evaluation-mappings?type=student")
-      if (res.status === 403) { setLocked("/api/data/evaluation-mappings?type=student"); return }
+      const url = activeSemesterId
+        ? `/api/data/evaluation-mappings?type=student&semesterId=${activeSemesterId}`
+        : "/api/data/evaluation-mappings?type=student"
+      const res = await fetch(url)
+      if (res.status === 403) { setLocked(url); return }
       if (!res.ok) throw new Error("Failed to load student enrollments")
       const json = await res.json()
       setData(json.data)
     } catch (err) { setError(err instanceof Error ? err.message : "Unknown error") }
     finally { setLoading(false) }
-  }, [])
+  }, [activeSemesterId])
 
-  useEffect(() => { Promise.resolve().then(() => fetchData()) }, [fetchData])
-
-  const { data: semestersData } = useApiGet<{ data: SemesterData[] }>("/api/semesters")
-  const activeSemesterId = useMemo(() => semestersData?.data?.find((s) => s.isActive)?.id ?? "", [semestersData])
+  useEffect(() => {
+    // Semesters drive the fetch URL — wait for them so mount fires one
+    // scoped request instead of bare-then-scoped.
+    if (semestersData === undefined) return
+    Promise.resolve().then(() => fetchData())
+  }, [fetchData, semestersData])
 
   const { data: fsData } = useApiGet<{ data: FacultyMapping[] }>("/api/data/evaluation-mappings?type=faculty")
   const facultySubjects = fsData?.data ?? []
@@ -77,7 +85,7 @@ export function EnrollmentsTab() {
     finally { setFormSaving(false) }
   }
 
-  const filtered = data?.filter((m) => {
+  const filtered = useMemo(() => data?.filter((m) => {
     if (!search) return true
     const q = search.toLowerCase()
     return (
@@ -88,7 +96,7 @@ export function EnrollmentsTab() {
       (m.faculty_subject?.subject.name ?? "").toLowerCase().includes(q) ||
       (m.faculty_subject?.faculty.name ?? "").toLowerCase().includes(q)
     )
-  })
+  }), [data, search])
 
   const groupedStudents = useMemo(() => {
     const map = new Map<string, { student: Enrollment["student"]; enrollments: Enrollment[] }>()

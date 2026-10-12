@@ -25,6 +25,15 @@ pending: none
 | slice-2 | Apply Slice 2 (modal chrome)? | Applied — header/footer shimmer while modalLoading, valid nesting (UI layer) |
 | gates | Close-out gate (tsc + eslint + suite)? | GREEN user-reported (agent-verified nothing per H1) |
 | fix-double-fetch | Post-load reload (user-reported, off-plan defect)? | Applied — effect gated on semestersData; one scoped fetch per mount |
+| fix-enrollments-memo | EnrollmentsTab regroup jank (user-asked "same")? | Applied — filtered memoized on [data, search]; table gate + modal already sound, untouched |
+| enroll-scope-1 | Student bulk repo semester filter? | Applied — listAllWithEmbeds({ semesterId }) + interface (repo layer) |
+| enroll-scope-2 | Route bulk pass-through? | Applied — semesterId forwarded on bulk path (route layer) |
+| enroll-scope-3 | Tab scoped fetch + semesters gate? | Applied — active-term URL, one fetch per mount (UI layer) |
+| enroll-scope-4 | Semester-only bulk route test? | Applied — filter arg + negative asserts (test layer) |
+
+## Pending
+
+- gates: user runs tsc + eslint + npm test, pastes output
 
 ## Pending
 
