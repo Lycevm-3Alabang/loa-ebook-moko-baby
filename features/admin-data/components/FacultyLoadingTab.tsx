@@ -219,7 +219,12 @@ function FacultyTab() {
     finally { setLoading(false) }
   }, [activeSemesterId])
 
-  useEffect(() => { Promise.resolve().then(() => fetchData()) }, [fetchData])
+  useEffect(() => {
+    // Semesters drive the fetch URL — wait for them so mount fires one
+    // scoped request instead of bare-then-scoped (the post-load reload).
+    if (semestersData === undefined) return
+    Promise.resolve().then(() => fetchData())
+  }, [fetchData, semestersData])
 
   // Get current user info for department restriction
   useEffect(() => {

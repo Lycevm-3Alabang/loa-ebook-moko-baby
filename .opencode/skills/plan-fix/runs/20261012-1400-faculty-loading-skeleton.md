@@ -24,6 +24,7 @@ pending: none
 | slice-1 | Apply Slice 1 (table gate)? | Applied — usersLoading + showTableSkeleton gate (UI layer) |
 | slice-2 | Apply Slice 2 (modal chrome)? | Applied — header/footer shimmer while modalLoading, valid nesting (UI layer) |
 | gates | Close-out gate (tsc + eslint + suite)? | GREEN user-reported (agent-verified nothing per H1) |
+| fix-double-fetch | Post-load reload (user-reported, off-plan defect)? | Applied — effect gated on semestersData; one scoped fetch per mount |
 
 ## Pending
 
