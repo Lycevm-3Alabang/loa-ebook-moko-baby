@@ -1589,14 +1589,6 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                     </option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  onClick={() => { setBlockedOnly(true); setPreviewPage(0) }}
-                  title="Show the blocked rows in the current view"
-                  className="text-[11px] font-semibold px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 transition-colors"
-                >
-                  Errors only
-                </button>
                 {(deptFilter || issueFilter || dupOnly || query.trim().length > 0 || blockedOnly) && (
                   <button
                     type="button"
