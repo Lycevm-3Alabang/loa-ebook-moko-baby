@@ -31,17 +31,17 @@ export interface StudentImportResult {
   // held). A re-run reads enrolled > 0 with inserted === 0.
   inserted: number
   skipped: number
-  failed: { row: number; email: string; subjectCode: string; section: string; remark: string; reasonCode: ImportReasonCode }[]
+  failed: { row: number; email: string; subjectCode: string; section: string; facultyEmail?: string; remark: string; reasonCode: ImportReasonCode }[]
   // Rows the file repeated: same (student, subject, section) as an earlier row in
   // this same request. Counted in `skipped`, never inserted twice. Distinguished
   // from ALREADY_PERSISTED (already in the database) by DUPLICATE_IN_FILE
   // (already in THIS file) — different statements, different ledger rows.
-  duplicateRows: { row: number; email: string; subjectCode: string; section: string; reasonCode: ImportReasonCode; remark: string }[]
+  duplicateRows: { row: number; email: string; subjectCode: string; section: string; facultyEmail?: string; reasonCode: ImportReasonCode; remark: string }[]
   // Keys the repository found already in the database for (student,
   // faculty_subject, semester). The enrollment exists — a re-run of a completed
   // file reads entirely of these. Joined back to source rows by the same key the
   // repo dedupes on, so no new query and no client-side id mapping.
-  alreadyPersisted: { row: number; email: string; subjectCode: string; section: string; reasonCode: ImportReasonCode }[]
+  alreadyPersisted: { row: number; email: string; subjectCode: string; section: string; facultyEmail?: string; reasonCode: ImportReasonCode }[]
   // Slots this call parked on Unassigned Faculty (allowUnassigned only) —
   // the reassignment worklist. Rows enrolled under them are normal persisted
   // rows; this names the classes, not the students.
@@ -446,6 +446,18 @@ export async function enrollStudentRows(
   // for — the client reconciles every preview row against enrolled + skipped +
   // failed. The ledger (D3) now carries them as DUPLICATE_IN_FILE rows.
   skipped += duplicateRows.length
+
+  // Echo the input faculty address onto every reported row (one join, not ten
+  // construction sites): API consumers get a structured field instead of
+  // parsing it out of remarks. Keyed by source row number, which all three
+  // lists already carry. Each row keeps its OWN cell value — duplicates point
+  // at the winning row for canonical values, never copied. Optional on the
+  // type so the ten construction sites stay untouched; always present at
+  // return (every source row has a map entry).
+  const facultyByRow = new Map(rows.map((r, i) => [i + 1, r.facultyEmail || ""]))
+  for (const f of failed) f.facultyEmail = facultyByRow.get(f.row) ?? ""
+  for (const d of duplicateRows) d.facultyEmail = facultyByRow.get(d.row) ?? ""
+  for (const a of alreadyPersisted) a.facultyEmail = facultyByRow.get(a.row) ?? ""
 
   return {
     created,
