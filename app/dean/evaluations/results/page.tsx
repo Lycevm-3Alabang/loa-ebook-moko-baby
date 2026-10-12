@@ -51,11 +51,16 @@ export default function DeanEvaluationResultsPage() {
     return (
       <div className="w-full space-y-6 pb-12">
         <h1 className="text-2xl font-bold text-primary">Evaluation Results</h1>
-        <p className="text-sm text-red-600">No department association found for your account.</p>
-        <p className="text-sm text-tertiary max-w-md">
-          Your dean account isn&apos;t linked to a department yet. Ask an administrator to
-          assign your account as dean of your department, then reload this page.
-        </p>
+        <div className="card p-12 sm:p-16 bg-surface text-center animate-fade-in">
+          <div className="w-16 h-16 bg-gold-50 border border-gold-200 rounded-2xl flex items-center justify-center mx-auto mb-5">
+            <span className="text-3xl">🏛️</span>
+          </div>
+          <h2 className="text-lg font-bold text-primary mb-2">No department association found for your account</h2>
+          <p className="text-sm text-tertiary max-w-md mx-auto">
+            Your dean account isn&apos;t linked to a department yet. Ask an administrator to
+            assign your account as dean of your department, then reload this page.
+          </p>
+        </div>
       </div>
     )
   }
