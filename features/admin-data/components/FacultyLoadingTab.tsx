@@ -64,13 +64,19 @@ function FacultyTab() {
   const [facultySearch, setFacultySearch] = useState("")
   const [facultyDropdownOpen, setFacultyDropdownOpen] = useState(false)
   const facultyDropdownRef = useRef<HTMLDivElement>(null)
+  const [subjectSearch, setSubjectSearch] = useState("")
+  const [subjectDropdownOpen, setSubjectDropdownOpen] = useState(false)
+  const subjectDropdownRef = useRef<HTMLDivElement>(null)
+  const [sectionSearch, setSectionSearch] = useState("")
+  const [sectionDropdownOpen, setSectionDropdownOpen] = useState(false)
+  const sectionDropdownRef = useRef<HTMLDivElement>(null)
   const [formSaving, setFormSaving] = useState(false)
   const [formError, setFormError] = useState("")
   const [formSuccess, setFormSuccess] = useState("")
 
   const tableRef = useRef<HTMLDivElement>(null)
   const [showImport, setShowImport] = useState(false)
-  const [showAddForm, setShowAddForm] = useState(true)
+  const [showCreateModal, setShowCreateModal] = useState(false)
 
   // ── CSV Import state ──────────────────────────────────────
   const csvFileRef = useRef<HTMLInputElement>(null)
@@ -193,7 +199,6 @@ function FacultyTab() {
 
   // ── Department filter ────────────────────────────────────
   const [deptFilter, setDeptFilter] = useState("all")
-  const [currentUserDept, setCurrentUserDept] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
 
   const { data: semestersData } = useApiGet<{ data: SemesterData[] }>("/api/semesters")
@@ -225,7 +230,6 @@ function FacultyTab() {
           const isAdm = j.user.role?.split("|").includes("ADMIN")
           setIsAdmin(isAdm)
           if (!isAdm && j.user.departmentId) {
-            setCurrentUserDept(j.user.departmentId)
             setDeptFilter(j.user.departmentId)
           }
         }
@@ -256,10 +260,55 @@ function FacultyTab() {
     ? faculties.find((f) => f.id === formFaculty)?.name ?? ""
     : ""
 
+  const filteredSubjects = useMemo(() => {
+    if (!subjectSearch) return subjects
+    const q = subjectSearch.toLowerCase()
+    return subjects.filter((s) => s.code.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
+  }, [subjects, subjectSearch])
+
+  const selectedSubjectLabel = formSubject
+    ? (() => { const s = subjects.find((x) => x.id === formSubject); return s ? `${s.code} - ${s.name}` : "" })()
+    : ""
+
+  const filteredSections = useMemo(() => {
+    if (!sectionSearch) return sections
+    const q = sectionSearch.toLowerCase()
+    return sections.filter((s) => s.program.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
+  }, [sections, sectionSearch])
+
+  const selectedSectionLabel = formSection
+    ? (() => { const s = sections.find((x) => x.id === formSection); return s ? `${s.program} - ${s.name}` : "" })()
+    : ""
+
+  const resetCreateForm = () => {
+    setFormFaculty("")
+    setFormSubject("")
+    setFormSection("")
+    setFacultySearch("")
+    setSubjectSearch("")
+    setSectionSearch("")
+    setFacultyDropdownOpen(false)
+    setSubjectDropdownOpen(false)
+    setSectionDropdownOpen(false)
+    setFormError("")
+    setFormSuccess("")
+  }
+
+  const closeCreateModal = () => {
+    setShowCreateModal(false)
+    resetCreateForm()
+  }
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (facultyDropdownRef.current && !facultyDropdownRef.current.contains(e.target as Node)) {
         setFacultyDropdownOpen(false)
+      }
+      if (subjectDropdownRef.current && !subjectDropdownRef.current.contains(e.target as Node)) {
+        setSubjectDropdownOpen(false)
+      }
+      if (sectionDropdownRef.current && !sectionDropdownRef.current.contains(e.target as Node)) {
+        setSectionDropdownOpen(false)
       }
     }
     document.addEventListener("mousedown", handleClickOutside)
@@ -803,11 +852,6 @@ function FacultyTab() {
     finally { setModalLoading(false) }
   }, [activeSemesterId])
 
-  const deptPills = [
-    { id: "all", label: "All" },
-    ...departments.map((d) => ({ id: d.id, label: d.name })),
-  ]
-
   return (
     <div className="space-y-6">
       {locked && <LockedTab endpoint={locked} />}
@@ -1349,103 +1393,17 @@ function FacultyTab() {
         )}
       </div>
 
-      <div className="border border-default rounded-lg overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setShowAddForm((s) => !s)}
-          className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold text-secondary hover:bg-surface-dim/40 transition-colors"
-        >
-          <span>Faculty Loading</span>
-          <span className="text-tertiary">{showAddForm ? "▲" : "▼"}</span>
-        </button>
-        {showAddForm && (
-          <div className="border-t border-default px-3 pb-3">
-            <form onSubmit={handleAdd} className="space-y-4 pt-3">
-              {formError && <p className="text-xs font-medium text-red-600 bg-red-50 p-2 rounded">{formError}</p>}
-              {formSuccess && <p className="text-xs font-medium text-green-600 bg-green-50 p-2 rounded">{formSuccess}</p>}
-              {!activeSemesterId && <p className="text-xs font-medium text-amber-600 bg-amber-50 dark:bg-amber-900/20 p-2 rounded flex items-center gap-2"><span>⚠️</span> No active semester. Set one as active before adding faculty load entries.</p>}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-tertiary mb-1">Department</label>
-                  <select value={formDept} onChange={(e) => { setFormDept(e.target.value); setFormFaculty(""); setFacultySearch("") }} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400">
-                    <option value="all">All Departments</option>
-                    {departments.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
-                  </select>
-                </div>
-                <div className="relative">
-                  <label className="block text-xs font-semibold text-tertiary mb-1">Faculty</label>
-                  <input
-                    value={facultySearch || selectedFacultyName}
-                    onChange={(e) => { setFacultySearch(e.target.value); setFormFaculty(""); setFacultyDropdownOpen(true) }}
-                    onFocus={() => setFacultyDropdownOpen(true)}
-                    placeholder="Search faculty..."
-                    className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    required
-                    autoComplete="off"
-                  />
-                  {facultyDropdownOpen && (
-                    <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl max-h-52 overflow-y-auto">
-                      {filteredFaculties.length === 0 ? (
-                        <p className="text-xs text-tertiary text-center py-4">No faculty found</p>
-                      ) : (
-                        filteredFaculties.map((f) => (
-                          <button
-                            key={f.id}
-                            type="button"
-                            onClick={() => { setFormFaculty(f.id); setFacultySearch(""); setFacultyDropdownOpen(false) }}
-                            className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-hover transition-colors ${formFaculty === f.id ? "bg-amber-50 dark:bg-amber-900/20 font-semibold" : ""}`}
-                          >
-                            <span className="text-primary">{f.name}</span>
-                            <span className="text-tertiary ml-1 text-xs">{f.email}</span>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-tertiary mb-1">Subject</label>
-                  <select value={formSubject} onChange={(e) => { setFormSubject(e.target.value) }} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" required>
-                    <option value="">Select subject...</option>
-                    {subjects.map((s) => (<option key={s.id} value={s.id}>{s.code} - {s.name}</option>))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-tertiary mb-1">Section</label>
-                  <select value={formSection} onChange={(e) => { setFormSection(e.target.value) }} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" required>
-                    <option value="">Select section...</option>
-                    {sections.map((s) => (<option key={s.id} value={s.id}>{s.program} - {s.name}</option>))}
-                  </select>
-                </div>
-              </div>
-              <div className="pt-2"><IosButton type="submit" loading={formSaving} disabled={!activeSemesterId} variant="primary">Create Faculty Load Entry</IosButton></div>
-            </form>
-          </div>
-        )}
-      </div>
-
       {/* Department Filter */}
       <div className="card p-4 sm:p-6 bg-surface space-y-3">
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
-          {deptPills.map((pill) => {
-            const active = deptFilter === pill.id
-            return (
-              <button
-                key={pill.id}
-                onClick={() => {
-                  if (!isAdmin && pill.id !== currentUserDept) return
-                  setDeptFilter(pill.id)
-                }}
-                disabled={!isAdmin && pill.id !== currentUserDept}
-                className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${active
-                  ? "bg-amber-500 text-white border-amber-500 shadow-sm"
-                  : "bg-surface text-tertiary border-default hover:border-amber-300 hover:text-secondary"
-                  } disabled:opacity-40 disabled:cursor-not-allowed`}
-              >
-                {pill.label}
-              </button>
-            )
-          })}
+        <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+          <div className="flex-1">
+            <label className="block text-xs font-semibold text-tertiary mb-1">Department</label>
+            <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} disabled={!isAdmin} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-60">
+              <option value="all">All Departments</option>
+              {departments.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
+            </select>
+          </div>
+          <IosButton variant="primary" size="sm" onClick={() => setShowCreateModal(true)}>+ Add Faculty Load</IosButton>
         </div>
 
         {!activeSemesterId && (
@@ -1512,6 +1470,135 @@ function FacultyTab() {
           </p>
         )}
       </div>
+
+      {/* ── Create Faculty Load Modal ─────────────────────── */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-8 sm:pt-12 bg-black/60" onClick={closeCreateModal}>
+          <div className="bg-white dark:bg-surface-dim rounded-2xl w-full max-w-2xl mx-4 shadow-2xl border border-default overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-default">
+              <p className="text-sm font-bold text-secondary">Create Faculty Load Entry</p>
+              <IosButton variant="gray" size="xs" onClick={closeCreateModal}>
+                <svg className="w-4 h-4 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </IosButton>
+            </div>
+            <div className="p-4 sm:p-6 max-h-[80vh] overflow-y-auto">
+              <form onSubmit={handleAdd} className="space-y-4">
+                {formError && <p className="text-xs font-medium text-red-600 bg-red-50 p-2 rounded">{formError}</p>}
+                {formSuccess && <p className="text-xs font-medium text-green-600 bg-green-50 p-2 rounded">{formSuccess}</p>}
+                {!activeSemesterId && <p className="text-xs font-medium text-amber-600 bg-amber-50 dark:bg-amber-900/20 p-2 rounded flex items-center gap-2"><span>⚠️</span> No active semester. Set one as active before adding faculty load entries.</p>}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-tertiary mb-1">Department</label>
+                    <select value={formDept} onChange={(e) => { setFormDept(e.target.value); setFormFaculty(""); setFacultySearch("") }} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                      <option value="all">All Departments</option>
+                      {departments.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
+                    </select>
+                  </div>
+                  <div className="relative" ref={facultyDropdownRef}>
+                    <label className="block text-xs font-semibold text-tertiary mb-1">Faculty</label>
+                    <input
+                      value={facultySearch || selectedFacultyName}
+                      onChange={(e) => { setFacultySearch(e.target.value); setFormFaculty(""); setFacultyDropdownOpen(true) }}
+                      onFocus={() => setFacultyDropdownOpen(true)}
+                      placeholder="Search faculty..."
+                      className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      required
+                      autoComplete="off"
+                    />
+                    {facultyDropdownOpen && (
+                      <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl max-h-52 overflow-y-auto">
+                        {filteredFaculties.length === 0 ? (
+                          <p className="text-xs text-tertiary text-center py-4">No faculty found</p>
+                        ) : (
+                          filteredFaculties.map((f) => (
+                            <button
+                              key={f.id}
+                              type="button"
+                              onClick={() => { setFormFaculty(f.id); setFacultySearch(""); setFacultyDropdownOpen(false) }}
+                              className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-hover transition-colors ${formFaculty === f.id ? "bg-amber-50 dark:bg-amber-900/20 font-semibold" : ""}`}
+                            >
+                              <span className="text-primary">{f.name}</span>
+                              <span className="text-tertiary ml-1 text-xs">{f.email}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="relative" ref={subjectDropdownRef}>
+                    <label className="block text-xs font-semibold text-tertiary mb-1">Subject</label>
+                    <input
+                      value={subjectSearch || selectedSubjectLabel}
+                      onChange={(e) => { setSubjectSearch(e.target.value); setFormSubject(""); setSubjectDropdownOpen(true) }}
+                      onFocus={() => setSubjectDropdownOpen(true)}
+                      placeholder="Search subject..."
+                      className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      required
+                      autoComplete="off"
+                    />
+                    {subjectDropdownOpen && (
+                      <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl max-h-52 overflow-y-auto">
+                        {filteredSubjects.length === 0 ? (
+                          <p className="text-xs text-tertiary text-center py-4">No subject found</p>
+                        ) : (
+                          filteredSubjects.map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => { setFormSubject(s.id); setSubjectSearch(""); setSubjectDropdownOpen(false) }}
+                              className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-hover transition-colors ${formSubject === s.id ? "bg-amber-50 dark:bg-amber-900/20 font-semibold" : ""}`}
+                            >
+                              <span className="text-primary">{s.code}</span>
+                              <span className="text-tertiary ml-1 text-xs">- {s.name}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="relative" ref={sectionDropdownRef}>
+                    <label className="block text-xs font-semibold text-tertiary mb-1">Section</label>
+                    <input
+                      value={sectionSearch || selectedSectionLabel}
+                      onChange={(e) => { setSectionSearch(e.target.value); setFormSection(""); setSectionDropdownOpen(true) }}
+                      onFocus={() => setSectionDropdownOpen(true)}
+                      placeholder="Search section..."
+                      className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      required
+                      autoComplete="off"
+                    />
+                    {sectionDropdownOpen && (
+                      <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl max-h-52 overflow-y-auto">
+                        {filteredSections.length === 0 ? (
+                          <p className="text-xs text-tertiary text-center py-4">No section found</p>
+                        ) : (
+                          filteredSections.map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => { setFormSection(s.id); setSectionSearch(""); setSectionDropdownOpen(false) }}
+                              className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-hover transition-colors ${formSection === s.id ? "bg-amber-50 dark:bg-amber-900/20 font-semibold" : ""}`}
+                            >
+                              <span className="text-primary">{s.program}</span>
+                              <span className="text-tertiary ml-1 text-xs">- {s.name}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="pt-2 flex items-center gap-2">
+                  <IosButton type="submit" loading={formSaving} disabled={!activeSemesterId} variant="primary">Create Faculty Load Entry</IosButton>
+                  <IosButton variant="plain" size="sm" type="button" onClick={closeCreateModal}>Cancel</IosButton>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Faculty Load Modal ─────────────────────────────── */}
       {selectedFaculty && (

@@ -23,14 +23,16 @@ export async function GET(request: NextRequest) {
       ...(facultyId ? { facultyId } : {}),
     })
 
-    // Headcount per faculty_subject (exact per teacher), scoped to the
-    // requested semester when given. Single batched query — no N+1.
-    // (Replaces the old section-based student_count, which had no consumers
-    // and double-counted co-taught sections.)
-    const headcounts = await studentEnrollmentRepository.countByFacultySubjectIds(
-      data.map((r) => r.id),
-      semesterId || undefined,
-    )
+    // Headcount per faculty_subject (exact per teacher), aggregated in the
+    // application. Only fetched on the per-faculty path (modal) — the bulk
+    // table never displays headcount, so it skips this query entirely
+    // instead of batching hundreds of ids into one oversized filter.
+    const headcounts: Record<string, number> = facultyId
+      ? await studentEnrollmentRepository.countByFacultySubjectIds(
+        data.map((r) => r.id),
+        semesterId || undefined,
+      )
+      : {}
 
     // Semester titles prefer the join embed; backfill from the semesters
     // table when the embed was unavailable (PostgREST camelCase FK miss).
