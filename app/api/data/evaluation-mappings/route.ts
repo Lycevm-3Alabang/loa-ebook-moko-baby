@@ -16,6 +16,23 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get("type")
 
   if (type === "faculty") {
+    const id = searchParams.get("id")
+    if (id) {
+      const row = await facultySubjectRepository.findByIdWithEmbeds(id)
+      if (!row) return NextResponse.json({ data: [] })
+      let semester = row.semester
+      if (!semester && row.semesterId) {
+        const semesters = await semesterRepository.list()
+        const title = semesters.find((s) => s.id === row.semesterId)?.title ?? "—"
+        semester = { id: row.semesterId, title }
+      }
+      const counts = await studentEnrollmentRepository.countByFacultySubjectIds(
+        [id],
+        row.semesterId || undefined,
+      )
+      return NextResponse.json({ data: [{ ...row, semester, headcount: counts[id] ?? 0 }] })
+    }
+
     const semesterId = searchParams.get("semesterId")
     const facultyId = searchParams.get("facultyId")
     const data = await facultySubjectRepository.listAllWithEmbeds({
