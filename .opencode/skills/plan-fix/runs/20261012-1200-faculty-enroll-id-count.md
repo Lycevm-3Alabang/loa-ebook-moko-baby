@@ -29,10 +29,11 @@ pending: slice-1
 | slice-2 | Apply Slice 2 (route scope)? | Applied — scoped student branch with server total (route layer) |
 | slice-3 | Apply Slice 3 (UI scope)? | Applied — scoped studentKey + server-total header + scoped invalidates (UI layer) |
 | lint-offplan | FacultyLoadingTab lint (user-asked, out of plan scope)? | Applied — subjects/sections wrapped in useMemo; openFacultyProfile useCallback → plain fn (callers use inline arrows; compiler owns memoization) |
+| slice-4 | Apply Slice 4 (proof/tests)? | Applied — student scoped/bulk route tests (test layer) |
 
 ## Pending
 
-- slice-4: Slice 4 proof/tests (starts only on your continue)
+- none (all 4 slices applied; gates await user run per H1)
 
 ## Decisions
 
