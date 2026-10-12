@@ -22,10 +22,11 @@ pending: slice-1
 | handoff | Run implement-fix with it? | A — Yes, load implement-fix on this file (no slice starts yet) |
 | who-implements | Who implements Slice 1 (table gate)? | B — Code it (agent writes after Apply, one file per turn) |
 | slice-1 | Apply Slice 1 (table gate)? | Applied — usersLoading + showTableSkeleton gate (UI layer) |
+| slice-2 | Apply Slice 2 (modal chrome)? | Applied — header/footer shimmer while modalLoading, valid nesting (UI layer) |
 
 ## Pending
 
-- slice-2: Slice 2 modal chrome (starts only on your continue)
+- gates: user runs tsc + npm test, pastes output
 
 ## Decisions
 
