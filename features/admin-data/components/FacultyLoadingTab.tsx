@@ -836,6 +836,14 @@ function FacultyTab() {
   // warming; settled-and-empty falls through to "No faculty found."
   const showTableSkeleton = (loading && !data) || (facultyRows.length === 0 && (loading || usersLoading))
 
+  // Minimum shimmer time so the skeleton reads on fast loads instead of
+  // flashing for a frame; slow loads stay on the gate above regardless.
+  const [skeletonReady, setSkeletonReady] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setSkeletonReady(true), 700)
+    return () => clearTimeout(t)
+  }, [])
+
   const [selectedFaculty, setSelectedFaculty] = useState<{ id: string; name: string } | null>(null)
   const [modalRows, setModalRows] = useState<FacultyMapping[] | null>(null)
   const [modalLoading, setModalLoading] = useState(false)
@@ -1424,13 +1432,13 @@ function FacultyTab() {
           </div>
         )}
         <SearchInput value={search} onChange={(v) => { setSearch(v) }} placeholder="Search by faculty name or email..." />
-        {showTableSkeleton ? (
+        {showTableSkeleton || !skeletonReady ? (
           <SkeletonTable rows={4} cols={3} />
         ) : facultyRows.length === 0 ? (
           <p className="text-xs text-tertiary text-center py-8">No faculty found.</p>
         ) : (
           <>
-            <div ref={tableRef} className="desktop-only max-h-96 overflow-y-auto tbl-container tbl">
+            <div ref={tableRef} className="desktop-only max-h-96 overflow-y-auto tbl-container tbl animate-fade-in">
               <table>
                 <thead>
                   <tr>
@@ -1454,7 +1462,7 @@ function FacultyTab() {
                 </tbody>
               </table>
             </div>
-            <div className="mobile-only space-y-2">
+            <div className="mobile-only space-y-2 animate-fade-in">
               {facultyPagination.paginatedItems.map((row) => {
                 return (
                   <div key={row.faculty.id} className="p-4 rounded-xl bg-surface border border-default space-y-2">
