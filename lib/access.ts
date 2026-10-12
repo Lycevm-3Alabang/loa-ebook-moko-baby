@@ -95,6 +95,11 @@ const HIDDEN_DEFAULTS: Record<string, string[]> = {
   FACULTY: ["/faculty/evaluations/reports"],
 }
 
+// Read-only reference data every signed-in user needs.
+// Writes under these paths stay ADMIN-gated in-route, so granting the
+// path here only ever exposes reads.
+const AUTHENTICATED_APIS: string[] = ["/api/semesters"]
+
 export async function getUserAccess(userId: string, role: string): Promise<AccessEntry[]> {
   const cached = accessCache.get(userId)
   if (cached && Date.now() - cached.ts < ACCESS_CACHE_TTL) return cached.entries
@@ -131,6 +136,14 @@ export async function getUserAccess(userId: string, role: string): Promise<Acces
       entries.set(url, { url, access: "granted", type: t })
     }
 
+    // Grant reference reads every signed-in user needs (can't be overridden)
+    if (topRole !== "GUEST") {
+      for (const url of AUTHENTICATED_APIS) {
+        const t = allPaths.get(url) ?? pathType(url)
+        entries.set(url, { url, access: "granted", type: t })
+      }
+    }
+
     // Grant additional pages from RBAC config
     const rbacPages = config[topRole]?.pages ?? []
     for (const url of rbacPages) {
@@ -147,7 +160,7 @@ export async function getUserAccess(userId: string, role: string): Promise<Acces
       .eq('user_id', userId)
 
     if (perms) {
-      const defaultSet = new Set(defaultPaths)
+      const defaultSet = new Set([...defaultPaths, ...(topRole === "GUEST" ? [] : AUTHENTICATED_APIS)])
       for (const p of perms as { grants: string[]; denies: string[]; resource_path: string }[]) {
         // Irrevocable defaults cannot be overridden by user_permissions
         if (defaultSet.has(p.resource_path)) continue
