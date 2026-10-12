@@ -24,7 +24,7 @@ export const authOptions: NextAuthOptions = {
         const user = await userRepository.findByEmail(credentials.email as string)
 
         if (!user || !user.passwordHash) return null
-        if (user.isDisabled) return null
+        if (user.isDisabled || user.deletedAt) return null
         if (hasRole(user.role, "GUEST")) return null
 
         const isValid = await compare(credentials.password as string, user.passwordHash)
@@ -109,6 +109,11 @@ export async function auth() {
 
     if (dbUser.isDisabled) {
       console.warn(`[auth] Session user ${userId} is disabled — returning null`)
+      return null
+    }
+
+    if ((dbUser as unknown as Record<string, unknown>).deletedAt) {
+      console.warn(`[auth] Session user ${userId} is deleted — returning null`)
       return null
     }
 

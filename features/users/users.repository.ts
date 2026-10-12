@@ -260,6 +260,8 @@ export const userRepository: IUserRepository = {
     }
   },
   async update(id, data) {
+    const existing = await this.findById(id)
+    if (existing?.deletedAt) throw new Error("User is deleted and cannot be edited — restore it first")
     const { role, ...userFields } = data
     if (userFields.email) userFields.email = userFields.email.toLowerCase().trim()
     if (Object.keys(userFields).length > 0) {

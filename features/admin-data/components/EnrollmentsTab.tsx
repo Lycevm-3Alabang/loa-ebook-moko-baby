@@ -38,6 +38,9 @@ export function EnrollmentsTab() {
   const [formFsSearch, setFormFsSearch] = useState("")
   const [fsDropdownOpen, setFsDropdownOpen] = useState(false)
   const fsDropdownRef = useRef<HTMLDivElement>(null)
+  const [studentSearch, setStudentSearch] = useState("")
+  const [studentDropdownOpen, setStudentDropdownOpen] = useState(false)
+  const studentDropdownRef = useRef<HTMLDivElement>(null)
 
   const { data: semestersData } = useApiGet<{ data: SemesterData[] }>("/api/semesters")
   const activeSemesterId = useMemo(() => semestersData?.data?.find((s) => s.isActive)?.id ?? "", [semestersData])
@@ -80,16 +83,35 @@ export function EnrollmentsTab() {
       if (fsDropdownRef.current && !fsDropdownRef.current.contains(e.target as Node)) {
         setFsDropdownOpen(false)
       }
+      if (studentDropdownRef.current && !studentDropdownRef.current.contains(e.target as Node)) {
+        setStudentDropdownOpen(false)
+      }
     }
     document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
+  const { data: usersData } = useApiGet<{ users: { id: string; name: string; email: string; role: string; isDisabled: boolean }[] }>("/api/admin/users")
+  const students = useMemo(() => (usersData?.users ?? []).filter((u) => u.role.includes("STUDENT") && !u.isDisabled), [usersData])
+
+  const filteredStudents = useMemo(() => {
+    if (!studentSearch.trim()) return students
+    const q = studentSearch.toLowerCase()
+    return students.filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+  }, [students, studentSearch])
+
   // ── Quick Add handlers ───────────────────────────────────
+
+  const closeQuickAdd = () => {
+    setShowQuickAdd(false)
+    setFormFsId(""); setFormFsSearch("")
+    setFormName(""); setFormEmail(""); setStudentSearch("")
+    setFormError(""); setFsDropdownOpen(false); setStudentDropdownOpen(false)
+  }
 
   const handleQuickAdd = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formName || !formEmail || !formFsId) return
+    if (!formFsId || !formName || !formEmail) { setFormError("Select a subject and a student from the lists."); return }
     setFormSaving(true); setFormError(""); setFormSuccess("")
     try {
       const res = await fetch("/api/admin/student-enrollments", {
@@ -98,7 +120,7 @@ export function EnrollmentsTab() {
         body: JSON.stringify({ name: formName, email: formEmail, faculty_subject_id: formFsId, semesterId: activeSemesterId || null }),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Failed to add enrollment") }
-      setFormFsId(""); setFormFsSearch(""); setFormName(""); setFormEmail(""); setShowQuickAdd(false)
+      closeQuickAdd()
       setFormSuccess("Enrollment added!")
       setTimeout(() => setFormSuccess(""), 3000)
       fetchData(true)
@@ -325,11 +347,11 @@ export function EnrollmentsTab() {
 
       {/* ── Quick Add Modal ─────────────────────────── */}
       {showQuickAdd && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 sm:pt-20 bg-black/60" onClick={() => setShowQuickAdd(false)}>
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 sm:pt-20 bg-black/60" onClick={closeQuickAdd}>
           <div className="bg-white dark:bg-surface-dim rounded-2xl w-full max-w-2xl mx-4 shadow-2xl border border-default overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-default">
               <p className="text-sm font-bold text-secondary">Quick Add Single Student</p>
-              <IosButton variant="gray" size="xs" onClick={() => setShowQuickAdd(false)}>
+              <IosButton variant="gray" size="xs" onClick={closeQuickAdd}>
                 <svg className="w-4 h-4 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -374,17 +396,45 @@ export function EnrollmentsTab() {
                     )}
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-tertiary mb-1">Student Name</label>
-                    <input type="text" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="e.g. Juan Dela Cruz" className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" required />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-tertiary mb-1">Student Email</label>
-                    <input type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} placeholder="e.g. juan@example.com" className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" required />
+                <div>
+                  <label className="block text-xs font-semibold text-tertiary mb-1">Student</label>
+                  <div className="relative" ref={studentDropdownRef}>
+                    <input
+                      type="text"
+                      value={studentSearch}
+                      onChange={(e) => { setStudentSearch(e.target.value); setFormName(""); setFormEmail(""); setStudentDropdownOpen(true) }}
+                      onFocus={() => setStudentDropdownOpen(true)}
+                      placeholder="Type to search students..."
+                      className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      autoComplete="off"
+                      required
+                    />
+                    {studentDropdownOpen && filteredStudents.length > 0 && (
+                      <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                        {filteredStudents.map((u) => (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => { setFormName(u.name); setFormEmail(u.email); setStudentSearch(`${u.name} (${u.email})`); setStudentDropdownOpen(false) }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-surface-hover transition-colors"
+                          >
+                            <span className="font-medium text-primary">{u.name}</span>
+                            <span className="text-tertiary ml-1 text-xs">({u.email})</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {studentDropdownOpen && studentSearch.trim() && filteredStudents.length === 0 && (
+                      <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-surface border border-strong rounded-lg shadow-xl">
+                        <p className="text-xs text-tertiary text-center py-3">No students found.</p>
+                      </div>
+                    )}
                   </div>
                 </div>
-                <IosButton type="submit" loading={formSaving} disabled={!activeSemesterId} variant="primary">Add Enrollment</IosButton>
+                <div className="flex items-center justify-end gap-2">
+                  <IosButton type="button" variant="gray" onClick={closeQuickAdd}>Cancel</IosButton>
+                  <IosButton type="submit" loading={formSaving} disabled={!activeSemesterId} variant="primary">Add Enrollment</IosButton>
+                </div>
               </form>
             </div>
           </div>

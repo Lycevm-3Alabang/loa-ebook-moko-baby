@@ -81,6 +81,14 @@ export async function createEnrollment(
     }
   }
 
+  const resolvedStudent = await userRepository.findById(resolvedStudentId)
+  if (!resolvedStudent) {
+    throw new EnrollmentError("Student account not found", 404)
+  }
+  if (resolvedStudent.isDisabled || resolvedStudent.deletedAt) {
+    throw new EnrollmentError("This student account is disabled or deleted and cannot be enrolled", 400)
+  }
+
   let resolvedSectionId = section_id
   if (!resolvedSectionId) {
     const { data: fs, error: fsErr } = await supabase

@@ -5,6 +5,7 @@ import {
   resolveTimeSlots,
   validateTimeSlots,
   resolveCreator,
+  assertUsersAssignable,
   resolveMeetingType,
   checkForConflicts,
   collectAttendeeIds,
@@ -50,6 +51,7 @@ export async function requestAppointment(input: {
   const meetingType = resolveMeetingType(creator.role, input.meetingType)
 
   const allAttendeeIds = collectAttendeeIds(input.studentId, input.facultyId, input.attendeeIds, input.attendeeOptions)
+  await assertUsersAssignable([input.createdByUserId, ...allAttendeeIds])
   await checkForConflicts(
     creator.role,
     input.createdByUserId,
