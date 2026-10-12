@@ -12,6 +12,9 @@ async function logUserAction(email: string, action: string, details?: string) {
   await logAuditEvent({ email, action, details })
 }
 
+// Literal (not .replace()) so supabase keeps literal-type inference like USER_SELECT
+const USER_SELECT_INNER = `id, name, email, "departmentId", course, "employeeNo", "semesterId", "isDisabled", "hasLoggedInBefore", "lastLoginAt", "tokenVersion", "onboardingVersion", "createdAt", "deletedAt", userrole!inner(roleName)`
+
 export const userRepository: IUserRepository = {
   async findByEmail(email) {
     const trimmed = email.trim()
@@ -151,13 +154,14 @@ export const userRepository: IUserRepository = {
 
   async listByRole(role, options) {
     try {
-      let query = supabase.from("users").select(USER_SELECT).eq("userrole.roleName", role)
+      let query = supabase.from("users").select(USER_SELECT_INNER).eq("userrole.roleName", role)
       if (!options?.includeDeleted) {
         query = query.is("deletedAt", null)
       }
       const { data, error } = await query
       if (error) throw error
-      return toUsersWithRoles(data)
+      const withRoles = toUsersWithRoles((data || []) as DbRecord[])
+      return withRoles.filter((u) => u.role.split("|").includes(role))
     } catch (err) {
       if (isMissingUserrole(err as QueryError)) {
         console.warn("[repo] userrole table not found — listByRole returns empty")
