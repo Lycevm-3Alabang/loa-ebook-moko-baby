@@ -12,10 +12,11 @@ export const facultySubjectRepository: IFacultySubjectRepository = {
     return data as FacultySubjectData[]
   },
 
-  async listAllWithEmbeds(semesterId?: string) {
-    let q = supabase
-      .from("faculty_subjects")
-      .select(`
+  async listAllWithEmbeds(filters?: { semesterId?: string; facultyId?: string }) {
+    const build = (withSemester: boolean) => {
+      let q = supabase
+        .from("faculty_subjects")
+        .select(`
         id,
         faculty_id,
         subject_id,
@@ -24,9 +25,18 @@ export const facultySubjectRepository: IFacultySubjectRepository = {
         faculty:faculty_id (id, name, email, "departmentId"),
         subject:subject_id (id, code, name),
         section:section_id (id, name, program)
+        ${withSemester ? ',semester:"semesterId" (id, title)' : ""}
       `)
-    if (semesterId) q = q.eq("semesterId", semesterId) as typeof q
-    const { data, error } = await q
+      if (filters?.semesterId) q = q.eq("semesterId", filters.semesterId) as typeof q
+      if (filters?.facultyId) q = q.eq("faculty_id", filters.facultyId) as typeof q
+      return q
+    }
+    let { data, error } = await build(true)
+    if (error && error.code === "PGRST201") {
+      // PostgREST missed the camelCase "semesterId" FK — retry without the
+      // semester embed; the route backfills titles from the semesters table.
+      ;({ data, error } = await build(false))
+    }
     if (error) throw error
     return (data || []) as unknown as FacultySubjectWithEmbeds[]
   },

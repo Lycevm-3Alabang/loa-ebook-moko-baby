@@ -778,8 +778,30 @@ function FacultyTab() {
 
   const facultyPagination = usePagination(facultyRows, 25)
 
-  const [selectedFacultyLoad, setSelectedFacultyLoad] = useState<FacultyMapping[] | null>(null)
-  const facultyLoadPagination = usePagination(selectedFacultyLoad ?? [], 25)
+  const [selectedFaculty, setSelectedFaculty] = useState<{ id: string; name: string } | null>(null)
+  const [modalRows, setModalRows] = useState<FacultyMapping[] | null>(null)
+  const [modalLoading, setModalLoading] = useState(false)
+  const [modalError, setModalError] = useState("")
+  const modalPagination = usePagination(modalRows ?? [], 25)
+
+  // Per-open refetch: faculty_subject rows for this faculty + active semester,
+  // with headcount + semester title resolved server-side per row.
+  const openFacultyProfile = useCallback(async (facultyId: string, facultyName: string) => {
+    setSelectedFaculty({ id: facultyId, name: facultyName })
+    setModalRows(null)
+    setModalError("")
+    setModalLoading(true)
+    try {
+      const params = new URLSearchParams({ type: "faculty", facultyId })
+      if (activeSemesterId) params.set("semesterId", activeSemesterId)
+      const res = await fetch(`/api/data/evaluation-mappings?${params.toString()}`)
+      if (res.status === 403) throw new Error("Access denied for faculty loading.")
+      if (!res.ok) throw new Error("Failed to load faculty profile")
+      const json = await res.json()
+      setModalRows(json.data)
+    } catch (err) { setModalError(err instanceof Error ? err.message : "Unknown error") }
+    finally { setModalLoading(false) }
+  }, [activeSemesterId])
 
   const deptPills = [
     { id: "all", label: "All" },
@@ -1455,7 +1477,7 @@ function FacultyTab() {
                         <td className="font-medium text-secondary">{row.faculty.name} <span className="text-tertiary font-normal">({row.faculty.email})</span></td>
                         <td className="text-center font-semibold text-secondary">{row.mappings.length}</td>
                         <td>
-                          <IosButton variant="plain" size="xs" onClick={() => setSelectedFacultyLoad(row.mappings)}>View Loading Profile</IosButton>
+                          <IosButton variant="plain" size="xs" onClick={() => openFacultyProfile(row.faculty.id, row.faculty.name)} disabled={row.mappings.length === 0}>View Loading Profile</IosButton>
                         </td>
                       </tr>
                     )
@@ -1474,7 +1496,7 @@ function FacultyTab() {
                       </div>
                       <div className="shrink-0 text-right">
                         <span className="text-xs font-semibold text-secondary">{row.mappings.length} Subject{row.mappings.length !== 1 ? "s" : ""}</span>
-                        <IosButton variant="plain" size="xs" onClick={() => setSelectedFacultyLoad(row.mappings)}>View Loading Profile</IosButton>
+                        <IosButton variant="plain" size="xs" onClick={() => openFacultyProfile(row.faculty.id, row.faculty.name)} disabled={row.mappings.length === 0}>View Loading Profile</IosButton>
                       </div>
                     </div>
                   </div>
@@ -1492,32 +1514,42 @@ function FacultyTab() {
       </div>
 
       {/* ── Faculty Load Modal ─────────────────────────────── */}
-      {selectedFacultyLoad && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 sm:pt-20 bg-black/60" onClick={() => setSelectedFacultyLoad(null)}>
+      {selectedFaculty && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 sm:pt-20 bg-black/60" onClick={() => setSelectedFaculty(null)}>
           <div className="bg-white dark:bg-surface-dim rounded-2xl w-full max-w-2xl mx-4 shadow-2xl border border-default overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-default">
               <div className="min-w-0">
-                <p className="text-sm font-bold text-secondary truncate">{selectedFacultyLoad[0]?.faculty.name ?? "Faculty load"}</p>
-                <p className="text-xs text-tertiary truncate">{selectedFacultyLoad.length} subject load{selectedFacultyLoad.length !== 1 ? "s" : ""}</p>
+                <p className="text-sm font-bold text-secondary truncate">{selectedFaculty.name}</p>
+                <p className="text-xs text-tertiary truncate">{modalRows ? `${modalRows.length} subject load${modalRows.length !== 1 ? "s" : ""}` : "Loading..."}</p>
               </div>
-              <IosButton variant="gray" size="xs" onClick={() => setSelectedFacultyLoad(null)}>
+              <IosButton variant="gray" size="xs" onClick={() => setSelectedFaculty(null)}>
                 <svg className="w-4 h-4 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </IosButton>
             </div>
             <div className="p-4 max-h-[60vh] overflow-y-auto tbl">
+              {modalLoading ? (
+                <SkeletonTable rows={3} cols={6} />
+              ) : modalError ? (
+                <p className="text-xs font-medium text-red-600">{modalError}</p>
+              ) : !modalRows || modalRows.length === 0 ? (
+                <p className="text-xs text-tertiary text-center py-8">No active loads.</p>
+              ) : (
+              <>
               <table className="desktop-only">
                 <thead>
                   <tr>
                     <th className="w-8">#</th>
                     <th>Subject</th>
                     <th>Section</th>
+                    <th>Semester</th>
+                    <th className="text-center">Headcount</th>
                     <th className="w-20 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {facultyLoadPagination.paginatedItems.map((m, i) => {
+                  {modalPagination.paginatedItems.map((m, i) => {
                     return (
                       <tr key={m.id}>
                         <td className="text-tertiary">{i + 1}</td>
@@ -1525,9 +1557,9 @@ function FacultyTab() {
                           <span className="font-medium text-secondary">{m.subject.code}</span>
                           <span className="text-tertiary ml-1">- {m.subject.name}</span>
                         </td>
-                        <td className="text-secondary">{m.section.program}-{m.section.name}
-                          {!m.semesterId && <span className="ml-1.5 text-[10px] font-semibold text-amber-600 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-0.5 rounded-full">no semester</span>}
-                        </td>
+                        <td className="text-secondary">{m.section.program}-{m.section.name}</td>
+                        <td className="text-tertiary">{m.semester?.title ?? "—"}</td>
+                        <td className="text-center font-semibold text-secondary">{m.headcount ?? 0}</td>
                         <td className="text-center">
                           <Link href={`/admin/data/academic-infrastructure/faculty-enroll/${m.id}`} className="text-xs text-amber-600 hover:text-amber-700 font-semibold">Edit</Link>
                         </td>
@@ -1537,24 +1569,26 @@ function FacultyTab() {
                 </tbody>
               </table>
               <div className="mobile-only space-y-1.5">
-                {facultyLoadPagination.paginatedItems.map((m, i) => {
+                {modalPagination.paginatedItems.map((m, i) => {
                   return (
                     <div key={m.id} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-surface-hover/50 text-xs">
                       <span className="text-tertiary font-mono w-5 shrink-0 text-right">{i + 1}</span>
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold text-secondary truncate">{m.subject.code} - {m.subject.name}</p>
-                        <p className="text-tertiary truncate">{m.section.program}-{m.section.name}</p>
+                        <p className="text-tertiary truncate">{m.section.program}-{m.section.name} · {m.semester?.title ?? "—"}</p>
                       </div>
-                      {!m.semesterId && <span className="shrink-0 text-right text-xs font-semibold text-amber-600">⚠️</span>}
+                      <span className="shrink-0 text-right text-xs font-semibold text-secondary">{m.headcount ?? 0} student{(m.headcount ?? 0) !== 1 ? "s" : ""}</span>
                       <Link href={`/admin/data/academic-infrastructure/faculty-enroll/${m.id}`} className="shrink-0 text-xs text-amber-600 hover:text-amber-700 font-semibold ml-1">Edit</Link>
                     </div>
                   )
                 })}
               </div>
+              </>
+              )}
             </div>
             <div className="flex items-center justify-between px-6 py-3 border-t border-default bg-surface-dim text-xs text-tertiary">
-              <span>{selectedFacultyLoad.length} subject load{selectedFacultyLoad.length !== 1 ? "s" : ""}</span>
-              <Paginator page={facultyLoadPagination.page} totalPages={facultyLoadPagination.totalPages} pageSize={facultyLoadPagination.pageSize} totalItems={selectedFacultyLoad.length} setPage={facultyLoadPagination.setPage} setPageSize={facultyLoadPagination.setPageSize} showSizeSelector={false} />
+              <span>{modalRows ? `${modalRows.length} subject load${modalRows.length !== 1 ? "s" : ""}` : "…"}</span>
+              <Paginator page={modalPagination.page} totalPages={modalPagination.totalPages} pageSize={modalPagination.pageSize} totalItems={modalRows?.length ?? 0} setPage={modalPagination.setPage} setPageSize={modalPagination.setPageSize} showSizeSelector={false} />
             </div>
           </div>
         </div>

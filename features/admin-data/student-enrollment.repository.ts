@@ -193,6 +193,21 @@ export const studentEnrollmentRepository: IStudentEnrollmentRepository = {
     }, {})
   },
 
+  async countByFacultySubjectIds(ids, semesterId?) {
+    if (ids.length === 0) return {}
+    let q = supabase
+      .from("student_enrollments")
+      .select("faculty_subject_id")
+      .in("faculty_subject_id", ids)
+    if (semesterId) q = q.eq("semesterId", semesterId) as typeof q
+    const { data, error } = await q
+    if (error) throw error
+    return (data || []).reduce<Record<string, number>>((acc, r) => {
+      if (r.faculty_subject_id) acc[r.faculty_subject_id] = (acc[r.faculty_subject_id] || 0) + 1
+      return acc
+    }, {})
+  },
+
   async listAllWithEmbeds() {
     const { data, error } = await supabase
       .from("student_enrollments")
