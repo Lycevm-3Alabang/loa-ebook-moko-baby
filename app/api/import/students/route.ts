@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
   let isLast = true
   let mode: string | undefined = undefined
   let step1Note = ""
+  let allowUnassigned = false
   let ensureItems: { email: string; name: string; departmentId?: string | null }[] | undefined = undefined
 
   const contentType = request.headers.get("content-type") || ""
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
       : step1Raw === "done"
         ? "; Step 1 done"
         : ""
+    allowUnassigned = body.allowUnassigned === true
     if (bodyDeptId) {
       const dept = await departmentRepository.findById(bodyDeptId)
       if (dept) departmentId = bodyDeptId
@@ -142,18 +144,21 @@ export async function POST(request: NextRequest) {
   }
 
   const result = mode === "enroll"
-    ? await enrollStudentRows(importRows, departmentId, semesterId)
+    ? await enrollStudentRows(importRows, departmentId, semesterId, undefined, { allowUnassigned })
     : await importStudents(importRows, departmentId, semesterId)
   result.parseErrors = parseErrors
   result.semesterTitle = activeSemesters[0].title
+  const parkedNote = result.parkedSlots.length > 0
+    ? `; ${result.parkedSlots.length} classes parked on Unassigned Faculty (${result.parkedSlots.map((p) => `${p.subjectCode} in ${p.section}`).join(", ")})`
+    : ""
 
   if (isLast) {
     await logAuditEvent({
       userId: (session!.user as Record<string, unknown>).id as string,
       action: mode === "enroll" ? "IMPORT_STUDENTS_ENROLL" : "IMPORT_STUDENTS",
       details: fileId
-        ? `Imported chunk ${chunkIndex + 1}/${totalChunks} (file ${fileId}): ${result.enrolled} enrollments (${result.failed.length} failed, ${result.parseErrors.length} parse errors)${step1Note}`
-        : `Imported ${result.enrolled} enrollments (${result.failed.length} failed, ${result.parseErrors.length} parse errors)${step1Note}`,
+        ? `Imported chunk ${chunkIndex + 1}/${totalChunks} (file ${fileId}): ${result.enrolled} enrollments (${result.failed.length} failed, ${result.parseErrors.length} parse errors)${step1Note}${parkedNote}`
+        : `Imported ${result.enrolled} enrollments (${result.failed.length} failed, ${result.parseErrors.length} parse errors)${step1Note}${parkedNote}`,
     })
   }
 
