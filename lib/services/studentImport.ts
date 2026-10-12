@@ -1,6 +1,12 @@
 import { userRepository, sectionRepository, subjectRepository, facultySubjectRepository, studentEnrollmentRepository } from "@/lib/repositories/factory"
 import { isExcelErrorCell, isAllowedStudentEmail, STUDENT_ALLOWED_DOMAINS, reasonRemarks, type ImportReasonCode } from "@/lib/csv-utils"
 
+// Placeholder faculty that owns unassigned loadings. Canonical value lives as
+// DUMMY_FACULTY_EMAIL in etlEvaluation — kept as a local literal on purpose:
+// importing etlEvaluation pulls the live Supabase client into this module and
+// breaks the mocked test graph (SUPABASE_URL required at import time).
+const UNASSIGNED_FACULTY_EMAIL = "placeholder@lyceumalabang.edu.ph"
+
 function parseSectionIdentifier(raw: string): { name: string; program: string } {
   const idx = raw.indexOf("-")
   if (idx === -1) return { name: raw, program: "" }
@@ -36,6 +42,10 @@ export interface StudentImportResult {
   // file reads entirely of these. Joined back to source rows by the same key the
   // repo dedupes on, so no new query and no client-side id mapping.
   alreadyPersisted: { row: number; email: string; subjectCode: string; section: string; reasonCode: ImportReasonCode }[]
+  // Slots this call parked on Unassigned Faculty (allowUnassigned only) —
+  // the reassignment worklist. Rows enrolled under them are normal persisted
+  // rows; this names the classes, not the students.
+  parkedSlots: { subjectCode: string; section: string }[]
   // Set when the faculty mappings this chunk needs are attached to a semester other
   // than the active one — typically because a new term was activated without
   // re-importing the faculty CSV. Without this the symptom is every row failing
@@ -182,6 +192,7 @@ export async function enrollStudentRows(
   departmentId: string | null,
   semesterId: string | null,
   userMapOverride?: Map<string, { id: string; email: string; name: string; role: string }>,
+  options?: { allowUnassigned?: boolean },
 ): Promise<StudentImportResult> {
   const failed: StudentImportResult["failed"] = []
   const created: StudentImportResult["created"] = []
@@ -189,7 +200,7 @@ export async function enrollStudentRows(
   let skipped = 0
 
   if (rows.length === 0) {
-    return { created, enrolled, inserted: 0, skipped, failed, duplicateRows: [], alreadyPersisted: [], termMismatch: null, parseErrors: [], totalRows: 0, semesterId }
+    return { created, enrolled, inserted: 0, skipped, failed, duplicateRows: [], alreadyPersisted: [], parkedSlots: [], termMismatch: null, parseErrors: [], totalRows: 0, semesterId }
   }
 
   const excelOffenderFor = (r: StudentCsvRow): string | null =>
@@ -294,6 +305,44 @@ export async function enrollStudentRows(
   const termMismatch = slotRows.length > 0 && mappedTerms.length > 0
     ? { mappedTerms, activeTerm: semesterId }
     : null
+
+  // Park-if-missing (allowUnassigned only): one dummy-owned loading per unique
+  // pair with no slot, single createMany, then the row loop resolves normally.
+  // Creation needs a valid subject+section (typos still fail in the loop);
+  // named-faculty rows and real owners never reach here, and nothing is ever
+  // evicted — creation runs only where resolveSlot finds nothing at all.
+  // Blank test mirrors the row loop's own `if (r.facultyEmail)` exactly.
+  const parkedSlots: StudentImportResult["parkedSlots"] = []
+  if (options?.allowUnassigned) {
+    const missing = new Map<string, { subjectId: string; sectionId: string; subjectCode: string; section: string }>()
+    for (const r of rows) {
+      if (r.facultyEmail) continue
+      const subject = subjects.get(r.subjectCode)
+      const section = sections.get(`${r.sectionName}|${r.sectionProgram}`)
+      if (!subject || !section) continue
+      if (resolveSlot(subject.id, section.id)) continue
+      const key = `${subject.id}|${section.id}`
+      if (!missing.has(key)) {
+        missing.set(key, { subjectId: subject.id, sectionId: section.id, subjectCode: r.subjectCode, section: `${r.sectionProgram}-${r.sectionName}` })
+      }
+    }
+    if (missing.size > 0) {
+      const dummyMap = await userRepository.findManyByEmail([UNASSIGNED_FACULTY_EMAIL])
+      const dummy = dummyMap.get(UNASSIGNED_FACULTY_EMAIL)
+      if (dummy) {
+        const created = await facultySubjectRepository.createMany(
+          [...missing.values()].map((p) => ({ faculty_id: dummy.id, subject_id: p.subjectId, section_id: p.sectionId, semesterId })),
+        )
+        for (const row of created) {
+          const key = `${row.subject_id}|${row.section_id}`
+          slotsByPair.set(key, [...(slotsByPair.get(key) ?? []), { id: row.id, faculty_id: row.faculty_id, semesterId: row.semesterId }])
+          const pair = missing.get(key)
+          if (pair) parkedSlots.push({ subjectCode: pair.subjectCode, section: pair.section })
+        }
+      }
+      // No dummy user, or nothing created → rows fail NO_FACULTY_ASSIGNED as today.
+    }
+  }
 
   const toEnroll: { student_id: string; section_id: string; faculty_subject_id?: string | null; semesterId?: string | null }[] = []
   // Dedupe within this request: the CSV may repeat a row, and one multi-row INSERT
@@ -405,6 +454,7 @@ export async function enrollStudentRows(
     failed,
     duplicateRows,
     alreadyPersisted,
+    parkedSlots,
     inserted,
     termMismatch,
     parseErrors: [],
