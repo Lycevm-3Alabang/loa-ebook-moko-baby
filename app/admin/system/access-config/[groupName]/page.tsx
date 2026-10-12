@@ -105,9 +105,7 @@ export default function EditAccessGroupPage() {
     setSelectedPages((prev) => {
       const on = prev.includes(path)
       if (on) {
-        const newOverrides = { ...overrides }
-        delete newOverrides[path]
-        setOverrides(newOverrides)
+        // Per-API overrides are independent — unchecking the page no longer wipes them.
         return prev.filter((p) => p !== path)
       }
       return [...prev, path]
@@ -137,10 +135,10 @@ export default function EditAccessGroupPage() {
   }
 
   const isApiEffective = (pagePath: string, apiPath: string): boolean => {
-    if (!selectedPages.includes(pagePath)) return false
     const o = overrides[pagePath]?.[apiPath]
+    if (o === true) return true
     if (o === false) return false
-    return true
+    return selectedPages.includes(pagePath)
   }
 
   const isApiOverridden = (pagePath: string, apiPath: string): "granted" | "denied" | null => {
@@ -390,11 +388,7 @@ export default function EditAccessGroupPage() {
                   <button
                     onClick={() => {
                       if (allSelected) {
-                        const next = selectedPages.filter((p) => !toggleable.includes(p))
-                        setSelectedPages(next)
-                        const nextOverrides = { ...overrides }
-                        for (const p of toggleable) delete nextOverrides[p]
-                        setOverrides(nextOverrides)
+                        setSelectedPages((prev) => prev.filter((p) => !toggleable.includes(p)))
                       } else {
                         setSelectedPages((prev) => {
                           const next = new Set(prev)
@@ -552,15 +546,13 @@ export default function EditAccessGroupPage() {
                                     return (
                                       <label
                                         key={apiPath}
-                                        className={`flex items-center gap-2 py-0.5 rounded cursor-pointer text-xs group ${
-                                          !pageOn ? "opacity-40 pointer-events-none" : ""
-                                        }`}
+                                        className="flex items-center gap-2 py-0.5 rounded cursor-pointer text-xs group"
                                       >
                                         <input
                                           type="checkbox"
                                           checked={effective}
                                           onChange={() => toggleApiOverride(row.path, apiPath)}
-                                          disabled={!pageOn || readOnly}
+                                          disabled={readOnly}
                                           className={`rounded border-strong text-amber-600 focus:ring-amber-500 ${
                                             overrideState === "granted" ? "ring-2 ring-amber-400" : ""
                                           } ${overrideState === "denied" ? "opacity-50" : ""}`}
