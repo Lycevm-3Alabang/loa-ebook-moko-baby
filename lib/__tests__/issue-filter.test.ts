@@ -49,8 +49,12 @@ describe("matchesIssue", () => {
     expect(hasIssue(newcomer)).toBe(false)
     expect(matchesIssue(newcomer, "no-issues")).toBe(true)
     expect(matchesIssue(newcomer, "has-issues")).toBe(false)
-    // ...and no granular key claims them
-    expect(ISSUE_KEYS.every((k) => !matchesIssue(newcomer, k))).toBe(true)
+    // ...and no granular key claims them (no-issues, the negation, still does)
+    expect(
+      ISSUE_KEYS.filter((k) => k !== "has-issues" && k !== "no-issues").every(
+        (k) => !matchesIssue(newcomer, k),
+      ),
+    ).toBe(true)
   })
 
   it("counts an invalid-value-only row as an issue (the precision case)", () => {
