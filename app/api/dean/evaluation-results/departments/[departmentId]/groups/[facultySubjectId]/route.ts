@@ -7,7 +7,9 @@ import {
   userRepository,
   subjectRepository,
   evaluationRepository,
+  evaluationResultRepository,
 } from "@/lib/repositories/factory"
+import { EvaluationPeriodInactiveError } from "@/features/evaluation-results/evaluation-results.repository"
 import {
   computeCategoryAverages,
   computeGeneralRating,
@@ -31,13 +33,15 @@ export async function GET(
 
   const { departmentId, facultySubjectId } = await params
   if (departmentId !== dept.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return NextResponse.json({ error: `You manage ${dept.name} — tried to open ${departmentId}` }, { status: 403 })
   }
 
   try {
     const { searchParams } = new URL(request.url)
     const evaluationPeriodId = searchParams.get("evaluationPeriodId") || searchParams.get("semesterId")
     if (!evaluationPeriodId) return NextResponse.json({ error: "evaluationPeriodId is required" }, { status: 400 })
+
+    await evaluationResultRepository.assertPeriodIsActive(evaluationPeriodId)
 
     const fsData = await facultySubjectRepository.findById(facultySubjectId)
     if (!fsData) return NextResponse.json({ error: "Faculty-subject not found" }, { status: 404 })
@@ -112,6 +116,9 @@ export async function GET(
       evaluations: evaluationRows,
     })
   } catch (e) {
+    if (e instanceof EvaluationPeriodInactiveError) {
+      return NextResponse.json({ error: e.message }, { status: e.status })
+    }
     console.error("Dean group evaluation detail error:", e)
     return NextResponse.json({ error: "Failed to fetch evaluation detail" }, { status: 500 })
   }

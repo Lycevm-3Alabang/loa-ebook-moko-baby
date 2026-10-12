@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { evaluationResultRepository, evaluationRepository, userRepository } from "@/lib/repositories/factory"
+import { EvaluationPeriodInactiveError } from "@/features/evaluation-results/evaluation-results.repository"
 
 const CATEGORY_NAMES: Record<string, string> = {
   "Professional Manner": "professionalManner",
@@ -33,6 +34,8 @@ export async function GET(request: Request) {
     const evaluationPeriodId = searchParams.get("evaluationPeriodId") || searchParams.get("periodId")
     const userId = (session.user as Record<string, unknown>).id as string
     if (!evaluationPeriodId) return NextResponse.json({ error: "periodId is required" }, { status: 400 })
+
+    await evaluationResultRepository.assertPeriodIsActive(evaluationPeriodId)
 
     const visMap = await evaluationResultRepository.getVisibilityMap(evaluationPeriodId)
     if (!visMap.get(userId)) {
@@ -96,6 +99,9 @@ export async function GET(request: Request) {
       facultyNames: { [userId]: user?.name || userId },
     })
   } catch (e) {
+    if (e instanceof EvaluationPeriodInactiveError) {
+      return NextResponse.json({ error: e.message }, { status: e.status })
+    }
     console.error("Faculty evaluation results error:", e)
     return NextResponse.json({ error: "Failed to fetch evaluation results" }, { status: 500 })
   }

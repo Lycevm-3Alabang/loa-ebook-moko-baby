@@ -1,6 +1,15 @@
 import { supabase } from "@/lib/db"
 import { fetchRatingsWithCategories } from "@/lib/db/common"
 import type { EvaluationResultData, IEvaluationResultRepository, StudentBreakdownItem, FacultyEvalDetail } from "@/lib/types"
+import { semesterRepository } from "@/lib/repositories/factory"
+
+export class EvaluationPeriodInactiveError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
 
 export const evaluationResultRepository: IEvaluationResultRepository = {
   async list(evaluationPeriodId, filters) {
@@ -287,6 +296,30 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
       .limit(limit)
     if (error) throw error
     return (data || []) as EvaluationResultData[]
+  },
+
+  async assertPeriodIsActive(evaluationPeriodId: string) {
+    const { data: period, error: pErr } = await supabase
+      .from("evaluation_periods")
+      .select("semesterId")
+      .eq("id", evaluationPeriodId)
+      .single()
+    if (pErr) {
+      if (pErr.code === "PGRST116") {
+        throw new EvaluationPeriodInactiveError("Evaluation period not found", 404)
+      }
+      throw pErr
+    }
+    if (!period) {
+      throw new EvaluationPeriodInactiveError("Evaluation period not found", 404)
+    }
+    const activeSemester = await semesterRepository.findActive()
+    if (!activeSemester || period.semesterId !== activeSemester.id) {
+      throw new EvaluationPeriodInactiveError(
+        "Results for this period are not available — only the active semester's results can be viewed. Ask ADMIN to activate the correct semester.",
+        403,
+      )
+    }
   },
 }
 
