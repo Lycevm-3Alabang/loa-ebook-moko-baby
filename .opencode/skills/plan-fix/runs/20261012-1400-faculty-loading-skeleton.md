@@ -5,8 +5,8 @@ repo: /home/nino-compyl/loa/loa-ebook-moko-baby
 calibration: {1: "C", 2: "A", 3: "A", 4: "D", 5: "B", 6: "C"}
 workflow: "D"
 decision: "Option A — Close the holes: combined skeleton gate + modal header/footer shimmer"
-status: implementing
-pending: slice-1
+status: done
+pending: none
 ---
 
 # Plan
@@ -23,10 +23,11 @@ pending: slice-1
 | who-implements | Who implements Slice 1 (table gate)? | B — Code it (agent writes after Apply, one file per turn) |
 | slice-1 | Apply Slice 1 (table gate)? | Applied — usersLoading + showTableSkeleton gate (UI layer) |
 | slice-2 | Apply Slice 2 (modal chrome)? | Applied — header/footer shimmer while modalLoading, valid nesting (UI layer) |
+| gates | Close-out gate (tsc + eslint + suite)? | GREEN user-reported (agent-verified nothing per H1) |
 
 ## Pending
 
-- gates: user runs tsc + npm test, pastes output
+- none
 
 ## Decisions
 
