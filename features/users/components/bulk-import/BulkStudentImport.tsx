@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
-import { cleanCell, isExcelErrorCell, parseCsvRows, isAllowedStudentEmail, type ImportReasonCode } from "@/lib/csv-utils"
+import { cleanCell, escapeCsvCell, isExcelErrorCell, parseCsvRows, isAllowedStudentEmail, type ImportReasonCode } from "@/lib/csv-utils"
 import { useChunkedImport, decodeCsvFile, withRetryHints, type ChunkMeta } from "@/features/admin-data/components/useChunkedImport"
 import { buildImportLedger, assertLedgerClosure, ledgerToCsv, type LedgerRow } from "./import-ledger"
 import { computeDepartmentGrouping } from "./department-grouping"
@@ -119,6 +119,26 @@ function downloadBlob(csv: string, filename: string) {
   URL.revokeObjectURL(url)
 }
 
+const STEP1_FAILED_CSV_FILENAME = "step1-failed-emails.csv"
+
+// One line per email (first wins): the server classifies per item, so a
+// non-deduped caller can report one address twice. Fix outside and re-run
+// Step 1 — re-check is idempotent.
+function buildStep1FailedCsv(
+  failed: { email: string; remark: string }[],
+  nameByEmail: Map<string, string>,
+): string {
+  const seen = new Set<string>()
+  const lines = ["email,name,reason"]
+  for (const f of failed) {
+    const key = (f.email || "").toLowerCase().trim()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    lines.push([f.email, nameByEmail.get(key) ?? "", f.remark].map(escapeCsvCell).join(","))
+  }
+  return lines.join("\n")
+}
+
 function parseClientCsv(text: string): { rows: StudentCsvRow[]; error?: string } {
   const allRows = parseCsvRows(text)
   if (allRows.length < 2) return { rows: [], error: "CSV file is empty" }
@@ -222,6 +242,8 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const [sequenceError, setSequenceError] = useState("")
   // Synchronous double-start guard: state hasn't flushed on rapid clicks.
   const seqRunningRef = useRef(false)
+  // Same pre-flush race as the sequencer: two fast clicks, one POST.
+  const ensureRunningRef = useRef(false)
   const { isRunning: chunkRunning, progress: chunkProgress, history: chunkHistory, run: runChunks, cancel: cancelChunks } =
     useChunkedImport<PreviewRow, ImportResult>()
 
@@ -316,13 +338,13 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   useEffect(() => { Promise.resolve().then(() => fetchReferenceData()) }, [fetchReferenceData])
 
   useEffect(() => {
-    if (activePanelId === null) return
+    if (activePanelId === null && step1Status !== "running") return
     const guard = (e: BeforeUnloadEvent) => {
       e.preventDefault()
     }
     window.addEventListener("beforeunload", guard)
     return () => window.removeEventListener("beforeunload", guard)
-  }, [activePanelId])
+  }, [activePanelId, step1Status])
 
   const blockedRows = useMemo(() => {
     if (!previewRows) return []
@@ -589,6 +611,11 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   const handleRemoveBlockedIn = (panel: DepartmentPanel<PanelRow>) =>
     removeBlockedRows(panel.rows.filter((r) => r.isBlocked))
 
+  // Step indicator jumps. Scroll-only: gating stays functional, never navigational.
+  const scrollToStep = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
+
   // Strip → table bridge. Filter-only: run scope is untouched (pinned §3.1).
   const viewPanelRows = (panel: DepartmentPanel<PanelRow>) => {
     setDeptFilter(panel.id)
@@ -651,7 +678,8 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
   // with frozen departments; the server enforces blank/off-domain/Excel-error
   // as failures without creating.
   const runStep1 = async () => {
-    if (!previewRows || step1Status === "running" || activePanelId !== null) return
+    if (!previewRows || ensureRunningRef.current || step1Status === "running" || activePanelId !== null) return
+    ensureRunningRef.current = true
     setStep1Status("running")
     setStep1Error("")
     try {
@@ -676,6 +704,8 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
     } catch {
       setStep1Status("idle")
       setStep1Error("Could not reach the server. Please check your connection and try again.")
+    } finally {
+      ensureRunningRef.current = false
     }
   }
 
@@ -958,6 +988,16 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
 
   return (
     <>
+      {step1Status === "running" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-white dark:bg-surface-dim rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl">
+            <div className="w-10 h-10 border-4 border-gold-600 border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm font-semibold text-secondary">Ensuring users…</p>
+            <p className="text-xs text-tertiary">Deduping emails and registering new students.</p>
+            <p className="text-[11px] text-tertiary/70">Stay on this page until done — re-pressing Ensure afterwards re-checks without duplicating.</p>
+          </div>
+        </div>
+      )}
       {activePanelId !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="bg-white dark:bg-surface-dim rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl">
@@ -1064,6 +1104,25 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
               </h4>
               <span className="text-[11px] text-tertiary">{TEMPLATE_HEADERS}</span>
             </div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+              <button type="button" onClick={() => scrollToStep("step1-ensure")}
+                className="font-semibold text-secondary hover:underline">
+                1 Ensure users
+              </button>
+              <span className="text-tertiary">
+                {step1Status === "done" && step1Result
+                  ? `done · ${step1Result.created.length} created · ${step1Result.existing} existing`
+                  : step1Status === "skipped" ? "skipped" : step1Status === "running" ? "running…" : "todo"}
+              </span>
+              <span className="text-tertiary">→</span>
+              <button type="button" onClick={() => scrollToStep("step2-enrol")}
+                className="font-semibold text-secondary hover:underline">
+                2 Enrol
+              </button>
+              <span className="text-tertiary">
+                {step2Locked ? "waiting" : `${ranPanelCount} of ${panels.length} panels run`}
+              </span>
+            </div>
 
             {/* §8 "Invalid-list volume": StepPanel renders invalid[] in a max-h-32 scroll, so
                 per-panel lists alone leave the admin scrolling ten boxes to learn whether
@@ -1102,8 +1161,14 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             )}
 
             {/* Step 1 — ensure users before any enrolment runs. */}
-            <div className="rounded-xl border border-default bg-surface-dim/40 px-4 py-3 space-y-2">
-              <p className="text-xs font-semibold text-secondary">Step 1 — Ensure users</p>
+            <div id="step1-ensure" className="rounded-xl border border-default bg-surface-dim/40 px-4 py-3 space-y-2">
+              <p className="text-xs font-semibold text-secondary">
+                Step 1 — Ensure users
+                {previewRows && (
+                  <span className="font-normal text-tertiary"> · {step1Students.length} distinct students from {previewRows.length} rows</span>
+                )}
+              </p>
+              <p className="text-[11px] text-tertiary/70">Registered department follows first row wins — the stamp Step 2 enrols with.</p>
               {step1Status === "idle" && (
                 <div className="flex flex-wrap items-center gap-2">
                   <button type="button" onClick={runStep1} disabled={activePanelId !== null}
@@ -1118,9 +1183,6 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                   {step1Error && <p className="text-[11px] text-red-600 w-full">{step1Error}</p>}
                 </div>
               )}
-              {step1Status === "running" && (
-                <p className="text-[11px] text-tertiary">Ensuring users… stay on this page until done.</p>
-              )}
               {step1Status === "done" && step1Result && (
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-[11px] text-tertiary">
@@ -1131,6 +1193,19 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
                     className="text-[11px] font-semibold text-secondary hover:underline disabled:opacity-40">
                     Re-check
                   </button>
+                  {step1Result.failed.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const names = new Map(step1Students.map((s) => [s.email.toLowerCase().trim(), s.name]))
+                        downloadBlob(buildStep1FailedCsv(step1Result.failed, names), STEP1_FAILED_CSV_FILENAME)
+                      }}
+                      title="Download the failed emails with reasons — fix outside and re-check Step 1"
+                      className="text-[11px] font-semibold text-secondary hover:underline disabled:opacity-40"
+                    >
+                      Download {step1Result.failed.length} failed
+                    </button>
+                  )}
                   {step1Result.failed.length > 0 && (
                     <p className="text-[11px] text-amber-600 w-full">{step1Result.failed.length} emails need fixing — they will fail as STUDENT_NOT_FOUND in Step 2, never auto-created.</p>
                   )}
@@ -1175,7 +1250,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             {step1Status === "done" && (step1Result?.failed.length ?? 0) > 0 && (
               <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/20 px-4 py-3">
                 <p className="text-[11px] text-amber-700 dark:text-amber-300">
-                  {step1Result?.failed.length} emails aren&apos;t registered — they&apos;ll fail per row as STUDENT_NOT_FOUND, never auto-created. Re-check Step 1 after fixing, or run and work the ledger.
+                  {step1Result?.failed.length}  emails aren&apos;t registered — they&apos;ll fail per row as STUDENT_NOT_FOUND, never auto-created. Re-check Step 1 after fixing, or run and work the ledger.
                 </p>
               </div>
             )}
@@ -1188,7 +1263,7 @@ export default function BulkStudentImport({ departmentId: _departmentId, semeste
             )}
 
             {panels.length > 0 && (
-              <div className="space-y-2">
+              <div id="step2-enrol" className="space-y-2">
                 <p className="text-[11px] text-tertiary/70">
                   {panels.length} department{panels.length !== 1 ? "s" : ""} in this file — run them independently, in any
                   order. A re-run skips rows already saved, so nothing is written twice.
