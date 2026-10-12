@@ -212,6 +212,15 @@ export const studentEnrollmentRepository: IStudentEnrollmentRepository = {
     return (data || []) as unknown as StudentEnrollmentWithEmbeds[]
   },
 
+  async countByFacultySubjectId(facultySubjectId: string) {
+    const { count, error } = await supabase
+      .from("student_enrollments")
+      .select("id", { count: "exact", head: true })
+      .eq("faculty_subject_id", facultySubjectId)
+    if (error) throw error
+    return count ?? 0
+  },
+
   async countBySemesterId(semesterId) {
     const { count, error } = await supabase
       .from("student_enrollments")
