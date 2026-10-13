@@ -188,8 +188,10 @@ export function EnrollmentsTab() {
         </div>
       )}
 
-      {/* ── Quick Add — modal (form lives below, beside the subjects modal) ── */}
-      <IosButton variant="primary" onClick={() => setShowQuickAdd(true)}>+ Quick Add Single Student</IosButton>
+      {/* ── Quick Add — mirrors the "+ Add Faculty Load" row: right-aligned, same style ── */}
+      <div className="flex justify-end">
+        <IosButton variant="primary" size="sm" onClick={() => setShowQuickAdd(true)}>+ Quick Add Single Student</IosButton>
+      </div>
 
       {/* ═══════════════════════════════════════════════════
           ENROLLMENT TABLE
@@ -348,8 +350,8 @@ export function EnrollmentsTab() {
       {/* ── Quick Add Modal ─────────────────────────── */}
       {showQuickAdd && (
         <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 sm:pt-20 bg-black/60" onClick={closeQuickAdd}>
-          <div className="bg-white dark:bg-surface-dim rounded-2xl w-full max-w-2xl mx-4 shadow-2xl border border-default overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-default">
+          <div className="bg-white dark:bg-surface-dim rounded-2xl w-full max-w-2xl mx-4 shadow-2xl border border-default overflow-hidden h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-default shrink-0">
               <p className="text-sm font-bold text-secondary">Quick Add Single Student</p>
               <IosButton variant="gray" size="xs" onClick={closeQuickAdd}>
                 <svg className="w-4 h-4 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -357,7 +359,7 @@ export function EnrollmentsTab() {
                 </svg>
               </IosButton>
             </div>
-            <div className="px-6 py-4 space-y-4">
+            <div className="px-6 py-4 space-y-4 flex-1 overflow-y-auto">
               {formError && <p className="text-xs font-medium text-red-600 bg-red-50 p-2 rounded">{formError}</p>}
               {formSuccess && <p className="text-xs font-medium text-green-600 bg-green-50 p-2 rounded">{formSuccess}</p>}
               <form onSubmit={handleQuickAdd} className="space-y-4">

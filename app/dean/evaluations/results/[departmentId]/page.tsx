@@ -194,7 +194,7 @@ export default function DeanDepartmentDetailPage() {
       </div>
 
       {isLocked && (
-        <LockedTab endpoint="/api/dean/evaluation-results" message="Evaluation Results not ready" />
+        <LockedTab endpoint="/api/dean/evaluation-results" message={resultsError?.message || "Evaluation Results not ready"} />
       )}
 
       {loading && (

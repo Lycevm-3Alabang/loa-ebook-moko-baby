@@ -20,6 +20,15 @@ const origFetch = typeof window !== "undefined" ? window.fetch.bind(window) : un
 
 const recentToasts = new Set<string>()
 
+// Infrastructure-generic 403 messages stay masked as "Access denied" for
+// non-admins. Anything else is a curated business message from the route
+// (e.g. "not released yet", "belongs to another faculty") and is surfaced.
+const MASKED_403_MESSAGES = new Set([
+  "Forbidden",
+  "Access is not configured for this route.",
+  "This route is locked in the access configuration.",
+])
+
 async function patchedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const method = init?.method || (typeof input === "object" && "method" in input && (input as Request).method) || "GET"
   const url = typeof input === "string" ? input : input instanceof URL ? input.pathname : input.url
@@ -42,7 +51,8 @@ async function patchedFetch(input: RequestInfo | URL, init?: RequestInit): Promi
           const isAdmin = currentRole?.includes("ADMIN")
           const isFacultyEvalResults = url.includes("/api/faculty/evaluation-results")
           if (isFacultyEvalResults && !isAdmin) return
-          dispatch403(url, isAdmin ? m : "Access denied. Contact an administrator.", method)
+          const display = isAdmin || !MASKED_403_MESSAGES.has(m) ? m : "Access denied. Contact an administrator."
+          dispatch403(url, display, method)
         })
         .catch(() => {
           origFetch!("/api/audit/forbidden", {
