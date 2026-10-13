@@ -22,11 +22,11 @@ pending: verify
 | slice-a1-contract | Apply contract slice (lib/types/evaluation.ts)? | Applied — Step 1/3 |
 | slice-a1-impl | Apply repository slice (evaluations.repository.ts)? | Applied — Step 2/3 |
 | slice-a2-gate | Apply route gate slice (admin route.ts)? | Applied — Step 3/3 |
-| verify | npm test + admin GET shows 2 departments? | Partial — lint 0 errors (1 pre-existing EnrollmentsTab warning); vitest tail + endpoint unchecked |
+| verify | npm test + admin GET shows 2 departments? | Tests GREEN (user-reported); endpoint data check still open |
 
 ## Pending
 
-- verify: npm test + admin GET shows 2 departments?
+- endpoint-check: admin GET shows 2 departments for 0c0a15fd...? (tests GREEN user-reported)
 
 ## Plan
 

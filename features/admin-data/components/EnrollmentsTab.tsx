@@ -68,7 +68,7 @@ export function EnrollmentsTab() {
   }, [fetchData, semestersData])
 
   const { data: fsData } = useApiGet<{ data: FacultyMapping[] }>("/api/data/evaluation-mappings?type=faculty")
-  const facultySubjects = fsData?.data ?? []
+  const facultySubjects = useMemo(() => fsData?.data ?? [], [fsData])
 
   const filteredFacultySubjects = useMemo(() => {
     if (!formFsSearch.trim()) return facultySubjects
