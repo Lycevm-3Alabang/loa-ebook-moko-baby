@@ -68,15 +68,15 @@ export function EnrollmentsTab() {
   }, [fetchData, semestersData])
 
   const { data: fsData } = useApiGet<{ data: FacultyMapping[] }>("/api/data/evaluation-mappings?type=faculty")
-  const facultySubjects = fsData?.data ?? []
 
   const filteredFacultySubjects = useMemo(() => {
+    const facultySubjects = fsData?.data ?? []
     if (!formFsSearch.trim()) return facultySubjects
     const q = formFsSearch.toLowerCase()
     return facultySubjects.filter((fs) =>
       `${fs.section.program} ${fs.section.name} ${fs.subject.code} ${fs.subject.name} ${fs.faculty.name}`.toLowerCase().includes(q)
     )
-  }, [facultySubjects, formFsSearch])
+  }, [fsData, formFsSearch])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
