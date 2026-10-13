@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
-import { departmentRepository } from "@/lib/repositories/factory"
+import { departmentRepository, userRepository } from "@/lib/repositories/factory"
+import { hasRole } from "@/lib/utils/roles"
 import { requireAdmin, requireAdminOrDean } from "@/lib/route-guard"
 import { logAuditEvent } from "@/lib/services/audit"
 
@@ -29,6 +30,16 @@ export async function POST(request: NextRequest) {
 
     if (!name || !code) {
       return NextResponse.json({ error: "Name and Code are required" }, { status: 400 })
+    }
+
+    if (deanId) {
+      const dean = await userRepository.findById(deanId)
+      if (!dean) {
+        return NextResponse.json({ error: "Assigned dean not found" }, { status: 404 })
+      }
+      if (!hasRole(dean.role, "DEAN")) {
+        return NextResponse.json({ error: "Assigned user is not a dean" }, { status: 400 })
+      }
     }
 
     const created = await departmentRepository.create({

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
-import { departmentRepository } from "@/lib/repositories/factory"
+import { departmentRepository, userRepository } from "@/lib/repositories/factory"
+import { hasRole } from "@/lib/utils/roles"
 import { requireAdmin } from "@/lib/route-guard"
 import { logAuditEvent } from "@/lib/services/audit"
 
@@ -36,6 +37,26 @@ export async function PATCH(
       auditActions.push(`code to "${code.toUpperCase()}"`)
     }
     if (deanId !== undefined) {
+      if (deanId) {
+        const dean = await userRepository.findById(deanId)
+        if (!dean) {
+          return NextResponse.json({ error: "Assigned dean not found" }, { status: 404 })
+        }
+        if (!hasRole(dean.role, "DEAN")) {
+          return NextResponse.json({ error: "Assigned user is not a dean" }, { status: 400 })
+        }
+        if (dean.departmentId !== id) {
+          let actual = "no department"
+          if (dean.departmentId) {
+            const home = await departmentRepository.findById(dean.departmentId)
+            actual = home ? `${home.name} (${home.code})` : "another department"
+          }
+          return NextResponse.json(
+            { error: `Assigned dean belongs to ${actual} and cannot head this department` },
+            { status: 400 },
+          )
+        }
+      }
       updateData.deanId = deanId || null
       auditActions.push(deanId ? `dean to user ID ${deanId}` : "removed dean")
     }

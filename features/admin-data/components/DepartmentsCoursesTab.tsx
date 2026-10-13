@@ -53,6 +53,10 @@ export function DepartmentsCoursesTab() {
   }
 
   const deans = users.filter((u) => u.role.split("|").includes("DEAN"))
+  const editDeanOptions = editingDeptId
+    ? deans.filter((d) => d.departmentId === editingDeptId || d.id === editDeptDeanId)
+    : deans
+  const addDeanOptions = deans.filter((d) => !d.departmentId)
 
   const grouped = departments.map((dept) => ({
     ...dept,
@@ -203,8 +207,11 @@ export function DepartmentsCoursesTab() {
                   <label className="block text-xs font-semibold text-tertiary mb-1">Assigned Dean</label>
                   <select value={editDeptDeanId} onChange={(e) => setEditDeptDeanId(e.target.value)} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400">
                     <option value="">Unassigned</option>
-                    {deans.map((d) => (<option key={d.id} value={d.id}>{d.name} ({d.email})</option>))}
+                    {editDeanOptions.map((d) => (<option key={d.id} value={d.id}>{d.name} ({d.email})</option>))}
                   </select>
+                  {editDeanOptions.length === 0 && (
+                    <p className="text-[11px] text-tertiary mt-1">No deans belong to this department — assign users to it via Users first.</p>
+                  )}
                 </div>
               </div>
               <div><IosButton type="submit" loading={saving} variant="primary">Save Changes</IosButton></div>
@@ -235,8 +242,9 @@ export function DepartmentsCoursesTab() {
                         <label className="block text-xs font-semibold text-tertiary mb-1">Assigned Dean (Optional)</label>
                         <select value={newDeptDeanId} onChange={(e) => setNewDeptDeanId(e.target.value)} className="w-full text-sm bg-surface border border-strong rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400">
                           <option value="">Select Dean...</option>
-                          {deans.map((d) => (<option key={d.id} value={d.id}>{d.name} ({d.email})</option>))}
+                          {addDeanOptions.map((d) => (<option key={d.id} value={d.id}>{d.name} ({d.email})</option>))}
                         </select>
+                        <p className="text-[11px] text-tertiary mt-1">Only deans without a home department are listed — set home departments via Users first.</p>
                       </div>
                     </div>
                     <div><IosButton type="submit" loading={saving} variant="primary">Create Department</IosButton></div>
