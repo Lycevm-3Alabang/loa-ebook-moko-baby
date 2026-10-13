@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/route-guard"
-import { evaluationResultRepository, evaluationRepository, departmentRepository } from "@/lib/repositories/factory"
+import { evaluationResultRepository, evaluationRepository, departmentRepository, userRepository, evaluationPeriodRepository } from "@/lib/repositories/factory"
+import { supabase } from "@/lib/db"
 import { findHighestLowestRubrics, getRemark } from "@/lib/evaluation-utils"
 
 export async function GET(request: NextRequest) {
@@ -42,7 +43,56 @@ export async function GET(request: NextRequest) {
       avgSentByFaculty.set(facId, Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 100) / 100)
     }
 
-    const deptIds = [...new Set(results.map((r) => r.departmentId).filter(Boolean))]
+    // Live home department — do not use evaluation_results.departmentId (stale snapshot).
+    const facultyIds = [...new Set(results.map((r) => r.facultyId))]
+    const liveUsers = facultyIds.length > 0 ? await userRepository.listByIds(facultyIds) : []
+    const liveDeptMap = new Map<string, string | null>(liveUsers.map((u) => [u.id, u.departmentId]))
+
+    // Fallback for nulls, same chain as compute(): faculty_subjects -> sections -> department_courses.
+    const nullFacIds = facultyIds.filter((id) => !liveDeptMap.get(id))
+    if (nullFacIds.length > 0) {
+      const evalPeriod = await evaluationPeriodRepository.findById(evaluationPeriodId)
+      const semesterId = evalPeriod?.semesterId
+      if (semesterId) {
+        const { data: fsRows } = await supabase
+          .from("faculty_subjects")
+          .select("faculty_id, section_id")
+          .in("faculty_id", nullFacIds)
+          .eq("semesterId", semesterId)
+        if (fsRows && fsRows.length > 0) {
+          const sectionIds = [...new Set(fsRows.map((r) => r.section_id).filter(Boolean))]
+          if (sectionIds.length > 0) {
+            const { data: sectionRows } = await supabase
+              .from("sections")
+              .select("id, departmentCourseId")
+              .in("id", sectionIds)
+            if (sectionRows && sectionRows.length > 0) {
+              const dcIds = [...new Set(sectionRows.map((r) => r.departmentCourseId).filter(Boolean))]
+              if (dcIds.length > 0) {
+                const { data: dcRows } = await supabase
+                  .from("department_courses")
+                  .select("id, departmentId")
+                  .in("id", dcIds)
+                if (dcRows && dcRows.length > 0) {
+                  const dcDeptMap = new Map(dcRows.map((r) => [r.id, r.departmentId]))
+                  const sectionDeptMap = new Map(
+                    sectionRows.map((r) => [r.id, dcDeptMap.get(r.departmentCourseId)]),
+                  )
+                  for (const fs of fsRows) {
+                    const deptId = sectionDeptMap.get(fs.section_id) as string | undefined
+                    if (deptId && !liveDeptMap.get(fs.faculty_id)) {
+                      liveDeptMap.set(fs.faculty_id, deptId)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const deptIds = [...new Set([...liveDeptMap.values()].filter(Boolean))] as string[]
     const allDepts = await departmentRepository.listAll()
     const deptMap = new Map(allDepts.filter((d) => deptIds.includes(d.id)).map((d) => [d.id, d]))
 
@@ -62,7 +112,7 @@ export async function GET(request: NextRequest) {
     }>()
 
     for (const row of results) {
-      const deptId = row.departmentId ?? "__unknown__"
+      const deptId = liveDeptMap.get(row.facultyId) ?? "__unknown__"
       if (!deptGroups.has(deptId)) {
         deptGroups.set(deptId, {
           departmentId: deptId,

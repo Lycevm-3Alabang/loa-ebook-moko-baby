@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
-import { departmentRepository, evaluationResultRepository, evaluationRepository } from "@/lib/repositories/factory"
+import { departmentRepository, evaluationResultRepository, evaluationRepository, userRepository, evaluationPeriodRepository } from "@/lib/repositories/factory"
+import { supabase } from "@/lib/db"
 import { findHighestLowestRubrics, getRemark } from "@/lib/evaluation-utils"
 
 export async function GET(request: NextRequest) {
@@ -19,11 +20,60 @@ export async function GET(request: NextRequest) {
     const dept = await departmentRepository.findByDeanId(userId)
     if (!dept) return NextResponse.json({ departments: [] })
 
-    let results = await evaluationResultRepository.list(evaluationPeriodId, { departmentId: dept.id })
+    // Live home department — do not filter by evaluation_results.departmentId (stale snapshot).
+    async function resolveLiveDeptMap(facultyIds: string[], periodId: string) {
+      const liveUsers = facultyIds.length > 0 ? await userRepository.listByIds(facultyIds) : []
+      const m = new Map<string, string | null>(liveUsers.map((u) => [u.id, u.departmentId]))
+      const nullIds = facultyIds.filter((id) => !m.get(id))
+      if (nullIds.length > 0) {
+        const ep = await evaluationPeriodRepository.findById(periodId)
+        const semId = ep?.semesterId
+        if (semId) {
+          const { data: fsRows } = await supabase
+            .from("faculty_subjects")
+            .select("faculty_id, section_id")
+            .in("faculty_id", nullIds)
+            .eq("semesterId", semId)
+          if (fsRows && fsRows.length > 0) {
+            const secIds = [...new Set(fsRows.map((r) => r.section_id).filter(Boolean))]
+            if (secIds.length > 0) {
+              const { data: secRows } = await supabase
+                .from("sections")
+                .select("id, departmentCourseId")
+                .in("id", secIds)
+              if (secRows && secRows.length > 0) {
+                const dcIds = [...new Set(secRows.map((r) => r.departmentCourseId).filter(Boolean))]
+                if (dcIds.length > 0) {
+                  const { data: dcRows } = await supabase
+                    .from("department_courses")
+                    .select("id, departmentId")
+                    .in("id", dcIds)
+                  if (dcRows && dcRows.length > 0) {
+                    const dcMap = new Map(dcRows.map((r) => [r.id, r.departmentId]))
+                    const secMap = new Map(secRows.map((r) => [r.id, dcMap.get(r.departmentCourseId)]))
+                    for (const fs of fsRows) {
+                      const d = secMap.get(fs.section_id) as string | undefined
+                      if (d && !m.get(fs.faculty_id)) m.set(fs.faculty_id, d)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      return m
+    }
+
+    let allResults = await evaluationResultRepository.list(evaluationPeriodId)
+    let liveMap = await resolveLiveDeptMap([...new Set(allResults.map((r) => r.facultyId))], evaluationPeriodId)
+    let results = allResults.filter((r) => liveMap.get(r.facultyId) === dept.id)
     const hasCategoryData = results.length > 0 && results.some((r) => r.generalRating !== null)
     if (!hasCategoryData) {
       await evaluationResultRepository.computeAll(evaluationPeriodId)
-      results = await evaluationResultRepository.list(evaluationPeriodId, { departmentId: dept.id })
+      allResults = await evaluationResultRepository.list(evaluationPeriodId)
+      liveMap = await resolveLiveDeptMap([...new Set(allResults.map((r) => r.facultyId))], evaluationPeriodId)
+      results = allResults.filter((r) => liveMap.get(r.facultyId) === dept.id)
       if (results.length === 0) return NextResponse.json({ departments: [] })
     }
 

@@ -440,13 +440,23 @@ export async function getDeanDetails(
   evaluationPeriodId: string,
   departmentId: string,
 ): Promise<FacultyEvalDetail[]> {
-  const { data: results, error: resErr } = await supabase
+  // Live home department — do not filter by evaluation_results.departmentId (stale snapshot).
+  const { data: allResults, error: resErr } = await supabase
     .from("evaluation_results")
     .select("*")
     .eq("evaluation_period_id", evaluationPeriodId)
-    .eq("departmentId", departmentId)
   if (resErr) throw resErr
-  if (!results || results.length === 0) return []
+  if (!allResults || allResults.length === 0) return []
+
+  const allFacIds = allResults.map((r) => r.facultyId)
+  const { data: deptUsers, error: duErr } = await supabase
+    .from("users")
+    .select("id, departmentId")
+    .in("id", allFacIds)
+  if (duErr) throw duErr
+  const liveDept = new Map((deptUsers || []).map((u) => [u.id, u.departmentId as string | null]))
+  const results = allResults.filter((r) => liveDept.get(r.facultyId) === departmentId)
+  if (results.length === 0) return []
 
   const facultyIds = results.map((r) => r.facultyId)
 

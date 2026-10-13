@@ -94,7 +94,8 @@ export async function getAdminEvalReportData(evaluationPeriodId?: string): Promi
   for (const r of rows) {
     const facultyId = r.facultyId as string
     const user = userMap.get(facultyId)
-    const deptId = (r.departmentId as string) ?? user?.departmentId ?? "unassigned"
+    // Live home department — do not use evaluation_results.departmentId (stale snapshot).
+    const deptId = user?.departmentId ?? "unassigned"
     if (!deptMap.has(deptId)) deptMap.set(deptId, [])
     deptMap.get(deptId)!.push({
       facultyId,
@@ -170,12 +171,22 @@ export async function getDeanEvalReportData(deanId: string, evaluationPeriodId?:
     .single()
   if (!dept) return { evaluationPeriodId: "", departments: [], facultyResults: [] }
 
+  // Live home department — do not filter by evaluation_results.departmentId (stale snapshot).
   const { data: results } = await supabase
     .from("evaluation_results")
     .select("*")
     .eq("evaluation_period_id", activePeriodId)
-    .eq("departmentId", dept.id)
-  const rows = (results ?? []) as Array<Record<string, unknown>>
+  const allRows = (results ?? []) as Array<Record<string, unknown>>
+
+  const allFacIds = [...new Set(allRows.map((r) => r.facultyId as string))]
+  const { data: allUsers } = await supabase
+    .from("users")
+    .select("id, name, departmentId")
+    .in("id", allFacIds)
+  const liveDept = new Map(
+    (allUsers ?? []).map((u: Record<string, unknown>) => [u.id, u.departmentId as string | null]),
+  )
+  const rows = allRows.filter((r) => liveDept.get(r.facultyId as string) === dept.id)
 
   const facultyIds = [...new Set(rows.map((r) => r.facultyId as string))]
   const { data: users } = await supabase
