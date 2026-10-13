@@ -71,13 +71,12 @@ export function EnrollmentsTab() {
   const facultySubjects = useMemo(() => fsData?.data ?? [], [fsData])
 
   const filteredFacultySubjects = useMemo(() => {
-    const facultySubjects = fsData?.data ?? []
     if (!formFsSearch.trim()) return facultySubjects
     const q = formFsSearch.toLowerCase()
     return facultySubjects.filter((fs) =>
       `${fs.section.program} ${fs.section.name} ${fs.subject.code} ${fs.subject.name} ${fs.faculty.name}`.toLowerCase().includes(q)
     )
-  }, [fsData, formFsSearch])
+  }, [facultySubjects, formFsSearch])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
