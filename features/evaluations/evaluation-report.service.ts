@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase"
-import { departmentRepository, evaluationPeriodRepository } from "@/lib/repositories/factory"
+import { departmentRepository, evaluationPeriodRepository, evaluationResultRepository, userRepository } from "@/lib/repositories/factory"
 
 export interface EvalReportFaculty {
   facultyId: string
@@ -164,36 +164,23 @@ export async function getDeanEvalReportData(deanId: string, evaluationPeriodId?:
   const activePeriodId = evaluationPeriodId ?? (await getActiveEvaluationPeriodId())
   if (!activePeriodId) return { evaluationPeriodId: "", departments: [], facultyResults: [] }
 
-  const { data: dept } = await supabase
-    .from("departments")
-    .select("id, name")
-    .eq("deanId", deanId)
-    .single()
+  const dept = await departmentRepository.findByDeanId(deanId)
   if (!dept) return { evaluationPeriodId: "", departments: [], facultyResults: [] }
 
   // Live home department — do not filter by evaluation_results.departmentId (stale snapshot).
-  const { data: results } = await supabase
-    .from("evaluation_results")
-    .select("*")
-    .eq("evaluation_period_id", activePeriodId)
-  const allRows = (results ?? []) as Array<Record<string, unknown>>
+  const resultRows = await evaluationResultRepository.list(activePeriodId)
+  const allRows = (resultRows ?? []) as Array<Record<string, unknown>>
 
   const allFacIds = [...new Set(allRows.map((r) => r.facultyId as string))]
-  const { data: allUsers } = await supabase
-    .from("users")
-    .select("id, name, departmentId")
-    .in("id", allFacIds)
+  const allUsers = allFacIds.length > 0 ? await userRepository.listByIds(allFacIds) : []
   const liveDept = new Map(
-    (allUsers ?? []).map((u: Record<string, unknown>) => [u.id, u.departmentId as string | null]),
+    (allUsers ?? []).map((u) => [u.id, (u as { id: string; departmentId: string | null }).departmentId ?? null]),
   )
   const rows = allRows.filter((r) => liveDept.get(r.facultyId as string) === dept.id)
 
   const facultyIds = [...new Set(rows.map((r) => r.facultyId as string))]
-  const { data: users } = await supabase
-    .from("users")
-    .select("id, name")
-    .in("id", facultyIds)
-  const userMap = new Map((users ?? []).map((u: Record<string, unknown>) => [u.id, (u as { id: string; name: string }).name]))
+  const users = facultyIds.length > 0 ? await userRepository.listByIds(facultyIds) : []
+  const userMap = new Map(users.map((u) => [u.id, (u as { id: string; name: string }).name]))
 
   const facultyResults: EvalReportFaculty[] = rows.map((r) => {
     const facultyId = r.facultyId as string
@@ -292,3 +279,49 @@ export async function getFacultyEvalReportData(facultyId: string, evaluationPeri
 }
 
 export { CATEGORY_KEYS }
+
+export interface DeanDashboardKpis {
+  general: number | null; remark: string | null;
+  actual: number; expected: number | null; responsePct: number | null;
+  facultyEvaluated: number; facultyAssigned: number;
+  atRisk: number; outstanding: number;
+}
+export interface DeanDashboardData {
+  semesterId: string; evaluationPeriodId: string; rubricGroupName: string | null;
+  kpis: DeanDashboardKpis;
+  trend: { semesterId: string; title: string; general: number | null; rubricChanged: boolean }[];
+  remarkMix: { remark: string; count: number }[];
+  categories: { key: string; value: number | null; delta: number | null }[];
+  lowResponse: { facultyId: string; facultyName: string; actual: number; expected: number | null }[];
+  bottom5: EvalReportFaculty[]; top5: EvalReportFaculty[];
+}
+export async function getDeanDashboardData(deanId: string, semesterId?: string, evaluationPeriodId?: string): Promise<DeanDashboardData | null> {
+  const periodId = evaluationPeriodId ?? semesterId ?? await getActiveEvaluationPeriodId();
+  if (!periodId) return null;
+  const base = await getDeanEvalReportData(deanId, periodId);
+  if (base.departments.length === 0) return null;
+  const rows = base.facultyResults.filter((f) => (f.totalRespondents ?? 0) >= 5);
+  const gen = (f: EvalReportFaculty) => f.generalRating;
+  const sorted = [...rows].sort((a, b) => (b.generalRating ?? -1) - (a.generalRating ?? -1));
+  const remarkOf = (g: number | null) => g === null ? null : g >= 4.5 ? "Outstanding" : g >= 3.5 ? "Very Satisfactory" : g >= 2.5 ? "Satisfactory" : g >= 1.5 ? "Unsatisfactory" : "Poor";
+  const dept = base.departments[0];
+  const totalResp = rows.reduce((s, f) => s + f.totalRespondents, 0);
+  return {
+    semesterId: periodId, evaluationPeriodId: periodId, rubricGroupName: null,
+    kpis: {
+      general: dept.avgGeneralRating, remark: remarkOf(dept.avgGeneralRating),
+      actual: totalResp, expected: null, responsePct: null,
+      facultyEvaluated: rows.length, facultyAssigned: base.facultyResults.length,
+      atRisk: rows.filter((f) => (f.generalRating ?? 5) < 2.5).length,
+      outstanding: rows.filter((f) => (f.generalRating ?? 0) >= 4.5).length,
+    },
+    trend: [{ semesterId: periodId, title: "", general: dept.avgGeneralRating, rubricChanged: false }],
+    remarkMix: ["Outstanding","Very Satisfactory","Satisfactory","Unsatisfactory","Poor"].map((remark) => ({
+      remark, count: rows.filter((f) => remarkOf(gen(f)) === remark).length,
+    })),
+    categories: CATEGORY_KEYS.map((key) => ({ key, value: dept[`avg${key.charAt(0).toUpperCase()}${key.slice(1)}` as keyof EvalReportDepartment] as number | null, delta: null })),
+    lowResponse: base.facultyResults.filter((f) => f.totalRespondents < 5).map((f) => ({ facultyId: f.facultyId, facultyName: f.facultyName, actual: f.totalRespondents, expected: null })),
+    bottom5: [...rows].sort((a, b) => (a.generalRating ?? 9) - (b.generalRating ?? 9)).slice(0, 5),
+    top5: sorted.slice(0, 5),
+  };
+}
