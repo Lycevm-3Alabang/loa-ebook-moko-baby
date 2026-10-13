@@ -403,6 +403,17 @@ export const evaluationRepository: IEvaluationRepository = {
     }
     return result
   },
+  async listSubmittedEvaluateeIds(evaluationPeriodId) {
+    const { data, error } = await supabase
+      .from("evaluations")
+      .select("evaluateeId")
+      .eq("evaluation_period_id", evaluationPeriodId)
+      .eq("status", "SUBMITTED")
+      .eq("isDisabled", false)
+      .not("facultySubjectId", "is", null)
+    if (error) throw error
+    return [...new Set((data || []).map((e) => e.evaluateeId))]
+  },
   async invalidateByFacultySubject(facultySubjectId, remarks) {
     const { error } = await supabase
       .from("evaluations")

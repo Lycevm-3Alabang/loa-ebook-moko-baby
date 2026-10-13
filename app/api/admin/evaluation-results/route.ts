@@ -18,6 +18,14 @@ export async function GET(request: NextRequest) {
       await evaluationResultRepository.computeAll(evaluationPeriodId)
       results = await evaluationResultRepository.list(evaluationPeriodId)
       if (results.length === 0) return NextResponse.json({ departments: [] })
+    } else {
+      const submittedIds = await evaluationRepository.listSubmittedEvaluateeIds(evaluationPeriodId)
+      const resultFaculty = new Set(results.map((r) => r.facultyId))
+      const hasMissing = submittedIds.some((id) => !resultFaculty.has(id))
+      if (hasMissing) {
+        await evaluationResultRepository.computeAll(evaluationPeriodId)
+        results = await evaluationResultRepository.list(evaluationPeriodId)
+      }
     }
 
     const sentimentRows = await evaluationRepository.listSubmittedWithSentiment(evaluationPeriodId)
