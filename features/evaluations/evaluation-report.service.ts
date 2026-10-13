@@ -169,7 +169,7 @@ export async function getDeanEvalReportData(deanId: string, evaluationPeriodId?:
 
   // Live home department — do not filter by evaluation_results.departmentId (stale snapshot).
   const resultRows = await evaluationResultRepository.list(activePeriodId)
-  const allRows = (resultRows ?? []) as Array<Record<string, unknown>>
+  const allRows = ((resultRows ?? []) as unknown) as Array<Record<string, unknown>>
 
   const allFacIds = [...new Set(allRows.map((r) => r.facultyId as string))]
   const allUsers = allFacIds.length > 0 ? await userRepository.listByIds(allFacIds) : []
