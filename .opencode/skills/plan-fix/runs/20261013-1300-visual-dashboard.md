@@ -5,8 +5,8 @@ repo: D:\loa\e-consultation-worktrees\regie-worktree
 calibration: {1: "A", 2: "A", 3: "B", 4: "D", 5: "A", 6: "C"}
 workflow: "D"
 decision: "Option A service + visual components + both pages (fill 5 data stubs, build no-table blocks, wire Dean + new Admin mirror)"
-status: implementing
-pending: slice-1
+status: done
+pending: none
 ---
 
 # Plan
@@ -22,10 +22,14 @@ pending: slice-1
 | handoff | Run implement-fix with it? | Yes |
 | who-implements | Who implements? | B — Code it |
 | slice-1 | Slice 1 service fill + admin twin — apply? | Applied |
+| slice-2 | Slice 2 single-file visuals — apply? | Applied |
+| slice-3a | Slice 3a Dean rewire — apply? | Applied |
+| slice-3b | Slice 3b Admin page — apply? | Applied |
+| verify | tsc + vitest? | Green (user-reported) |
 
 ## Pending
 
-- slice-2: Slice 2 single-file visuals proposal shown above; awaiting Apply / Stop / revision
+- none: closed out, verify green (user-reported)
 
 ## Decisions
 

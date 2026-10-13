@@ -1,10 +1,10 @@
-import Link from "next/link"
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { hasRole } from "@/lib/utils/roles"
 import { getDeanEvalReportData, getDeanDashboardData } from "@/features/evaluations/evaluation-report.service"
 import { semesterRepository, evaluationPeriodRepository } from "@/lib/repositories/factory"
 import EvaluationReportContent from "@/features/evaluations/components/EvaluationReportContent"
+import { KpiCards, TrendLine, RemarkStack, CategoryBars, ResponseStrip, AttentionCards, DashboardEmpty } from "@/features/evaluations/components/dashboard/DashboardVisuals"
 
 export default async function DeanEvalReportDetailPage({
   searchParams,
@@ -29,6 +29,7 @@ export default async function DeanEvalReportDetailPage({
   ])
   const periodId = dashboard?.evaluationPeriodId ?? base.evaluationPeriodId
   const deptId = base.departments[0]?.departmentId ?? ""
+  const facultyLink = (name: string) => `/dean/evaluations/results/${deptId}?evaluationPeriodId=${periodId}&search=${encodeURIComponent(name)}`
 
   return (
     <div className="w-full space-y-6 pb-12">
@@ -48,51 +49,21 @@ export default async function DeanEvalReportDetailPage({
       </form>
 
       {!dashboard ? (
-        <div className="bg-white rounded-xl border p-12 text-center">
-          <p className="text-sm text-tertiary">No data for this semester / period.</p>
-        </div>
+        <DashboardEmpty />
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-white rounded-xl border p-4"><p className="text-[10px] text-tertiary">General</p><p className="text-2xl font-bold">{dashboard.kpis.general?.toFixed(2) ?? "—"}</p><p className="text-xs">{dashboard.kpis.remark ?? ""}</p></div>
-            <div className="bg-white rounded-xl border p-4"><p className="text-[10px] text-tertiary">Response</p><p className="text-2xl font-bold">{dashboard.kpis.responsePct ?? "—"}</p><p className="text-xs">{dashboard.kpis.actual} responses</p></div>
-            <div className="bg-white rounded-xl border p-4"><p className="text-[10px] text-tertiary">Faculty</p><p className="text-2xl font-bold">{dashboard.kpis.facultyEvaluated}/{dashboard.kpis.facultyAssigned}</p></div>
-            <div className="bg-white rounded-xl border p-4"><p className="text-[10px] text-tertiary">Risk</p><p className="text-2xl font-bold">{dashboard.kpis.atRisk} at-risk</p><p className="text-xs">{dashboard.kpis.outstanding} outstanding</p></div>
+          <KpiCards dashboard={dashboard} />
+          <div className="grid gap-3 md:grid-cols-12">
+            <div className="md:col-span-7"><TrendLine trend={dashboard.trend} /></div>
+            <div className="md:col-span-5"><RemarkStack mix={dashboard.remarkMix} /></div>
           </div>
-
+          <div className="grid gap-3 md:grid-cols-12">
+            <div className="md:col-span-7"><CategoryBars categories={dashboard.categories} /></div>
+            <div className="md:col-span-5"><ResponseStrip dashboard={dashboard} /></div>
+          </div>
           <div className="grid gap-3 md:grid-cols-2">
-            <div className="bg-white rounded-xl border p-4"><p className="text-xs font-bold mb-2">Trend</p>
-              {dashboard.trend.map((t) => <p key={t.semesterId} className="text-xs">{t.title || t.semesterId}: {t.general?.toFixed(2) ?? "—"}{t.rubricChanged ? " ⚠ rubric changed" : ""}</p>)}
-            </div>
-            <div className="bg-white rounded-xl border p-4"><p className="text-xs font-bold mb-2">Remarks</p>
-              {dashboard.remarkMix.map((r) => <p key={r.remark} className="text-xs">{r.remark}: {r.count}</p>)}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border p-4"><p className="text-xs font-bold mb-2">Categories</p>
-            {dashboard.categories.map((c) => (
-              <div key={c.key} className="flex items-center gap-3 py-1">
-                <span className="text-xs w-40">{c.key}</span>
-                <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden"><div className="h-full bg-emerald-500" style={{ width: `${c.value !== null ? (c.value / 5) * 100 : 0}%` }} /></div>
-                <span className="text-xs w-10 text-right">{c.value?.toFixed(2) ?? "—"}</span>
-                <span className="text-xs w-12 text-right">{c.delta === null ? "" : c.delta > 0 ? `▲${c.delta}` : `▼${c.delta}`}</span>
-              </div>
-            ))}
-          </div>
-
-          {dashboard.lowResponse.length > 0 && (
-            <div className="bg-white rounded-xl border p-4"><p className="text-xs font-bold mb-2">Response health</p>
-              {dashboard.lowResponse.map((r) => <p key={r.facultyId} className="text-xs">⚠ {r.facultyName}: {r.actual} responses</p>)}
-            </div>
-          )}
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="bg-white rounded-xl border p-4"><p className="text-xs font-bold mb-2">Bottom 5</p>
-              {dashboard.bottom5.map((f, i) => <p key={f.facultyId} className="text-xs">{i + 1}. <Link className="underline" href={`/dean/evaluations/results/${deptId}?evaluationPeriodId=${periodId}&search=${encodeURIComponent(f.facultyName)}`}>{f.facultyName}</Link> — {f.generalRating?.toFixed(2) ?? "—"}</p>)}
-            </div>
-            <div className="bg-white rounded-xl border p-4"><p className="text-xs font-bold mb-2">Top 5</p>
-              {dashboard.top5.map((f, i) => <p key={f.facultyId} className="text-xs">{i + 1}. <Link className="underline" href={`/dean/evaluations/results/${deptId}?evaluationPeriodId=${periodId}&search=${encodeURIComponent(f.facultyName)}`}>{f.facultyName}</Link> — {f.generalRating?.toFixed(2) ?? "—"}</p>)}
-            </div>
+            <AttentionCards title="Attention" items={dashboard.bottom5} tone="risk" linkFor={facultyLink} />
+            <AttentionCards title="Recognition" items={dashboard.top5} tone="praise" linkFor={facultyLink} />
           </div>
         </>
       )}
