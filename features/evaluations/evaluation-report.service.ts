@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase"
-import { departmentRepository, evaluationPeriodRepository, evaluationResultRepository, userRepository } from "@/lib/repositories/factory"
+import { departmentRepository, evaluationPeriodRepository, evaluationResultRepository, userRepository, facultySubjectRepository, studentEnrollmentRepository, rubricGroupRepository } from "@/lib/repositories/factory"
 
 export interface EvalReportFaculty {
   facultyId: string
@@ -295,33 +295,148 @@ export interface DeanDashboardData {
   lowResponse: { facultyId: string; facultyName: string; actual: number; expected: number | null }[];
   bottom5: EvalReportFaculty[]; top5: EvalReportFaculty[];
 }
-export async function getDeanDashboardData(deanId: string, semesterId?: string, evaluationPeriodId?: string): Promise<DeanDashboardData | null> {
-  const periodId = evaluationPeriodId ?? semesterId ?? await getActiveEvaluationPeriodId();
-  if (!periodId) return null;
-  const base = await getDeanEvalReportData(deanId, periodId);
-  if (base.departments.length === 0) return null;
-  const rows = base.facultyResults.filter((f) => (f.totalRespondents ?? 0) >= 5);
-  const gen = (f: EvalReportFaculty) => f.generalRating;
-  const sorted = [...rows].sort((a, b) => (b.generalRating ?? -1) - (a.generalRating ?? -1));
-  const remarkOf = (g: number | null) => g === null ? null : g >= 4.5 ? "Outstanding" : g >= 3.5 ? "Very Satisfactory" : g >= 2.5 ? "Satisfactory" : g >= 1.5 ? "Unsatisfactory" : "Poor";
-  const dept = base.departments[0];
-  const totalResp = rows.reduce((s, f) => s + f.totalRespondents, 0);
+function remarkOf(g: number | null): string | null {
+  return g === null ? null : g >= 4.5 ? "Outstanding" : g >= 3.5 ? "Very Satisfactory" : g >= 2.5 ? "Satisfactory" : g >= 1.5 ? "Unsatisfactory" : "Poor"
+}
+
+// Additive dashboard internals — existing report functions above are untouched.
+async function facultyGrainForDept(departmentId: string, periodId: string): Promise<EvalReportFaculty[]> {
+  const resultRows = await evaluationResultRepository.list(periodId)
+  const allRows = ((resultRows ?? []) as unknown) as Array<Record<string, unknown>>
+  const allFacIds = [...new Set(allRows.map((r) => r.facultyId as string))]
+  const allUsers = allFacIds.length > 0 ? await userRepository.listByIds(allFacIds) : []
+  const liveDept = new Map(allUsers.map((u) => [u.id, (u as { id: string; departmentId: string | null }).departmentId ?? null]))
+  const rows = allRows.filter((r) => liveDept.get(r.facultyId as string) === departmentId)
+  const facultyIds = [...new Set(rows.map((r) => r.facultyId as string))]
+  const users = facultyIds.length > 0 ? await userRepository.listByIds(facultyIds) : []
+  const userMap = new Map(users.map((u) => [u.id, (u as { id: string; name: string }).name]))
+  return rows.map((r) => {
+    const facultyId = r.facultyId as string
+    return {
+      facultyId,
+      facultyName: userMap.get(facultyId) ?? facultyId,
+      totalRespondents: (r.totalRespondents as number) ?? 0,
+      professionalManner: r.professionalManner as number | null,
+      communicationWithStudent: r.communicationWithStudent as number | null,
+      studentEngagement: r.studentEngagement as number | null,
+      learningMaterials: r.learningMaterials as number | null,
+      timeManagement: r.timeManagement as number | null,
+      experientialLearning: r.experientialLearning as number | null,
+      respectUniqueness: r.respectUniqueness as number | null,
+      assessmentAndFeedback: r.assessmentAndFeedback as number | null,
+      generalRating: r.generalRating as number | null,
+      remarks: r.remarks as string | null,
+    }
+  })
+}
+
+async function deptPeriodAverages(departmentId: string, periodId: string) {
+  const resultRows = await evaluationResultRepository.list(periodId)
+  const allRows = ((resultRows ?? []) as unknown) as Array<Record<string, unknown>>
+  const facIds = [...new Set(allRows.map((r) => r.facultyId as string))]
+  const users = facIds.length > 0 ? await userRepository.listByIds(facIds) : []
+  const liveDept = new Map(users.map((u) => [u.id, (u as { id: string; departmentId: string | null }).departmentId ?? null]))
+  const rows = allRows.filter((r) => liveDept.get(r.facultyId as string) === departmentId)
+  const cats: Record<string, number | null> = {}
+  for (const key of CATEGORY_KEYS) cats[key] = avg(rows.map((r) => (r[key] as number | null) ?? null))
   return {
-    semesterId: periodId, evaluationPeriodId: periodId, rubricGroupName: null,
+    general: avg(rows.map((r) => (r.generalRating as number | null) ?? null)),
+    cats,
+    respondents: rows.reduce((s, r) => s + ((r.totalRespondents as number) ?? 0), 0),
+    facultyIds: [...new Set(rows.map((r) => r.facultyId as string))],
+  }
+}
+
+async function deptExpectedCounts(departmentId: string, semesterId: string | null) {
+  if (!semesterId) return { total: 0, byFaculty: new Map<string, number>() }
+  const allFS = await facultySubjectRepository.listAllWithEmbeds({ semesterId })
+  const mine = allFS.filter((fs) => fs.faculty?.departmentId === departmentId)
+  const ids = mine.map((fs) => fs.id)
+  const counts = ids.length > 0 ? await studentEnrollmentRepository.countByFacultySubjectIds(ids, semesterId) : {}
+  const byFaculty = new Map<string, number>()
+  for (const fs of mine) byFaculty.set(fs.faculty_id, (byFaculty.get(fs.faculty_id) ?? 0) + (counts[fs.id] ?? 0))
+  return { total: [...byFaculty.values()].reduce((a, b) => a + b, 0), byFaculty }
+}
+
+async function buildDeptDashboard(dept: { id: string; name: string }, periodId: string): Promise<DeanDashboardData> {
+  const [grain, cur, period, descList] = await Promise.all([
+    facultyGrainForDept(dept.id, periodId),
+    deptPeriodAverages(dept.id, periodId),
+    evaluationPeriodRepository.findById(periodId),
+    evaluationPeriodRepository.list(),
+  ])
+  let rubricGroupName: string | null = null
+  if (period?.rubricGroupId) rubricGroupName = (await rubricGroupRepository.findById(period.rubricGroupId))?.name ?? null
+  const idx = descList.findIndex((p) => p.id === periodId)
+  const prev = idx >= 0 ? (descList[idx + 1] ?? null) : null
+  const prevAvg = prev ? await deptPeriodAverages(dept.id, prev.id) : null
+  const deltaFor = (key: string, v: number | null) =>
+    v === null || !prevAvg || prevAvg.cats[key] == null ? null : Math.round((v - (prevAvg.cats[key] as number)) * 100) / 100
+  const trend = []
+  for (const p of descList.slice(0, 4).reverse()) {
+    const a = p.id === periodId ? cur : await deptPeriodAverages(dept.id, p.id)
+    trend.push({
+      semesterId: p.semesterId,
+      title: [p.semesterTitle, p.name].filter(Boolean).join(" — "),
+      general: a.general,
+      rubricChanged: (p.rubricGroupId ?? null) !== (period?.rubricGroupId ?? null),
+    })
+  }
+  const { total: expected, byFaculty } = await deptExpectedCounts(dept.id, period?.semesterId ?? null)
+  const responsePct = expected > 0 ? Math.round((cur.respondents / expected) * 100) : null
+  const rows = grain.filter((f) => (f.totalRespondents ?? 0) >= 5)
+  const sorted = [...rows].sort((a, b) => (b.generalRating ?? -1) - (a.generalRating ?? -1))
+  return {
+    semesterId: period?.semesterId ?? periodId,
+    evaluationPeriodId: periodId,
+    rubricGroupName,
     kpis: {
-      general: dept.avgGeneralRating, remark: remarkOf(dept.avgGeneralRating),
-      actual: totalResp, expected: null, responsePct: null,
-      facultyEvaluated: rows.length, facultyAssigned: base.facultyResults.length,
+      general: cur.general, remark: remarkOf(cur.general),
+      actual: cur.respondents, expected, responsePct,
+      facultyEvaluated: rows.length, facultyAssigned: grain.length,
       atRisk: rows.filter((f) => (f.generalRating ?? 5) < 2.5).length,
       outstanding: rows.filter((f) => (f.generalRating ?? 0) >= 4.5).length,
     },
-    trend: [{ semesterId: periodId, title: "", general: dept.avgGeneralRating, rubricChanged: false }],
-    remarkMix: ["Outstanding","Very Satisfactory","Satisfactory","Unsatisfactory","Poor"].map((remark) => ({
-      remark, count: rows.filter((f) => remarkOf(gen(f)) === remark).length,
+    trend,
+    remarkMix: ["Outstanding", "Very Satisfactory", "Satisfactory", "Unsatisfactory", "Poor"].map((remark) => ({
+      remark, count: rows.filter((f) => remarkOf(f.generalRating) === remark).length,
     })),
-    categories: CATEGORY_KEYS.map((key) => ({ key, value: dept[`avg${key.charAt(0).toUpperCase()}${key.slice(1)}` as keyof EvalReportDepartment] as number | null, delta: null })),
-    lowResponse: base.facultyResults.filter((f) => f.totalRespondents < 5).map((f) => ({ facultyId: f.facultyId, facultyName: f.facultyName, actual: f.totalRespondents, expected: null })),
+    categories: CATEGORY_KEYS.map((key) => ({ key, value: cur.cats[key], delta: deltaFor(key, cur.cats[key]) })),
+    lowResponse: grain.filter((f) => f.totalRespondents < 5).map((f) => ({ facultyId: f.facultyId, facultyName: f.facultyName, actual: f.totalRespondents, expected: byFaculty.get(f.facultyId) ?? null })),
     bottom5: [...rows].sort((a, b) => (a.generalRating ?? 9) - (b.generalRating ?? 9)).slice(0, 5),
     top5: sorted.slice(0, 5),
-  };
+  }
+}
+
+export async function getDeanDashboardData(deanId: string, semesterId?: string, evaluationPeriodId?: string): Promise<DeanDashboardData | null> {
+  const dept = await departmentRepository.findByDeanId(deanId)
+  if (!dept) return null
+  let periodId = evaluationPeriodId ?? null
+  if (!periodId && semesterId) {
+    const options = await evaluationPeriodRepository.findBySemester(semesterId)
+    periodId = options.find((p) => p.isActive)?.id ?? options[0]?.id ?? null
+  }
+  if (!periodId) periodId = await getActiveEvaluationPeriodId()
+  if (!periodId) return null
+  return buildDeptDashboard({ id: dept.id, name: dept.name }, periodId)
+}
+
+export interface AdminDeptBar { departmentId: string; departmentName: string; general: number | null; remark: string | null; respondents: number }
+export interface AdminDashboardData { evaluationPeriodId: string; departments: AdminDeptBar[]; selected: DeanDashboardData | null }
+export async function getAdminDashboardData(evaluationPeriodId?: string, departmentId?: string): Promise<AdminDashboardData | null> {
+  const periodId = evaluationPeriodId ?? await getActiveEvaluationPeriodId()
+  if (!periodId) return null
+  const depts = await departmentRepository.listAll()
+  const departments: AdminDeptBar[] = []
+  for (const d of depts) {
+    const a = await deptPeriodAverages(d.id, periodId)
+    departments.push({ departmentId: d.id, departmentName: d.name, general: a.general, remark: remarkOf(a.general), respondents: a.respondents })
+  }
+  departments.sort((a, b) => (b.general ?? -1) - (a.general ?? -1))
+  let selected: DeanDashboardData | null = null
+  if (departmentId) {
+    const dept = await departmentRepository.findById(departmentId)
+    if (dept) selected = await buildDeptDashboard({ id: dept.id, name: dept.name }, periodId)
+  }
+  return { evaluationPeriodId: periodId, departments, selected }
 }
