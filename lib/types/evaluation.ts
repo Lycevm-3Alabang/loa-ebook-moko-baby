@@ -476,6 +476,7 @@ export interface IEvaluationRepository {
   invalidateById(id: string, remarks: string): Promise<void>
   invalidateByEvaluatorAndPeriod(evaluatorId: string, facultySubjectId: string, evaluationPeriodId: string, remarks: string): Promise<void>
   listSubmittedWithSentiment(evaluationPeriodId: string): Promise<{ evaluateeId: string; sentimentScore: number | null }[]>
+  listSubmittedEvaluateeIds(evaluationPeriodId: string): Promise<string[]>
   invalidateByFacultySubject(facultySubjectId: string, remarks: string): Promise<void>
   countSubmittedByFacultyIds(facultyIds: string[]): Promise<number>
   countDistinctSubmittedEvaluateesByFacultyIds(facultyIds: string[]): Promise<{ total: number; distinctEvaluatees: number }>
