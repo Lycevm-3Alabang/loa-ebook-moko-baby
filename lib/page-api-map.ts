@@ -95,8 +95,8 @@ export const pageApiMap: Record<string, PageApiEntry> = {
       "/api/data/evaluation-mappings",
     ],
   },
-  "/admin/evaluations/status": {
-    label: "Evaluation Status",
+  "/admin/evaluations/coverage": {
+    label: "Evaluation Coverage",
     apis: [
       "/api/admin/evaluation-status",
       "/api/evaluation-periods",

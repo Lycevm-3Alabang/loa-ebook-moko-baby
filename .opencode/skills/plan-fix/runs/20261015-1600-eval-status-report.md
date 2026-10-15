@@ -29,6 +29,9 @@ pending: none
 | scale-1 | Paginated submitter counter? | Applied (interface + repo method, service switched) |
 | scale-2 | Paginated enrollment counter? | Applied (additive countByFacultySubjectIdsPaged, service switched; original untouched) |
 | scale-3 | Drilldown pagination? | Applied (usePagination + Paginator, 25/page, resets on dept/search) |
+| faculty-col | Show faculty in drilldown? | Applied (expected-vs-actual per faculty-subject; search includes faculty) |
+| dedupe | Strip Results overlap? | Applied (Coverage title, no Responses on dept table, Ratings → bridge) |
+| rename | Status → Coverage? | Applied (route + nav + grants + M36; /status kept as redirect stub) |
 
 ## Pending
 

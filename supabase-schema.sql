@@ -2082,6 +2082,7 @@ $$;
 
 -- =========================================================
 -- Migration 35: Grant evaluation-status paths to ADMIN
+-- (Renamed to Coverage in Migration 36; kept for the redirect stub.)
 -- =========================================================
 
 DO $$ BEGIN
@@ -2090,6 +2091,22 @@ DO $$ BEGIN
     WHERE "groupName" = 'ADMIN' AND pages @> '["/admin/evaluations/status"]'::JSONB
   ) THEN
     UPDATE group_access SET pages = pages || '["/admin/evaluations/status","/api/admin/evaluation-status"]'::JSONB
+    WHERE "groupName" = 'ADMIN';
+  END IF;
+END $$;
+
+-- =========================================================
+-- Migration 36: Grant evaluation-coverage paths to ADMIN
+-- Status was renamed to Coverage; both stay granted so legacy
+-- /status links (redirect stub) keep working.
+-- =========================================================
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM group_access
+    WHERE "groupName" = 'ADMIN' AND pages @> '["/admin/evaluations/coverage"]'::JSONB
+  ) THEN
+    UPDATE group_access SET pages = pages || '["/admin/evaluations/coverage"]'::JSONB
     WHERE "groupName" = 'ADMIN';
   END IF;
 END $$;
