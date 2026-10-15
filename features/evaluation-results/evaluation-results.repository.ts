@@ -1,6 +1,13 @@
 import { supabase } from "@/lib/db"
 import { fetchRatingsWithCategories } from "@/lib/db/common"
-import type { EvaluationResultData, IEvaluationResultRepository, StudentBreakdownItem, FacultyEvalDetail } from "@/lib/types"
+import {
+  computeCategoryAverages,
+  computeGeneralRating,
+  mapCategoryAveragesToColumns,
+  findHighestLowestRubrics,
+  getRemark,
+} from "@/lib/evaluation-utils"
+import type { EvaluationResultData, IEvaluationResultRepository, LiveDeptAverage, StudentBreakdownItem, FacultyEvalDetail } from "@/lib/types"
 import { semesterRepository } from "@/lib/repositories/factory"
 
 export class EvaluationPeriodInactiveError extends Error {
@@ -229,6 +236,155 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
 
   async computeAll(evaluationPeriodId) {
     await this.compute(evaluationPeriodId)
+  },
+
+  /**
+   * Live per-department averages computed from submitted evals (no cache read,
+   * no writes). Same aggregation semantics as compute(): per-faculty pooled
+   * general (rounded 2dp), then the department mean of faculty generals.
+   * Faculty with no usable ratings contribute nothing, so placeholder and
+   * rating-less rows can never blank a department average.
+   */
+  async listLiveDeptAverages(evaluationPeriodId): Promise<LiveDeptAverage[]> {
+    const { data: evals, error: evErr } = await supabase
+      .from("evaluations")
+      .select("id, evaluateeId")
+      .eq("evaluation_period_id", evaluationPeriodId)
+      .eq("status", "SUBMITTED")
+      .eq("isDisabled", false)
+      .not("facultySubjectId", "is", null)
+    if (evErr) throw evErr
+    if (!evals || evals.length === 0) return []
+
+    const facEvalMap = new Map<string, string[]>()
+    for (const ev of evals) {
+      if (!facEvalMap.has(ev.evaluateeId)) facEvalMap.set(ev.evaluateeId, [])
+      facEvalMap.get(ev.evaluateeId)!.push(ev.id)
+    }
+    const facIds = [...facEvalMap.keys()]
+
+    const { data: evalPeriod } = await supabase
+      .from("evaluation_periods")
+      .select("semesterId")
+      .eq("id", evaluationPeriodId)
+      .single()
+    const semesterId = evalPeriod?.semesterId
+
+    const [ratings, usersResult] = await Promise.all([
+      fetchRatingsWithCategories(supabase, evals.map((e) => e.id)),
+      supabase.from("users").select("id, departmentId").in("id", facIds),
+    ])
+    if (usersResult.error) throw usersResult.error
+
+    const ratingsByEval = new Map<string, typeof ratings>()
+    for (const r of ratings) {
+      if (!ratingsByEval.has(r.evaluationId)) ratingsByEval.set(r.evaluationId, [])
+      ratingsByEval.get(r.evaluationId)!.push(r)
+    }
+
+    // Live home department per faculty, same chain as compute().
+    const deptOf = new Map((usersResult.data || []).map((u) => [u.id, u.departmentId as string | null]))
+    const nullFacIds = facIds.filter((id) => !deptOf.get(id))
+    if (nullFacIds.length > 0 && semesterId) {
+      const { data: fsRows } = await supabase
+        .from("faculty_subjects")
+        .select("faculty_id, section_id")
+        .in("faculty_id", nullFacIds)
+        .eq("semesterId", semesterId)
+      if (fsRows && fsRows.length > 0) {
+        const sectionIds = [...new Set(fsRows.map((r) => r.section_id).filter(Boolean))]
+        if (sectionIds.length > 0) {
+          const { data: sectionRows } = await supabase
+            .from("sections")
+            .select("id, departmentCourseId")
+            .in("id", sectionIds)
+          if (sectionRows && sectionRows.length > 0) {
+            const dcIds = [...new Set(sectionRows.map((r) => r.departmentCourseId).filter(Boolean))]
+            if (dcIds.length > 0) {
+              const { data: dcRows } = await supabase
+                .from("department_courses")
+                .select("id, departmentId")
+                .in("id", dcIds)
+              if (dcRows && dcRows.length > 0) {
+                const dcDeptMap = new Map(dcRows.map((r) => [r.id, r.departmentId]))
+                const sectionDeptMap = new Map(
+                  sectionRows.map((r) => [r.id, dcDeptMap.get(r.departmentCourseId)]),
+                )
+                for (const fs of fsRows) {
+                  const deptId = sectionDeptMap.get(fs.section_id)
+                  if (deptId && !deptOf.get(fs.faculty_id)) {
+                    deptOf.set(fs.faculty_id, deptId)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const catKeys = [
+      "professionalManner", "communicationWithStudent", "studentEngagement",
+      "learningMaterials", "timeManagement", "experientialLearning",
+      "respectUniqueness", "assessmentAndFeedback",
+    ] as const
+
+    const groups = new Map<string, {
+      facultyIds: Set<string>
+      respondents: number
+      generals: number[]
+      cats: Record<string, number[]>
+    }>()
+    for (const [facId, eids] of facEvalMap) {
+      const facRatings = eids.flatMap((eid) => ratingsByEval.get(eid) ?? [])
+      if (facRatings.length === 0) continue
+      const catAverages = computeCategoryAverages(facRatings)
+      const general = computeGeneralRating(catAverages)
+      if (general === null) continue
+      const cols = mapCategoryAveragesToColumns(catAverages)
+      const deptId = deptOf.get(facId) ?? "__unknown__"
+      let g = groups.get(deptId)
+      if (!g) {
+        g = {
+          facultyIds: new Set(),
+          respondents: 0,
+          generals: [],
+          cats: Object.fromEntries(catKeys.map((k) => [k, [] as number[]])),
+        }
+        groups.set(deptId, g)
+      }
+      g.facultyIds.add(facId)
+      g.respondents += eids.length
+      g.generals.push(Math.round(general * 100) / 100)
+      for (const key of catKeys) {
+        const v = cols[key]
+        if (v !== null) g.cats[key].push(v)
+      }
+    }
+
+    return [...groups.entries()].map(([departmentId, g]) => {
+      const avgRating = g.generals.length > 0
+        ? Math.round(g.generals.reduce((a, b) => a + b, 0) / g.generals.length * 100) / 100
+        : null
+      const catAverages: Record<string, number | null> = {}
+      for (const key of catKeys) {
+        const vals = g.cats[key]
+        catAverages[key] = vals.length > 0
+          ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 100) / 100
+          : null
+      }
+      const rubrics = findHighestLowestRubrics(catAverages)
+      return {
+        departmentId,
+        facultyIds: [...g.facultyIds],
+        totalRespondents: g.respondents,
+        avgRating,
+        remarks: getRemark(avgRating),
+        catAverages,
+        highestRubrics: rubrics.highest,
+        lowestRubrics: rubrics.lowest,
+      }
+    })
   },
 
   async setVisibility(evaluationPeriodId, facultyIds, visible) {

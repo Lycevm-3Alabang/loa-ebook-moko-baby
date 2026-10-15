@@ -564,11 +564,23 @@ export interface FacultyEvalDetail {
   students: StudentBreakdownItem[]
 }
 
+export interface LiveDeptAverage {
+  departmentId: string
+  facultyIds: string[]
+  totalRespondents: number
+  avgRating: number | null
+  remarks: string | null
+  catAverages: Record<string, number | null>
+  highestRubrics: { key: string; label: string; score: number }[]
+  lowestRubrics: { key: string; label: string; score: number }[]
+}
+
 export interface IEvaluationResultRepository {
   list(evaluationPeriodId: string, filters?: { departmentId?: string; facultyId?: string }): Promise<EvaluationResultData[]>
   findByFaculty(evaluationPeriodId: string, facultyId: string): Promise<EvaluationResultData | null>
   compute(evaluationPeriodId: string, facultyId?: string): Promise<void>
   computeAll(evaluationPeriodId: string): Promise<void>
+  listLiveDeptAverages(evaluationPeriodId: string): Promise<LiveDeptAverage[]>
   setVisibility(evaluationPeriodId: string, facultyIds: string[], visible: boolean): Promise<void>
   getVisibilityMap(evaluationPeriodId: string): Promise<Map<string, boolean>>
   countBySemesterId(semesterId: string): Promise<number>
