@@ -23,6 +23,14 @@ pending: none
 | plan-done | Is middle-aligned plan done? | Done |
 | who-implements | Who implements this slice? | Code it |
 | slice-1 | Apply header fix to lib/evaluation-pdf.ts? | Applied |
+| center-group | Center logo+name as group? | Requested: group centered, address below |
+| remove-name | Logo already has name? | Requested: remove separate school-name text |
+| bigger-logo | Increase logo size? | Requested: increase size (32 → 42mm) |
+| slice-2 | Apply logo-only centered + larger? | Applied |
+
+## Pending
+
+- none
 
 ## Pending
 

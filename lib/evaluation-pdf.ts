@@ -69,10 +69,9 @@ function slug(text: string): string {
 
 async function addPdfHeader(doc: jsPDF) {
   const pageW = doc.internal.pageSize.getWidth()
-  const logoX = 14
   const logoY = 10
-  const logoWidth = 32
-  let logoHeight = 18
+  const logoWidth = 42
+  let logoHeight = 24
   let logoBase64: string | null = null
 
   try {
@@ -94,18 +93,18 @@ async function addPdfHeader(doc: jsPDF) {
     logoBase64 = null
   }
 
-  // Row 1: logo (left) + school name (same row, middle-aligned)
+  // Row 1: centered logo only (lockup already contains school name)
   const hasLogo = logoBase64 !== null
   const rowH = hasLogo ? logoHeight : 12
   if (hasLogo) {
+    const logoX = (pageW - logoWidth) / 2
     doc.addImage(logoBase64 as string, "PNG", logoX, logoY, logoWidth, logoHeight)
+  } else {
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(15)
+    doc.setTextColor(0, 0, 0)
+    doc.text("LYCEUM OF ALABANG", pageW / 2, logoY + 8, { align: "center" })
   }
-  const nameX = hasLogo ? logoX + logoWidth + 6 : 14
-  const nameMidY = logoY + rowH / 2 + 2
-  doc.setFont("helvetica", "bold")
-  doc.setFontSize(15)
-  doc.setTextColor(0, 0, 0)
-  doc.text("LYCEUM OF ALABANG", nameX, nameMidY)
 
   // Row 2: address centered under both
   const addrY = logoY + rowH + 6
