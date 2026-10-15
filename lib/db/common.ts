@@ -56,18 +56,38 @@ export interface RatingWithCategory {
   rubric_items: { categoryId: string; rubric_categories: { name: string } }
 }
 
+const RATINGS_IN_CHUNK_SIZE = 100
+
+function chunkIds(ids: string[], size: number): string[][] {
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += size) {
+    chunks.push(ids.slice(i, i + size))
+  }
+  return chunks
+}
+
 export async function fetchRatingsWithCategories(
   client: SupabaseClient,
   evaluationIds: string[],
 ): Promise<RatingWithCategory[]> {
   if (evaluationIds.length === 0) return []
 
-  const { data: ratingRows, error: rErr } = await client
-    .from("evaluation_ratings")
-    .select("evaluationId, rating, itemId")
-    .in("evaluationId", evaluationIds)
-  if (rErr) throw rErr
-  if (!ratingRows || ratingRows.length === 0) return []
+  // PostgREST caps URL length (~8KB). 1318 UUIDs ≈ 48KB in one .in() → 400
+  // Bad Request. Chunk to 100 ids (≈3.7KB) per request.
+  const uniqueEvalIds = [...new Set(evaluationIds)]
+  const ratingResults = await Promise.all(
+    chunkIds(uniqueEvalIds, RATINGS_IN_CHUNK_SIZE).map((ids) =>
+      client
+        .from("evaluation_ratings")
+        .select("evaluationId, rating, itemId")
+        .in("evaluationId", ids),
+    ),
+  )
+  for (const res of ratingResults) {
+    if (res.error) throw res.error
+  }
+  const ratingRows = ratingResults.flatMap((res) => res.data || [])
+  if (ratingRows.length === 0) return []
 
   const itemIds = [
     ...new Set(
@@ -88,24 +108,35 @@ export async function fetchRatingsWithCategories(
       },
     }))
   }
-  const { data: itemRows, error: iErr } = await client
-    .from("rubric_items")
-    .select("id, categoryId")
-    .in("id", itemIds)
-  if (iErr) throw iErr
+  const itemResults = await Promise.all(
+    chunkIds(itemIds, RATINGS_IN_CHUNK_SIZE).map((ids) =>
+      client.from("rubric_items").select("id, categoryId").in("id", ids),
+    ),
+  )
+  for (const res of itemResults) {
+    if (res.error) throw res.error
+  }
+  const itemRows = itemResults.flatMap((res) => res.data || [])
 
   const categoryIds = [
     ...new Set(
-      (itemRows || [])
+      itemRows
         .map((i) => i.categoryId)
         .filter((id): id is string => typeof id === "string" && id !== ""),
     ),
   ]
-  const { data: catRows, error: cErr } =
+  const catResults =
     categoryIds.length === 0
-      ? { data: [], error: null }
-      : await client.from("rubric_categories").select("id, name").in("id", categoryIds)
-  if (cErr) throw cErr
+      ? []
+      : await Promise.all(
+          chunkIds(categoryIds, RATINGS_IN_CHUNK_SIZE).map((ids) =>
+            client.from("rubric_categories").select("id, name").in("id", ids),
+          ),
+        )
+  for (const res of catResults) {
+    if (res.error) throw res.error
+  }
+  const catRows = catResults.flatMap((res) => res.data || [])
 
   const catMap = new Map((catRows || []).map((c) => [c.id, c.name]))
   const itemMap = new Map((itemRows || []).map((i) => [i.id, i.categoryId]))

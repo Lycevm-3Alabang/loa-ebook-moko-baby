@@ -4,6 +4,18 @@ import type { EvaluationData, EvaluationComment, EvaluationCommentWithEvaluation
 
 const DUMMY_FACULTY_EMAIL_EVAL = "placeholder@lyceumalabang.edu.ph"
 
+// PostgREST caps URL length (~8KB). 1318 UUIDs ≈ 48KB in one .in() → 400
+// Bad Request. Chunk large .in() lists to stay under it.
+const IN_CHUNK_SIZE = 100
+
+function chunkStrIds(ids: string[], size: number): string[][] {
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += size) {
+    chunks.push(ids.slice(i, i + size))
+  }
+  return chunks
+}
+
 // Semester titles for a set of mapping semesterIds, in one round trip.
 // Deliberately a separate query, NOT an embedded `semesters!inner(title)`
 // join on the faculty_subjects selects: !inner would silently drop
@@ -390,11 +402,16 @@ export const evaluationRepository: IEvaluationRepository = {
     if (error) throw error
     if (!data || data.length === 0) return []
 
-    const evalIds = data.map((e) => e.id)
-    const { data: commentRows } = await supabase
-      .from("evaluation_comments")
-      .select("evaluationId, sentimentScore")
-      .in("evaluationId", evalIds)
+    const evalIds = [...new Set(data.map((e) => e.id))]
+    const commentResults = await Promise.all(
+      chunkStrIds(evalIds, IN_CHUNK_SIZE).map((ids) =>
+        supabase
+          .from("evaluation_comments")
+          .select("evaluationId, sentimentScore")
+          .in("evaluationId", ids),
+      ),
+    )
+    const commentRows = commentResults.flatMap((res) => res.data || [])
 
     const sentByEval = new Map<string, { sentimentScore: number | null }[]>()
     for (const c of commentRows || []) {
@@ -502,21 +519,33 @@ export const evaluationRepository: IEvaluationRepository = {
   },
   async listCommentsByEvaluationIds(evaluationIds) {
     if (evaluationIds.length === 0) return []
-    const { data, error } = await supabase
-      .from("evaluation_comments")
-      .select("evaluationId, sentimentScore")
-      .in("evaluationId", evaluationIds)
-    if (error) throw error
-    return (data || []) as EvaluationCommentLight[]
+    const results = await Promise.all(
+      chunkStrIds([...new Set(evaluationIds)], IN_CHUNK_SIZE).map((ids) =>
+        supabase
+          .from("evaluation_comments")
+          .select("evaluationId, sentimentScore")
+          .in("evaluationId", ids),
+      ),
+    )
+    for (const res of results) {
+      if (res.error) throw res.error
+    }
+    return results.flatMap((res) => res.data || []) as EvaluationCommentLight[]
   },
   async listFullCommentsByEvaluationIds(evaluationIds) {
     if (evaluationIds.length === 0) return []
-    const { data, error } = await supabase
-      .from("evaluation_comments")
-      .select("id, evaluationId, comment, sentimentLabel, sentimentScore")
-      .in("evaluationId", evaluationIds)
-    if (error) throw error
-    return (data || []) as EvaluationCommentFull[]
+    const results = await Promise.all(
+      chunkStrIds([...new Set(evaluationIds)], IN_CHUNK_SIZE).map((ids) =>
+        supabase
+          .from("evaluation_comments")
+          .select("id, evaluationId, comment, sentimentLabel, sentimentScore")
+          .in("evaluationId", ids),
+      ),
+    )
+    for (const res of results) {
+      if (res.error) throw res.error
+    }
+    return results.flatMap((res) => res.data || []) as EvaluationCommentFull[]
   },
   async countBySemesterId(semesterId) {
     const { count, error } = await supabase

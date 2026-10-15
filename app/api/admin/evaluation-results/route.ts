@@ -73,7 +73,19 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ departments })
   } catch (e) {
-    console.error("Admin evaluation results error:", e)
+    // PostgrestErrors are plain objects ({ message, code, details, hint }),
+    // which Vercel serializes as { message } only — extract all fields so
+    // the next 400 names its table instead of logging "Bad Request" alone.
+    const errShape = e as { message?: unknown; code?: unknown; details?: unknown; hint?: unknown }
+    console.error(
+      "Admin evaluation results error:",
+      JSON.stringify({
+        message: errShape?.message,
+        code: errShape?.code,
+        details: errShape?.details,
+        hint: errShape?.hint,
+      }),
+    )
     await logServerError({
       route: "/api/admin/evaluation-results",
       method: request.method,

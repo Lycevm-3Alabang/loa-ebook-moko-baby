@@ -18,6 +18,17 @@ export class EvaluationPeriodInactiveError extends Error {
   }
 }
 
+// PostgREST caps URL length (~8KB). Chunk large .in() lists to stay under it.
+const IN_CHUNK_SIZE = 100
+
+function chunkStrIds(ids: string[], size: number): string[][] {
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += size) {
+    chunks.push(ids.slice(i, i + size))
+  }
+  return chunks
+}
+
 export const evaluationResultRepository: IEvaluationResultRepository = {
   async list(evaluationPeriodId, filters) {
     let q = supabase.from("evaluation_results").select("*").eq("evaluation_period_id", evaluationPeriodId)
@@ -73,20 +84,31 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
 
     const semesterId = evalPeriod?.semesterId
 
-    const [ratings, usersResult, existingResult] = await Promise.all([
+    const uniqueFacultyIds = [...new Set(allFacultyIds)]
+    const facultyChunks = chunkStrIds(uniqueFacultyIds, IN_CHUNK_SIZE)
+    const [ratings, usersResults, existingResults] = await Promise.all([
       fetchRatingsWithCategories(supabase, allEvalIds),
-      supabase.from("users").select("id, departmentId").in("id", allFacultyIds),
-      supabase
-        .from("evaluation_results")
-        .select("id, facultyId")
-        .eq("evaluation_period_id", evaluationPeriodId)
-        .in("facultyId", allFacultyIds),
+      Promise.all(
+        facultyChunks.map((ids) =>
+          supabase.from("users").select("id, departmentId").in("id", ids),
+        ),
+      ),
+      Promise.all(
+        facultyChunks.map((ids) =>
+          supabase
+            .from("evaluation_results")
+            .select("id, facultyId")
+            .eq("evaluation_period_id", evaluationPeriodId)
+            .in("facultyId", ids),
+        ),
+      ),
     ])
-    if (usersResult.error) throw usersResult.error
-    if (existingResult.error) throw existingResult.error
+    for (const res of [...usersResults, ...existingResults]) {
+      if (res.error) throw res.error
+    }
 
-    const users = usersResult.data || []
-    const existingResults = existingResult.data || []
+    const users = usersResults.flatMap((res) => res.data || [])
+    const existingResultsRows = existingResults.flatMap((res) => res.data || [])
 
     const evalRatingsMap = new Map<string, typeof ratings>()
     for (const r of ratings) {
@@ -98,27 +120,51 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
 
     const facIdsWithNullDept = allFacultyIds.filter((id) => !userDeptMap.get(id))
     if (facIdsWithNullDept.length > 0 && semesterId) {
-      const { data: fsRows } = await supabase
-        .from("faculty_subjects")
-        .select("faculty_id, section_id")
-        .in("faculty_id", facIdsWithNullDept)
-        .eq("semesterId", semesterId)
+      const fsResults = await Promise.all(
+        chunkStrIds([...new Set(facIdsWithNullDept)], IN_CHUNK_SIZE).map((ids) =>
+          supabase
+            .from("faculty_subjects")
+            .select("faculty_id, section_id")
+            .in("faculty_id", ids)
+            .eq("semesterId", semesterId),
+        ),
+      )
+      for (const res of fsResults) {
+        if (res.error) throw res.error
+      }
+      const fsRows = fsResults.flatMap((res) => res.data || [])
 
-      if (fsRows && fsRows.length > 0) {
+      if (fsRows.length > 0) {
         const sectionIds = [...new Set(fsRows.map((r) => r.section_id).filter(Boolean))]
         if (sectionIds.length > 0) {
-          const { data: sectionRows } = await supabase
-            .from("sections")
-            .select("id, departmentCourseId")
-            .in("id", sectionIds)
+          const sectionResults = await Promise.all(
+            chunkStrIds(sectionIds as string[], IN_CHUNK_SIZE).map((ids) =>
+              supabase
+                .from("sections")
+                .select("id, departmentCourseId")
+                .in("id", ids),
+            ),
+          )
+          for (const res of sectionResults) {
+            if (res.error) throw res.error
+          }
+          const sectionRows = sectionResults.flatMap((res) => res.data || [])
 
-          if (sectionRows && sectionRows.length > 0) {
+          if (sectionRows.length > 0) {
             const dcIds = [...new Set(sectionRows.map((r) => r.departmentCourseId).filter(Boolean))]
             if (dcIds.length > 0) {
-              const { data: dcRows } = await supabase
-                .from("department_courses")
-                .select("id, departmentId")
-                .in("id", dcIds)
+              const dcResults = await Promise.all(
+                chunkStrIds(dcIds as string[], IN_CHUNK_SIZE).map((ids) =>
+                  supabase
+                    .from("department_courses")
+                    .select("id, departmentId")
+                    .in("id", ids),
+                ),
+              )
+              for (const res of dcResults) {
+                if (res.error) throw res.error
+              }
+              const dcRows = dcResults.flatMap((res) => res.data || [])
 
               if (dcRows && dcRows.length > 0) {
                 const dcDeptMap = new Map(dcRows.map((r) => [r.id, r.departmentId]))
@@ -139,7 +185,7 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
       }
     }
 
-    const existingMap = new Map(existingResults.map((r) => [r.facultyId, r.id]))
+    const existingMap = new Map(existingResultsRows.map((r) => [r.facultyId, r.id]))
 
     const nameToColumn: Record<string, string> = {
       "Professional Manner": "professionalManner",
@@ -270,11 +316,19 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
       .single()
     const semesterId = evalPeriod?.semesterId
 
-    const [ratings, usersResult] = await Promise.all([
+    const uniqueFacIds = [...new Set(facIds)]
+    const [ratings, usersResults] = await Promise.all([
       fetchRatingsWithCategories(supabase, evals.map((e) => e.id)),
-      supabase.from("users").select("id, departmentId").in("id", facIds),
+      Promise.all(
+        chunkStrIds(uniqueFacIds, IN_CHUNK_SIZE).map((ids) =>
+          supabase.from("users").select("id, departmentId").in("id", ids),
+        ),
+      ),
     ])
-    if (usersResult.error) throw usersResult.error
+    for (const res of usersResults) {
+      if (res.error) throw res.error
+    }
+    const usersRows = usersResults.flatMap((res) => res.data || [])
 
     const ratingsByEval = new Map<string, typeof ratings>()
     for (const r of ratings) {
@@ -283,28 +337,52 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
     }
 
     // Live home department per faculty, same chain as compute().
-    const deptOf = new Map((usersResult.data || []).map((u) => [u.id, u.departmentId as string | null]))
+    const deptOf = new Map(usersRows.map((u) => [u.id, u.departmentId as string | null]))
     const nullFacIds = facIds.filter((id) => !deptOf.get(id))
     if (nullFacIds.length > 0 && semesterId) {
-      const { data: fsRows } = await supabase
-        .from("faculty_subjects")
-        .select("faculty_id, section_id")
-        .in("faculty_id", nullFacIds)
-        .eq("semesterId", semesterId)
-      if (fsRows && fsRows.length > 0) {
+      const fsResults = await Promise.all(
+        chunkStrIds([...new Set(nullFacIds)], IN_CHUNK_SIZE).map((ids) =>
+          supabase
+            .from("faculty_subjects")
+            .select("faculty_id, section_id")
+            .in("faculty_id", ids)
+            .eq("semesterId", semesterId),
+        ),
+      )
+      for (const res of fsResults) {
+        if (res.error) throw res.error
+      }
+      const fsRows = fsResults.flatMap((res) => res.data || [])
+      if (fsRows.length > 0) {
         const sectionIds = [...new Set(fsRows.map((r) => r.section_id).filter(Boolean))]
         if (sectionIds.length > 0) {
-          const { data: sectionRows } = await supabase
-            .from("sections")
-            .select("id, departmentCourseId")
-            .in("id", sectionIds)
-          if (sectionRows && sectionRows.length > 0) {
+          const sectionResults = await Promise.all(
+            chunkStrIds(sectionIds as string[], IN_CHUNK_SIZE).map((ids) =>
+              supabase
+                .from("sections")
+                .select("id, departmentCourseId")
+                .in("id", ids),
+            ),
+          )
+          for (const res of sectionResults) {
+            if (res.error) throw res.error
+          }
+          const sectionRows = sectionResults.flatMap((res) => res.data || [])
+          if (sectionRows.length > 0) {
             const dcIds = [...new Set(sectionRows.map((r) => r.departmentCourseId).filter(Boolean))]
             if (dcIds.length > 0) {
-              const { data: dcRows } = await supabase
-                .from("department_courses")
-                .select("id, departmentId")
-                .in("id", dcIds)
+              const dcResults = await Promise.all(
+                chunkStrIds(dcIds as string[], IN_CHUNK_SIZE).map((ids) =>
+                  supabase
+                    .from("department_courses")
+                    .select("id, departmentId")
+                    .in("id", ids),
+                ),
+              )
+              for (const res of dcResults) {
+                if (res.error) throw res.error
+              }
+              const dcRows = dcResults.flatMap((res) => res.data || [])
               if (dcRows && dcRows.length > 0) {
                 const dcDeptMap = new Map(dcRows.map((r) => [r.id, r.departmentId]))
                 const sectionDeptMap = new Map(
