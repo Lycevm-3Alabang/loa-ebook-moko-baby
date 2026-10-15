@@ -6,15 +6,49 @@ import { consultationApprovedHtml } from "@/lib/email-templates/consultation-app
 import { bookingAcknowledgementHtml } from "@/lib/email-templates/booking-acknowledgement"
 import { statusNotificationHtml } from "@/lib/email-templates/status-notification"
 
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
-  },
-})
+const DOMAIN_DEFAULTS = {
+  host: "mail.lyceumalabang.edu.ph",
+  port: 465,
+  user: "noreply@lyceumalabang.edu.ph",
+} as const
+
+type EmailProvider = "gmail" | "domain"
+
+function getEmailProvider(): EmailProvider {
+  return process.env.EMAIL_PROVIDER === "gmail" ? "gmail" : "domain"
+}
+
+function getTransporter() {
+  if (getEmailProvider() === "gmail") {
+    if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
+    return nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false,
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
+    })
+  }
+  const host = process.env.DOMAIN_SMTP_HOST ?? DOMAIN_DEFAULTS.host
+  const port = Number(process.env.DOMAIN_SMTP_PORT ?? DOMAIN_DEFAULTS.port)
+  const user = process.env.DOMAIN_SMTP_USER ?? DOMAIN_DEFAULTS.user
+  const pass = process.env.DOMAIN_SMTP_PASS
+  if (!pass) throw new Error("DOMAIN_SMTP_PASS env var not set")
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure: true,
+    auth: { user, pass },
+  })
+}
+
+function getFrom(): string {
+  if (getEmailProvider() === "gmail") return `"ACES" <${process.env.GMAIL_USER}>`
+  const user = process.env.DOMAIN_SMTP_USER ?? DOMAIN_DEFAULTS.user
+  return `"ACES" <${user}>`
+}
 
 function isEmailEnabled() {
   return process.env.EMAIL_FEATURE_FLAG === "true"
@@ -29,10 +63,8 @@ export async function sendActivationEmail(email: string, name: string, activatio
     return
   }
 
-  if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
-
-  await transporter.sendMail({
-    from: `"ACES" <${process.env.GMAIL_USER}>`,
+  await getTransporter().sendMail({
+    from: getFrom(),
     to: email,
     subject: "Activate Your ACES Account",
     html: `
@@ -63,10 +95,8 @@ export async function sendMeetingInviteEmail(
     return
   }
 
-  if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
-
-  await transporter.sendMail({
-    from: `"ACES" <${process.env.GMAIL_USER}>`,
+  await getTransporter().sendMail({
+    from: getFrom(),
     to: email,
     subject: `Meeting Invitation: ${meetingTitle}`,
     html: `
@@ -119,10 +149,8 @@ export async function sendConsultationInvite(
     return
   }
 
-  if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
-
   const mail: Mail.Options = {
-    from: `"ACES" <${process.env.GMAIL_USER}>`,
+    from: getFrom(),
     to: recipient.email,
     subject: `${data.studentName} is requesting for Consultation`,
     html,
@@ -135,7 +163,7 @@ export async function sendConsultationInvite(
     } : {}),
   }
 
-  await transporter.sendMail(mail)
+  await getTransporter().sendMail(mail)
 }
 
 export async function sendMeetingInviteWithICS(
@@ -171,10 +199,8 @@ export async function sendMeetingInviteWithICS(
     return
   }
 
-  if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
-
   const mail: Mail.Options = {
-    from: `"ACES" <${process.env.GMAIL_USER}>`,
+    from: getFrom(),
     to: recipient.email,
     subject: `Consultation Invitation — ${data.title}`,
     html,
@@ -187,7 +213,7 @@ export async function sendMeetingInviteWithICS(
     } : {}),
   }
 
-  await transporter.sendMail(mail)
+  await getTransporter().sendMail(mail)
 }
 
 export async function sendApprovedWithTeamsLink(
@@ -230,10 +256,8 @@ export async function sendApprovedWithTeamsLink(
     return
   }
 
-  if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
-
   const mail: Mail.Options = {
-    from: `"ACES" <${process.env.GMAIL_USER}>`,
+    from: getFrom(),
     to: recipient.email,
     subject: `Consultation Accepted — Microsoft Teams Link Inside`,
     html,
@@ -246,7 +270,7 @@ export async function sendApprovedWithTeamsLink(
     } : {}),
   }
 
-  await transporter.sendMail(mail)
+  await getTransporter().sendMail(mail)
 }
 
 export async function sendForgotPasswordEmail(email: string, name: string, resetUrl: string) {
@@ -258,10 +282,8 @@ export async function sendForgotPasswordEmail(email: string, name: string, reset
     return
   }
 
-  if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
-
-  await transporter.sendMail({
-    from: `"ACES" <${process.env.GMAIL_USER}>`,
+  await getTransporter().sendMail({
+    from: getFrom(),
     to: email,
     subject: "Reset Your ACES Password",
     html: `
@@ -305,14 +327,12 @@ export async function sendBookingAcknowledgement(
     return
   }
 
-  if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
-
   const subject = data.variant === "request"
     ? `Consultation Request Sent: ${data.meetingTitle}`
     : `Meeting Created: ${data.meetingTitle}`
 
-  await transporter.sendMail({
-    from: `"ACES" <${process.env.GMAIL_USER}>`,
+  await getTransporter().sendMail({
+    from: getFrom(),
     to: to.email,
     subject,
     html,
@@ -359,16 +379,14 @@ export async function sendStatusUpdateEmail(
     return
   }
 
-  if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
-
   const subjectMap: Record<string, string> = {
     cancelled: `Cancelled: ${data.meetingTitle}`,
     completed: `Completed: ${data.meetingTitle}`,
     accepted: `Accepted: ${data.meetingTitle}`,
   }
 
-  await transporter.sendMail({
-    from: `"ACES" <${process.env.GMAIL_USER}>`,
+  await getTransporter().sendMail({
+    from: getFrom(),
     to: recipient.email,
     subject: subjectMap[data.variant] || `Status Update: ${data.meetingTitle}`,
     html,
@@ -383,10 +401,8 @@ export async function sendPasswordChangedEmail(email: string, name: string) {
     return
   }
 
-  if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
-
-  await transporter.sendMail({
-    from: `"ACES" <${process.env.GMAIL_USER}>`,
+  await getTransporter().sendMail({
+    from: getFrom(),
     to: email,
     subject: "Your ACES Password Has Been Changed",
     html: `
