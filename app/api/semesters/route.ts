@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { getSemesters, createSemester } from "@/features/admin-data/semesters.service"
 import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
-import { logAuditEvent } from "@/lib/services/audit"
+import { logAuditEvent, logServerError } from "@/lib/services/audit"
 
 export const dynamic = "force-dynamic"
 
@@ -12,6 +12,7 @@ export async function GET() {
     return NextResponse.json({ data: semesters }, { status: 200 })
   } catch (error) {
     console.error("Error fetching semesters", error)
+    await logServerError({ route: "/api/semesters", method: "GET", error })
     return NextResponse.json({ error: "Failed to fetch semesters" }, { status: 500 })
   }
 }
@@ -43,6 +44,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ data: semester }, { status: 201 })
   } catch (error) {
     console.error("Error creating semester", error)
+    await logServerError({
+      route: "/api/semesters",
+      method: request.method,
+      params: Object.fromEntries(new URL(request.url).searchParams),
+      error,
+    })
     return NextResponse.json({ error: (error as Error).message || "Failed to create semester." }, { status: 500 })
   }
 }

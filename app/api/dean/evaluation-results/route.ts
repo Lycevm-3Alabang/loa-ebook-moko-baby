@@ -4,6 +4,7 @@ import { hasRole } from "@/lib/utils/roles"
 import { departmentRepository, evaluationResultRepository, evaluationRepository, userRepository, evaluationPeriodRepository } from "@/lib/repositories/factory"
 import { supabase } from "@/lib/db"
 import { findHighestLowestRubrics, getRemark } from "@/lib/evaluation-utils"
+import { logServerError } from "@/lib/services/audit"
 
 export async function GET(request: NextRequest) {
   const session = await auth()
@@ -154,6 +155,14 @@ export async function GET(request: NextRequest) {
     })
   } catch (e) {
     console.error("Dean evaluation results error:", e)
+    await logServerError({
+      route: "/api/dean/evaluation-results",
+      method: request.method,
+      params: Object.fromEntries(new URL(request.url).searchParams),
+      email: (session?.user as unknown as { email?: string | null } | undefined)?.email ?? null,
+      role: (session?.user as unknown as { role?: string | null } | undefined)?.role ?? null,
+      error: e,
+    })
     return NextResponse.json({ error: "Failed to fetch evaluation results" }, { status: 500 })
   }
 }

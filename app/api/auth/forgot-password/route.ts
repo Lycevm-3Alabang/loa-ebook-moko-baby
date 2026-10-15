@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { userRepository, passwordResetTokenRepository } from "@/lib/repositories/factory"
 import { randomBytes } from "crypto"
 import { sendActivationWorkflow, sendForgotPasswordWorkflow } from "@/lib/workflows/email-workflows"
-import { logAuditEvent } from "@/lib/services/audit"
+import { logAuditEvent, logServerError } from "@/lib/services/audit"
 
 export async function POST(req: NextRequest) {
   try {
@@ -46,6 +46,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Forgot password error:", error)
+    await logServerError({
+      route: "/api/auth/forgot-password",
+      method: req.method,
+      params: Object.fromEntries(new URL(req.url).searchParams),
+      error,
+    })
     const message = error instanceof Error ? error.message : "Internal server error"
     return NextResponse.json({ error: message, code: "SERVER_ERROR" }, { status: 500 })
   }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { userRepository } from "@/lib/repositories/factory"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
+import { logServerError } from "@/lib/services/audit"
 
 export async function POST() {
   try {
@@ -20,6 +21,7 @@ export async function POST() {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Onboarding error:", error)
+    await logServerError({ route: "/api/auth/onboarding", method: "POST", error })
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

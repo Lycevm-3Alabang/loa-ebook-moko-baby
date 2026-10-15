@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { userRepository, passwordResetTokenRepository } from "@/lib/repositories/factory"
 import { hash } from "bcryptjs"
 import { sendPasswordChangedWorkflow } from "@/lib/workflows/email-workflows"
+import { logServerError } from "@/lib/services/audit"
 
 export async function POST(req: NextRequest) {
   try {
@@ -47,6 +48,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, email: resetToken.email, name: user.name })
   } catch (error) {
     console.error("Change password error:", error)
+    await logServerError({
+      route: "/api/auth/change-password",
+      method: req.method,
+      params: Object.fromEntries(new URL(req.url).searchParams),
+      error,
+    })
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

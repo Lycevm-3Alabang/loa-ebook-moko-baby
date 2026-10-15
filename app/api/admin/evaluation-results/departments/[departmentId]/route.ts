@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/route-guard"
+import { logServerError } from "@/lib/services/audit"
 import {
   userRepository,
   evaluationRepository,
@@ -123,6 +124,12 @@ export async function GET(
     })
   } catch (e) {
     console.error("Department evaluation results error:", e)
+    await logServerError({
+      route: "/api/admin/evaluation-results/departments/[departmentId]",
+      method: request.method,
+      params: Object.fromEntries(new URL(request.url).searchParams),
+      error: e,
+    })
     return NextResponse.json({ error: "Failed to fetch department evaluation results" }, { status: 500 })
   }
 }

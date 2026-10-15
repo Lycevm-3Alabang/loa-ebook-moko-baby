@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, Fragment } from "react"
 import LockedTab from "@/components/ui/LockedTab"
 import ErrorState from "@/components/ui/ErrorState"
 import ErrorBoundary from "@/components/ui/ErrorBoundary"
@@ -29,6 +29,7 @@ function ActionBadge({ action }: { action: string }) {
     PASSWORD_RESET: "bg-amber-50 text-amber-700 border-amber-200/50",
     EMAIL_SENT: "bg-purple-50 text-purple-700 border-purple-200/50",
     EMAIL_FAILED: "bg-red-50 text-red-700 border-red-200/50",
+    SERVER_ERROR: "bg-red-600 text-white border-red-600",
   }
   const fallback = "bg-surface text-secondary border-slate-200/50"
   return (
@@ -55,6 +56,7 @@ export default function AuditTrailPage() {
 
   const [clearConfirm, setClearConfirm] = useState(false)
   const [clearing, setClearing] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const fetchLogs = useCallback(async () => {
     setLoading(true)
@@ -237,7 +239,8 @@ export default function AuditTrailPage() {
               </thead>
               <tbody>
                 {data.logs.map((log) => (
-                  <tr key={log.id}>
+                  <Fragment key={log.id}>
+                  <tr>
                     <td className="whitespace-nowrap text-xs text-tertiary font-medium tabular-nums">
                       {new Date(log.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </td>
@@ -247,10 +250,29 @@ export default function AuditTrailPage() {
                     <td className="whitespace-nowrap text-xs text-secondary font-medium">
                       {log.email || "\u2014"}
                     </td>
-                    <td className="text-xs text-tertiary max-w-xs truncate">
-                      {log.details || "\u2014"}
+                    <td className="text-xs text-tertiary max-w-xs">
+                      {log.action === "SERVER_ERROR" ? (
+                        <button
+                          onClick={() => setExpandedId((id) => (id === log.id ? null : log.id))}
+                          className="font-semibold text-red-600 hover:underline cursor-pointer"
+                        >
+                          {expandedId === log.id ? "Hide stack" : "View stack"}
+                        </button>
+                      ) : (
+                        <span className="block truncate">{log.details || "—"}</span>
+                      )}
                     </td>
                   </tr>
+                  {expandedId === log.id && log.action === "SERVER_ERROR" && (
+                    <tr key={`${log.id}-stack`}>
+                      <td colSpan={4} className="bg-surface px-4 py-3">
+                        <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-secondary max-h-96 overflow-auto">
+                          {log.details || "No details recorded."}
+                        </pre>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/route-guard"
 import { supabase } from "@/lib/db"
+import { logServerError } from "@/lib/services/audit"
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ evaluationId: string }> }) {
   const authErr = await requireAdmin(request)
@@ -85,6 +86,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     })
   } catch (e) {
     console.error("Evaluation details error:", e)
+    await logServerError({
+      route: "/api/admin/evaluations/[evaluationId]/details",
+      method: request.method,
+      params: Object.fromEntries(new URL(request.url).searchParams),
+      error: e,
+    })
     return NextResponse.json({ error: "Failed to load evaluation details" }, { status: 500 })
   }
 }

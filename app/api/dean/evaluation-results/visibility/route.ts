@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
+import { logServerError } from "@/lib/services/audit"
 import {
   departmentRepository,
   userRepository,
@@ -41,6 +42,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true })
   } catch (e) {
     console.error("Dean visibility toggle error:", e)
+    await logServerError({
+      route: "/api/dean/evaluation-results/visibility",
+      method: request.method,
+      params: Object.fromEntries(new URL(request.url).searchParams),
+      email: (session?.user as unknown as { email?: string | null } | undefined)?.email ?? null,
+      role: (session?.user as unknown as { role?: string | null } | undefined)?.role ?? null,
+      error: e,
+    })
     return NextResponse.json({ error: "Failed to update visibility" }, { status: 500 })
   }
 }

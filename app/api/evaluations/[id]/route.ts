@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { getEvaluation, getEvaluationRatings, getEvaluationComment } from "@/features/evaluations/evaluations.service"
 import { rubricGroupRepository, userRepository, facultySubjectRepository, subjectRepository, sectionRepository } from "@/lib/repositories/factory"
 import { groupSnapshotRows } from "@/lib/evaluation-utils"
+import { logServerError } from "@/lib/services/audit"
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
@@ -76,6 +77,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json(responseBody)
   } catch (err) {
     console.error("[EVAL API ERROR]", err)
+    await logServerError({
+      route: "/api/evaluations/[id]",
+      method: request.method,
+      params: Object.fromEntries(new URL(request.url).searchParams),
+      error: err,
+    })
     return NextResponse.json({ error: "Failed to fetch evaluation" }, { status: 500 })
   }
 }

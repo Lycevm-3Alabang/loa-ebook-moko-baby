@@ -10,6 +10,7 @@ import {
   subjectRepository,
 } from "@/lib/repositories/factory"
 import { EvaluationPeriodInactiveError } from "@/features/evaluation-results/evaluation-results.repository"
+import { logServerError } from "@/lib/services/audit"
 import {
   computeCategoryAverages,
   computeGeneralRating,
@@ -142,6 +143,14 @@ export async function GET(
       return NextResponse.json({ error: e.message }, { status: e.status })
     }
     console.error("Dean department evaluation results error:", e)
+    await logServerError({
+      route: "/api/dean/evaluation-results/departments/[departmentId]",
+      method: request.method,
+      params: Object.fromEntries(new URL(request.url).searchParams),
+      email: (session?.user as unknown as { email?: string | null } | undefined)?.email ?? null,
+      role: (session?.user as unknown as { role?: string | null } | undefined)?.role ?? null,
+      error: e,
+    })
     return NextResponse.json({ error: "Failed to fetch department evaluation results" }, { status: 500 })
   }
 }

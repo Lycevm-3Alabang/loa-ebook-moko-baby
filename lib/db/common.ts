@@ -69,18 +69,42 @@ export async function fetchRatingsWithCategories(
   if (rErr) throw rErr
   if (!ratingRows || ratingRows.length === 0) return []
 
-  const itemIds = [...new Set(ratingRows.map((r) => r.itemId))]
+  const itemIds = [
+    ...new Set(
+      ratingRows
+        .map((r) => r.itemId)
+        .filter((id): id is string => typeof id === "string" && id !== ""),
+    ),
+  ]
+  // Unresolvable ratings keep the "" category fallback below instead of
+  // crashing PostgREST with .in("id", []) or .in("id", [null]).
+  if (itemIds.length === 0) {
+    return ratingRows.map((r) => ({
+      evaluationId: r.evaluationId,
+      rating: r.rating,
+      rubric_items: {
+        categoryId: "",
+        rubric_categories: { name: "" },
+      },
+    }))
+  }
   const { data: itemRows, error: iErr } = await client
     .from("rubric_items")
     .select("id, categoryId")
     .in("id", itemIds)
   if (iErr) throw iErr
 
-  const categoryIds = [...new Set((itemRows || []).map((i) => i.categoryId))]
-  const { data: catRows, error: cErr } = await client
-    .from("rubric_categories")
-    .select("id, name")
-    .in("id", categoryIds)
+  const categoryIds = [
+    ...new Set(
+      (itemRows || [])
+        .map((i) => i.categoryId)
+        .filter((id): id is string => typeof id === "string" && id !== ""),
+    ),
+  ]
+  const { data: catRows, error: cErr } =
+    categoryIds.length === 0
+      ? { data: [], error: null }
+      : await client.from("rubric_categories").select("id, name").in("id", categoryIds)
   if (cErr) throw cErr
 
   const catMap = new Map((catRows || []).map((c) => [c.id, c.name]))

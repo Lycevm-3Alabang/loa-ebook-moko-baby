@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/route-guard"
+import { logServerError } from "@/lib/services/audit"
 import {
   userRepository,
   departmentRepository,
@@ -113,6 +114,12 @@ export async function GET(
     })
   } catch (e) {
     console.error("Consolidated faculty evaluation error:", e)
+    await logServerError({
+      route: "/api/admin/evaluation-results/departments/[departmentId]/faculty/[facultyId]",
+      method: request.method,
+      params: Object.fromEntries(new URL(request.url).searchParams),
+      error: e,
+    })
     return NextResponse.json({ error: "Failed to fetch consolidated evaluation" }, { status: 500 })
   }
 }

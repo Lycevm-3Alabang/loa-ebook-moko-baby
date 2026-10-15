@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { getSemester, updateSemester, deleteSemester, activateSemester } from "@/features/admin-data/semesters.service"
 import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
-import { logAuditEvent } from "@/lib/services/audit"
+import { logAuditEvent, logServerError } from "@/lib/services/audit"
 
 async function requireAuth() {
   const session = await auth()
@@ -38,6 +38,12 @@ export async function GET(
     return NextResponse.json({ data: semester }, { status: 200 })
   } catch (error) {
     console.error("Error fetching semester details", error)
+    await logServerError({
+      route: "/api/semesters/[id]",
+      method: _request.method,
+      params: Object.fromEntries(new URL(_request.url).searchParams),
+      error,
+    })
     return NextResponse.json({ error: "Failed to retrieve semester details." }, { status: 500 })
   }
 }
@@ -77,6 +83,12 @@ export async function PATCH(
     return NextResponse.json({ data: updatedSemester }, { status: 200 })
   } catch (error) {
     console.error("Error updating semester", error)
+    await logServerError({
+      route: "/api/semesters/[id]",
+      method: request.method,
+      params: Object.fromEntries(new URL(request.url).searchParams),
+      error,
+    })
     return NextResponse.json({ error: (error as Error).message || "Failed to update semester." }, { status: 500 })
   }
 }
@@ -104,6 +116,12 @@ export async function DELETE(
     return NextResponse.json({ success: true }, { status: 200 })
   } catch (error) {
     console.error("Error deleting semester", error)
+    await logServerError({
+      route: "/api/semesters/[id]",
+      method: _request.method,
+      params: Object.fromEntries(new URL(_request.url).searchParams),
+      error,
+    })
     return NextResponse.json({ error: (error as Error).message || "Failed to delete semester." }, { status: 500 })
   }
 }
@@ -130,6 +148,12 @@ export async function POST(
     return NextResponse.json({ data: activatedSemester }, { status: 200 })
   } catch (error) {
     console.error("Error activating semester", error)
+    await logServerError({
+      route: "/api/semesters/[id]",
+      method: _request.method,
+      params: Object.fromEntries(new URL(_request.url).searchParams),
+      error,
+    })
     return NextResponse.json({ error: (error as Error).message || "Failed to activate semester." }, { status: 500 })
   }
 }

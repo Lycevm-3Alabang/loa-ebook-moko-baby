@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
 import { departmentRepository } from "@/lib/repositories/factory"
 import { getStudentBreakdownsForFaculty } from "@/features/evaluation-results/evaluation-results.repository"
+import { logServerError } from "@/lib/services/audit"
 
 export async function GET(request: Request) {
   const session = await auth()
@@ -33,7 +34,14 @@ export async function GET(request: Request) {
       ...s,
     }))
     return NextResponse.json({ students: anonymized })
-  } catch {
+  } catch (e) {
+    console.error("Dean student breakdown error:", e)
+    await logServerError({
+      route: "/api/dean/evaluation-results/details",
+      method: request.method,
+      params: Object.fromEntries(new URL(request.url).searchParams),
+      error: e,
+    })
     return NextResponse.json({ error: "Failed to fetch student breakdown" }, { status: 500 })
   }
 }
