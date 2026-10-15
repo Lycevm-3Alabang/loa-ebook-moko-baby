@@ -27,6 +27,7 @@ pending: none
 | remove-name | Logo already has name? | Requested: remove separate school-name text |
 | bigger-logo | Increase logo size? | Requested: increase size (32 → 42mm) |
 | slice-2 | Apply logo-only centered + larger? | Applied |
+| bigger-2 | Increase again? | Applied (42 → 50mm) |
 
 ## Pending
 

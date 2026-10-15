@@ -70,8 +70,8 @@ function slug(text: string): string {
 async function addPdfHeader(doc: jsPDF) {
   const pageW = doc.internal.pageSize.getWidth()
   const logoY = 10
-  const logoWidth = 42
-  let logoHeight = 24
+  const logoWidth = 50
+  let logoHeight = 30
   let logoBase64: string | null = null
 
   try {
