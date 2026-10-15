@@ -5,8 +5,8 @@ repo: /home/nino-compyl/loa/loa-ebook-moko-baby
 calibration: {1: "A", 2: "A", 3: "B", 4: "D", 5: "A", 6: "C"}
 workflow: "D"
 decision: "Option A fold rules into faculty-booked (guard frozen; caller fixed)"
-status: implementing
-pending: slice-1
+status: done
+pending: none
 ---
 
 # Plan

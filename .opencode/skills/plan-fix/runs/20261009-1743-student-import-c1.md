@@ -5,8 +5,8 @@ repo: D:/loa/e-consultation-worktrees/regie-worktree
 calibration: {1: "C", 2: "E", 3: "B", 4: "A", 5: "A", 6: "A"}
 workflow: "A"
 decision: "Option A â€” C1 integrity + C2 batched resolution, zero new interface methods. semesterId derived server-side via findActive(). D8 (stale UNIQUE constraint vs live schema) rides in C2."
-status: implementing
-pending: u1
+status: done
+pending: none
 ---
 
 # Plan â€” session

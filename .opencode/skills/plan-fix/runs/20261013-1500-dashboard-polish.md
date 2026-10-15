@@ -5,8 +5,8 @@ repo: D:\loa\e-consultation-worktrees\regie-worktree
 calibration: {1: "A", 2: "A", 3: "B", 4: "D", 5: "A", 6: "C"}
 workflow: "D"
 decision: "Option A placeholder-first polish (badged fixtures + TSDoc source map, live service untouched)"
-status: implementing
-pending: slice-1
+status: done
+pending: none
 ---
 
 # Plan

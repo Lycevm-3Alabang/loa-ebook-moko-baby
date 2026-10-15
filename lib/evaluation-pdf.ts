@@ -69,31 +69,56 @@ function slug(text: string): string {
 
 async function addPdfHeader(doc: jsPDF) {
   const pageW = doc.internal.pageSize.getWidth()
-  let y = 12
+  const logoX = 14
+  const logoY = 10
+  const logoWidth = 32
+  let logoHeight = 18
+  let logoBase64: string | null = null
 
   try {
     const logoResp = await fetch("/logo-blk.png")
     const logoBlob = await logoResp.blob()
-    const logoBase64 = await new Promise<string>((resolve) => {
+    logoBase64 = await new Promise<string>((resolve) => {
       const reader = new FileReader()
       reader.onloadend = () => resolve(reader.result as string)
       reader.readAsDataURL(logoBlob)
     })
-    const logoWidth = 28
-    doc.addImage(logoBase64, "PNG", (pageW - logoWidth) / 2, y, logoWidth, 0)
-    y += 10
+    const img = new Image()
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = reject
+      img.src = logoBase64 as string
+    })
+    logoHeight = logoWidth * (img.naturalHeight / img.naturalWidth)
   } catch {
-    y += 4
+    logoBase64 = null
   }
 
-  doc.setFontSize(7)
-  doc.setTextColor(80, 80, 80)
-  doc.text("Main Bldg. Km. 30 National Road, Tunasan, Muntinlupa City", pageW / 2, y, { align: "center" })
-  y += 5
+  // Row 1: logo (left) + school name (same row, middle-aligned)
+  const hasLogo = logoBase64 !== null
+  const rowH = hasLogo ? logoHeight : 12
+  if (hasLogo) {
+    doc.addImage(logoBase64 as string, "PNG", logoX, logoY, logoWidth, logoHeight)
+  }
+  const nameX = hasLogo ? logoX + logoWidth + 6 : 14
+  const nameMidY = logoY + rowH / 2 + 2
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(15)
+  doc.setTextColor(0, 0, 0)
+  doc.text("LYCEUM OF ALABANG", nameX, nameMidY)
 
+  // Row 2: address centered under both
+  const addrY = logoY + rowH + 6
+  doc.setFont("helvetica", "normal")
+  doc.setFontSize(8)
+  doc.setTextColor(80, 80, 80)
+  doc.text("Main Bldg. Km. 30 National Road, Tunasan, Muntinlupa City", pageW / 2, addrY, { align: "center" })
+
+  // Rule
+  const lineY = addrY + 4
   doc.setDrawColor(180, 180, 180)
-  doc.line(14, y, pageW - 14, y)
-  y += 6
+  doc.line(14, lineY, pageW - 14, lineY)
+  const y = lineY + 6
 
   return { doc, y, pageW }
 }

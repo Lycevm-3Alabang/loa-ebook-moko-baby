@@ -5,8 +5,8 @@ repo: D:/loa/e-consultation-worktrees/regie-worktree
 calibration: {1: "A", 2: "A", 3: "B", 4: "D", 5: "A", 6: "C"}
 workflow: "D"
 decision: "Phase A targeted self-heal on admin GET (Phase B write-through follow-up)"
-status: ready-for-implement-fix
-pending: verify
+status: done
+pending: none
 ---
 
 # Plan

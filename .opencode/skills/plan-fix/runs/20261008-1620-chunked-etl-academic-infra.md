@@ -5,8 +5,8 @@ repo: regie-worktree
 calibration: {1: "A", 2: "B", 3: "A", 4: "D", 5: "B", 6: "Other — reused from 1559 run"}
 workflow: "D"
 decision: "option-1 client-chunked JSON over existing routes — approved"
-status: implementing
-pending: slice-1
+status: done
+pending: none
 ---
 
 # Plan

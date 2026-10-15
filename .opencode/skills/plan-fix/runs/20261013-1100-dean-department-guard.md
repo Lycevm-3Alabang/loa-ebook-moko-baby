@@ -5,8 +5,8 @@ repo: D:/loa/e-consultation-worktrees/regie-worktree
 calibration: {1: "A", 2: "A", 3: "B", 4: "D", 5: "A", 6: "C"}
 workflow: "D"
 decision: "Option A strict guard both layers (POST role-check, PATCH full match, filtered dropdowns)"
-status: ready-for-implement-fix
-pending: handoff
+status: done
+pending: none
 ---
 
 # Plan

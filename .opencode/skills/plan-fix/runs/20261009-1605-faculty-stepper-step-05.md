@@ -5,8 +5,8 @@ repo: regie-worktree
 calibration: {1: "C", 2: "E", 3: "B", 4: "A", 5: "A", 6: "A"}
 workflow: "A"
 decision: "option-1 distinct-set step in existing route — approved"
-status: ready-for-implement-fix
-pending: handoff
+status: done
+pending: none
 ---
 
 # Plan

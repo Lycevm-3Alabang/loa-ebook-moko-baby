@@ -5,8 +5,8 @@ repo: D:\loa\e-consultation-worktrees\regie-worktree
 calibration: {1: "A", 2: "A", 3: "B", 4: "D", 5: "A", 6: "C"}
 workflow: "D"
 decision: "Option A pool raw ratings (deptPeriodAverages via submitted evals + computeCategoryAverages, shape kept)"
-status: in-progress
-pending: plan-done
+status: done
+pending: none
 ---
 
 # Plan

@@ -5,8 +5,8 @@ repo: regie-worktree
 calibration: {1: "A", 2: "B", 3: "A", 4: "D", 5: "B", 6: "Other — no code change; idempotent INSERT SQL dump for Supabase from ETL CSVs"}
 workflow: "D"
 decision: "option-1 single idempotent dump via generator — approved"
-status: implementing
-pending: "done"
+status: done
+pending: none
 ---
 
 # Plan
