@@ -70,6 +70,8 @@ export default function DataUsersPage() {
   const [editUserType, setEditUserType] = useState("")
   const [editGrant, setEditGrant] = useState("")
   const [editSaving, setEditSaving] = useState(false)
+  const [resending, setResending] = useState(false)
+  const [resendMsg, setResendMsg] = useState<string | null>(null)
 
   // Create modal state
   const [showCreate, setShowCreate] = useState(false)
@@ -199,6 +201,8 @@ export default function DataUsersPage() {
     setEditDept(u.departmentId || "")
     setEditUserType(getUserType(u.role))
     setEditGrant(getGrant(u.role))
+    setResending(false)
+    setResendMsg(null)
   }
 
   const handleEditSave = async () => {
@@ -267,6 +271,47 @@ export default function DataUsersPage() {
         }
       }
     } catch { }
+  }
+
+  const handleResendActivation = async () => {
+    if (!editUser || resending) return
+    if (editUser.hasLoggedInBefore) {
+      setResendMsg("Account already activated")
+      return
+    }
+    if (!confirm(`Resend activation email to ${editUser.email}?`)) return
+    setResending(true)
+    setResendMsg(null)
+    try {
+      const res = await fetch("/api/auth/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: editUser.email }),
+      })
+      if (res.status === 403) { setLockedEndpoint("/api/auth/activate"); return }
+      if (res.ok) {
+        setResendMsg("Activation email sent")
+        return
+      }
+      const text = await res.text()
+      try {
+        const data = JSON.parse(text)
+        if (data.code === "ALREADY_ACTIVATED") {
+          setResendMsg("Account already activated")
+          setUsers((prev) => prev.map((u) => (u.id === editUser.id ? { ...u, hasLoggedInBefore: true } : u)))
+        } else if (data.code === "NOT_FOUND") {
+          setResendMsg("No account found with this email")
+        } else {
+          setErrorMessage(data.error || "Failed to resend activation email")
+        }
+      } catch {
+        setErrorMessage("Failed to resend activation email")
+      }
+    } catch {
+      setErrorMessage("Failed to resend activation email")
+    } finally {
+      setResending(false)
+    }
   }
 
   const handleCreateUser = async () => {
@@ -442,6 +487,7 @@ export default function DataUsersPage() {
             </select>
             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input text-xs py-1.5 flex-1 sm:flex-none sm:w-auto min-w-0">
               <option value="all">All</option>
+              <option value="active">Active</option>
               <option value="disabled">Disabled</option>
               <option value="activated">Activated</option>
               <option value="pending">Pending</option>
@@ -927,6 +973,30 @@ export default function DataUsersPage() {
                   Reset
                 </IosButton>
               </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-secondary">Activation Email</p>
+                  <p className="text-[11px] text-tertiary mt-0.5">
+                    {editUser.hasLoggedInBefore ? "Account already activated" : "Resend the activation link to this user"}
+                  </p>
+                </div>
+                {editUser.hasLoggedInBefore ? (
+                  <span className="text-xs font-semibold text-emerald-600">Activated</span>
+                ) : (
+                  <IosButton
+                    onClick={handleResendActivation}
+                    disabled={resending}
+                    variant="plain"
+                    size="xs"
+                    className="!text-gold-600 font-semibold"
+                  >
+                    {resending ? "Sending..." : "Resend"}
+                  </IosButton>
+                )}
+              </div>
+              {resendMsg && (
+                <p className="text-[11px] text-secondary">{resendMsg}</p>
+              )}
             </div>
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
