@@ -215,6 +215,35 @@ export const studentEnrollmentRepository: IStudentEnrollmentRepository = {
     return merged
   },
 
+  async countByFacultySubjectIdsPaged(ids, semesterId?) {
+    if (ids.length === 0) return {}
+    // Uncapped variant for the status report: chunked .in() (URL cap) +
+    // .range() pages (PostgREST 1000-row cap).
+    const IN_CHUNK = 100
+    const PAGE = 1000
+    const merged: Record<string, number> = {}
+    for (let i = 0; i < ids.length; i += IN_CHUNK) {
+      const chunk = ids.slice(i, i + IN_CHUNK)
+      let offset = 0
+      for (;;) {
+        let q = supabase
+          .from("student_enrollments")
+          .select("faculty_subject_id")
+          .in("faculty_subject_id", chunk)
+        if (semesterId) q = q.eq("semesterId", semesterId) as typeof q
+        const { data, error } = await q.range(offset, offset + PAGE - 1)
+        if (error) throw error
+        const rows = data || []
+        for (const r of rows) {
+          if (r.faculty_subject_id) merged[r.faculty_subject_id] = (merged[r.faculty_subject_id] || 0) + 1
+        }
+        if (rows.length < PAGE) break
+        offset += PAGE
+      }
+    }
+    return merged
+  },
+
   async listAllWithEmbeds(filters?: { semesterId?: string }) {
     let q = supabase
       .from("student_enrollments")

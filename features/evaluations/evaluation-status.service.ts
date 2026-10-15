@@ -7,6 +7,7 @@ import {
   subjectRepository,
   userRepository,
 } from "@/lib/repositories/factory"
+import { STATUS_ON_TRACK_PCT } from "./constants"
 
 export interface SubjectStatusRow {
   facultySubjectId: string
@@ -31,19 +32,7 @@ export interface DeptStatusRow {
   pct: number | null
 }
 
-// PostgREST caps URL length (~8KB) — chunk large .in() lists like the
-// evaluation repositories do.
-const IN_CHUNK = 100
-
-export const STATUS_ON_TRACK_PCT = 70
-
-function chunkIds(ids: string[], size: number): string[][] {
-  const chunks: string[][] = []
-  for (let i = 0; i < ids.length; i += size) {
-    chunks.push(ids.slice(i, i + size))
-  }
-  return chunks
-}
+export { STATUS_ON_TRACK_PCT }
 
 function pctOf(submitted: number, expected: number): number | null {
   if (expected <= 0) return null
@@ -62,24 +51,13 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
   if (mappings.length === 0) return { departments: [], subjects: [] as SubjectStatusRow[] }
 
   const fsIds = mappings.map((m) => m.id)
-  const chunks = chunkIds(fsIds, IN_CHUNK)
 
-  const [submittedPages, expectedByFs, subjects, ...deptFacultyPages] = await Promise.all([
-    Promise.all(
-      chunks.map((c) => evaluationRepository.listSubmittedByPeriodAndFacultySubjectIds(evaluationPeriodId, c)),
-    ),
-    studentEnrollmentRepository.countByFacultySubjectIds(fsIds, semesterId),
+  const [submittedCounts, expectedByFs, subjects, ...deptFacultyPages] = await Promise.all([
+    evaluationRepository.countSubmittedByFacultySubjectIds(evaluationPeriodId, fsIds),
+    studentEnrollmentRepository.countByFacultySubjectIdsPaged(fsIds, semesterId),
     subjectRepository.findByIds([...new Set(mappings.map((m) => m.subject_id))]),
     ...departments.map((d) => userRepository.listByDepartment(d.id)),
   ])
-
-  const submittedRows = submittedPages.flat()
-  const submittedByFs = new Map<string, Set<string>>()
-  for (const row of submittedRows) {
-    if (!row.facultySubjectId) continue
-    if (!submittedByFs.has(row.facultySubjectId)) submittedByFs.set(row.facultySubjectId, new Set())
-    submittedByFs.get(row.facultySubjectId)!.add(row.evaluatorId)
-  }
 
   const subjMap = new Map(subjects.map((s) => [s.id, s]))
   const facName = new Map<string, string>()
@@ -92,7 +70,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
   const q = (search ?? "").trim().toLowerCase()
   const subjectRows: SubjectStatusRow[] = []
   for (const m of mappings) {
-    const submitted = submittedByFs.get(m.id)?.size ?? 0
+    const submitted = submittedCounts[m.id] ?? 0
     const expected = expectedByFs[m.id] ?? 0
     const subj = subjMap.get(m.subject_id)
     const facultyName = facName.get(m.faculty_id) ?? m.faculty_id
@@ -123,7 +101,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     let expected = 0
     const deptMappings = mappings.filter((m) => facDept.get(m.faculty_id) === d.id)
     for (const m of deptMappings) {
-      const s = submittedByFs.get(m.id)?.size ?? 0
+      const s = submittedCounts[m.id] ?? 0
       if (s > 0) evaluated += 1
       submitted += s
       expected += expectedByFs[m.id] ?? 0

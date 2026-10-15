@@ -25,6 +25,10 @@ pending: none
 | slice-2b | Apply status API route? | Applied |
 | slice-3 | Apply page wiring? | Applied — subject rows show subject only, no faculty names (display + search) |
 | slice-4 | Apply access grants? | Applied (access.ts + page-api-map.ts + Migration 35) |
+| fix-500 | Server import in client bundle? | Applied (STATUS_ON_TRACK_PCT → constants.ts) |
+| scale-1 | Paginated submitter counter? | Applied (interface + repo method, service switched) |
+| scale-2 | Paginated enrollment counter? | Applied (additive countByFacultySubjectIdsPaged, service switched; original untouched) |
+| scale-3 | Drilldown pagination? | Applied (usePagination + Paginator, 25/page, resets on dept/search) |
 
 ## Pending
 

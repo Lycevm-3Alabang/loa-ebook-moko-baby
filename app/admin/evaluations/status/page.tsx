@@ -7,8 +7,9 @@ import Skeleton, { SkeletonMetricGrid } from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import SubmitButton from "@/components/ui/SubmitButton"
 import { useApiGet } from "@/lib/api/client"
+import { usePagination, Paginator } from "@/components/ui/Paginator"
 import { formatPeriodLabel } from "@/lib/evaluation-utils"
-import { STATUS_ON_TRACK_PCT } from "@/features/evaluations/evaluation-status.service"
+import { STATUS_ON_TRACK_PCT } from "@/features/evaluations/constants"
 
 interface DeptRow {
   departmentId: string
@@ -159,16 +160,6 @@ export default function AdminEvaluationStatusPage() {
 
   const completion = kpis.expected > 0 ? (kpis.submitted / kpis.expected) * 100 : null
 
-  const selectDept = (id: string) => {
-    setSelectedDept(id)
-    router.replace(`/admin/evaluations/status?dept=${encodeURIComponent(id)}`)
-  }
-
-  const clearDept = () => {
-    setSelectedDept(null)
-    router.replace("/admin/evaluations/status")
-  }
-
   const activeDept = sortedDepts.find((d) => d.departmentId === selectedDept) ?? null
   const deptSubjects = useMemo(() => {
     if (!selectedDept) return []
@@ -178,6 +169,20 @@ export default function AdminEvaluationStatusPage() {
         (!q || `${s.subjectCode} ${s.subjectName}`.toLowerCase().includes(q)),
     )
   }, [statusData, selectedDept, q])
+
+  const subjectPager = usePagination(deptSubjects, 25)
+
+  const selectDept = (id: string) => {
+    setSelectedDept(id)
+    subjectPager.setPage(0)
+    router.replace(`/admin/evaluations/status?dept=${encodeURIComponent(id)}`)
+  }
+
+  const clearDept = () => {
+    setSelectedDept(null)
+    subjectPager.setPage(0)
+    router.replace("/admin/evaluations/status")
+  }
 
   return (
     <div className="w-full space-y-6 pb-12">
@@ -203,7 +208,7 @@ export default function AdminEvaluationStatusPage() {
         <input
           type="text"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => { setSearch(e.target.value); subjectPager.setPage(0) }}
           placeholder="Search department or subject..."
           className="rounded-xl border border-default bg-surface px-3 py-2 text-sm text-secondary shadow-sm transition-colors focus:border-slate-400 focus:outline-none"
         />
@@ -314,7 +319,7 @@ export default function AdminEvaluationStatusPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {deptSubjects.map((s) => (
+                      {subjectPager.paginatedItems.map((s) => (
                         <tr key={s.facultySubjectId} className="border-b border-default hover:bg-surface-hover transition-colors">
                           <td className="py-3 pr-4">
                             <span className="text-sm font-semibold text-primary">{s.subjectCode}</span>
@@ -340,6 +345,16 @@ export default function AdminEvaluationStatusPage() {
                     </tbody>
                   </table>
                 </div>
+              )}
+              {deptSubjects.length > 0 && (
+                <Paginator
+                  page={subjectPager.page}
+                  totalPages={subjectPager.totalPages}
+                  pageSize={subjectPager.pageSize}
+                  totalItems={deptSubjects.length}
+                  setPage={subjectPager.setPage}
+                  setPageSize={subjectPager.setPageSize}
+                />
               )}
             </div>
           )}

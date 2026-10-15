@@ -513,6 +513,40 @@ export const evaluationRepository: IEvaluationRepository = {
     if (error) throw error
     return (data || []) as EvaluationDetailItem[]
   },
+  async countSubmittedByFacultySubjectIds(evaluationPeriodId, facultySubjectIds) {
+    if (facultySubjectIds.length === 0) return {}
+    // Status-report counter: chunked .in() (URL cap) + .range() pages
+    // (PostgREST 1000-row cap). Tallies DISTINCT evaluators per mapping.
+    const IN_CHUNK = 100
+    const PAGE = 1000
+    const sets = new Map<string, Set<string>>()
+    for (let i = 0; i < facultySubjectIds.length; i += IN_CHUNK) {
+      const chunk = facultySubjectIds.slice(i, i + IN_CHUNK)
+      let offset = 0
+      for (;;) {
+        const { data, error } = await supabase
+          .from("evaluations")
+          .select("evaluatorId, facultySubjectId")
+          .eq("evaluation_period_id", evaluationPeriodId)
+          .eq("status", "SUBMITTED")
+          .in("facultySubjectId", chunk)
+          .order("facultySubjectId", { ascending: true })
+          .range(offset, offset + PAGE - 1)
+        if (error) throw error
+        const rows = data || []
+        for (const r of rows) {
+          if (!r.facultySubjectId) continue
+          if (!sets.has(r.facultySubjectId)) sets.set(r.facultySubjectId, new Set())
+          sets.get(r.facultySubjectId)!.add(r.evaluatorId)
+        }
+        if (rows.length < PAGE) break
+        offset += PAGE
+      }
+    }
+    const out: Record<string, number> = {}
+    for (const [k, v] of sets) out[k] = v.size
+    return out
+  },
   async listRatingsByEvaluationIds(evaluationIds) {
     if (evaluationIds.length === 0) return []
     return fetchRatingsWithCategories(supabase, evaluationIds) as Promise<EvaluationRatingRow[]>

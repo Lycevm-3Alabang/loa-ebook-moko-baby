@@ -438,6 +438,7 @@ export interface IStudentEnrollmentRepository {
   getDistinctFaculty(student_id: string, semesterId?: string): Promise<string[]>
   countBySectionIds(sectionIds: string[]): Promise<Record<string, number>>
   countByFacultySubjectIds(ids: string[], semesterId?: string): Promise<Record<string, number>>
+  countByFacultySubjectIdsPaged(ids: string[], semesterId?: string): Promise<Record<string, number>>
   listAllWithEmbeds(filters?: { semesterId?: string }): Promise<StudentEnrollmentWithEmbeds[]>
   listByFacultySubject(facultySubjectId: string, semesterId?: string): Promise<StudentEnrollmentWithEmbeds[]>
   countBySemesterId(semesterId: string): Promise<number>
@@ -479,6 +480,7 @@ export interface IEvaluationRepository {
   listSubmittedEvaluateeIds(evaluationPeriodId: string): Promise<string[]>
   invalidateByFacultySubject(facultySubjectId: string, remarks: string): Promise<void>
   countSubmittedByFacultyIds(facultyIds: string[]): Promise<number>
+  countSubmittedByFacultySubjectIds(evaluationPeriodId: string, facultySubjectIds: string[]): Promise<Record<string, number>>
   countDistinctSubmittedEvaluateesByFacultyIds(facultyIds: string[]): Promise<{ total: number; distinctEvaluatees: number }>
   listSubmittedByPeriodAndEvaluatee(evaluationPeriodId: string, evaluateeId: string): Promise<EvaluationListItem[]>
   listSubmittedByPeriodAndEvaluatees(evaluationPeriodId: string, evaluateeIds: string[]): Promise<EvaluationListItem[]>
