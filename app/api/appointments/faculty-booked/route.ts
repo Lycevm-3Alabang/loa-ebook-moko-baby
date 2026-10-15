@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { getFacultyBookedAppointments } from "@/features/appointments/appointments.service"
+import { listAvailabilityRules } from "@/features/appointments/availability.service"
+import { logServerError } from "@/lib/services/audit"
 import { hasRole } from "@/lib/utils/roles"
 
 export async function GET(request: NextRequest) {
@@ -34,8 +36,18 @@ export async function GET(request: NextRequest) {
       startTime: a.startTime,
       endTime: a.endTime,
     }))
-    return NextResponse.json({ appointments: slots })
-  } catch {
+    const rules = await listAvailabilityRules(facultyId)
+    return NextResponse.json({ appointments: slots, rules })
+  } catch (e) {
+    console.error("Faculty booked appointments error:", e)
+    await logServerError({
+      route: "/api/appointments/faculty-booked",
+      method: request.method,
+      params: Object.fromEntries(new URL(request.url).searchParams),
+      email: (session?.user as unknown as { email?: string | null } | undefined)?.email ?? null,
+      role: (session?.user as unknown as { role?: string | null } | undefined)?.role ?? null,
+      error: e,
+    })
     return NextResponse.json(
       { error: "Failed to fetch faculty booked appointments" },
       { status: 500 }

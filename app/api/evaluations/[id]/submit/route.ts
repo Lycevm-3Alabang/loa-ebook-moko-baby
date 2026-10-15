@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { logServerError } from "@/lib/services/audit"
 import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
 import { submitEvaluation, getEvaluationIfOwner } from "@/features/evaluations/evaluations.service"
@@ -15,7 +16,14 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     if (!evaluation) return NextResponse.json({ error: "Not found" }, { status: 404 })
     const submitted = await submitEvaluation(id)
     return NextResponse.json({ evaluation: submitted })
-  } catch {
+  } catch (e) {
+    console.error("Submit evaluation error:", e)
+    await logServerError({
+      route: "/api/evaluations/[id]/submit",
+      method: _request.method,
+      params: Object.fromEntries(new URL(_request.url).searchParams),
+      error: e,
+    })
     return NextResponse.json({ error: "Failed to submit evaluation" }, { status: 500 })
   }
 }

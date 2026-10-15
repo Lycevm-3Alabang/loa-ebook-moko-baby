@@ -5,6 +5,7 @@ import { getActiveEvaluationPeriod } from "@/features/admin-data/evaluation-peri
 import { getActiveSemester } from "@/features/admin-data/semesters.service"
 import { getPendingEvaluations } from "@/features/evaluations/evaluations.service"
 import { userRepository, subjectRepository } from "@/lib/repositories/factory"
+import { logServerError } from "@/lib/services/audit"
 
 export async function GET() {
   const session = await auth()
@@ -57,7 +58,9 @@ export async function GET() {
     })
 
     return NextResponse.json({ pending: result })
-  } catch {
+  } catch (e) {
+    console.error("Pending evaluations error:", e)
+    await logServerError({ route: "/api/evaluations/pending", method: "GET", error: e })
     return NextResponse.json({ error: "Failed to fetch pending evaluations" }, { status: 500 })
   }
 }

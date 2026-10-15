@@ -96,7 +96,7 @@ export default function StudentBooking({ facultyList, userRole, students, server
     ? `/api/appointments/faculty-booked?facultyId=${primaryFacultyId}&startDate=${fmtDate(currentYear, currentMonth, 1)}&endDate=${fmtDate(currentYear, currentMonth, getDaysInMonth(currentYear, currentMonth))}`
     : null
 
-  const { data: bookedData } = useApiGet<{ appointments: { date: string; startTime: string; endTime: string }[] }>(bookedUrl)
+  const { data: bookedData } = useApiGet<{ appointments: { date: string; startTime: string; endTime: string }[]; rules: FacultyRule[] }>(bookedUrl)
 
   useEffect(() => {
     if (bookedData?.appointments && bookedAppointments.length === 0) {
@@ -115,10 +115,6 @@ export default function StudentBooking({ facultyList, userRole, students, server
     `/api/users/attendees?department=${attendeeDeptFilter}`
   )
   const attendeeUsers = useMemo(() => attendeeData?.users ?? [], [attendeeData])
-
-  // Fetch active rules dynamically for the selected primary faculty
-  const rulesUrl = primaryFacultyId ? `/api/availability-rules?facultyId=${primaryFacultyId}` : null
-  const { data: rulesData } = useApiGet<{ rules: FacultyRule[] }>(rulesUrl)
 
   const hourOptions = useMemo(() => {
     const base = allow24Hours
@@ -142,13 +138,13 @@ export default function StudentBooking({ facultyList, userRole, students, server
   const [conflicts, setConflicts] = useState<{ userName: string; message: string; appointments?: { appointmentId: string; title: string | null; meetingType: string; date: string; startTime: string; endTime: string }[] }[]>([])
 
   const getActiveRule = (dateStr: string) => {
-    if (!rulesData?.rules) return null
+    if (!bookedData?.rules) return null
 
     const [year, month, day] = dateStr.split('-').map(Number)
     const utcDate = new Date(Date.UTC(year, month - 1, day))
     const dayOfWeek = toOurDayOfWeek(utcDate.getUTCDay())
 
-    return rulesData.rules.find(
+    return bookedData.rules.find(
       (r) =>
         r.dayOfWeek === dayOfWeek &&
         r.startDate <= dateStr &&
@@ -161,11 +157,11 @@ export default function StudentBooking({ facultyList, userRole, students, server
     if (!selectedDay || !primaryFacultyId) return []
     const dateStr = fmtDate(currentYear, currentMonth, selectedDay)
     const rule = (() => {
-      if (!rulesData?.rules) return null
+      if (!bookedData?.rules) return null
       const [year, month, day] = dateStr.split('-').map(Number)
       const utcDate = new Date(Date.UTC(year, month - 1, day))
       const dayOfWeek = toOurDayOfWeek(utcDate.getUTCDay())
-      return rulesData.rules.find(
+      return bookedData.rules.find(
         (r) =>
           r.dayOfWeek === dayOfWeek &&
           r.startDate <= dateStr &&
@@ -196,7 +192,7 @@ export default function StudentBooking({ facultyList, userRole, students, server
     }
 
     return ranges.sort((a, b) => a.start.localeCompare(b.start))
-  }, [selectedDay, primaryFacultyId, currentYear, currentMonth, bookedAppointments, rulesData])
+  }, [selectedDay, primaryFacultyId, currentYear, currentMonth, bookedAppointments, bookedData])
 
   // For students: constrain hour options to only hours within free time ranges
   const studentHourOptions = useMemo(() => {

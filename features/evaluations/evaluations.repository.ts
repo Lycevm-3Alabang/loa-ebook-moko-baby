@@ -238,7 +238,15 @@ export const evaluationRepository: IEvaluationRepository = {
       .insert({ evaluation_period_id: evaluationPeriodId, semesterId: ep?.semesterId, evaluatorId, evaluateeId, facultySubjectId, source: source ?? null })
       .select("*")
       .single()
-    if (error) throw error
+    if (error) {
+      // Lost a creation race (unique period+evaluator+subject): return the
+      // row the other request inserted instead of surfacing a 500.
+      if (error.code === "23505") {
+        const existing = await this.findByComposite(evaluationPeriodId, evaluatorId, facultySubjectId)
+        if (existing) return existing
+      }
+      throw error
+    }
     return data as EvaluationData
   },
 

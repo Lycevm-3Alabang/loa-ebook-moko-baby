@@ -5,6 +5,7 @@ import { getOrCreateEvaluation, getEvaluation, getMyEvaluations } from "@/featur
 import { getActiveEvaluationPeriod } from "@/features/admin-data/evaluation-periods.service"
 import { userRepository, facultySubjectRepository, subjectRepository, evaluationPeriodRepository, studentEnrollmentRepository } from "@/lib/repositories/factory"
 import type { EvaluationData } from "@/lib/types"
+import { logServerError } from "@/lib/services/audit"
 
 async function enrichEvaluation(evaluation: EvaluationData) {
   const [facultyUser, fsData] = await Promise.all([
@@ -104,7 +105,14 @@ export async function POST(request: Request) {
     const enriched = await enrichEvaluation(evaluation)
 
     return NextResponse.json({ evaluation: enriched }, { status: 200 })
-  } catch {
+  } catch (e) {
+    console.error("Create evaluation error:", e)
+    await logServerError({
+      route: "/api/evaluations",
+      method: request.method,
+      params: Object.fromEntries(new URL(request.url).searchParams),
+      error: e,
+    })
     return NextResponse.json({ error: "Failed to create evaluation" }, { status: 500 })
   }
 }

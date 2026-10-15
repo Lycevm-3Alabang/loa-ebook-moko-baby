@@ -22,6 +22,11 @@ pending: slice-1
 | slice-2 | Apply Slice 2 (15 eval-results catches)? | Applied — 15/15 files import + call verified; inactive-4xx excluded; details catch bound |
 | slice-3 | Apply Slice 3 (11 files, 14 catches)? | Applied — 10 files / 14 calls verified (counts include grep path overlap); 400-paths + email callbacks excluded |
 | slice-4 | Apply Slice 4 (viewer)? | Applied — SERVER_ERROR badge + expandable stack; structure verified |
+| slice-5 | Student eval catches + create() race guard? | Applied — 4 catches wired + 23505 fallback in create() |
+
+## Pending
+
+- none (run closed; user verifies via tsc + vitest)
 
 ## Pending
 

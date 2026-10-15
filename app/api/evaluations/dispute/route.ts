@@ -4,6 +4,7 @@ import { hasRole } from "@/lib/utils/roles"
 import { evaluationRepository, evaluationPeriodRepository, studentEnrollmentRepository, auditLogRepository, userRepository } from "@/lib/repositories/factory"
 import { getActiveEvaluationPeriod } from "@/features/admin-data/evaluation-periods.service"
 import nodemailer from "nodemailer"
+import { logServerError } from "@/lib/services/audit"
 
 const emailEnabled = () => process.env.EMAIL_FEATURE_FLAG === "true"
 
@@ -121,7 +122,14 @@ export async function POST(request: Request) {
     void notifyAdmins
 
     return NextResponse.json({ success: true })
-  } catch {
+  } catch (e) {
+    console.error("Submit dispute error:", e)
+    await logServerError({
+      route: "/api/evaluations/dispute",
+      method: request.method,
+      params: Object.fromEntries(new URL(request.url).searchParams),
+      error: e,
+    })
     return NextResponse.json({ error: "Failed to submit dispute" }, { status: 500 })
   }
 }
