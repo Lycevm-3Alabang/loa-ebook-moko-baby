@@ -2079,3 +2079,17 @@ BEGIN
   EXECUTE sql_text;
 END;
 $$;
+
+-- =========================================================
+-- Migration 35: Grant evaluation-status paths to ADMIN
+-- =========================================================
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM group_access
+    WHERE "groupName" = 'ADMIN' AND pages @> '["/admin/evaluations/status"]'::JSONB
+  ) THEN
+    UPDATE group_access SET pages = pages || '["/admin/evaluations/status","/api/admin/evaluation-status"]'::JSONB
+    WHERE "groupName" = 'ADMIN';
+  END IF;
+END $$;

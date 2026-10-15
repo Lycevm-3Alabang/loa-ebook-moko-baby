@@ -95,6 +95,13 @@ export const pageApiMap: Record<string, PageApiEntry> = {
       "/api/data/evaluation-mappings",
     ],
   },
+  "/admin/evaluations/status": {
+    label: "Evaluation Status",
+    apis: [
+      "/api/admin/evaluation-status",
+      "/api/evaluation-periods",
+    ],
+  },
   "/admin/evaluations/rubrics": {
     label: "Rubrics",
     apis: [
