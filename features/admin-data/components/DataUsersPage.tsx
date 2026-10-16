@@ -314,6 +314,40 @@ export default function DataUsersPage() {
     }
   }
 
+  const handleSendPasswordReset = async () => {
+    if (!editUser || resending) return
+    if (!confirm(`Send password reset email to ${editUser.email}?`)) return
+    setResending(true)
+    setResendMsg(null)
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: editUser.email }),
+      })
+      if (res.status === 403) { setLockedEndpoint("/api/auth/forgot-password"); return }
+      if (res.ok) {
+        setResendMsg("Password reset email sent")
+        return
+      }
+      const text = await res.text()
+      try {
+        const data = JSON.parse(text)
+        if (data.code === "NOT_FOUND") {
+          setResendMsg("No account found with this email")
+        } else {
+          setErrorMessage(data.error || "Failed to send password reset email")
+        }
+      } catch {
+        setErrorMessage("Failed to send password reset email")
+      }
+    } catch {
+      setErrorMessage("Failed to send password reset email")
+    } finally {
+      setResending(false)
+    }
+  }
+
   const handleCreateUser = async () => {
     setCreateError("")
     if (!createName.trim() || !createEmail.trim()) {
@@ -959,13 +993,15 @@ export default function DataUsersPage() {
                   {editUser.isDisabled ? "Enable" : "Disable"}
                 </IosButton>
               </div>
+              {/* Hidden: Onboarding Reset not useful — handler kept for reference */}
+              {false && (
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-semibold text-secondary">Onboarding Reset</p>
                   <p className="text-[11px] text-tertiary mt-0.5">Resets to 0 so the user must activate again</p>
                 </div>
                 <IosButton
-                  onClick={() => handleResetOnboarding(editUser.id)}
+                  onClick={() => { if (editUser) handleResetOnboarding(editUser.id) }}
                   variant="plain"
                   size="xs"
                   className="!text-red-500 font-semibold"
@@ -973,15 +1009,24 @@ export default function DataUsersPage() {
                   Reset
                 </IosButton>
               </div>
+              )}
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-semibold text-secondary">Activation Email</p>
                   <p className="text-[11px] text-tertiary mt-0.5">
-                    {editUser.hasLoggedInBefore ? "Account already activated" : "Resend the activation link to this user"}
+                    {editUser.hasLoggedInBefore ? "Send a password reset link to this user" : "Resend the activation link to this user"}
                   </p>
                 </div>
                 {editUser.hasLoggedInBefore ? (
-                  <span className="text-xs font-semibold text-emerald-600">Activated</span>
+                  <IosButton
+                    onClick={handleSendPasswordReset}
+                    disabled={resending}
+                    variant="plain"
+                    size="xs"
+                    className="!text-gold-600 font-semibold"
+                  >
+                    {resending ? "Sending..." : "Send Password Reset"}
+                  </IosButton>
                 ) : (
                   <IosButton
                     onClick={handleResendActivation}
