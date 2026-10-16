@@ -586,6 +586,7 @@ export interface IEvaluationResultRepository {
   setVisibility(evaluationPeriodId: string, facultyIds: string[], visible: boolean): Promise<void>
   getVisibilityMap(evaluationPeriodId: string): Promise<Map<string, boolean>>
   countBySemesterId(semesterId: string): Promise<number>
+  getLatestComputedAt(evaluationPeriodId: string): Promise<string | null>
   listByFacultyId(facultyId: string, limit?: number): Promise<EvaluationResultData[]>
   assertPeriodIsActive(evaluationPeriodId: string): Promise<void>
 }

@@ -39,6 +39,18 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
     return data as EvaluationResultData[]
   },
 
+  async getLatestComputedAt(evaluationPeriodId) {
+    const { data, error } = await supabase
+      .from("evaluation_results")
+      .select("computedAt")
+      .eq("evaluation_period_id", evaluationPeriodId)
+      .order("computedAt", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (error) throw error
+    return (data?.computedAt as string | null) ?? null
+  },
+
   async findByFaculty(evaluationPeriodId, facultyId) {
     const { data, error } = await supabase
       .from("evaluation_results")

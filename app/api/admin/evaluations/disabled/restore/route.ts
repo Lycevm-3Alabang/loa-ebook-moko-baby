@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/route-guard"
 import { evaluationRepository } from "@/lib/repositories/factory"
+import { recomputeResultsWorkflow } from "@/lib/workflows/recompute-workflow"
 import { logAuditEvent, logServerError } from "@/lib/services/audit"
 
 export async function POST(request: NextRequest) {
@@ -12,7 +13,14 @@ export async function POST(request: NextRequest) {
     const { ids } = body as { ids: string[] }
     if (!ids || !Array.isArray(ids) || ids.length === 0) return NextResponse.json({ error: "ids required" }, { status: 400 })
 
+    // Lookup first: a lookup failure 500s with nothing mutated.
+    const rows = await Promise.all(ids.map((id) => evaluationRepository.findById(id)))
+    const periodIds = [...new Set(rows.map((r) => (r as unknown as Record<string, unknown> | null)?.evaluation_period_id).filter((v): v is string => typeof v === "string" && v.length > 0))]
+
     await evaluationRepository.restoreByIds(ids)
+
+    // Best-effort: recompute never blocks the restore response.
+    for (const pid of periodIds) recomputeResultsWorkflow(pid, "immediate").catch(() => {})
 
     await logAuditEvent({ action: "restore_evaluations", details: JSON.stringify({ ids }) }).catch(() => {})
 
