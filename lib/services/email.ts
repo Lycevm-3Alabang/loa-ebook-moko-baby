@@ -12,10 +12,13 @@ const DOMAIN_DEFAULTS = {
   user: "noreply@lyceumalabang.edu.ph",
 } as const
 
-type EmailProvider = "gmail" | "domain"
+type EmailProvider = "gmail" | "domain" | "rest"
 
 function getEmailProvider(): EmailProvider {
-  return process.env.EMAIL_PROVIDER === "gmail" ? "gmail" : "domain"
+  const v = process.env.EMAIL_PROVIDER
+  if (v === "gmail") return "gmail"
+  if (v === "rest") return "rest"
+  return "domain"
 }
 
 function getTransporter() {
@@ -77,12 +80,78 @@ function getGmailTransporter() {
   })
 }
 
-// Primary-then-gmail-once: covers hard SMTP failures (refused/auth/timeout).
-// Silent server-side quarantine (250 OK then dropped) is invisible here —
-// that gap needs the mail-admin allowlist, not code.
+// REST relay (LOA Auth Platform on cPanel): Vercel cannot reliably SMTP-auth
+// from cloud IPs, so the relay submits locally on the host. Contract:
+// POST {to, subject, html} → 200 {ok, message_id}; 401/422/429/502 otherwise.
+// Secret comes from env only (RELAY_SECRET) — never hardcoded.
+const RELAY_TIMEOUT_MS = 15_000
+const RELAY_RETRY_CAP_MS = 15_000
+
+function getRelayConfig() {
+  const url = process.env.AUTH_RELAY_URL ?? "https://auth.lyceumalabang.edu.ph/api/v1/mail/send"
+  const secret = process.env.RELAY_SECRET
+  if (!secret) throw new Error("RELAY_SECRET env var not set")
+  return { url, secret }
+}
+
+async function sendViaRest(mail: Mail.Options) {
+  const { url, secret } = getRelayConfig()
+  const to = Array.isArray(mail.to) ? mail.to.join(", ") : String(mail.to ?? "")
+  const attachments = (mail as unknown as { attachments?: unknown[] }).attachments
+  if (attachments && attachments.length > 0) {
+    console.warn(`[email] rest mode: dropping ${attachments.length} attachment(s) for ${to} (relay v1 has no attachments)`)
+  }
+  const body = JSON.stringify({ to, subject: mail.subject, html: mail.html })
+  const attempt = async (): Promise<void> => {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret}` },
+      body,
+      signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
+    })
+    if (res.status === 429) {
+      let retryAfterMs = 0
+      try {
+        const data = (await res.json()) as { retry_after?: number }
+        if (typeof data.retry_after === "number") retryAfterMs = data.retry_after * 1000
+      } catch { /* ignore parse errors */ }
+      const err = new Error(
+        `Relay rate-limited${retryAfterMs > 0 ? `, retry after ${Math.round(retryAfterMs / 1000)}s` : ""}`,
+      ) as Error & { retryAfterMs?: number }
+      err.retryAfterMs = retryAfterMs
+      throw err
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => "")
+      throw new Error(`Relay send failed (${res.status}): ${text.slice(0, 200)}`)
+    }
+  }
+  try {
+    await attempt()
+  } catch (e) {
+    // Honor 429 once (capped for serverless), then let the durable
+    // workflow retry later. Other failures throw immediately.
+    const waitMs = (e as { retryAfterMs?: number }).retryAfterMs ?? 0
+    if (waitMs > 0) {
+      await new Promise((r) => setTimeout(r, Math.min(waitMs, RELAY_RETRY_CAP_MS)))
+      await attempt()
+    } else {
+      throw e
+    }
+  }
+}
+
+async function sendViaPrimary(mail: Mail.Options) {
+  if (getEmailProvider() === "rest") return sendViaRest(mail)
+  return getTransporter().sendMail(mail)
+}
+
+// Primary-then-gmail-once: covers hard failures (SMTP refused/auth/timeout,
+// relay 4xx/5xx). Silent server-side quarantine (250 OK then dropped) is
+// invisible here — that gap needs the mail-admin allowlist, not code.
 async function sendMailWithFallback(mail: Mail.Options) {
   try {
-    await getTransporter().sendMail(mail)
+    await sendViaPrimary(mail)
     return
   } catch (primaryErr) {
     if (getEmailProvider() === "gmail" || !process.env.GMAIL_USER) throw primaryErr
