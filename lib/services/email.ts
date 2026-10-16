@@ -82,7 +82,7 @@ function getGmailTransporter() {
 // that gap needs the mail-admin allowlist, not code.
 async function sendMailWithFallback(mail: Mail.Options) {
   try {
-    await sendMailWithFallback(mail)
+    await getTransporter().sendMail(mail)
     return
   } catch (primaryErr) {
     if (getEmailProvider() === "gmail" || !process.env.GMAIL_USER) throw primaryErr
