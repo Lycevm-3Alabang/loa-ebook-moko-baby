@@ -22,6 +22,7 @@ function getTransporter() {
   if (getEmailProvider() === "gmail") {
     if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
     return nodemailer.createTransport({
+      name: getHeloName(),
       host: "smtp.gmail.com",
       port: 587,
       secure: false,
@@ -37,11 +38,63 @@ function getTransporter() {
   const pass = process.env.DOMAIN_SMTP_PASS
   if (!pass) throw new Error("DOMAIN_SMTP_PASS env var not set")
   return nodemailer.createTransport({
+    name: getHeloName(),
     host,
     port,
     secure: true,
     auth: { user, pass },
   })
+}
+
+// Explicit HELO hostname: serverless hosts announce link-local junk
+// ([169.254.x.x]) by default, which trips sender-domain/HELO checks.
+// Configurable via EMAIL_HELO_NAME, else derived from NEXTAUTH_URL;
+// undefined preserves Nodemailer's default (os.hostname()).
+function getHeloName(): string | undefined {
+  if (process.env.EMAIL_HELO_NAME) return process.env.EMAIL_HELO_NAME
+  try {
+    if (process.env.NEXTAUTH_URL) {
+      const helo = new URL(process.env.NEXTAUTH_URL).hostname
+      console.log(`[email] HELO hostname from NEXTAUTH_URL: ${helo}`)
+      return helo
+    }
+  } catch { /* fall through to default */ }
+  console.log("[email] HELO hostname: NEXTAUTH_URL not set, using Nodemailer default")
+  return undefined
+}
+
+function getGmailTransporter() {
+  if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
+  return nodemailer.createTransport({
+    name: getHeloName(),
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false,
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD,
+    },
+  })
+}
+
+// Primary-then-gmail-once: covers hard SMTP failures (refused/auth/timeout).
+// Silent server-side quarantine (250 OK then dropped) is invisible here —
+// that gap needs the mail-admin allowlist, not code.
+async function sendMailWithFallback(mail: Mail.Options) {
+  try {
+    await sendMailWithFallback(mail)
+    return
+  } catch (primaryErr) {
+    if (getEmailProvider() === "gmail" || !process.env.GMAIL_USER) throw primaryErr
+    try {
+      await getGmailTransporter().sendMail({
+        ...mail,
+        from: `"ACES" <${process.env.GMAIL_USER}>`,
+      })
+    } catch {
+      throw primaryErr
+    }
+  }
 }
 
 function getFrom(): string {
@@ -63,7 +116,7 @@ export async function sendActivationEmail(email: string, name: string, activatio
     return
   }
 
-  await getTransporter().sendMail({
+  await sendMailWithFallback({
     from: getFrom(),
     to: email,
     subject: "Activate Your ACES Account",
@@ -95,7 +148,7 @@ export async function sendMeetingInviteEmail(
     return
   }
 
-  await getTransporter().sendMail({
+  await sendMailWithFallback({
     from: getFrom(),
     to: email,
     subject: `Meeting Invitation: ${meetingTitle}`,
@@ -163,7 +216,7 @@ export async function sendConsultationInvite(
     } : {}),
   }
 
-  await getTransporter().sendMail(mail)
+  await sendMailWithFallback(mail)
 }
 
 export async function sendMeetingInviteWithICS(
@@ -213,7 +266,7 @@ export async function sendMeetingInviteWithICS(
     } : {}),
   }
 
-  await getTransporter().sendMail(mail)
+  await sendMailWithFallback(mail)
 }
 
 export async function sendApprovedWithTeamsLink(
@@ -270,7 +323,7 @@ export async function sendApprovedWithTeamsLink(
     } : {}),
   }
 
-  await getTransporter().sendMail(mail)
+  await sendMailWithFallback(mail)
 }
 
 export async function sendForgotPasswordEmail(email: string, name: string, resetUrl: string) {
@@ -282,7 +335,7 @@ export async function sendForgotPasswordEmail(email: string, name: string, reset
     return
   }
 
-  await getTransporter().sendMail({
+  await sendMailWithFallback({
     from: getFrom(),
     to: email,
     subject: "Reset Your ACES Password",
@@ -331,7 +384,7 @@ export async function sendBookingAcknowledgement(
     ? `Consultation Request Sent: ${data.meetingTitle}`
     : `Meeting Created: ${data.meetingTitle}`
 
-  await getTransporter().sendMail({
+  await sendMailWithFallback({
     from: getFrom(),
     to: to.email,
     subject,
@@ -385,7 +438,7 @@ export async function sendStatusUpdateEmail(
     accepted: `Accepted: ${data.meetingTitle}`,
   }
 
-  await getTransporter().sendMail({
+  await sendMailWithFallback({
     from: getFrom(),
     to: recipient.email,
     subject: subjectMap[data.variant] || `Status Update: ${data.meetingTitle}`,
@@ -401,7 +454,7 @@ export async function sendPasswordChangedEmail(email: string, name: string) {
     return
   }
 
-  await getTransporter().sendMail({
+  await sendMailWithFallback({
     from: getFrom(),
     to: email,
     subject: "Your ACES Password Has Been Changed",
