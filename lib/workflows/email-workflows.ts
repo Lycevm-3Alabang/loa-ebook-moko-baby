@@ -7,6 +7,15 @@ export interface EmailRecipient {
   viewUrl: string
 }
 
+import type { EmailReceipt } from "@/lib/services/email"
+
+function receiptDetails(name: string, receipt: EmailReceipt | undefined) {
+  const via = `sent to ${name} via ${receipt?.provider ?? "unknown"}`
+  const id = receipt?.messageId ? `, id ${receipt.messageId}` : ""
+  const warn = receipt?.fallbackFrom ? ` (primary failed: ${receipt.fallbackFrom})` : ""
+  return `${via}${id}${warn}`
+}
+
 async function logEmailSend(email: string, action: string, status: "SUCCESS" | "FAILED", details?: string) {
   await logAuditEvent({
     email,
@@ -48,8 +57,8 @@ export async function sendPasswordChangedWorkflow(
   "use workflow"
 
   try {
-    await sendPasswordChangedEmail(email, name)
-    await logEmailSend(email, "Password changed notification", "SUCCESS", `sent to ${name}`)
+    const receipt = await sendPasswordChangedEmail(email, name)
+    await logEmailSend(email, "Password changed notification", "SUCCESS", receiptDetails(name, receipt))
   } catch (err) {
     await logEmailSend(email, "Password changed notification", "FAILED", err instanceof Error ? err.message : "Unknown error")
     throw err
@@ -64,8 +73,8 @@ export async function sendActivationWorkflow(
   "use workflow"
 
   try {
-    await sendActivationEmail(email, name, activationUrl)
-    await logEmailSend(email, "Activation email", "SUCCESS", `sent to ${name}`)
+    const receipt = await sendActivationEmail(email, name, activationUrl)
+    await logEmailSend(email, "Activation email", "SUCCESS", receiptDetails(name, receipt))
   } catch (err) {
     await logEmailSend(email, "Activation email", "FAILED", err instanceof Error ? err.message : "Unknown error")
     throw err
@@ -80,8 +89,8 @@ export async function sendForgotPasswordWorkflow(
   "use workflow"
 
   try {
-    await sendForgotPasswordEmail(email, name, resetUrl)
-    await logEmailSend(email, "Password reset email", "SUCCESS", `sent to ${name}`)
+    const receipt = await sendForgotPasswordEmail(email, name, resetUrl)
+    await logEmailSend(email, "Password reset email", "SUCCESS", receiptDetails(name, receipt))
   } catch (err) {
     await logEmailSend(email, "Password reset email", "FAILED", err instanceof Error ? err.message : "Unknown error")
     throw err
