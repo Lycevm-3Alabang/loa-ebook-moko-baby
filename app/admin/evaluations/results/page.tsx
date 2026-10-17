@@ -88,11 +88,12 @@ export default function AdminEvaluationResultsPage() {
   }
 
   const exportZip = () => {
-    if (!selectedPeriod) return
-    const url = `/api/admin/evaluation-results/export?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}`
+    const period = selectedPeriod || (periods.length > 0 ? periods[0].id : "")
+    if (!period) return
+    const url = `/api/admin/evaluation-results/export?evaluationPeriodId=${encodeURIComponent(period)}`
     const a = document.createElement("a")
     a.href = url
-    a.download = `evaluation-results-${selectedPeriod}.zip`
+    a.download = `evaluation-results-${period}.zip`
     a.click()
   }
 
@@ -121,7 +122,8 @@ export default function AdminEvaluationResultsPage() {
         </select>
         <button
           onClick={exportZip}
-          disabled={!selectedPeriod}
+          disabled={periods.length === 0}
+          title={periods.length === 0 ? "No periods available" : "Download all departments as ZIP"}
           className="rounded-xl border border-default bg-surface px-3 py-2 text-sm text-secondary shadow-sm transition-colors focus:border-slate-400 focus:outline-none disabled:opacity-50"
         >
           Export (ZIP)

@@ -24,7 +24,6 @@ who-implements
 | slice-6 | Apply slice 6 (dean results export route) | Applied — app/api/dean/evaluation-results/export/route.ts created |
 | slice-7 | Apply slice 7 (results page export buttons) | Applied — admin + dean results pages |
 | slice-8 | Apply slice 8 (export route tests) | Applied — admin (4) + dean (4) tests |
-| slice-1 | Apply slice 1 (zip writer) | Applied — lib/zip.ts created || who-implements | Who implements | B (Code it) |
 ## Pending
 none
 

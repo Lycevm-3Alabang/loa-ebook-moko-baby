@@ -39,10 +39,11 @@ export default function DeanEvaluationResultsPage() {
   }
 
   const exportZip = () => {
-    if (!evaluationPeriodId) return
+    const period = evaluationPeriodId || (periods.length > 0 ? periods[0].id : "")
+    if (!period) return
     const a = document.createElement("a")
-    a.href = `/api/dean/evaluation-results/export?evaluationPeriodId=${encodeURIComponent(evaluationPeriodId)}`
-    a.download = `evaluation-results-${evaluationPeriodId}.zip`
+    a.href = `/api/dean/evaluation-results/export?evaluationPeriodId=${encodeURIComponent(period)}`
+    a.download = `evaluation-results-${period}.zip`
     a.click()
   }
 
@@ -92,7 +93,8 @@ export default function DeanEvaluationResultsPage() {
         </select>
         <button
           onClick={exportZip}
-          disabled={!evaluationPeriodId}
+          disabled={periods.length === 0}
+          title={periods.length === 0 ? "No periods available" : "Download your department as ZIP"}
           className="rounded-xl border border-default bg-surface px-3 py-2 text-sm text-secondary shadow-sm transition-colors focus:border-slate-400 focus:outline-none disabled:opacity-50"
         >
           Export (ZIP)
