@@ -10,11 +10,12 @@ type EmailProvider = "gmail" | "rest"
 
 function getEmailProvider(): EmailProvider {
   const v = process.env.EMAIL_PROVIDER
-  // Unset defaults to rest (relay). "domain" was decommissioned: direct
-  // SMTP-auth from cloud IPs is silently quarantined server-side.
-  if (!v) return "rest"
-  if (v === "gmail" || v === "rest") return v
-  throw new Error(`EMAIL_PROVIDER "${v}" is not supported (domain mode decommissioned). Use "rest" or "gmail".`)
+  // Unset, "domain" (decommissioned direct SMTP), and "gmail" all resolve to
+  // gmail. Only an explicit "rest" selects the cPanel relay. "domain" is kept
+  // as an alias for backward compat since direct SMTP was decommissioned.
+  if (!v || v === "gmail" || v === "domain") return "gmail"
+  if (v === "rest") return "rest"
+  throw new Error(`EMAIL_PROVIDER "${v}" is not supported. Use "rest", "gmail", or "domain" (alias for gmail).`)
 }
 
 function getTransporter() {
@@ -137,24 +138,37 @@ async function sendViaPrimary(mail: Mail.Options): Promise<EmailReceipt> {
   return { provider: getEmailProvider(), messageId: (info as { messageId?: string })?.messageId }
 }
 
-// Primary-then-gmail-once: covers hard failures (SMTP refused/auth/timeout,
-// relay 4xx/5xx). Silent server-side quarantine (250 OK then dropped) is
-// invisible here — that gap needs the mail-admin allowlist, not code.
+// Primary-then-fallback-once: covers hard failures (SMTP refused/auth/timeout,
+// relay 4xx/5xx). The fallback is the *other* provider, so gmail mode falls
+// back to the rest relay and rest mode falls back to gmail. Silent server-side
+// quarantine (250 OK then dropped) is invisible here -- that gap needs the
+// mail-admin allowlist, not code.
 async function sendMailWithFallback(mail: Mail.Options): Promise<EmailReceipt> {
+  const primary = getEmailProvider()
   try {
     return await sendViaPrimary(mail)
   } catch (primaryErr) {
     const reason = (primaryErr as Error)?.message ?? String(primaryErr)
-    console.warn(`[email] primary (${getEmailProvider()}) failed, gmail fallback: ${reason}`)
-    if (getEmailProvider() === "gmail" || !process.env.GMAIL_USER) throw primaryErr
+    const fallback: EmailProvider = primary === "gmail" ? "rest" : "gmail"
+    console.warn(`[email] primary (${primary}) failed, ${fallback} fallback: ${reason}`)
     try {
-      const info = await getTransporter().sendMail({
-        ...mail,
-        from: `"ACES" <${process.env.GMAIL_USER}>`,
-      })
+      if (fallback === "gmail") {
+        if (!process.env.GMAIL_USER) throw primaryErr
+        const info = await getTransporter().sendMail({
+          ...mail,
+          from: `"ACES" <${process.env.GMAIL_USER}>`,
+        })
+        return {
+          provider: "fallback:gmail",
+          messageId: (info as { messageId?: string })?.messageId,
+          fallbackFrom: reason,
+        }
+      }
+      // fallback === "rest"
+      const messageId = await sendViaRest(mail)
       return {
-        provider: "fallback:gmail",
-        messageId: (info as { messageId?: string })?.messageId,
+        provider: "fallback:rest",
+        messageId,
         fallbackFrom: reason,
       }
     } catch {
