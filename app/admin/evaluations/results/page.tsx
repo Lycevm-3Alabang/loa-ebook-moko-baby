@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import { useApiGet, dispatchToast, downloadFromApi } from "@/lib/api/client"
+import IosButton from "@/components/ui/IosButton"
 import { getRemarkColor, formatPeriodLabel } from "@/lib/evaluation-utils"
 
 interface DepartmentRow {
@@ -122,13 +123,14 @@ export default function AdminEvaluationResultsPage() {
             <option key={p.id} value={p.id}>{formatPeriodLabel(p)}</option>
           ))}
         </select>
-        <button
+        <IosButton
+          variant="tinted"
+          size="sm"
           onClick={exportZip}
           title="Download all departments as a ZIP of CSVs"
-          className="rounded-xl border border-default bg-surface px-3 py-2 text-sm text-secondary shadow-sm transition-colors focus:border-slate-400 focus:outline-none"
         >
           Export (ZIP)
-        </button>
+        </IosButton>
       </div>
 
       {error && <ErrorState message={error} onRetry={() => window.location.reload()} />}

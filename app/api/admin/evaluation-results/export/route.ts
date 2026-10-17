@@ -38,18 +38,36 @@ export async function GET(request: NextRequest) {
     const entries: { name: string; data: Uint8Array }[] = []
     const encoder = new TextEncoder()
 
-    // Per-department CSVs
-    let hasData = false
-    for (const dept of departments) {
-      const subjects = await getDepartmentSubjectResults(evaluationPeriodId, dept.id)
-      if (subjects.length === 0) continue
-      hasData = true
-      const csv = subjectCsv(subjects)
-      const code = (dept.code || dept.id).replace(/[^a-zA-Z0-9_-]/g, "_")
-      entries.push({ name: `${code}_results.csv`, data: encoder.encode(csv) })
+    // Per-department CSVs. Parallelised: each department costs ~6 sequential
+    // repository round trips, so awaiting them one-by-one over every department
+    // blew past the serverless budget. One failure must not lose the rest.
+    const perDept = await Promise.allSettled(
+      departments.map(async (dept) => {
+        const subjects = await getDepartmentSubjectResults(evaluationPeriodId, dept.id)
+        if (subjects.length === 0) return null
+        const code = (dept.code || dept.id).replace(/[^a-zA-Z0-9_-]/g, "_")
+        return { name: `${code}_results.csv`, data: encoder.encode(subjectCsv(subjects)) }
+      }),
+    )
+
+    const failures = perDept.filter((r) => r.status === "rejected")
+    if (failures.length > 0) {
+      const first = failures[0] as PromiseRejectedResult
+      const msg = (first.reason as { message?: unknown })?.message ?? String(first.reason)
+      await logServerError({
+        route: "/api/admin/evaluation-results/export",
+        method: request.method,
+        params: Object.fromEntries(new URL(request.url).searchParams),
+        error: first.reason,
+      })
+      return NextResponse.json({ error: `Failed to export: ${msg}` }, { status: 500 })
     }
 
-    if (!hasData) {
+    for (const r of perDept) {
+      if (r.status === "fulfilled" && r.value) entries.push(r.value)
+    }
+
+    if (entries.length === 0) {
       return NextResponse.json({ error: "No data to export" }, { status: 404 })
     }
 
@@ -77,6 +95,9 @@ export async function GET(request: NextRequest) {
     const errShape = e as { message?: unknown; code?: unknown; details?: unknown; hint?: unknown }
     console.error("Admin evaluation results export error:", JSON.stringify({ message: errShape?.message, code: errShape?.code, details: errShape?.details, hint: errShape?.hint }))
     await logServerError({ route: "/api/admin/evaluation-results/export", method: request.method, params: Object.fromEntries(new URL(request.url).searchParams), error: e })
-    return NextResponse.json({ error: "Failed to export evaluation results" }, { status: 500 })
+    // Surface the underlying cause. A generic "Failed to export" hides the real
+    // fault from the only person who can act on it (the admin reading the toast).
+    const detail = typeof errShape?.message === "string" ? errShape.message : "unknown error"
+    return NextResponse.json({ error: `Failed to export: ${detail}` }, { status: 500 })
   }
 }

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Skeleton from "@/components/ui/Skeleton"
 import { useApiGet, dispatchToast, downloadFromApi } from "@/lib/api/client"
+import IosButton from "@/components/ui/IosButton"
 import { formatPeriodLabel } from "@/lib/evaluation-utils"
 
 interface Period {
@@ -94,13 +95,14 @@ export default function DeanEvaluationResultsPage() {
             <option key={p.id} value={p.id}>{formatPeriodLabel(p)}</option>
           ))}
         </select>
-        <button
+        <IosButton
+          variant="tinted"
+          size="sm"
           onClick={exportZip}
           title="Download your department's results as a ZIP of CSVs"
-          className="rounded-xl border border-default bg-surface px-3 py-2 text-sm text-secondary shadow-sm transition-colors focus:border-slate-400 focus:outline-none"
         >
           Export (ZIP)
-        </button>
+        </IosButton>
       </div>
     </div>
   )
