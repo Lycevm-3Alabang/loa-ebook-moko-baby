@@ -480,14 +480,22 @@ export const evaluationRepository: IEvaluationRepository = {
   },
   async listSubmittedByPeriodAndEvaluatees(evaluationPeriodId, evaluateeIds) {
     if (evaluateeIds.length === 0) return []
-    const { data, error } = await supabase
-      .from("evaluations")
-      .select("id, evaluateeId, facultySubjectId, submittedAt")
-      .eq("evaluation_period_id", evaluationPeriodId)
-      .eq("status", "SUBMITTED")
-      .in("evaluateeId", evaluateeIds)
-    if (error) throw error
-    return (data || []) as EvaluationListItem[]
+    // Chunked .in(): evaluateeIds is every faculty in a department, which
+    // overflows PostgREST's ~8KB URL cap and answers 400.
+    const results = await Promise.all(
+      chunkStrIds([...new Set(evaluateeIds)], IN_CHUNK_SIZE).map((ids) =>
+        supabase
+          .from("evaluations")
+          .select("id, evaluateeId, facultySubjectId, submittedAt")
+          .eq("evaluation_period_id", evaluationPeriodId)
+          .eq("status", "SUBMITTED")
+          .in("evaluateeId", ids),
+      ),
+    )
+    for (const res of results) {
+      if (res.error) throw res.error
+    }
+    return results.flatMap((res) => res.data || []) as EvaluationListItem[]
   },
   async listSubmittedByPeriodAndEvaluateeAndFS(evaluationPeriodId, evaluateeId, facultySubjectId) {
     const { data, error } = await supabase

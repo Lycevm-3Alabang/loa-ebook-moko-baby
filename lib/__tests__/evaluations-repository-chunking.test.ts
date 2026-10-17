@@ -144,3 +144,52 @@ describe("listStatusByPeriodAndFacultySubjectIds — PostgREST URL budget", () =
     })
   })
 })
+
+describe("listSubmittedByPeriodAndEvaluatees — PostgREST URL budget", () => {
+  it("makes no query for an empty evaluatee list", async () => {
+    await evaluationRepository.listSubmittedByPeriodAndEvaluatees("p1", [])
+    expect(mockSupabase.from).not.toHaveBeenCalled()
+  })
+
+  it("chunks a whole department of faculty instead of one oversized .in()", async () => {
+    const captured: Captured = { inCalls: [], fromCalls: 0 }
+    mockSupabase.from.mockImplementation(() => {
+      captured.fromCalls++
+      return makeChain({ data: [], error: null }, captured)
+    })
+
+    // A department's faculty list is the real input size here — this is what
+    // overflowed PostgREST's ~8KB URL cap and 500'd the export route.
+    await evaluationRepository.listSubmittedByPeriodAndEvaluatees("p1", ids(250))
+
+    expect(captured.fromCalls).toBe(3)
+    for (const chunk of captured.inCalls) {
+      expect(chunk.length).toBeLessThanOrEqual(100)
+    }
+  })
+
+  it("merges rows across chunks", async () => {
+    const captured: Captured = { inCalls: [], fromCalls: 0 }
+    mockSupabase.from.mockImplementation(() => {
+      captured.fromCalls++
+      const n = captured.inCalls.length
+      return makeChain({ data: [{ id: `e-${n}`, evaluateeId: "f1", facultySubjectId: "fs1", submittedAt: null }], error: null }, captured)
+    })
+
+    const result = await evaluationRepository.listSubmittedByPeriodAndEvaluatees("p1", ids(250))
+
+    expect(result).toHaveLength(3)
+    expect(result.map((r) => r.id)).toEqual(["e-0", "e-1", "e-2"])
+  })
+
+  it("throws when any chunk errors", async () => {
+    const captured: Captured = { inCalls: [], fromCalls: 0 }
+    mockSupabase.from.mockImplementation(() => {
+      captured.fromCalls++
+      const n = captured.inCalls.length
+      return makeChain({ data: null, error: n === 0 ? { message: "url too long" } : null }, captured)
+    })
+
+    await expect(evaluationRepository.listSubmittedByPeriodAndEvaluatees("p1", ids(250))).rejects.toEqual({ message: "url too long" })
+  })
+})
