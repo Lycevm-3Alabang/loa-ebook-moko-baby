@@ -515,13 +515,22 @@ export const evaluationRepository: IEvaluationRepository = {
   },
   async listStatusByPeriodAndFacultySubjectIds(evaluationPeriodId, facultySubjectIds) {
     if (facultySubjectIds.length === 0) return []
-    const { data, error } = await supabase
-      .from("evaluations")
-      .select("id, evaluatorId, status, isDisabled, submittedAt, facultySubjectId")
-      .eq("evaluation_period_id", evaluationPeriodId)
-      .in("facultySubjectId", facultySubjectIds)
-    if (error) throw error
-    return (data || []).map((r) => ({
+    // Chunked .in(): PostgREST caps URL length (~8KB). A semester's full
+    // faculty-subject list in one .in() overflows the URL and PostgREST
+    // answers 400, which surfaces as a 500 on the route.
+    const results = await Promise.all(
+      chunkStrIds([...new Set(facultySubjectIds)], IN_CHUNK_SIZE).map((ids) =>
+        supabase
+          .from("evaluations")
+          .select("id, evaluatorId, status, isDisabled, submittedAt, facultySubjectId")
+          .eq("evaluation_period_id", evaluationPeriodId)
+          .in("facultySubjectId", ids),
+      ),
+    )
+    for (const res of results) {
+      if (res.error) throw res.error
+    }
+    return results.flatMap((res) => (res.data || [])).map((r) => ({
       id: r.id,
       evaluatorId: r.evaluatorId,
       status: r.status as "DRAFT" | "SUBMITTED" | "INVALID",
