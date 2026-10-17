@@ -10,6 +10,45 @@ export function dispatch403(path: string, message: string, method?: string) {
   }
 }
 
+/** Surface a user-facing message through the global ToastContainer. */
+export function dispatchToast(message: string) {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("app:toast", { detail: { message } }))
+  }
+}
+
+/**
+ * Download a file from an API route, reporting failures instead of failing
+ * silently. A plain `<a download>` click surfaces nothing to the user when the
+ * route 404s/403s, which reads as an unresponsive button.
+ */
+export async function downloadFromApi(url: string, filename: string): Promise<void> {
+  let res: Response
+  try {
+    res = await fetch(url)
+  } catch {
+    dispatchToast("Export failed: could not reach the server.")
+    return
+  }
+
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string }
+    dispatchToast(body.error || `Export failed (HTTP ${res.status}).`)
+    return
+  }
+
+  const blob = await res.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = objectUrl
+  a.download = filename
+  // Attached before click: detached anchors are unreliable in some browsers.
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(objectUrl)
+}
+
 let currentRole: string | null = null
 
 export function setUserRole(role: string | null) {

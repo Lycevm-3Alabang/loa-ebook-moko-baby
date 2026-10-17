@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
-import { useApiGet } from "@/lib/api/client"
+import { useApiGet, dispatchToast, downloadFromApi } from "@/lib/api/client"
 import { getRemarkColor, formatPeriodLabel } from "@/lib/evaluation-utils"
 
 interface DepartmentRow {
@@ -89,12 +89,14 @@ export default function AdminEvaluationResultsPage() {
 
   const exportZip = () => {
     const period = selectedPeriod || (periods.length > 0 ? periods[0].id : "")
-    if (!period) return
-    const url = `/api/admin/evaluation-results/export?evaluationPeriodId=${encodeURIComponent(period)}`
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `evaluation-results-${period}.zip`
-    a.click()
+    if (!period) {
+      dispatchToast("Select an evaluation period before exporting.")
+      return
+    }
+    void downloadFromApi(
+      `/api/admin/evaluation-results/export?evaluationPeriodId=${encodeURIComponent(period)}`,
+      `evaluation-results-${period}.zip`,
+    )
   }
 
   const formatScore = (v: number | null) => (v !== null ? v.toFixed(2) : "\u2014")
@@ -122,9 +124,8 @@ export default function AdminEvaluationResultsPage() {
         </select>
         <button
           onClick={exportZip}
-          disabled={periods.length === 0}
-          title={periods.length === 0 ? "No periods available" : "Download all departments as ZIP"}
-          className="rounded-xl border border-default bg-surface px-3 py-2 text-sm text-secondary shadow-sm transition-colors focus:border-slate-400 focus:outline-none disabled:opacity-50"
+          title="Download all departments as a ZIP of CSVs"
+          className="rounded-xl border border-default bg-surface px-3 py-2 text-sm text-secondary shadow-sm transition-colors focus:border-slate-400 focus:outline-none"
         >
           Export (ZIP)
         </button>

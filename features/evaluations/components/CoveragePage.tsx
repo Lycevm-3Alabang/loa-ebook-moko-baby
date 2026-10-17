@@ -91,6 +91,11 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
 
   const { data: statusData, error: statusError } = useApiGet<{ departments: DepartmentRow[]; subjects: SubjectRow[] }>(
     selectedPeriod ? `${statusBase}?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}` : null,
+    // Freshness: the global SWRConfig sets revalidateOnFocus:false, which leaves
+    // this page frozen after mount. Coverage is a live-progress report (students
+    // submit/dispute while it is open), so opt this hook back into focus
+    // revalidation and a 30s poll. Scoped to this call - other pages untouched.
+    { revalidateOnFocus: true, refreshInterval: 30_000 },
   )
   const error = statusError?.message || ""
   const loading = !statusData && !statusError && !!selectedPeriod
