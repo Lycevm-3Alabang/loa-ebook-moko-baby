@@ -85,6 +85,7 @@ lib/                    # Global utilities & infrastructure
 ## Key Conventions
 
 - **Double-click prevention:** all form buttons use `SubmitButton` (500ms guard via `useRef`)
+- **House-style buttons:** interactive actions use `components/ui/IosButton.tsx` (`variant` = `primary` / `tinted` / `success` / `destructive` / `gray` / `plain`; `size` = `xs` / `sm` / `md`). `variant="plain"` is the text-link style, `loading` renders a spinner. Avoid hand-rolled `<button>` + Tailwind — it drifts from the design system and loses the hover/active scale.
 - **Skeletons:** `Skeleton.tsx` variants (`text`, `card`, `table-row`, etc.) + composite (`SkeletonTable`, `SkeletonMetricGrid`, `SkeletonCard`)
 - **Dark mode:** class-based (`.dark` on `<html>`), persisted in localStorage, Tailwind `dark:` variant, no-flash inline script in `<head>`
 - **Feature flags:** env vars (`EMAIL_FEATURE_FLAG`, `SSO_FEATURE_FLAG`, `FEATURE_CREATE_TEAMS_MEETING`)
@@ -102,7 +103,7 @@ lib/                    # Global utilities & infrastructure
 ## Testing
 
 - Vitest with jsdom environment (config: `vitest.config.ts`)
-- All tests in `lib/__tests__/` (20 test files, 2026-10-09)
+- All tests in `lib/__tests__/` (45 test files / 511 tests, 2026-10-17)
 - Repositories mocked via `lib/repositories/factory.ts` module mock
 - CI runs `npx vitest run` on push/PR to `main`
 
@@ -110,7 +111,7 @@ lib/                    # Global utilities & infrastructure
 
 - **Faculty Evaluation Module** (`eval` branch): ~18 items marked ❌ missing in `README.md` (pages, API routes, repositories, reports)
 - **Sentiment analysis:** placeholders only (`lib/services/sentiment.ts`, API stubs)
-- **Test coverage:** minimal (20 test files, ~3.3k non-blank test LOC, 2026-10-09)
+- **Test coverage:** still light on repository/service integration tests — export-route tests mock the service, so a real Supabase query failure cannot surface in CI (see Lesson 7)
 
 ## Setup
 
@@ -171,6 +172,39 @@ Renaming DB columns cascade through the full TypeScript stack:
 
 - **Symptom:** ESLint `@typescript-eslint/no-unused-vars` on destructured params like `({ role, ...fields })`
 - **Fix:** Prefix with underscore: `({ role: _role, ...fields })` — the config allows unused args matching `/^_/u`.
+
+### 7. PostgREST URL Cap — `.in()` Must Be Chunked
+
+- **Symptom:** Route returns 500 with no useful message. Supabase → Logs → API shows `GET | 400` on `/rest/v1/<table>?...&<col>=in.(...)`. ~1318 UUIDs ≈ 48KB URL.
+- **Root cause:** PostgREST carries filters in the **query string**, so a large `.in()` list exceeds the ~8KB URL limit and answers **400**. Supabase-js surfaces that as an error you `throw`, which the route turns into a 500. Not a DB/data problem.
+- **Fix:** Chunk at `IN_CHUNK_SIZE = 100`, `Promise.all` the chunks, then `flatMap` the rows.
+- **Corollary — chunking is per-method, never per-line-range.** `eval-results-400-fix-checklist.md` Slice 4 ticked `evaluations.repository.ts:382-520` as done. That range *contains* `listSubmittedByPeriodAndEvaluatees`, but the method itself stayed unchunked and 500'd the export months later. **Enumerate every `.in(` call site explicitly** and grep for unchunked ones — never certify a slice by line span.
+- **Corollary — empty guard:** return early on an empty id list; `.in.()` with zero values is itself a 400.
+
+### 8. Diagnosing a 500: Vercel Logs Do Not Show the Response Body
+
+- **Symptom:** Vercel log shows `Status: 500`, `Execution Duration`, and a GET count, but no cause. Easy to burn several deploy cycles guessing.
+- **Why:** The Vercel invocation log reports status/duration/**request** metadata only. The failing **query** and the **response body** are both elsewhere.
+- **How to actually diagnose, in order:**
+  1. **Surface the error first** — catch and return `Failed to export: ${err.message}` so the toast/Response tab names the cause.
+  2. **Supabase → Logs → API** — filters to `400`/`error` and shows the exact URL (though the displayed `event_message` is **truncated**, so you cannot count IDs from it).
+  3. **Browser DevTools → Network → Response tab**, or the toast text.
+- **Corollary:** a Vercel `Deployment ID` pins which build answered. Confirm it changed before reading anything else into a log — a stale ID means you are looking at pre-fix evidence (compare `Request ID` too; an identical ID means the same request, not a new attempt).
+
+### 9. React 19: `ref` Is a Regular Prop — `forwardRef` Is Deprecated
+
+- **Symptom:** a shared UI primitive (`IosButton`) cannot hold a ref, silently killing autofocus/focus-trap setup downstream.
+- **Root cause:** React 19 passes `ref` to function components as an ordinary prop. `forwardRef` is deprecated for function components (still functional, but warns).
+- **Fix:** declare `ref?: React.Ref<HTMLButtonElement>` on the props interface, destructure `ref` out (so it never lands in `...props`), and attach it to the element:
+
+  ```tsx
+  interface IosButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+    ref?: React.Ref<HTMLButtonElement>
+  }
+  // ...<button {...props} ref={ref} ...>
+  ```
+
+- **Note:** a `querySelectorAll('button, …')`-based **focus trap is unaffected** — it matches the live DOM, and the primitive still renders a real `<button>`. Only explicit `ref.current?.focus()` breaks.
 
 ## Hard Rules
 

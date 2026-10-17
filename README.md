@@ -392,6 +392,16 @@ Non-activated accounts must use the activation flow at `/activate`.
 
 ## Recent Improvements
 
+### Evaluation Coverage & Results Export
+- New **Evaluation Coverage** page at `/admin/evaluations/coverage` and `/dean/evaluations/coverage`, sharing one component (`features/evaluations/components/CoveragePage.tsx`). This is distinct from the consultation report at `/admin/reports/coverage`.
+- Buckets are mutually exclusive with priority `Participated > Disputed > In-progress > Not Participated`; `SUBMITTED` + `isDisabled` is counted as **Disputed**.
+- Counts **unique students per department** (deduped), not raw responses. Note the headline `Unique students` KPI sums the per-department counts, so it is not distinct across departments.
+- Per-subject drill-down opens `CoverageDetailModal` showing the four student buckets for that subject.
+- **CSV export** from the coverage page, **ZIP export** from the results page (one CSV per department + `summary.csv`) built by the dependency-free `lib/zip.ts`.
+- Downloads go through `downloadFromApi` and report failures via toast; the Export button is not disabled for an empty period, so the request runs and reports what it found.
+- Coverage status revalidates on window focus and polls every 30s — the global `SWRConfig` keeps `revalidateOnFocus: false` and only this page opts in.
+- Fixed a 500 on both export routes: an unchunked `.in()` in `listSubmittedByPeriodAndEvaluatees` overflowed PostgREST's ~8KB URL cap. See `eval-results-400-fix-checklist.md` and AGENTS.md Lesson 7.
+
 ### Academic Infrastructure Setup Guide
 - Added collapsible "Setup Guide — What depends on what?" UI to `/admin/data/academic-infrastructure`
 - Shows 7-step dependency chain for Semesters → Departments → Courses → Subjects → Sections → Faculty Loading → Enrollments

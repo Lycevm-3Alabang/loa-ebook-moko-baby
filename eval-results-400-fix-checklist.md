@@ -9,4 +9,22 @@ Single `.in(...)` with 1318 UUIDs ≈ 48KB URL → PostgREST 400 → route 500.
 - [x] Slice 3: chunk `listLiveDeptAverages()` bulk `.in()` (`:273-276`, fallback chain `:288-324`)
 - [x] Slice 4: chunk `listSubmittedWithSentiment` / `listRatingsBy*` / `listCommentsBy*` (`features/evaluations/evaluations.repository.ts:382-520`)
 - [x] Slice 5: enrich `console.error` + `logServerError` with `code/hint/details` so next 400 names the table
-- [ ] Verify: `npx vitest run lib/__tests__/evaluation` + repro curl for period `5a01886e...` returns 200
+- [x] Verify: `npx vitest run lib/__tests__/evaluation` + repro curl for period `5a01886e...` returns 200
+
+## Correction (2026-10-17) — Slice 4 was ticked but incomplete
+
+Slice 4 was certified **by line range** (`:382-520`), not by method. That range
+*contains* `listSubmittedByPeriodAndEvaluatees`, whose `.in("evaluateeId", …)` was
+left unchunked. It only receives **every faculty in one department**, so the earlier
+1318-eval repro did not exercise it — the coverage/export path did, and 500'd:
+
+```
+GET | 400 | /rest/v1/evaluations?select=id,evaluateeId,facultySubjectId,submittedAt
+             &evaluation_period_id=eq.<period>&status=eq.SUBMITTED&evaluateeId=in.(…)
+```
+
+Fixed by chunking at `IN_CHUNK_SIZE = 100`; regression coverage added in
+`lib/__tests__/evaluations-repository-chunking.test.ts` (11 tests).
+
+**Rule going forward:** enumerate every `.in(` call site and check it individually.
+Never certify a slice by line span. See AGENTS.md Lesson 7.
