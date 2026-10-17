@@ -487,6 +487,7 @@ export interface IEvaluationRepository {
   countBySemesterId(semesterId: string): Promise<number>
   listSubmittedByPeriodAndEvaluateeAndFS(evaluationPeriodId: string, evaluateeId: string, facultySubjectId: string): Promise<EvaluationDetailItem[]>
   listSubmittedByPeriodAndFacultySubjectIds(evaluationPeriodId: string, facultySubjectIds: string[]): Promise<EvaluationDetailItem[]>
+  listStatusByPeriodAndFacultySubjectIds(evaluationPeriodId: string, facultySubjectIds: string[]): Promise<EvaluationStatusItem[]>
   listRatingsByEvaluationIds(evaluationIds: string[]): Promise<EvaluationRatingRow[]>
   listCommentsByEvaluationIds(evaluationIds: string[]): Promise<EvaluationCommentLight[]>
   listFullCommentsByEvaluationIds(evaluationIds: string[]): Promise<EvaluationCommentFull[]>
@@ -507,6 +508,15 @@ export interface EvaluationDetailItem {
   evaluatorId: string
   submittedAt: string | null
   createdAt: string
+  facultySubjectId: string | null
+}
+
+export interface EvaluationStatusItem {
+  id: string
+  evaluatorId: string
+  status: "DRAFT" | "SUBMITTED" | "INVALID"
+  isDisabled: boolean
+  submittedAt: string | null
   facultySubjectId: string | null
 }
 

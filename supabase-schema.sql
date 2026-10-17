@@ -2110,3 +2110,17 @@ DO $$ BEGIN
     WHERE "groupName" = 'ADMIN';
   END IF;
 END $$;
+
+-- =========================================================
+-- Migration 37: Grant evaluation-coverage paths to DEAN
+-- =========================================================
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM group_access
+    WHERE "groupName" = 'DEAN' AND pages @> '["/dean/evaluations/coverage"]'::JSONB
+  ) THEN
+    UPDATE group_access SET pages = pages || '["/dean/evaluations/coverage","/api/dean/evaluation-status"]'::JSONB
+    WHERE "groupName" = 'DEAN';
+  END IF;
+END $$;

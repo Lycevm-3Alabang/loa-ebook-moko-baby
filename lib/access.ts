@@ -10,7 +10,7 @@ export const DEFAULT_CONFIG: Record<string, GroupAccessEntry> = {
     pages: ["/", "/admin", "/admin/data/maintenance", "/admin/data/users/deleted", "/admin/system/access-config", "/admin/system/user-permissions", "/admin/data/users", "/admin/data/academic-infrastructure", "/admin/consultations", "/admin/consultations/reports/health", "/admin/consultations/reports/demand", "/admin/consultations/reports/backlog", "/admin/consultations/reports/coverage", "/admin/consultations/reports/distribution", "/admin/evaluations", "/admin/evaluations/results", "/admin/evaluations/rubrics", "/admin/evaluations/disabled", "/admin/evaluations/coverage", "/admin/system/audit-trail", "/admin/system/reported-bugs", "/faculty/availability", "/faq"],
   },
   DEAN: {
-    pages: ["/", "/dean", "/dean/upload", "/dean/departments", "/dean/reports", "/dean/evaluations", "/dean/evaluations/results", "/dean/data/users", "/dean/data/academic-infrastructure", "/faculty/meetings", "/faculty/availability", "/faculty/reports", "/api/dean/evaluation-results", "/api/dean/evaluation-results/details", "/api/evaluation-periods"],
+    pages: ["/", "/dean", "/dean/upload", "/dean/departments", "/dean/reports", "/dean/evaluations", "/dean/evaluations/results", "/dean/evaluations/coverage", "/dean/data/users", "/dean/data/academic-infrastructure", "/faculty/meetings", "/faculty/availability", "/faculty/reports", "/api/dean/evaluation-results", "/api/dean/evaluation-results/details", "/api/dean/evaluation-status", "/api/evaluation-periods"],
   },
   FACULTY: {
     pages: ["/", "/faculty", "/faculty/meetings", "/faculty/availability", "/faculty/upload", "/faculty/evaluations", "/faculty/evaluations/results", "/admin/consultations/reports/health"],

@@ -1,12 +1,7 @@
 import { supabase } from "@/lib/db"
 import { fetchRatingsWithCategories } from "@/lib/db/common"
-import {
-  computeCategoryAverages,
-  computeGeneralRating,
-  mapCategoryAveragesToColumns,
-  findHighestLowestRubrics,
-  getRemark,
-} from "@/lib/evaluation-utils"
+import { buildLiveDeptAverages, resolveFacultyDepartment } from "@/lib/evaluation-utils"
+import type { RatingRow } from "@/lib/evaluation-utils"
 import type { EvaluationResultData, IEvaluationResultRepository, LiveDeptAverage, StudentBreakdownItem, FacultyEvalDetail } from "@/lib/types"
 import { semesterRepository } from "@/lib/repositories/factory"
 
@@ -348,9 +343,14 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
       ratingsByEval.get(r.evaluationId)!.push(r)
     }
 
-    // Live home department per faculty, same chain as compute().
-    const deptOf = new Map(usersRows.map((u) => [u.id, u.departmentId as string | null]))
-    const nullFacIds = facIds.filter((id) => !deptOf.get(id))
+    // Live home department per faculty, same chain as compute(), resolved via
+    // the pure resolveFacultyDepartment helper (single source of truth).
+    const userDept = new Map(usersRows.map((u) => [u.id, u.departmentId as string | null]))
+    const nullFacIds = facIds.filter((id) => !userDept.get(id))
+    const facultySubjects: { faculty_id: string; section_id: string | null; semesterId: string | null }[] = []
+    const sections = new Map<string, string | null>()
+    const departmentCourses = new Map<string, string | null>()
+
     if (nullFacIds.length > 0 && semesterId) {
       const fsResults = await Promise.all(
         chunkStrIds([...new Set(nullFacIds)], IN_CHUNK_SIZE).map((ids) =>
@@ -365,6 +365,8 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
         if (res.error) throw res.error
       }
       const fsRows = fsResults.flatMap((res) => res.data || [])
+      facultySubjects.push(...fsRows.map((r) => ({ faculty_id: r.faculty_id, section_id: r.section_id, semesterId })))
+
       if (fsRows.length > 0) {
         const sectionIds = [...new Set(fsRows.map((r) => r.section_id).filter(Boolean))]
         if (sectionIds.length > 0) {
@@ -380,6 +382,8 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
             if (res.error) throw res.error
           }
           const sectionRows = sectionResults.flatMap((res) => res.data || [])
+          for (const s of sectionRows) sections.set(s.id, s.departmentCourseId)
+
           if (sectionRows.length > 0) {
             const dcIds = [...new Set(sectionRows.map((r) => r.departmentCourseId).filter(Boolean))]
             if (dcIds.length > 0) {
@@ -395,86 +399,28 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
                 if (res.error) throw res.error
               }
               const dcRows = dcResults.flatMap((res) => res.data || [])
-              if (dcRows && dcRows.length > 0) {
-                const dcDeptMap = new Map(dcRows.map((r) => [r.id, r.departmentId]))
-                const sectionDeptMap = new Map(
-                  sectionRows.map((r) => [r.id, dcDeptMap.get(r.departmentCourseId)]),
-                )
-                for (const fs of fsRows) {
-                  const deptId = sectionDeptMap.get(fs.section_id)
-                  if (deptId && !deptOf.get(fs.faculty_id)) {
-                    deptOf.set(fs.faculty_id, deptId)
-                  }
-                }
-              }
+              for (const dc of dcRows) departmentCourses.set(dc.id, dc.departmentId)
             }
           }
         }
       }
     }
 
-    const catKeys = [
-      "professionalManner", "communicationWithStudent", "studentEngagement",
-      "learningMaterials", "timeManagement", "experientialLearning",
-      "respectUniqueness", "assessmentAndFeedback",
-    ] as const
+    const deptOf = new Map<string, string | null>()
+    for (const facId of facIds) {
+      const resolved = resolveFacultyDepartment(facId, { userDept, facultySubjects, sections, departmentCourses, semesterId: semesterId ?? null })
+      deptOf.set(facId, resolved)
+    }
 
-    const groups = new Map<string, {
-      facultyIds: Set<string>
-      respondents: number
-      generals: number[]
-      cats: Record<string, number[]>
-    }>()
+    const inputs: { facultyId: string; deptId: string; evalCount: number; ratings: RatingRow[] }[] = []
     for (const [facId, eids] of facEvalMap) {
       const facRatings = eids.flatMap((eid) => ratingsByEval.get(eid) ?? [])
       if (facRatings.length === 0) continue
-      const catAverages = computeCategoryAverages(facRatings)
-      const general = computeGeneralRating(catAverages)
-      if (general === null) continue
-      const cols = mapCategoryAveragesToColumns(catAverages)
       const deptId = deptOf.get(facId) ?? "__unknown__"
-      let g = groups.get(deptId)
-      if (!g) {
-        g = {
-          facultyIds: new Set(),
-          respondents: 0,
-          generals: [],
-          cats: Object.fromEntries(catKeys.map((k) => [k, [] as number[]])),
-        }
-        groups.set(deptId, g)
-      }
-      g.facultyIds.add(facId)
-      g.respondents += eids.length
-      g.generals.push(Math.round(general * 100) / 100)
-      for (const key of catKeys) {
-        const v = cols[key]
-        if (v !== null) g.cats[key].push(v)
-      }
+      inputs.push({ facultyId: facId, deptId, evalCount: eids.length, ratings: facRatings as unknown as RatingRow[] })
     }
 
-    return [...groups.entries()].map(([departmentId, g]) => {
-      const avgRating = g.generals.length > 0
-        ? Math.round(g.generals.reduce((a, b) => a + b, 0) / g.generals.length * 100) / 100
-        : null
-      const catAverages: Record<string, number | null> = {}
-      for (const key of catKeys) {
-        const vals = g.cats[key]
-        catAverages[key] = vals.length > 0
-          ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 100) / 100
-          : null
-      }
-      const rubrics = findHighestLowestRubrics(catAverages)
-      return {
-        departmentId,
-        facultyIds: [...g.facultyIds],
-        totalRespondents: g.respondents,
-        avgRating,
-        remarks: getRemark(avgRating),
-        catAverages,
-        highestRubrics: rubrics.highest,
-        lowestRubrics: rubrics.lowest,
-      }
-    })
+    return buildLiveDeptAverages(inputs)
   },
 
   async setVisibility(evaluationPeriodId, facultyIds, visible) {
