@@ -5,6 +5,7 @@ import { getDeanEvalReportData } from "@/features/evaluations/evaluation-report.
 import type { DeanDashboardData } from "@/features/evaluations/evaluation-report.service"
 import { semesterRepository, evaluationPeriodRepository } from "@/lib/repositories/factory"
 import EvaluationReportContent from "@/features/evaluations/components/EvaluationReportContent"
+import IosButton from "@/components/ui/IosButton"
 import { KpiCards, TrendLine, RemarkStack, CategoryBars, ResponseStrip, AttentionCards, DashboardEmpty } from "@/features/evaluations/components/dashboard/DashboardVisuals"
 
 export default async function DeanEvalReportDetailPage({
@@ -88,7 +89,7 @@ export default async function DeanEvalReportDetailPage({
             {periods.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </label>
-        <button type="submit" className="text-xs px-3 py-1.5 rounded-lg border">Apply</button>
+        <IosButton type="submit" variant="tinted" size="sm" title="Apply the selected filters">Apply</IosButton>
         {dashboard?.rubricGroupName && <span className="text-xs text-tertiary">Rubric: {dashboard.rubricGroupName}</span>}
       </form>
 

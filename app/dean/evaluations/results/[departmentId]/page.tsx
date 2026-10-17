@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, useEffect } from "react"
 import { useParams, useSearchParams } from "next/navigation"
 import Skeleton from "@/components/ui/Skeleton"
 import LockedTab from "@/components/ui/LockedTab"
+import IosButton from "@/components/ui/IosButton"
 import { useApiGet } from "@/lib/api/client"
 import { getRemarkColor } from "@/lib/evaluation-utils"
 import { downloadDeptPdf } from "@/lib/evaluation-pdf"
@@ -214,32 +215,35 @@ export default function DeanDepartmentDetailPage() {
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-secondary">Department Summary</p>
               <div className="flex items-center gap-2">
-                <div className="flex rounded-lg border border-default overflow-hidden text-xs">
-                  <button
-                    type="button"
+                <div className="flex items-center gap-1.5">
+                  <IosButton
+                    variant={pdfMode === "per_subject" ? "primary" : "gray"}
+                    size="sm"
                     onClick={() => setPdfMode("per_subject")}
-                    className={`px-3 py-1.5 transition-colors ${pdfMode === "per_subject" ? "bg-blue-600 text-white" : "bg-surface text-tertiary hover:text-secondary"}`}
+                    aria-pressed={pdfMode === "per_subject"}
                   >
                     Per Subject
-                  </button>
-                  <button
-                    type="button"
+                  </IosButton>
+                  <IosButton
+                    variant={pdfMode === "per_faculty" ? "primary" : "gray"}
+                    size="sm"
                     onClick={() => setPdfMode("per_faculty")}
-                    className={`px-3 py-1.5 transition-colors ${pdfMode === "per_faculty" ? "bg-blue-600 text-white" : "bg-surface text-tertiary hover:text-secondary"}`}
+                    aria-pressed={pdfMode === "per_faculty"}
                   >
                     Per Faculty
-                  </button>
+                  </IosButton>
                 </div>
-                <button
-                  type="button"
+                <IosButton
+                  variant="tinted"
+                  size="sm"
                   onClick={handleDeptPdf}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm transition-colors"
+                  title={`Download ${pdfMode === "per_faculty" ? "per-faculty" : "per-subject"} PDF`}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 012 0V19a2 2 0 01-2 2z" />
                   </svg>
                   Download PDF
-                </button>
+                </IosButton>
               </div>
             </div>
 

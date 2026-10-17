@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
+import IosButton from "@/components/ui/IosButton"
 import { useApiGet } from "@/lib/api/client"
 import { usePagination, Paginator } from "@/components/ui/Paginator"
 import { formatPeriodLabel } from "@/lib/evaluation-utils"
@@ -248,8 +249,16 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
           placeholder="Search department or subject..."
           className="rounded-xl border border-default bg-surface px-3 py-2 text-sm text-secondary shadow-sm transition-colors focus:border-slate-400 focus:outline-none"
         />
-        <button onClick={() => { setSearch("") }} className="rounded-xl border border-default bg-surface px-3 py-2 text-sm text-secondary">Clear</button>
-        <button onClick={exportCsv} disabled={!statusData || (statusData.subjects?.length ?? 0) === 0} className="rounded-xl border border-default bg-surface px-3 py-2 text-sm text-secondary disabled:opacity-50">Export CSV</button>
+        <IosButton variant="gray" size="sm" onClick={() => { setSearch("") }}>Clear</IosButton>
+        <IosButton
+          variant="tinted"
+          size="sm"
+          onClick={exportCsv}
+          disabled={!statusData || (statusData.subjects?.length ?? 0) === 0}
+          title="Download coverage as CSV"
+        >
+          Export CSV
+        </IosButton>
       </div>
 
       {error && <ErrorState message={error} onRetry={() => window.location.reload()} />}
@@ -345,7 +354,7 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
 
           {selectedDept && (
             <div className="space-y-4">
-              <button onClick={clearDept} className="text-xs font-semibold text-secondary hover:text-primary">Back to departments</button>
+              <IosButton variant="plain" size="xs" onClick={clearDept}>Back to departments</IosButton>
               <div>
                 <h2 className="text-lg font-bold text-primary">{activeDept?.departmentName ?? "Department"}</h2>
                 <p className="text-xs text-tertiary mt-1">
@@ -388,12 +397,14 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
                             <td className="py-3 pr-4 text-right text-sm font-bold">{formatPct(s.enrolled > 0 ? (s.participated / s.enrolled) * 100 : null)}</td>
                             <td className="py-3 pr-4 text-right">{coveragePill(s.enrolled > 0 ? (s.participated / s.enrolled) * 100 : null)}</td>
                             <td className="py-3 text-right">
-                              <button
+                              <IosButton
+                                variant="plain"
+                                size="xs"
                                 onClick={() => openDetail(s)}
-                                className="text-xs font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                                title={`View student breakdown for ${s.subjectCode ?? s.subjectName ?? "subject"}`}
                               >
                                 Details
-                              </button>
+                              </IosButton>
                             </td>
                           </tr>
                         )

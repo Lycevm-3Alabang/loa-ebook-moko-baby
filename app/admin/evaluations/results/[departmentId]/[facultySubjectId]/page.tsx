@@ -4,6 +4,7 @@ import { useParams, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
+import IosButton from "@/components/ui/IosButton"
 import { useApiGet } from "@/lib/api/client"
 import { getRemarkColor, CATEGORY_KEYS, CATEGORY_LABELS } from "@/lib/evaluation-utils"
 import { SentimentBadge } from "@/features/evaluations/components/evaluation/SentimentBadge"
@@ -272,12 +273,14 @@ export default function GroupDetailPage() {
                     )}
                   </td>
                   <td className="py-2.5">
-                    <button
+                    <IosButton
+                      variant="plain"
+                      size="xs"
                       onClick={() => handleViewEvaluation(ev.evaluationId)}
-                      className="text-xs text-amber-600 hover:underline font-semibold"
+                      title="Open this evaluation response"
                     >
                       View
-                    </button>
+                    </IosButton>
                   </td>
                 </tr>
               ))}
@@ -322,8 +325,7 @@ export default function GroupDetailPage() {
               <>
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-semibold text-primary">Evaluation Detail</p>
-                  <button onClick={() => { setSelectedEvaluationId(null); setEvalDetail(null) }}
-                    className="text-xs text-tertiary hover:text-primary">Close</button>
+                  <IosButton variant="plain" size="xs" onClick={() => { setSelectedEvaluationId(null); setEvalDetail(null) }}>Close</IosButton>
                 </div>
                 <p className="text-xs text-tertiary">
                   {data.faculty.name} &mdash; {data.subject.code} {data.subject.name}
@@ -354,13 +356,15 @@ export default function GroupDetailPage() {
                 )}
                 {!evalDetail.isDisabled && (
                   <div className="border-t border-default pt-3 flex justify-end">
-                    <button
-                      disabled={invalidating}
+                    <IosButton
+                      variant="destructive"
+                      size="sm"
+                      loading={invalidating}
                       onClick={() => setShowInvalidateConfirm(true)}
-                      className="px-4 py-2 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
+                      title="Void this submitted evaluation"
                     >
                       {invalidating ? "Invalidating..." : "Invalidate This Evaluation"}
-                    </button>
+                    </IosButton>
                   </div>
                 )}
                 {evalDetail.isDisabled && (

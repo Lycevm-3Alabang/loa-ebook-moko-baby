@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react"
 import { createPortal } from "react-dom"
 import type { SubjectDetail, Student } from "./CoveragePage"
+import IosButton from "@/components/ui/IosButton"
 
 interface Props {
   open: boolean
@@ -77,14 +78,15 @@ export default function CoverageDetailModal({ open, title, detail, onClose }: Pr
       >
         <div className="flex items-center justify-between mb-4">
           <h2 id="coverage-modal-title" className="text-sm font-bold text-primary">{title}</h2>
-          <button
+          <IosButton
             ref={closeBtnRef}
+            variant="plain"
+            size="xs"
             onClick={onClose}
-            className="text-xs font-semibold text-secondary hover:text-primary"
             aria-label="Close"
           >
             Close
-          </button>
+          </IosButton>
         </div>
         {detail === "loading" && <p className="text-xs text-tertiary">Loading...</p>}
         {detail === "error" && <p className="text-xs text-red-600">Failed to load.</p>}

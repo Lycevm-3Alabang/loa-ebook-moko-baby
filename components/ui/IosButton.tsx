@@ -6,6 +6,9 @@ interface IosButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean
   variant?: "primary" | "tinted" | "success" | "destructive" | "gray" | "plain"
   size?: "xs" | "sm" | "md"
+  // React 19 passes `ref` to function components as a regular prop, so this is
+  // forwarded explicitly rather than via forwardRef (deprecated in 19).
+  ref?: React.Ref<HTMLButtonElement>
 }
 
 const variantClasses = {
@@ -31,6 +34,7 @@ export default function IosButton({
   size = "md",
   onClick,
   className = "",
+  ref,
   ...props
 }: IosButtonProps) {
   const clicked = useRef(false)
@@ -48,6 +52,7 @@ export default function IosButton({
   return (
     <button
       {...props}
+      ref={ref}
       disabled={disabled || loading}
       onClick={handleClick}
       className={`${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
