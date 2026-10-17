@@ -14,13 +14,11 @@ interface DepartmentRow {
   departmentId: string
   departmentName: string
   departmentCode: string
-  facultyCount: number
-  totalRespondents: number
-  avgRating: number | null
-  remarks: string | null
-  highestRubrics: { key: string; label: string; score: number }[]
-  lowestRubrics: { key: string; label: string; score: number }[]
-  sentimentScore: number | null
+  subjectsEvaluated: number
+  subjectsTotal: number
+  submitted: number
+  expected: number
+  pct: number | null
 }
 
 interface SubjectRow {
@@ -79,7 +77,7 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
     }
   }, [periods, selectedPeriod])
 
-  const { data: statusData, error: statusError } = useApiGet<{ departments: any[]; subjects: SubjectRow[] }>(
+  const { data: statusData, error: statusError } = useApiGet<{ departments: DepartmentRow[]; subjects: SubjectRow[] }>(
     selectedPeriod ? `${statusBase}?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}` : null,
   )
   const error = statusError?.message || ""

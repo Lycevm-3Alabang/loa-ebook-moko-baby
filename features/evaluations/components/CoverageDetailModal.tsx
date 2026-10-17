@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useCallback } from "react"
+import { useEffect, useRef } from "react"
 import { createPortal } from "react-dom"
 import type { SubjectDetail, Student } from "./CoveragePage"
 
@@ -18,7 +18,7 @@ function Bucket({ title, tone, students }: { title: string; tone: string; studen
       {students.length === 0 ? (
         <p className="text-xs text-tertiary mt-2">None</p>
       ) : (
-        <ul className="mt-2 space-y-1 max-h-64 overflow-y-auto">
+        <ul className="mt-2 space-y-1">
           {students.map((s) => (
             <li key={s.id} className="text-xs text-secondary">
               <span className="font-semibold text-primary">{s.name}</span>
@@ -73,7 +73,7 @@ export default function CoverageDetailModal({ open, title, detail, onClose }: Pr
       <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
       <div
         ref={panelRef}
-        className="relative z-10 w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-xl border border-default bg-surface p-5 shadow-xl"
+        className="relative z-10 w-full max-w-4xl max-h-[92vh] overflow-y-auto rounded-xl border border-default bg-surface p-5 shadow-xl"
       >
         <div className="flex items-center justify-between mb-4">
           <h2 id="coverage-modal-title" className="text-sm font-bold text-primary">{title}</h2>

@@ -1,5 +1,4 @@
-import { evaluationResultRepository, userRepository, evaluationRepository, facultySubjectRepository, subjectRepository, departmentRepository } from "@/lib/repositories/factory"
-import { supabase } from "@/lib/db"
+import { evaluationResultRepository, userRepository, evaluationRepository, facultySubjectRepository, subjectRepository } from "@/lib/repositories/factory"
 import {
   computeCategoryAverages,
   computeGeneralRating,
