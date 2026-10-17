@@ -7,6 +7,8 @@ import ErrorState from "@/components/ui/ErrorState"
 import { useApiGet } from "@/lib/api/client"
 import { usePagination, Paginator } from "@/components/ui/Paginator"
 import { formatPeriodLabel } from "@/lib/evaluation-utils"
+import CoverageDetailModal from "./CoverageDetailModal"
+import { downloadBlob } from "@/lib/zip"
 
 interface DepartmentRow {
   departmentId: string
@@ -41,9 +43,9 @@ interface Period {
   isActive?: boolean
 }
 
-interface Student { id: string; name: string; email: string }
+export interface Student { id: string; name: string; email: string }
 
-interface SubjectDetail {
+export interface SubjectDetail {
   participated: Student[]
   notParticipated: Student[]
   disputed: Student[]
@@ -64,8 +66,8 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
   const [sortKey, setSortKey] = useState<"departmentName" | "pct" | "subjectsTotal" | "submitted">("pct")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [selectedDept, setSelectedDept] = useState<string | null>(() => searchParams.get("dept"))
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [details, setDetails] = useState<Record<string, SubjectDetail | "loading" | "error">>({})
+  const [modalSubject, setModalSubject] = useState<SubjectRow | null>(null)
+  const [modalDetail, setModalDetail] = useState<SubjectDetail | "loading" | "error" | null>(null)
 
   const { data: periodsData } = useApiGet<{ periods: Period[] }>("/api/evaluation-periods")
   const periods = useMemo(() => periodsData?.periods ?? [], [periodsData])
@@ -159,21 +161,37 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
   const selectDept = (id: string) => { setSelectedDept(id); subjectPager.setPage(0); router.replace(`/admin/evaluations/coverage?dept=${encodeURIComponent(id)}`) }
   const clearDept = () => { setSelectedDept(null); subjectPager.setPage(0); router.replace("/admin/evaluations/coverage") }
 
-  const toggleExpand = (fsId: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev)
-      if (next.has(fsId)) next.delete(fsId)
-      else next.add(fsId)
-      return next
+  const exportCsv = () => {
+    const subjects = statusData?.subjects ?? []
+    if (subjects.length === 0) return
+    const headers = ["Department", "Subject Code", "Subject", "Faculty", "Submitted", "Expected", "Completion %", "Evaluated"]
+    const rows = subjects.map((s) => {
+      const dept = filteredDepts.find((d) => d.departmentId === (s.departmentId || UNASSIGNED))
+      return [
+        dept?.departmentName ?? (s.departmentId || "Unassigned"),
+        s.subjectCode,
+        s.subjectName,
+        s.facultyName,
+        String(s.submitted),
+        String(s.expected),
+        s.pct === null ? "" : s.pct.toFixed(1),
+        s.evaluated ? "Yes" : "No",
+      ]
     })
-    if (!details[fsId] && selectedPeriod) {
-      setDetails((d) => ({ ...d, [fsId]: "loading" }))
-      fetch(`${statusBase}?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}&facultySubjectId=${encodeURIComponent(fsId)}`)
-        .then((r) => r.json())
-        .then((json) => setDetails((d) => ({ ...d, [fsId]: json })))
-        .catch(() => setDetails((d) => ({ ...d, [fsId]: "error" })))
-    }
+    const csv = [headers.join(","), ...rows.map((r) => r.map((v) => `"${v.replace(/"/g, '""')}"`).join(","))].join("\n")
+    const periodLabel = periods.find((p) => p.id === selectedPeriod)?.name || selectedPeriod || "period"
+    downloadBlob(csv, `coverage-${periodLabel}.csv`, "text/csv;charset=utf-8")
   }
+
+  const openDetail = (s: SubjectRow) => {
+    setModalSubject(s)
+    setModalDetail("loading")
+    fetch(`${statusBase}?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}&facultySubjectId=${encodeURIComponent(s.facultySubjectId)}`)
+      .then((r) => r.json())
+      .then((json) => setModalDetail(json))
+      .catch(() => setModalDetail("error"))
+  }
+  const closeDetail = () => { setModalSubject(null); setModalDetail(null) }
 
   return (
     <div className="w-full space-y-6 pb-12">
@@ -204,6 +222,7 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
           className="rounded-xl border border-default bg-surface px-3 py-2 text-sm text-secondary shadow-sm transition-colors focus:border-slate-400 focus:outline-none"
         />
         <button onClick={() => { setSearch("") }} className="rounded-xl border border-default bg-surface px-3 py-2 text-sm text-secondary">Clear</button>
+        <button onClick={exportCsv} disabled={!statusData || (statusData.subjects?.length ?? 0) === 0} className="rounded-xl border border-default bg-surface px-3 py-2 text-sm text-secondary disabled:opacity-50">Export CSV</button>
       </div>
 
       {error && <ErrorState message={error} onRetry={() => window.location.reload()} />}
@@ -295,7 +314,6 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
                     </thead>
                     <tbody>
                       {subjectPager.paginatedItems.map((s) => {
-                        const isExpanded = expanded.has(s.facultySubjectId)
                         return (
                           <tr key={s.facultySubjectId} className="border-b border-default align-top">
                             <td className="py-3 pr-4">
@@ -308,10 +326,10 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
                             <td className="py-3 pr-4 text-right">{coveragePill(s.pct)}</td>
                             <td className="py-3 text-right">
                               <button
-                                onClick={() => toggleExpand(s.facultySubjectId)}
+                                onClick={() => openDetail(s)}
                                 className="text-xs font-semibold text-blue-600 hover:underline dark:text-blue-400"
                               >
-                                {isExpanded ? "Hide" : "Details"}
+                                Details
                               </button>
                             </td>
                           </tr>
@@ -319,27 +337,12 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
                       })}
                     </tbody>
                   </table>
-                  {subjectPager.paginatedItems.map((s) => {
-                    if (!expanded.has(s.facultySubjectId)) return null
-                    const detail = details[s.facultySubjectId]
-                    return (
-                      <div key={`detail-${s.facultySubjectId}`} className="mt-3 rounded-xl border border-default bg-surface p-4">
-                        <p className="text-xs font-semibold text-secondary mb-3">
-                          {s.subjectCode} - {s.subjectName} - {s.facultyName}
-                        </p>
-                        {detail === "loading" && <p className="text-xs text-tertiary">Loading...</p>}
-                        {detail === "error" && <p className="text-xs text-red-600">Failed to load.</p>}
-                        {detail && detail !== "loading" && detail !== "error" && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                            <Bucket title="Participated" tone="text-emerald-600 dark:text-emerald-400" students={detail.participated} />
-                            <Bucket title="Not Participated" tone="text-amber-600 dark:text-amber-400" students={detail.notParticipated} />
-                            <Bucket title="Disputed" tone="text-rose-600 dark:text-rose-400" students={detail.disputed} />
-                            <Bucket title="In-progress" tone="text-blue-600 dark:text-blue-400" students={detail.inProgress} />
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                  <CoverageDetailModal
+                    open={modalSubject !== null}
+                    title={modalSubject ? `${modalSubject.subjectCode} - ${modalSubject.subjectName} - ${modalSubject.facultyName}` : ""}
+                    detail={modalDetail}
+                    onClose={closeDetail}
+                  />
                 </div>
               )}
               {deptSubjects.length > 0 && (
@@ -372,22 +375,4 @@ function coveragePill(pct: number | null) {
   return <span className={`ml-2 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${cls}`}>{label}</span>
 }
 
-function Bucket({ title, tone, students }: { title: string; tone: string; students: Student[] }) {
-  return (
-    <div className="rounded-lg border border-default bg-surface p-3">
-      <p className={`text-[11px] font-bold uppercase tracking-wider ${tone}`}>{title} ({students.length})</p>
-      {students.length === 0 ? (
-        <p className="text-xs text-tertiary mt-2">None</p>
-      ) : (
-        <ul className="mt-2 space-y-1 max-h-48 overflow-y-auto">
-          {students.map((s) => (
-            <li key={s.id} className="text-xs text-secondary">
-              <span className="font-semibold text-primary">{s.name}</span>
-              <span className="text-tertiary ml-1">({s.email})</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
+

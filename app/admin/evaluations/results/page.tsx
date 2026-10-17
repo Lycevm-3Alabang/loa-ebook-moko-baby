@@ -87,6 +87,15 @@ export default function AdminEvaluationResultsPage() {
     return sortDir === "desc" ? " \u25BC" : " \u25B2"
   }
 
+  const exportZip = () => {
+    if (!selectedPeriod) return
+    const url = `/api/admin/evaluation-results/export?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}`
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `evaluation-results-${selectedPeriod}.zip`
+    a.click()
+  }
+
   const formatScore = (v: number | null) => (v !== null ? v.toFixed(2) : "\u2014")
 
   return (
@@ -110,6 +119,13 @@ export default function AdminEvaluationResultsPage() {
             <option key={p.id} value={p.id}>{formatPeriodLabel(p)}</option>
           ))}
         </select>
+        <button
+          onClick={exportZip}
+          disabled={!selectedPeriod}
+          className="rounded-xl border border-default bg-surface px-3 py-2 text-sm text-secondary shadow-sm transition-colors focus:border-slate-400 focus:outline-none disabled:opacity-50"
+        >
+          Export (ZIP)
+        </button>
       </div>
 
       {error && <ErrorState message={error} onRetry={() => window.location.reload()} />}
