@@ -19,6 +19,13 @@ interface DepartmentRow {
   submitted: number
   expected: number
   pct: number | null
+  facultyCount: number
+  uniqueStudents: number
+  participated: number
+  disputed: number
+  inProgress: number
+  notParticipated: number
+  completion: number | null
 }
 
 interface SubjectRow {
@@ -31,6 +38,11 @@ interface SubjectRow {
   expected: number
   pct: number | null
   evaluated: boolean
+  enrolled: number
+  participated: number
+  disputed: number
+  inProgress: number
+  notParticipated: number
 }
 
 interface Period {
@@ -61,7 +73,7 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
   const searchParams = useSearchParams()
   const [selectedPeriod, setSelectedPeriod] = useState("")
   const [search, setSearch] = useState("")
-  const [sortKey, setSortKey] = useState<"departmentName" | "pct" | "subjectsTotal" | "submitted">("pct")
+  const [sortKey, setSortKey] = useState<"departmentName" | "completion" | "subjectsTotal" | "submitted">("completion")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [selectedDept, setSelectedDept] = useState<string | null>(() => searchParams.get("dept"))
   const [modalSubject, setModalSubject] = useState<SubjectRow | null>(null)
@@ -99,6 +111,13 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
         submitted: unassigned.reduce((a, x) => a + x.submitted, 0),
         expected: unassigned.reduce((a, x) => a + x.expected, 0),
         pct: null,
+        facultyCount: 0,
+        uniqueStudents: unassigned.reduce((a, x) => a + x.enrolled, 0),
+        participated: unassigned.reduce((a, x) => a + x.participated, 0),
+        disputed: unassigned.reduce((a, x) => a + x.disputed, 0),
+        inProgress: unassigned.reduce((a, x) => a + x.inProgress, 0),
+        notParticipated: unassigned.reduce((a, x) => a + x.notParticipated, 0),
+        completion: null,
       })
     }
     if (!q) return withUnassigned
@@ -120,8 +139,8 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
           ? b.departmentName.localeCompare(a.departmentName)
           : a.departmentName.localeCompare(b.departmentName)
       }
-      const aVal = (sortKey === "pct" ? (a.pct ?? -1) : a[sortKey]) as number
-      const bVal = (sortKey === "pct" ? (b.pct ?? -1) : b[sortKey]) as number
+      const aVal = (sortKey === "completion" ? (a.completion ?? -1) : a[sortKey]) as number
+      const bVal = (sortKey === "completion" ? (b.completion ?? -1) : b[sortKey]) as number
       return sortDir === "desc" ? bVal - aVal : aVal - bVal
     })
     return sorted
@@ -136,13 +155,15 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
   const kpis = useMemo(() => {
     const depts = filteredDepts.filter((d) => d.departmentId !== UNASSIGNED)
     const reporting = depts.filter((d) => d.subjectsEvaluated > 0).length
-    const subjEval = depts.reduce((a, d) => a + d.subjectsEvaluated, 0)
-    const subjTotal = depts.reduce((a, d) => a + d.subjectsTotal, 0)
-    const submitted = depts.reduce((a, d) => a + d.submitted, 0)
-    const expected = depts.reduce((a, d) => a + d.expected, 0)
-    return { reporting, deptTotal: depts.length, subjEval, subjTotal, submitted, expected }
+    const facultyCount = depts.reduce((a, d) => a + d.facultyCount, 0)
+    const uniqueStudents = depts.reduce((a, d) => a + d.uniqueStudents, 0)
+    const participated = depts.reduce((a, d) => a + d.participated, 0)
+    const disputed = depts.reduce((a, d) => a + d.disputed, 0)
+    const inProgress = depts.reduce((a, d) => a + d.inProgress, 0)
+    const notParticipated = depts.reduce((a, d) => a + d.notParticipated, 0)
+    return { reporting, deptTotal: depts.length, facultyCount, uniqueStudents, participated, disputed, inProgress, notParticipated }
   }, [filteredDepts])
-  const completion = kpis.expected > 0 ? (kpis.submitted / kpis.expected) * 100 : null
+  const completion = kpis.uniqueStudents > 0 ? (kpis.participated / kpis.uniqueStudents) * 100 : null
 
   const activeDept = sortedDepts.find((d) => d.departmentId === selectedDept) ?? null
   const deptSubjects = useMemo(() => {
@@ -162,18 +183,21 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
   const exportCsv = () => {
     const subjects = statusData?.subjects ?? []
     if (subjects.length === 0) return
-    const headers = ["Department", "Subject Code", "Subject", "Faculty", "Submitted", "Expected", "Completion %", "Evaluated"]
+    const headers = ["Department", "Subject Code", "Subject", "Faculty", "Enrolled", "Participated", "Disputed", "In-progress", "Not Participated", "Completion %"]
     const rows = subjects.map((s) => {
       const dept = filteredDepts.find((d) => d.departmentId === (s.departmentId || UNASSIGNED))
+      const completionPct = s.enrolled > 0 ? (s.participated / s.enrolled) * 100 : null
       return [
         dept?.departmentName ?? (s.departmentId || "Unassigned"),
         s.subjectCode,
         s.subjectName,
         s.facultyName,
-        String(s.submitted),
-        String(s.expected),
-        s.pct === null ? "" : s.pct.toFixed(1),
-        s.evaluated ? "Yes" : "No",
+        String(s.enrolled),
+        String(s.participated),
+        String(s.disputed),
+        String(s.inProgress),
+        String(s.notParticipated),
+        completionPct === null ? "" : completionPct.toFixed(1),
       ]
     })
     const csv = [headers.join(","), ...rows.map((r) => r.map((v) => `"${v.replace(/"/g, '""')}"`).join(","))].join("\n")
@@ -235,18 +259,34 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
 
       {!loading && !error && selectedPeriod && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             <div className="rounded-xl border border-default bg-surface p-4">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Depts reporting</p>
               <p className="text-xl font-bold text-primary mt-1">{kpis.reporting} / {kpis.deptTotal}</p>
             </div>
             <div className="rounded-xl border border-default bg-surface p-4">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Subjects evaluated</p>
-              <p className="text-xl font-bold text-primary mt-1">{kpis.subjEval} / {kpis.subjTotal}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Faculties</p>
+              <p className="text-xl font-bold text-primary mt-1">{kpis.facultyCount}</p>
             </div>
             <div className="rounded-xl border border-default bg-surface p-4">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Responses</p>
-              <p className="text-xl font-bold text-primary mt-1">{kpis.submitted.toLocaleString()} / {kpis.expected.toLocaleString()}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Unique students</p>
+              <p className="text-xl font-bold text-primary mt-1">{kpis.uniqueStudents.toLocaleString()}</p>
+            </div>
+            <div className="rounded-xl border border-default bg-surface p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Participated</p>
+              <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{kpis.participated.toLocaleString()}</p>
+            </div>
+            <div className="rounded-xl border border-default bg-surface p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Disputed</p>
+              <p className="text-xl font-bold text-rose-600 dark:text-rose-400 mt-1">{kpis.disputed.toLocaleString()}</p>
+            </div>
+            <div className="rounded-xl border border-default bg-surface p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">In-progress</p>
+              <p className="text-xl font-bold text-blue-600 dark:text-blue-400 mt-1">{kpis.inProgress.toLocaleString()}</p>
+            </div>
+            <div className="rounded-xl border border-default bg-surface p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Not participated</p>
+              <p className="text-xl font-bold text-amber-600 dark:text-amber-400 mt-1">{kpis.notParticipated.toLocaleString()}</p>
             </div>
             <div className="rounded-xl border border-default bg-surface p-4">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Completion</p>
@@ -264,8 +304,14 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
                 <thead>
                   <tr className="text-[10px] font-semibold uppercase tracking-wider text-tertiary border-b border-default">
                     <th className="pb-3 pr-4 cursor-pointer hover:text-secondary" onClick={() => toggleSort("departmentName")}>Department{sortArrow("departmentName")}</th>
+                    <th className="pb-3 pr-4 text-right">Faculties</th>
                     <th className="pb-3 pr-4 text-right">Subjects</th>
-                    <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("pct")}>Completion{sortArrow("pct")}</th>
+                    <th className="pb-3 pr-4 text-right">Students</th>
+                    <th className="pb-3 pr-4 text-right">Participated</th>
+                    <th className="pb-3 pr-4 text-right">Disputed</th>
+                    <th className="pb-3 pr-4 text-right">In-prog.</th>
+                    <th className="pb-3 pr-4 text-right">Not part.</th>
+                    <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("completion")}>Completion{sortArrow("completion")}</th>
                     <th className="pb-3 pr-4 text-right">Status</th>
                   </tr>
                 </thead>
@@ -276,9 +322,15 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
                         <span className="text-sm font-semibold text-primary">{d.departmentName}</span>
                         {d.departmentCode && <span className="text-[10px] text-tertiary ml-2">({d.departmentCode})</span>}
                       </td>
+                      <td className="py-3 pr-4 text-right text-sm text-secondary">{d.facultyCount}</td>
                       <td className="py-3 pr-4 text-right text-sm text-secondary">{d.subjectsEvaluated} / {d.subjectsTotal}</td>
-                      <td className="py-3 pr-4 text-right text-sm font-bold">{formatPct(d.pct)}</td>
-                      <td className="py-3 pr-4 text-right">{coveragePill(d.pct)}</td>
+                      <td className="py-3 pr-4 text-right text-sm text-secondary">{d.uniqueStudents.toLocaleString()}</td>
+                      <td className="py-3 pr-4 text-right text-sm text-emerald-600 dark:text-emerald-400">{d.participated.toLocaleString()}</td>
+                      <td className="py-3 pr-4 text-right text-sm text-rose-600 dark:text-rose-400">{d.disputed.toLocaleString()}</td>
+                      <td className="py-3 pr-4 text-right text-sm text-blue-600 dark:text-blue-400">{d.inProgress.toLocaleString()}</td>
+                      <td className="py-3 pr-4 text-right text-sm text-amber-600 dark:text-amber-400">{d.notParticipated.toLocaleString()}</td>
+                      <td className="py-3 pr-4 text-right text-sm font-bold">{formatPct(d.completion)}</td>
+                      <td className="py-3 pr-4 text-right">{coveragePill(d.completion)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -304,7 +356,11 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
                       <tr className="text-[10px] font-semibold uppercase tracking-wider text-tertiary border-b border-default">
                         <th className="pb-3 pr-4">Subject</th>
                         <th className="pb-3 pr-4">Faculty</th>
-                        <th className="pb-3 pr-4 text-right">Responses</th>
+                        <th className="pb-3 pr-4 text-right">Enrolled</th>
+                        <th className="pb-3 pr-4 text-right">Participated</th>
+                        <th className="pb-3 pr-4 text-right">Disputed</th>
+                        <th className="pb-3 pr-4 text-right">In-prog.</th>
+                        <th className="pb-3 pr-4 text-right">Not part.</th>
                         <th className="pb-3 pr-4 text-right">Completion</th>
                         <th className="pb-3 pr-4 text-right">Status</th>
                         <th className="pb-3 text-right">Details</th>
@@ -319,9 +375,13 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
                               <span className="text-xs text-tertiary ml-2">{s.subjectName}</span>
                             </td>
                             <td className="py-3 pr-4 text-sm text-secondary">{s.facultyName}</td>
-                            <td className="py-3 pr-4 text-right text-sm text-secondary">{s.submitted} / {s.expected}</td>
-                            <td className="py-3 pr-4 text-right text-sm font-bold">{formatPct(s.pct)}</td>
-                            <td className="py-3 pr-4 text-right">{coveragePill(s.pct)}</td>
+                            <td className="py-3 pr-4 text-right text-sm text-secondary">{s.enrolled}</td>
+                            <td className="py-3 pr-4 text-right text-sm text-emerald-600 dark:text-emerald-400">{s.participated}</td>
+                            <td className="py-3 pr-4 text-right text-sm text-rose-600 dark:text-rose-400">{s.disputed}</td>
+                            <td className="py-3 pr-4 text-right text-sm text-blue-600 dark:text-blue-400">{s.inProgress}</td>
+                            <td className="py-3 pr-4 text-right text-sm text-amber-600 dark:text-amber-400">{s.notParticipated}</td>
+                            <td className="py-3 pr-4 text-right text-sm font-bold">{formatPct(s.enrolled > 0 ? (s.participated / s.enrolled) * 100 : null)}</td>
+                            <td className="py-3 pr-4 text-right">{coveragePill(s.enrolled > 0 ? (s.participated / s.enrolled) * 100 : null)}</td>
                             <td className="py-3 text-right">
                               <button
                                 onClick={() => openDetail(s)}

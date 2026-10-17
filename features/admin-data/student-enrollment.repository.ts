@@ -287,6 +287,28 @@ export const studentEnrollmentRepository: IStudentEnrollmentRepository = {
     return (data || []) as unknown as StudentEnrollmentWithEmbeds[]
   },
 
+  async listStudentIdsByFacultySubjectIds(facultySubjectIds: string[], semesterId?: string) {
+    const out = new Map<string, string[]>()
+    if (facultySubjectIds.length === 0) return out
+    for (let i = 0; i < facultySubjectIds.length; i += 100) {
+      const chunk = facultySubjectIds.slice(i, i + 100)
+      let q = supabase
+        .from("student_enrollments")
+        .select("faculty_subject_id, student_id")
+        .in("faculty_subject_id", chunk)
+      if (semesterId) q = q.eq("semesterId", semesterId) as typeof q
+      const { data, error } = await q
+      if (error) throw error
+      for (const row of data || []) {
+        if (!row.faculty_subject_id || !row.student_id) continue
+        if (!out.has(row.faculty_subject_id)) out.set(row.faculty_subject_id, [])
+        const arr = out.get(row.faculty_subject_id)!
+        if (!arr.includes(row.student_id)) arr.push(row.student_id)
+      }
+    }
+    return out
+  },
+
   async countByFacultySubjectId(facultySubjectId: string, semesterId?: string) {
     let q = supabase
       .from("student_enrollments")
