@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
 import { evaluationRepository, evaluationPeriodRepository, studentEnrollmentRepository, auditLogRepository, userRepository } from "@/lib/repositories/factory"
 import { getActiveEvaluationPeriod } from "@/features/admin-data/evaluation-periods.service"
+import { recomputeResultsWorkflow } from "@/lib/workflows/recompute-workflow"
 import nodemailer from "nodemailer"
 import { logServerError } from "@/lib/services/audit"
 
@@ -67,6 +68,9 @@ export async function POST(request: Request) {
         studentEmail: userEmail,
       }),
     })
+
+    // Best-effort like admin email below: never blocks the dispute response.
+    recomputeResultsWorkflow(activePeriod.id, "burst").catch(() => {})
 
     // Success is defined as invalidated + audited (both committed above).
     // Email is a notification, not the contract: it fires after we respond,

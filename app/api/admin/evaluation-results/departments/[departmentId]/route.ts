@@ -9,14 +9,7 @@ import {
   departmentRepository,
   evaluationResultRepository,
 } from "@/lib/repositories/factory"
-import {
-  computeCategoryAverages,
-  computeGeneralRating,
-  mapCategoryAveragesToColumns,
-  findHighestLowestRubrics,
-  computeSentimentScore,
-  getRemark,
-} from "@/lib/evaluation-utils"
+import { buildFacultySummary, getRemark } from "@/lib/evaluation-utils"
 
 export async function GET(
   request: NextRequest,
@@ -76,13 +69,8 @@ export async function GET(
       const subj = subjMap.get(fs.subject_id)
 
       const groupRatings = ratings.filter((r) => evalIds.includes(r.evaluationId))
-      const catAverages = computeCategoryAverages(groupRatings)
-      const general = computeGeneralRating(catAverages)
-      const catColumns = mapCategoryAveragesToColumns(catAverages)
-      const rubrics = findHighestLowestRubrics(catColumns)
-
       const groupComments = evalIds.flatMap((eid) => commentsByEval.get(eid) ?? [])
-      const sentiment = computeSentimentScore(groupComments)
+      const summary = buildFacultySummary(groupRatings, groupComments)
 
       subjectsList.push({
         facultySubjectId: fsKey,
@@ -93,19 +81,19 @@ export async function GET(
         subjectCode: subj?.code ?? "",
         subjectName: subj?.name ?? "",
         totalRespondents: evalIds.length,
-        avgRating: general,
-        remarks: getRemark(general),
-        professionalManner: catColumns.professionalManner,
-        communicationWithStudent: catColumns.communicationWithStudent,
-        studentEngagement: catColumns.studentEngagement,
-        learningMaterials: catColumns.learningMaterials,
-        timeManagement: catColumns.timeManagement,
-        experientialLearning: catColumns.experientialLearning,
-        respectUniqueness: catColumns.respectUniqueness,
-        assessmentAndFeedback: catColumns.assessmentAndFeedback,
-        highestRubrics: rubrics.highest,
-        lowestRubrics: rubrics.lowest,
-        sentimentScore: sentiment,
+        avgRating: summary.general,
+        remarks: getRemark(summary.general),
+        professionalManner: summary.catColumns.professionalManner,
+        communicationWithStudent: summary.catColumns.communicationWithStudent,
+        studentEngagement: summary.catColumns.studentEngagement,
+        learningMaterials: summary.catColumns.learningMaterials,
+        timeManagement: summary.catColumns.timeManagement,
+        experientialLearning: summary.catColumns.experientialLearning,
+        respectUniqueness: summary.catColumns.respectUniqueness,
+        assessmentAndFeedback: summary.catColumns.assessmentAndFeedback,
+        highestRubrics: summary.rubrics.highest,
+        lowestRubrics: summary.rubrics.lowest,
+        sentimentScore: summary.sentiment,
       })
     }
 

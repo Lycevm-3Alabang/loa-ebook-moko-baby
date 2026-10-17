@@ -34,6 +34,64 @@ export interface DeptStatusRow {
 
 export { STATUS_ON_TRACK_PCT }
 
+export interface StatusStudent {
+  id: string
+  name: string
+  email: string
+}
+
+export interface FacultySubjectStatusDetail {
+  facultySubjectId: string
+  participated: StatusStudent[]
+  notParticipated: StatusStudent[]
+  disputed: StatusStudent[]
+  inProgress: StatusStudent[]
+}
+
+export async function getEvaluationStatusDetail(
+  evaluationPeriodId: string,
+  facultySubjectId: string,
+): Promise<FacultySubjectStatusDetail> {
+  const period = await evaluationPeriodRepository.findById(evaluationPeriodId)
+  if (!period) throw new Error("Evaluation period not found")
+  const semesterId = period.semesterId
+
+  const [enrollments, evalRows] = await Promise.all([
+    studentEnrollmentRepository.listByFacultySubject(facultySubjectId, semesterId ?? undefined),
+    evaluationRepository.listStatusByPeriodAndFacultySubjectIds(evaluationPeriodId, [facultySubjectId]),
+  ])
+
+  const byEvaluator = new Map<string, typeof evalRows>()
+  for (const e of evalRows) {
+    if (!byEvaluator.has(e.evaluatorId)) byEvaluator.set(e.evaluatorId, [])
+    byEvaluator.get(e.evaluatorId)!.push(e)
+  }
+
+  const participated: StatusStudent[] = []
+  const notParticipated: StatusStudent[] = []
+  const disputed: StatusStudent[] = []
+  const inProgress: StatusStudent[] = []
+
+  for (const enr of enrollments) {
+    const student = enr.student
+    if (!student) continue
+    const rows = byEvaluator.get(student.id) ?? []
+    const entry: StatusStudent = { id: student.id, name: student.name, email: student.email }
+    let bucket: "participated" | "disputed" | "inProgress" | "notParticipated" = "notParticipated"
+    if (rows.some((r) => r.status === "SUBMITTED" && !r.isDisabled)) bucket = "participated"
+    else if (rows.some((r) => r.status === "INVALID" || (r.status === "SUBMITTED" && r.isDisabled))) bucket = "disputed"
+    else if (rows.some((r) => r.status === "DRAFT")) bucket = "inProgress"
+    else bucket = "notParticipated"
+
+    if (bucket === "participated") participated.push(entry)
+    else if (bucket === "disputed") disputed.push(entry)
+    else if (bucket === "inProgress") inProgress.push(entry)
+    else notParticipated.push(entry)
+  }
+
+  return { facultySubjectId, participated, notParticipated, disputed, inProgress }
+}
+
 function pctOf(submitted: number, expected: number): number | null {
   if (expected <= 0) return null
   return Math.round((submitted / expected) * 1000) / 10

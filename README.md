@@ -272,6 +272,9 @@ Copy `.env` to set up your local environment.
 | `EMAIL_FEATURE_FLAG` | No | Enable email sending via Gmail SMTP |
 | `GMAIL_USER` | If email | Gmail address for sending activation emails |
 | `GMAIL_APP_PASSWORD` | If email | Gmail app password |
+| `EMAIL_PROVIDER` | No | `gmail` (default) \| `rest` (cPanel relay) \| `domain` (alias for `gmail`, decommissioned direct SMTP). Unset/`domain`/`gmail` all use Gmail; only `rest` selects the relay. Each mode falls back to the other on hard failure. Any other value throws at send time |
+| `AUTH_RELAY_URL` | If rest | Relay endpoint (defaults to `https://auth.lyceumalabang.edu.ph/api/v1/mail/send`) |
+| `RELAY_SECRET` | If rest | Shared secret (Bearer) matching the cPanel `.env` — never commit it |
 | `FEATURE_CREATE_TEAMS_MEETING` | No | Master toggle for Teams sync features |
 
 ## UI Patterns

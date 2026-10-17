@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/route-guard"
 import { logServerError } from "@/lib/services/audit"
-import { getEvaluationStatus } from "@/features/evaluations/evaluation-status.service"
+import { getEvaluationStatus, getEvaluationStatusDetail } from "@/features/evaluations/evaluation-status.service"
 
 export async function GET(request: NextRequest) {
   const authErr = await requireAdmin(request)
@@ -11,8 +11,14 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const evaluationPeriodId = searchParams.get("evaluationPeriodId") || searchParams.get("semesterId")
     if (!evaluationPeriodId) return NextResponse.json({ error: "evaluationPeriodId is required" }, { status: 400 })
-    const search = searchParams.get("search") ?? undefined
 
+    const facultySubjectId = searchParams.get("facultySubjectId")
+    if (facultySubjectId) {
+      const detail = await getEvaluationStatusDetail(evaluationPeriodId, facultySubjectId)
+      return NextResponse.json(detail)
+    }
+
+    const search = searchParams.get("search") ?? undefined
     const data = await getEvaluationStatus(evaluationPeriodId, search)
     return NextResponse.json(data)
   } catch (e) {

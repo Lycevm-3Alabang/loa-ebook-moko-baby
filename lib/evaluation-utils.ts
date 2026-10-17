@@ -1,3 +1,5 @@
+import type { LiveDeptAverage } from "@/lib/types"
+
 export const CATEGORY_NAMES: Record<string, string> = {
   "Professional Manner": "professionalManner",
   "Communication with Students": "communicationWithStudent",
@@ -170,4 +172,105 @@ export function groupSnapshotRows(rows: FlatSnapshotRow[]): NestedRubricCategory
     })
   }
   return Array.from(catMap.values()).sort((a, b) => a.displayOrder - b.displayOrder)
+}
+
+// --- Aggregation helpers (extracted for testability) -----------------------
+
+export interface FacultySummary {
+  catAverages: Record<string, number>
+  general: number | null
+  catColumns: Record<string, number | null>
+  rubrics: { highest: { key: string; label: string; score: number }[]; lowest: { key: string; label: string; score: number }[] }
+  sentiment: number | null
+}
+
+export function buildFacultySummary(
+  ratings: RatingRow[],
+  comments: { sentimentScore: number | null }[] = [],
+): FacultySummary {
+  const catAverages = computeCategoryAverages(ratings)
+  const general = computeGeneralRating(catAverages)
+  const catColumns = mapCategoryAveragesToColumns(catAverages)
+  const rubrics = findHighestLowestRubrics(catColumns)
+  const sentiment = computeSentimentScore(comments)
+  return { catAverages, general, catColumns, rubrics, sentiment }
+}
+
+export interface FacultyDeptInput {
+  facultyId: string
+  deptId: string
+  evalCount: number
+  ratings: RatingRow[]
+}
+
+export interface DeptResolutionContext {
+  userDept: Map<string, string | null>
+  facultySubjects: { faculty_id: string; section_id: string | null; semesterId: string | null }[]
+  sections: Map<string, string | null>
+  departmentCourses: Map<string, string | null>
+  semesterId: string | null
+}
+
+export function resolveFacultyDepartment(facultyId: string, ctx: DeptResolutionContext): string | null {
+  const direct = ctx.userDept.get(facultyId)
+  if (direct) return direct
+  if (!ctx.semesterId) return null
+  const fs = ctx.facultySubjects.find((f) => f.faculty_id === facultyId && f.semesterId === ctx.semesterId)
+  if (!fs || !fs.section_id) return null
+  const dcId = ctx.sections.get(fs.section_id)
+  if (!dcId) return null
+  return ctx.departmentCourses.get(dcId) ?? null
+}
+
+export function buildLiveDeptAverages(inputs: FacultyDeptInput[]): LiveDeptAverage[] {
+  const groups = new Map<string, {
+    facultyIds: Set<string>
+    respondents: number
+    generals: number[]
+    cats: Record<string, number[]>
+  }>()
+  for (const inp of inputs) {
+    const { general, catColumns } = buildFacultySummary(inp.ratings)
+    if (general === null) continue
+    let g = groups.get(inp.deptId)
+    if (!g) {
+      g = {
+        facultyIds: new Set(),
+        respondents: 0,
+        generals: [],
+        cats: Object.fromEntries(CATEGORY_KEYS.map((k) => [k, [] as number[]])),
+      }
+      groups.set(inp.deptId, g)
+    }
+    g.facultyIds.add(inp.facultyId)
+    g.respondents += inp.evalCount
+    g.generals.push(Math.round(general * 100) / 100)
+    for (const key of CATEGORY_KEYS) {
+      const v = catColumns[key]
+      if (v !== null) g.cats[key].push(v)
+    }
+  }
+  return [...groups.entries()].map(([departmentId, g]) => {
+    const avgRating = g.generals.length > 0
+      ? Math.round(g.generals.reduce((a, b) => a + b, 0) / g.generals.length * 100) / 100
+      : null
+    const catAverages: Record<string, number | null> = {}
+    for (const key of CATEGORY_KEYS) {
+      const vals = g.cats[key]
+      catAverages[key] = vals.length > 0
+        ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 100) / 100
+        : null
+    }
+    const rubrics = findHighestLowestRubrics(catAverages)
+    return {
+      departmentId,
+      facultyIds: [...g.facultyIds],
+      totalRespondents: g.respondents,
+      avgRating,
+      remarks: getRemark(avgRating),
+      catAverages,
+      highestRubrics: rubrics.highest,
+      lowestRubrics: rubrics.lowest,
+    }
+  })
 }

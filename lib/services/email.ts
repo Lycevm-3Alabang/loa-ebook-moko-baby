@@ -6,48 +6,181 @@ import { consultationApprovedHtml } from "@/lib/email-templates/consultation-app
 import { bookingAcknowledgementHtml } from "@/lib/email-templates/booking-acknowledgement"
 import { statusNotificationHtml } from "@/lib/email-templates/status-notification"
 
-const DOMAIN_DEFAULTS = {
-  host: "mail.lyceumalabang.edu.ph",
-  port: 465,
-  user: "noreply@lyceumalabang.edu.ph",
-} as const
-
-type EmailProvider = "gmail" | "domain"
+type EmailProvider = "gmail" | "rest"
 
 function getEmailProvider(): EmailProvider {
-  return process.env.EMAIL_PROVIDER === "gmail" ? "gmail" : "domain"
+  const v = process.env.EMAIL_PROVIDER
+  // Unset, "domain" (decommissioned direct SMTP), and "gmail" all resolve to
+  // gmail. Only an explicit "rest" selects the cPanel relay. "domain" is kept
+  // as an alias for backward compat since direct SMTP was decommissioned.
+  if (!v || v === "gmail" || v === "domain") return "gmail"
+  if (v === "rest") return "rest"
+  throw new Error(`EMAIL_PROVIDER "${v}" is not supported. Use "rest", "gmail", or "domain" (alias for gmail).`)
 }
 
 function getTransporter() {
-  if (getEmailProvider() === "gmail") {
-    if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
-    return nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false,
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD,
-      },
-    })
-  }
-  const host = process.env.DOMAIN_SMTP_HOST ?? DOMAIN_DEFAULTS.host
-  const port = Number(process.env.DOMAIN_SMTP_PORT ?? DOMAIN_DEFAULTS.port)
-  const user = process.env.DOMAIN_SMTP_USER ?? DOMAIN_DEFAULTS.user
-  const pass = process.env.DOMAIN_SMTP_PASS
-  if (!pass) throw new Error("DOMAIN_SMTP_PASS env var not set")
+  // Domain SMTP was decommissioned (silent server-side quarantine from cloud
+  // IPs). Gmail is the only SMTP transporter: primary in gmail mode,
+  // fallback in rest mode.
+  if (!process.env.GMAIL_USER) throw new Error("GMAIL_USER env var not set")
   return nodemailer.createTransport({
-    host,
-    port,
-    secure: true,
-    auth: { user, pass },
+    name: getHeloName(),
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false,
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD,
+    },
   })
 }
 
+// Explicit HELO hostname: serverless hosts announce link-local junk
+// ([169.254.x.x]) by default, which trips sender-domain/HELO checks.
+// Configurable via EMAIL_HELO_NAME, else derived from NEXTAUTH_URL;
+// undefined preserves Nodemailer's default (os.hostname()).
+function getHeloName(): string | undefined {
+  if (process.env.EMAIL_HELO_NAME) return process.env.EMAIL_HELO_NAME
+  try {
+    if (process.env.NEXTAUTH_URL) {
+      const helo = new URL(process.env.NEXTAUTH_URL).hostname
+      console.log(`[email] HELO hostname from NEXTAUTH_URL: ${helo}`)
+      return helo
+    }
+  } catch { /* fall through to default */ }
+  console.log("[email] HELO hostname: NEXTAUTH_URL not set, using Nodemailer default")
+  return undefined
+}
+
+// REST relay (LOA Auth Platform on cPanel): Vercel cannot reliably SMTP-auth
+// from cloud IPs, so the relay submits locally on the host. Contract:
+// POST {to, subject, html} → 200 {ok, message_id}; 401/422/429/502 otherwise.
+// Secret comes from env only (RELAY_SECRET) — never hardcoded.
+const RELAY_TIMEOUT_MS = 15_000
+const RELAY_RETRY_CAP_MS = 15_000
+
+function getRelayConfig() {
+  const url = process.env.AUTH_RELAY_URL ?? "https://auth.lyceumalabang.edu.ph/api/v1/mail/send"
+  const secret = process.env.RELAY_SECRET
+  if (!secret) throw new Error("RELAY_SECRET env var not set")
+  return { url, secret }
+}
+
+// Receipt threaded up to the workflow audit log: which path delivered
+// the mail and the server/relay queue id (joinable to mail-server logs).
+export interface EmailReceipt {
+  provider: string
+  messageId?: string
+  // Present when the primary path failed and Gmail fallback delivered:
+  // success-with-warning, so SUCCESS never hides what went wrong.
+  fallbackFrom?: string
+}
+
+async function sendViaRest(mail: Mail.Options): Promise<string | undefined> {
+  const { url, secret } = getRelayConfig()
+  const to = Array.isArray(mail.to) ? mail.to.join(", ") : String(mail.to ?? "")
+  const attachments = (mail as unknown as { attachments?: unknown[] }).attachments
+  if (attachments && attachments.length > 0) {
+    console.warn(`[email] rest mode: dropping ${attachments.length} attachment(s) for ${to} (relay v1 has no attachments)`)
+  }
+  const body = JSON.stringify({ to, subject: mail.subject, html: mail.html })
+  const attempt = async (): Promise<string | undefined> => {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret}` },
+      body,
+      signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
+    })
+    if (res.status === 429) {
+      let retryAfterMs = 0
+      try {
+        const data = (await res.json()) as { retry_after?: number }
+        if (typeof data.retry_after === "number") retryAfterMs = data.retry_after * 1000
+      } catch { /* ignore parse errors */ }
+      const err = new Error(
+        `Relay rate-limited${retryAfterMs > 0 ? `, retry after ${Math.round(retryAfterMs / 1000)}s` : ""}`,
+      ) as Error & { retryAfterMs?: number }
+      err.retryAfterMs = retryAfterMs
+      throw err
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => "")
+      throw new Error(`Relay send failed (${res.status}): ${text.slice(0, 200)}`)
+    }
+    try {
+      const data = (await res.json()) as { message_id?: string }
+      return typeof data.message_id === "string" ? data.message_id : undefined
+    } catch {
+      return undefined
+    }
+  }
+  try {
+    return await attempt()
+  } catch (e) {
+    // Honor 429 once (capped for serverless), then let the durable
+    // workflow retry later. Other failures throw immediately.
+    const waitMs = (e as { retryAfterMs?: number }).retryAfterMs ?? 0
+    if (waitMs > 0) {
+      await new Promise((r) => setTimeout(r, Math.min(waitMs, RELAY_RETRY_CAP_MS)))
+      return await attempt()
+    } else {
+      throw e
+    }
+  }
+}
+
+async function sendViaPrimary(mail: Mail.Options): Promise<EmailReceipt> {
+  if (getEmailProvider() === "rest") {
+    const messageId = await sendViaRest(mail)
+    return { provider: "rest", messageId }
+  }
+  const info = await getTransporter().sendMail(mail)
+  return { provider: getEmailProvider(), messageId: (info as { messageId?: string })?.messageId }
+}
+
+// Primary-then-fallback-once: covers hard failures (SMTP refused/auth/timeout,
+// relay 4xx/5xx). The fallback is the *other* provider, so gmail mode falls
+// back to the rest relay and rest mode falls back to gmail. Silent server-side
+// quarantine (250 OK then dropped) is invisible here -- that gap needs the
+// mail-admin allowlist, not code.
+async function sendMailWithFallback(mail: Mail.Options): Promise<EmailReceipt> {
+  const primary = getEmailProvider()
+  try {
+    return await sendViaPrimary(mail)
+  } catch (primaryErr) {
+    const reason = (primaryErr as Error)?.message ?? String(primaryErr)
+    const fallback: EmailProvider = primary === "gmail" ? "rest" : "gmail"
+    console.warn(`[email] primary (${primary}) failed, ${fallback} fallback: ${reason}`)
+    try {
+      if (fallback === "gmail") {
+        if (!process.env.GMAIL_USER) throw primaryErr
+        const info = await getTransporter().sendMail({
+          ...mail,
+          from: `"ACES" <${process.env.GMAIL_USER}>`,
+        })
+        return {
+          provider: "fallback:gmail",
+          messageId: (info as { messageId?: string })?.messageId,
+          fallbackFrom: reason,
+        }
+      }
+      // fallback === "rest"
+      const messageId = await sendViaRest(mail)
+      return {
+        provider: "fallback:rest",
+        messageId,
+        fallbackFrom: reason,
+      }
+    } catch {
+      throw primaryErr
+    }
+  }
+}
+
 function getFrom(): string {
-  if (getEmailProvider() === "gmail") return `"ACES" <${process.env.GMAIL_USER}>`
-  const user = process.env.DOMAIN_SMTP_USER ?? DOMAIN_DEFAULTS.user
-  return `"ACES" <${user}>`
+  // Domain mode decommissioned: the Gmail identity is the only SMTP From.
+  // (rest mode ignores From entirely — the relay stamps its own.)
+  return `"ACES" <${process.env.GMAIL_USER}>`
 }
 
 function isEmailEnabled() {
@@ -63,7 +196,7 @@ export async function sendActivationEmail(email: string, name: string, activatio
     return
   }
 
-  await getTransporter().sendMail({
+  return sendMailWithFallback({
     from: getFrom(),
     to: email,
     subject: "Activate Your ACES Account",
@@ -95,7 +228,7 @@ export async function sendMeetingInviteEmail(
     return
   }
 
-  await getTransporter().sendMail({
+  return sendMailWithFallback({
     from: getFrom(),
     to: email,
     subject: `Meeting Invitation: ${meetingTitle}`,
@@ -163,7 +296,7 @@ export async function sendConsultationInvite(
     } : {}),
   }
 
-  await getTransporter().sendMail(mail)
+  return sendMailWithFallback(mail)
 }
 
 export async function sendMeetingInviteWithICS(
@@ -213,7 +346,7 @@ export async function sendMeetingInviteWithICS(
     } : {}),
   }
 
-  await getTransporter().sendMail(mail)
+  return sendMailWithFallback(mail)
 }
 
 export async function sendApprovedWithTeamsLink(
@@ -270,7 +403,7 @@ export async function sendApprovedWithTeamsLink(
     } : {}),
   }
 
-  await getTransporter().sendMail(mail)
+  return sendMailWithFallback(mail)
 }
 
 export async function sendForgotPasswordEmail(email: string, name: string, resetUrl: string) {
@@ -282,7 +415,7 @@ export async function sendForgotPasswordEmail(email: string, name: string, reset
     return
   }
 
-  await getTransporter().sendMail({
+  return sendMailWithFallback({
     from: getFrom(),
     to: email,
     subject: "Reset Your ACES Password",
@@ -331,7 +464,7 @@ export async function sendBookingAcknowledgement(
     ? `Consultation Request Sent: ${data.meetingTitle}`
     : `Meeting Created: ${data.meetingTitle}`
 
-  await getTransporter().sendMail({
+  return sendMailWithFallback({
     from: getFrom(),
     to: to.email,
     subject,
@@ -385,7 +518,7 @@ export async function sendStatusUpdateEmail(
     accepted: `Accepted: ${data.meetingTitle}`,
   }
 
-  await getTransporter().sendMail({
+  return sendMailWithFallback({
     from: getFrom(),
     to: recipient.email,
     subject: subjectMap[data.variant] || `Status Update: ${data.meetingTitle}`,
@@ -401,7 +534,7 @@ export async function sendPasswordChangedEmail(email: string, name: string) {
     return
   }
 
-  await getTransporter().sendMail({
+  return sendMailWithFallback({
     from: getFrom(),
     to: email,
     subject: "Your ACES Password Has Been Changed",

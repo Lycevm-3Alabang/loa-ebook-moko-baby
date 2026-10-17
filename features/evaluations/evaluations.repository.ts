@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/db"
 import { fetchRatingsWithCategories } from "@/lib/db/common"
-import type { EvaluationData, EvaluationComment, EvaluationCommentWithEvaluation, IEvaluationRepository, EvaluationListItem, EvaluationDetailItem, EvaluationRatingRow, EvaluationCommentLight, EvaluationCommentFull, PendingEvaluationItem } from "@/lib/types"
+import type { EvaluationData, EvaluationComment, EvaluationCommentWithEvaluation, IEvaluationRepository, EvaluationListItem, EvaluationDetailItem, EvaluationStatusItem, EvaluationRatingRow, EvaluationCommentLight, EvaluationCommentFull, PendingEvaluationItem } from "@/lib/types"
 
 const DUMMY_FACULTY_EMAIL_EVAL = "placeholder@lyceumalabang.edu.ph"
 
@@ -512,6 +512,23 @@ export const evaluationRepository: IEvaluationRepository = {
       .order("submittedAt", { ascending: true })
     if (error) throw error
     return (data || []) as EvaluationDetailItem[]
+  },
+  async listStatusByPeriodAndFacultySubjectIds(evaluationPeriodId, facultySubjectIds) {
+    if (facultySubjectIds.length === 0) return []
+    const { data, error } = await supabase
+      .from("evaluations")
+      .select("id, evaluatorId, status, isDisabled, submittedAt, facultySubjectId")
+      .eq("evaluation_period_id", evaluationPeriodId)
+      .in("facultySubjectId", facultySubjectIds)
+    if (error) throw error
+    return (data || []).map((r) => ({
+      id: r.id,
+      evaluatorId: r.evaluatorId,
+      status: r.status as "DRAFT" | "SUBMITTED" | "INVALID",
+      isDisabled: r.isDisabled ?? false,
+      submittedAt: r.submittedAt,
+      facultySubjectId: r.facultySubjectId,
+    })) as EvaluationStatusItem[]
   },
   async countSubmittedByFacultySubjectIds(evaluationPeriodId, facultySubjectIds) {
     if (facultySubjectIds.length === 0) return {}
