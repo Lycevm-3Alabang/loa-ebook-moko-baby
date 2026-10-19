@@ -76,15 +76,21 @@ export async function GET(
     const fsIds = [...new Set(evals.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
     const facultySubjects = await facultySubjectRepository.findByIds(fsIds)
     const subjects = await subjectRepository.findByIds([...new Set(facultySubjects.map((fs) => fs.subject_id))])
-    const fsMap = new Map(facultySubjects.map((fs) => [fs.id, fs]))
-    const subjMap = new Map(subjects.map((s) => [s.id, s]))
+  const fsMap = new Map(facultySubjects.map((fs) => [fs.id, fs]))
+  const subjMap = new Map(subjects.map((s) => [s.id, s]))
 
-    const groupEvalMap = new Map<string, string[]>()
-    for (const ev of evals) {
-      const key = ev.facultySubjectId || ev.evaluateeId
-      if (!groupEvalMap.has(key)) groupEvalMap.set(key, [])
-      groupEvalMap.get(key)!.push(ev.id)
-    }
+  const validEvals = evals.filter((ev) => {
+    if (!ev.facultySubjectId) return false
+    const fs = fsMap.get(ev.facultySubjectId)
+    return !!fs && fs.faculty_id === ev.evaluateeId
+  })
+
+  const groupEvalMap = new Map<string, string[]>()
+  for (const ev of validEvals) {
+    const key = ev.facultySubjectId as string
+    if (!groupEvalMap.has(key)) groupEvalMap.set(key, [])
+    groupEvalMap.get(key)!.push(ev.id)
+  }
 
     const subjectsList: Record<string, unknown>[] = []
     for (const [fsKey, evalIds] of groupEvalMap) {
