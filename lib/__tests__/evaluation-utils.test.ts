@@ -10,8 +10,10 @@ import {
   getRemarkColor,
   aggregateFacultyResults,
   aggregatePooledResults,
+  resolveFacultyDepartment,
+  resolveDepartmentFaculties,
 } from "@/lib/evaluation-utils"
-import type { RatingRow, FacultyRatingRow } from "@/lib/evaluation-utils"
+import type { RatingRow, FacultyRatingRow, DeptResolutionContext } from "@/lib/evaluation-utils"
 
 const row = (cat: string, rating: number): RatingRow => ({
   rating,
@@ -124,6 +126,39 @@ describe("getRemarkColor", () => {
   it("returns a class string for known remarks", () => {
     expect(getRemarkColor("Outstanding")).toContain("success")
     expect(getRemarkColor(null)).toContain("surface-tertiary")
+  })
+})
+
+describe("resolveDepartmentFaculties", () => {
+  const ctx = (over: Partial<DeptResolutionContext> = {}): DeptResolutionContext => ({
+    userDept: new Map<string, string | null>([["f-direct", "d1"], ["f-other", "d2"]]),
+    facultySubjects: [{ faculty_id: "f-fallback", section_id: "sec1", semesterId: "sem1" }],
+    sections: new Map([["sec1", "dc1"]]),
+    departmentCourses: new Map([["dc1", "d1"]]),
+    semesterId: "sem1",
+    ...over,
+  })
+
+  const CANDIDATES = ["f-direct", "f-fallback", "f-other", "f-unknown"]
+
+  it("returns the direct member and the fallback-resolved member", () => {
+    expect(resolveDepartmentFaculties("d1", CANDIDATES, ctx())).toEqual(["f-direct", "f-fallback"])
+  })
+
+  it("agrees with the forward helper for every candidate", () => {
+    const c = ctx()
+    for (const id of CANDIDATES) {
+      const included = resolveDepartmentFaculties("d1", [id], c).length === 1
+      expect(included).toBe(resolveFacultyDepartment(id, c) === "d1")
+    }
+  })
+
+  it("resolves only direct members when the period has no semester", () => {
+    expect(resolveDepartmentFaculties("d1", CANDIDATES, ctx({ semesterId: null }))).toEqual(["f-direct"])
+  })
+
+  it("returns an empty list for no candidates", () => {
+    expect(resolveDepartmentFaculties("d1", [], ctx())).toEqual([])
   })
 })
 

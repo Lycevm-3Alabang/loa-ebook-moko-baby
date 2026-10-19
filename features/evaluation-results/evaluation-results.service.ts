@@ -62,10 +62,12 @@ export async function getDepartmentSubjectResults(
   evaluationPeriodId: string,
   departmentId: string,
 ): Promise<DepartmentResults> {
-  const facUsers = await userRepository.listByDepartment(departmentId)
-  if (!facUsers || facUsers.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
+  const facIds = await evaluationResultRepository.listDepartmentFacultyIds(departmentId, evaluationPeriodId)
+  if (facIds.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
 
-  const facIds = facUsers.map((u) => u.id)
+  // The chain does not filter deletedAt, so a soft-deleted faculty can be in
+  // the set — fetch their row too, or their rows would read "Unknown".
+  const facUsers = await userRepository.listByIds(facIds, { includeDeleted: true })
   const facNameMap = new Map(facUsers.map((u) => [u.id, u]))
 
   const evals = await evaluationRepository.listSubmittedByPeriodAndEvaluatees(evaluationPeriodId, facIds)

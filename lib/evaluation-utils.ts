@@ -374,6 +374,19 @@ export function resolveFacultyDepartment(facultyId: string, ctx: DeptResolutionC
   return ctx.departmentCourses.get(dcId) ?? null
 }
 
+/**
+ * The inverse of resolveFacultyDepartment: the candidates whose department is
+ * this one. Uses the same helper, so the forward and the backward direction
+ * can never disagree.
+ */
+export function resolveDepartmentFaculties(
+  departmentId: string,
+  candidateFacultyIds: string[],
+  ctx: DeptResolutionContext,
+): string[] {
+  return candidateFacultyIds.filter((id) => resolveFacultyDepartment(id, ctx) === departmentId)
+}
+
 export function buildLiveDeptAverages(inputs: FacultyDeptInput[]): LiveDeptAverage[] {
   const groups = new Map<string, {
     facultyIds: Set<string>

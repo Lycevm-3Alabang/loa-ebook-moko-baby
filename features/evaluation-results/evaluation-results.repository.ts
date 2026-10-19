@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/db"
 import { fetchRatingsWithCategories } from "@/lib/db/common"
-import { buildLiveDeptAverages, resolveFacultyDepartment } from "@/lib/evaluation-utils"
-import type { RatingRow } from "@/lib/evaluation-utils"
+import { buildLiveDeptAverages, resolveFacultyDepartment, resolveDepartmentFaculties } from "@/lib/evaluation-utils"
+import type { RatingRow, DeptResolutionContext } from "@/lib/evaluation-utils"
 import type { EvaluationResultData, IEvaluationResultRepository, LiveDeptAverage, StudentBreakdownItem, FacultyEvalDetail } from "@/lib/types"
 import { semesterRepository } from "@/lib/repositories/factory"
 
@@ -22,6 +22,107 @@ function chunkStrIds(ids: string[], size: number): string[][] {
     chunks.push(ids.slice(i, i + size))
   }
   return chunks
+}
+
+/** The period's submitted, enabled evaluations — the candidate faculty set. */
+async function listSubmittedEvaluates(evaluationPeriodId: string): Promise<{ id: string; evaluateeId: string }[]> {
+  const { data, error } = await supabase
+    .from("evaluations")
+    .select("id, evaluateeId")
+    .eq("evaluation_period_id", evaluationPeriodId)
+    .eq("status", "SUBMITTED")
+    .eq("isDisabled", false)
+    .not("facultySubjectId", "is", null)
+  if (error) throw error
+  return data || []
+}
+
+/**
+ * The chain context the pure resolveFacultyDepartment helper needs: the users'
+ * department, the faculty's subject rows, the section -> course -> department
+ * map, and the period's semester. Staged on purpose — the chain lookups run
+ * only for the faculty WITHOUT a users.departmentId.
+ */
+async function loadDeptResolutionContext(
+  evaluationPeriodId: string,
+  facultyIds: string[],
+): Promise<DeptResolutionContext> {
+  const [evalPeriod, usersResults] = await Promise.all([
+    supabase.from("evaluation_periods").select("semesterId").eq("id", evaluationPeriodId).single(),
+    Promise.all(
+      chunkStrIds([...new Set(facultyIds)], IN_CHUNK_SIZE).map((ids) =>
+        supabase.from("users").select("id, departmentId").in("id", ids),
+      ),
+    ),
+  ])
+  for (const res of usersResults) {
+    if (res.error) throw res.error
+  }
+  const usersRows = usersResults.flatMap((res) => res.data || [])
+  const semesterId = evalPeriod.data?.semesterId ?? null
+  const userDept = new Map<string, string | null>(usersRows.map((u) => [u.id, u.departmentId as string | null]))
+
+  const nullFacIds = facultyIds.filter((id) => !userDept.get(id))
+  const facultySubjects: { faculty_id: string; section_id: string | null; semesterId: string | null }[] = []
+  const sections = new Map<string, string | null>()
+  const departmentCourses = new Map<string, string | null>()
+
+  if (nullFacIds.length > 0 && semesterId) {
+    const fsResults = await Promise.all(
+      chunkStrIds([...new Set(nullFacIds)], IN_CHUNK_SIZE).map((ids) =>
+        supabase
+          .from("faculty_subjects")
+          .select("faculty_id, section_id")
+          .in("faculty_id", ids)
+          .eq("semesterId", semesterId),
+      ),
+    )
+    for (const res of fsResults) {
+      if (res.error) throw res.error
+    }
+    const fsRows = fsResults.flatMap((res) => res.data || [])
+    facultySubjects.push(...fsRows.map((r) => ({ faculty_id: r.faculty_id, section_id: r.section_id, semesterId })))
+
+    if (fsRows.length > 0) {
+      const sectionIds = [...new Set(fsRows.map((r) => r.section_id).filter(Boolean))]
+      if (sectionIds.length > 0) {
+        const sectionResults = await Promise.all(
+          chunkStrIds(sectionIds as string[], IN_CHUNK_SIZE).map((ids) =>
+            supabase
+              .from("sections")
+              .select("id, departmentCourseId")
+              .in("id", ids),
+          ),
+        )
+        for (const res of sectionResults) {
+          if (res.error) throw res.error
+        }
+        const sectionRows = sectionResults.flatMap((res) => res.data || [])
+        for (const s of sectionRows) sections.set(s.id, s.departmentCourseId)
+
+        if (sectionRows.length > 0) {
+          const dcIds = [...new Set(sectionRows.map((r) => r.departmentCourseId).filter(Boolean))]
+          if (dcIds.length > 0) {
+            const dcResults = await Promise.all(
+              chunkStrIds(dcIds as string[], IN_CHUNK_SIZE).map((ids) =>
+                supabase
+                  .from("department_courses")
+                  .select("id, departmentId")
+                  .in("id", ids),
+              ),
+            )
+            for (const res of dcResults) {
+              if (res.error) throw res.error
+            }
+            const dcRows = dcResults.flatMap((res) => res.data || [])
+            for (const dc of dcRows) departmentCourses.set(dc.id, dc.departmentId)
+          }
+        }
+      }
+    }
+  }
+
+  return { userDept, facultySubjects, sections, departmentCourses, semesterId }
 }
 
 export const evaluationResultRepository: IEvaluationResultRepository = {
@@ -293,21 +394,14 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
 
   /**
    * Live per-department averages computed from submitted evals (no cache read,
-   * no writes). Same aggregation semantics as compute(): per-faculty pooled
-   * general (rounded 2dp), then the department mean of faculty generals.
-   * Faculty with no usable ratings contribute nothing, so placeholder and
-   * rating-less rows can never blank a department average.
+   * no writes). The department figure is POOLED over the department's rating
+   * rows, the same rule the detail page and the faculty card use. Faculty with
+   * no usable ratings contribute nothing, so placeholder and rating-less rows
+   * can never blank a department average.
    */
   async listLiveDeptAverages(evaluationPeriodId): Promise<LiveDeptAverage[]> {
-    const { data: evals, error: evErr } = await supabase
-      .from("evaluations")
-      .select("id, evaluateeId")
-      .eq("evaluation_period_id", evaluationPeriodId)
-      .eq("status", "SUBMITTED")
-      .eq("isDisabled", false)
-      .not("facultySubjectId", "is", null)
-    if (evErr) throw evErr
-    if (!evals || evals.length === 0) return []
+    const evals = await listSubmittedEvaluates(evaluationPeriodId)
+    if (evals.length === 0) return []
 
     const facEvalMap = new Map<string, string[]>()
     for (const ev of evals) {
@@ -316,26 +410,10 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
     }
     const facIds = [...facEvalMap.keys()]
 
-    const { data: evalPeriod } = await supabase
-      .from("evaluation_periods")
-      .select("semesterId")
-      .eq("id", evaluationPeriodId)
-      .single()
-    const semesterId = evalPeriod?.semesterId
-
-    const uniqueFacIds = [...new Set(facIds)]
-    const [ratings, usersResults] = await Promise.all([
+    const [ctx, ratings] = await Promise.all([
+      loadDeptResolutionContext(evaluationPeriodId, facIds),
       fetchRatingsWithCategories(supabase, evals.map((e) => e.id)),
-      Promise.all(
-        chunkStrIds(uniqueFacIds, IN_CHUNK_SIZE).map((ids) =>
-          supabase.from("users").select("id, departmentId").in("id", ids),
-        ),
-      ),
     ])
-    for (const res of usersResults) {
-      if (res.error) throw res.error
-    }
-    const usersRows = usersResults.flatMap((res) => res.data || [])
 
     const ratingsByEval = new Map<string, typeof ratings>()
     for (const r of ratings) {
@@ -345,71 +423,9 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
 
     // Live home department per faculty, same chain as compute(), resolved via
     // the pure resolveFacultyDepartment helper (single source of truth).
-    const userDept = new Map(usersRows.map((u) => [u.id, u.departmentId as string | null]))
-    const nullFacIds = facIds.filter((id) => !userDept.get(id))
-    const facultySubjects: { faculty_id: string; section_id: string | null; semesterId: string | null }[] = []
-    const sections = new Map<string, string | null>()
-    const departmentCourses = new Map<string, string | null>()
-
-    if (nullFacIds.length > 0 && semesterId) {
-      const fsResults = await Promise.all(
-        chunkStrIds([...new Set(nullFacIds)], IN_CHUNK_SIZE).map((ids) =>
-          supabase
-            .from("faculty_subjects")
-            .select("faculty_id, section_id")
-            .in("faculty_id", ids)
-            .eq("semesterId", semesterId),
-        ),
-      )
-      for (const res of fsResults) {
-        if (res.error) throw res.error
-      }
-      const fsRows = fsResults.flatMap((res) => res.data || [])
-      facultySubjects.push(...fsRows.map((r) => ({ faculty_id: r.faculty_id, section_id: r.section_id, semesterId })))
-
-      if (fsRows.length > 0) {
-        const sectionIds = [...new Set(fsRows.map((r) => r.section_id).filter(Boolean))]
-        if (sectionIds.length > 0) {
-          const sectionResults = await Promise.all(
-            chunkStrIds(sectionIds as string[], IN_CHUNK_SIZE).map((ids) =>
-              supabase
-                .from("sections")
-                .select("id, departmentCourseId")
-                .in("id", ids),
-            ),
-          )
-          for (const res of sectionResults) {
-            if (res.error) throw res.error
-          }
-          const sectionRows = sectionResults.flatMap((res) => res.data || [])
-          for (const s of sectionRows) sections.set(s.id, s.departmentCourseId)
-
-          if (sectionRows.length > 0) {
-            const dcIds = [...new Set(sectionRows.map((r) => r.departmentCourseId).filter(Boolean))]
-            if (dcIds.length > 0) {
-              const dcResults = await Promise.all(
-                chunkStrIds(dcIds as string[], IN_CHUNK_SIZE).map((ids) =>
-                  supabase
-                    .from("department_courses")
-                    .select("id, departmentId")
-                    .in("id", ids),
-                ),
-              )
-              for (const res of dcResults) {
-                if (res.error) throw res.error
-              }
-              const dcRows = dcResults.flatMap((res) => res.data || [])
-              for (const dc of dcRows) departmentCourses.set(dc.id, dc.departmentId)
-            }
-          }
-        }
-      }
-    }
-
     const deptOf = new Map<string, string | null>()
     for (const facId of facIds) {
-      const resolved = resolveFacultyDepartment(facId, { userDept, facultySubjects, sections, departmentCourses, semesterId: semesterId ?? null })
-      deptOf.set(facId, resolved)
+      deptOf.set(facId, resolveFacultyDepartment(facId, ctx))
     }
 
     const inputs: { facultyId: string; deptId: string; evalCount: number; ratings: RatingRow[] }[] = []
@@ -421,6 +437,21 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
     }
 
     return buildLiveDeptAverages(inputs)
+  },
+
+  /**
+   * The faculty of one department, resolved with the SAME chain the top-level
+   * page uses (users.departmentId, else faculty_subjects -> sections ->
+   * department_courses) and the same candidate population, so the two surfaces
+   * cover the same faculty and print the same pooled numbers.
+   */
+  async listDepartmentFacultyIds(departmentId: string, evaluationPeriodId: string): Promise<string[]> {
+    const evals = await listSubmittedEvaluates(evaluationPeriodId)
+    if (evals.length === 0) return []
+
+    const candidateIds = [...new Set(evals.map((e) => e.evaluateeId))]
+    const ctx = await loadDeptResolutionContext(evaluationPeriodId, candidateIds)
+    return resolveDepartmentFaculties(departmentId, candidateIds, ctx)
   },
 
   async setVisibility(evaluationPeriodId, facultyIds, visible) {

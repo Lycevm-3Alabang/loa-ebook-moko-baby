@@ -594,6 +594,7 @@ export interface IEvaluationResultRepository {
   compute(evaluationPeriodId: string, facultyId?: string): Promise<void>
   computeAll(evaluationPeriodId: string): Promise<void>
   listLiveDeptAverages(evaluationPeriodId: string): Promise<LiveDeptAverage[]>
+  listDepartmentFacultyIds(departmentId: string, evaluationPeriodId: string): Promise<string[]>
   setVisibility(evaluationPeriodId: string, facultyIds: string[], visible: boolean): Promise<void>
   getVisibilityMap(evaluationPeriodId: string): Promise<Map<string, boolean>>
   countBySemesterId(semesterId: string): Promise<number>
