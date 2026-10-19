@@ -58,7 +58,21 @@ export async function getDepartmentSubjectResults(evaluationPeriodId: string, de
   const evals = await evaluationRepository.listSubmittedByPeriodAndEvaluatees(evaluationPeriodId, facIds)
   if (evals.length === 0) return []
 
-  const evaluationIds = evals.map((e) => e.id)
+  const fsIds = [...new Set(evals.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
+  const facultySubjects = await facultySubjectRepository.findByIds(fsIds)
+  const subjects = await subjectRepository.findByIds([...new Set(facultySubjects.map((fs) => fs.subject_id))])
+  const fsMap = new Map(facultySubjects.map((fs) => [fs.id, fs]))
+  const subjMap = new Map(subjects.map((s) => [s.id, s]))
+
+  // Match the detail page's eval set: evaluatee must equal the subject's faculty.
+  const validEvals = evals.filter((ev) => {
+    if (!ev.facultySubjectId) return false
+    const fs = fsMap.get(ev.facultySubjectId)
+    return !!fs && fs.faculty_id === ev.evaluateeId
+  })
+  if (validEvals.length === 0) return []
+
+  const evaluationIds = validEvals.map((e) => e.id)
 
   const [ratings, commentsRaw] = await Promise.all([
     evaluationRepository.listRatingsByEvaluationIds(evaluationIds),
@@ -71,15 +85,9 @@ export async function getDepartmentSubjectResults(evaluationPeriodId: string, de
     commentsByEval.get(c.evaluationId)!.push(c)
   }
 
-  const fsIds = [...new Set(evals.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
-  const facultySubjects = await facultySubjectRepository.findByIds(fsIds)
-  const subjects = await subjectRepository.findByIds([...new Set(facultySubjects.map((fs) => fs.subject_id))])
-  const fsMap = new Map(facultySubjects.map((fs) => [fs.id, fs]))
-  const subjMap = new Map(subjects.map((s) => [s.id, s]))
-
   const groupEvalMap = new Map<string, string[]>()
-  for (const ev of evals) {
-    const key = ev.facultySubjectId || ev.evaluateeId
+  for (const ev of validEvals) {
+    const key = ev.facultySubjectId as string
     if (!groupEvalMap.has(key)) groupEvalMap.set(key, [])
     groupEvalMap.get(key)!.push(ev.id)
   }
