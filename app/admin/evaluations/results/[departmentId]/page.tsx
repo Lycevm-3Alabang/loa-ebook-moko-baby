@@ -7,7 +7,7 @@ import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import IosButton from "@/components/ui/IosButton"
 import { useApiGet } from "@/lib/api/client"
-import { getRemarkColor } from "@/lib/evaluation-utils"
+import { getRemarkColor, type FacultyAggregate, type DepartmentAggregate } from "@/lib/evaluation-utils"
 import { downloadDeptPdf } from "@/lib/evaluation-pdf"
 import DepartmentSubjectView from "@/features/evaluations/components/DepartmentSubjectView"
 
@@ -52,11 +52,12 @@ export default function DepartmentDetailPage() {
   const [visibilityMap, setVisibilityMap] = useState<Record<string, boolean>>({})
   const [toggling, setToggling] = useState(false)
 
-  const { data: resultsData, error: resultsError } = useApiGet<{ department: DepartmentInfo; subjects: SubjectRow[]; visibilityMap: Record<string, boolean> }>(
+  const { data: resultsData, error: resultsError } = useApiGet<{ department: DepartmentInfo; subjects: SubjectRow[]; visibilityMap: Record<string, boolean>; facultyAggregates: Record<string, FacultyAggregate>; departmentAggregate: DepartmentAggregate | null }>(
     evaluationPeriodId ? `/api/admin/evaluation-results/departments/${encodeURIComponent(departmentId)}?evaluationPeriodId=${encodeURIComponent(evaluationPeriodId)}` : null,
   )
   const department = resultsData?.department ?? null
   const subjects = useMemo(() => resultsData?.subjects ?? [], [resultsData])
+  const departmentAggregate = resultsData?.departmentAggregate ?? null
   const error = resultsError?.message || ""
   const loading = !resultsData && !resultsError && !!evaluationPeriodId
 
@@ -66,63 +67,6 @@ export default function DepartmentDetailPage() {
       Promise.resolve().then(() => setVisibilityMap(map))
     }
   }, [resultsData, visibilityMap])
-
-  const deptMetrics = useMemo(() => {
-    if (subjects.length === 0) return null
-    const uniqueFaculty = new Set(subjects.map((s) => s.facultyId)).size
-    const totalResp = subjects.reduce((sum, s) => sum + s.totalRespondents, 0)
-    const ratings = subjects.filter((s) => s.avgRating !== null).map((s) => s.avgRating as number)
-    const deptAvg = ratings.length > 0
-      ? Math.round(ratings.reduce((a, b) => a + b, 0) / ratings.length * 100) / 100
-      : null
-    const deptRemark = deptAvg !== null
-      ? (deptAvg >= 4.5 ? "Outstanding" : deptAvg >= 3.5 ? "Very Satisfactory" : deptAvg >= 2.5 ? "Satisfactory" : deptAvg >= 1.5 ? "Unsatisfactory" : "Poor")
-      : null
-
-    // Highest/lowest rubric averages across all subjects
-    const rubricSums: Record<string, { sum: number; count: number }> = {}
-    for (const s of subjects) {
-      for (const key of ["professionalManner", "communicationWithStudent", "studentEngagement", "learningMaterials", "timeManagement", "experientialLearning", "respectUniqueness", "assessmentAndFeedback"] as const) {
-        const val = s[key as keyof typeof s] as number | null
-        if (val !== null) {
-          if (!rubricSums[key]) rubricSums[key] = { sum: 0, count: 0 }
-          rubricSums[key].sum += val
-          rubricSums[key].count += 1
-        }
-      }
-    }
-    const rubricAvgs: { key: string; label: string; score: number }[] = Object.entries(rubricSums).map(([key, { sum, count }]) => ({
-      key,
-      label: key === "professionalManner" ? "Professional Manner"
-        : key === "communicationWithStudent" ? "Communication w/ Students"
-        : key === "studentEngagement" ? "Student Engagement"
-        : key === "learningMaterials" ? "Learning Materials"
-        : key === "timeManagement" ? "Time Management"
-        : key === "experientialLearning" ? "Experiential Learning"
-        : key === "respectUniqueness" ? "Respect for Uniqueness"
-        : "Assessment & Feedback",
-      score: Math.round(sum / count * 100) / 100,
-    }))
-    const highest = [...rubricAvgs].sort((a, b) => b.score - a.score).slice(0, 1)
-    const lowest = [...rubricAvgs].sort((a, b) => a.score - b.score).slice(0, 1)
-
-    // Overall sentiment
-    const sentiments = subjects.filter((s) => s.sentimentScore !== null).map((s) => s.sentimentScore as number)
-    const overallSentiment = sentiments.length > 0
-      ? Math.round(sentiments.reduce((a, b) => a + b, 0) / sentiments.length * 100) / 100
-      : null
-
-    return {
-      totalSubjects: subjects.length,
-      uniqueFaculty,
-      totalResp,
-      deptAvg,
-      deptRemark,
-      highest,
-      lowest,
-      overallSentiment,
-    }
-  }, [subjects])
 
   const toggleVisibility = useCallback(async (facultyId: string, visible: boolean) => {
     if (toggling) return
@@ -221,7 +165,7 @@ export default function DepartmentDetailPage() {
         <p className="text-sm text-tertiary text-center py-8">No evaluation data found for this department.</p>
       )}
 
-      {!loading && subjects.length > 0 && deptMetrics && (
+      {!loading && subjects.length > 0 && departmentAggregate && (
         <>
           {/* Department Summary Widget */}
           <div className="card p-5 space-y-4">
@@ -263,28 +207,28 @@ export default function DepartmentDetailPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div>
                 <p className="text-[10px] text-tertiary">Subjects</p>
-                <p className="text-lg font-bold">{deptMetrics.totalSubjects}</p>
+                <p className="text-lg font-bold">{departmentAggregate.totalSubjects}</p>
               </div>
               <div>
                 <p className="text-[10px] text-tertiary">Faculty</p>
-                <p className="text-lg font-bold">{deptMetrics.uniqueFaculty}</p>
+                <p className="text-lg font-bold">{departmentAggregate.uniqueFaculty}</p>
               </div>
               <div>
-                <p className="text-[10px] text-tertiary">Total Respondents</p>
-                <p className="text-lg font-bold">{deptMetrics.totalResp}</p>
+                <p className="text-[10px] text-tertiary">Total Responses</p>
+                <p className="text-lg font-bold">{departmentAggregate.totalResponses}</p>
               </div>
               <div>
                 <p className="text-[10px] text-tertiary">Department Average</p>
-                <p className="text-lg font-bold">{deptMetrics.deptAvg?.toFixed(2) ?? "\u2014"}</p>
-                {deptMetrics.deptRemark && (
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${getRemarkColor(deptMetrics.deptRemark)}`}>
-                    {deptMetrics.deptRemark}
+                <p className="text-lg font-bold">{departmentAggregate.avgRating?.toFixed(2) ?? "\u2014"}</p>
+                {departmentAggregate.remarks && (
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${getRemarkColor(departmentAggregate.remarks)}`}>
+                    {departmentAggregate.remarks}
                   </span>
                 )}
               </div>
               <div>
                 <p className="text-[10px] text-tertiary">Highest Rubric</p>
-                {deptMetrics.highest.map((r) => (
+                {departmentAggregate.highestRubrics.map((r) => (
                   <p key={r.key} className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                     {r.label}: {r.score.toFixed(2)}
                   </p>
@@ -292,7 +236,7 @@ export default function DepartmentDetailPage() {
               </div>
               <div>
                 <p className="text-[10px] text-tertiary">Lowest Rubric</p>
-                {deptMetrics.lowest.map((r) => (
+                {departmentAggregate.lowestRubrics.map((r) => (
                   <p key={r.key} className="text-xs font-semibold text-red-600 dark:text-red-400">
                     {r.label}: {r.score.toFixed(2)}
                   </p>
@@ -301,7 +245,7 @@ export default function DepartmentDetailPage() {
               <div>
                 <p className="text-[10px] text-tertiary">Overall Sentiment</p>
                 <p className="text-sm font-semibold">
-                  {deptMetrics.overallSentiment !== null ? deptMetrics.overallSentiment.toFixed(4) : "\u2014"}
+                  {departmentAggregate.sentimentScore !== null ? departmentAggregate.sentimentScore.toFixed(4) : "\u2014"}
                 </p>
               </div>
             </div>
@@ -316,6 +260,7 @@ export default function DepartmentDetailPage() {
             visibilityMap={visibilityMap}
             onVisibilityChange={toggleVisibility}
             onBulkVisibilityChange={bulkSetVisibility}
+            facultyAggregates={resultsData?.facultyAggregates ?? {}}
           />
         </>
       )}

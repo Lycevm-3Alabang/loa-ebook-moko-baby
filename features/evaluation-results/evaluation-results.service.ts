@@ -6,6 +6,10 @@ import {
   findHighestLowestRubrics,
   computeSentimentScore,
   getRemark,
+  aggregateFacultyResults,
+  aggregateDepartmentResults,
+  type FacultyAggregate,
+  type DepartmentAggregate,
 } from "@/lib/evaluation-utils"
 
 export async function getEvaluationResults(periodId: string, filters?: { departmentId?: string; facultyId?: string }) {
@@ -48,15 +52,24 @@ export interface DepartmentSubjectResult {
   sentimentScore: number | null
 }
 
-export async function getDepartmentSubjectResults(evaluationPeriodId: string, departmentId: string): Promise<DepartmentSubjectResult[]> {
+export interface DepartmentResults {
+  subjects: DepartmentSubjectResult[]
+  facultyAggregates: Record<string, FacultyAggregate>
+  departmentAggregate: DepartmentAggregate | null
+}
+
+export async function getDepartmentSubjectResults(
+  evaluationPeriodId: string,
+  departmentId: string,
+): Promise<DepartmentResults> {
   const facUsers = await userRepository.listByDepartment(departmentId)
-  if (!facUsers || facUsers.length === 0) return []
+  if (!facUsers || facUsers.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
 
   const facIds = facUsers.map((u) => u.id)
   const facNameMap = new Map(facUsers.map((u) => [u.id, u]))
 
   const evals = await evaluationRepository.listSubmittedByPeriodAndEvaluatees(evaluationPeriodId, facIds)
-  if (evals.length === 0) return []
+  if (evals.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
 
   const fsIds = [...new Set(evals.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
   const facultySubjects = await facultySubjectRepository.findByIds(fsIds)
@@ -70,7 +83,7 @@ export async function getDepartmentSubjectResults(evaluationPeriodId: string, de
     const fs = fsMap.get(ev.facultySubjectId)
     return !!fs && fs.faculty_id === ev.evaluateeId
   })
-  if (validEvals.length === 0) return []
+  if (validEvals.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
 
   const evaluationIds = validEvals.map((e) => e.id)
 
@@ -132,5 +145,10 @@ export async function getDepartmentSubjectResults(evaluationPeriodId: string, de
       sentimentScore: sentiment,
     })
   }
-  return out
+
+  return {
+    subjects: out,
+    facultyAggregates: aggregateFacultyResults(validEvals, ratings, commentsRaw),
+    departmentAggregate: aggregateDepartmentResults(out, ratings, commentsRaw),
+  }
 }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/route-guard"
 import { logServerError } from "@/lib/services/audit"
 import { departmentRepository, evaluationResultRepository } from "@/lib/repositories/factory"
-import { getDepartmentSubjectResults } from "@/features/evaluation-results/evaluation-results.service"
+import { getDepartmentSubjectResults, type DepartmentSubjectResult } from "@/features/evaluation-results/evaluation-results.service"
 import { createZip } from "@/lib/zip"
 
 function csvEscape(v: unknown): string {
@@ -10,7 +10,7 @@ function csvEscape(v: unknown): string {
   return `"${s.replace(/"/g, '""')}"`
 }
 
-function subjectCsv(subjects: Awaited<ReturnType<typeof getDepartmentSubjectResults>>): string {
+function subjectCsv(subjects: DepartmentSubjectResult[]): string {
   const headers = ["Faculty", "Faculty Email", "Subject Code", "Subject", "Respondents", "Avg Rating", "Remark", "Professional Manner", "Communication w/ Students", "Student Engagement", "Learning Materials", "Time Management", "Experiential Learning", "Respect for Uniqueness", "Assessment & Feedback", "Sentiment"]
   const rows = subjects.map((s) => [
     s.facultyName, s.facultyEmail, s.subjectCode, s.subjectName, s.totalRespondents,
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
     // blew past the serverless budget. One failure must not lose the rest.
     const perDept = await Promise.allSettled(
       departments.map(async (dept) => {
-        const subjects = await getDepartmentSubjectResults(evaluationPeriodId, dept.id)
+        const { subjects } = await getDepartmentSubjectResults(evaluationPeriodId, dept.id)
         if (subjects.length === 0) return null
         const code = (dept.code || dept.id).replace(/[^a-zA-Z0-9_-]/g, "_")
         return { name: `${code}_results.csv`, data: encoder.encode(subjectCsv(subjects)) }

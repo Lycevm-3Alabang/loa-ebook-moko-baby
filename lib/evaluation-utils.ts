@@ -196,6 +196,158 @@ export function buildFacultySummary(
   return { catAverages, general, catColumns, rubrics, sentiment }
 }
 
+export interface PooledAggregate {
+  avgRating: number | null
+  remarks: string | null
+  catColumns: Record<string, number | null>
+  highestRubrics: { key: string; label: string; score: number }[]
+  lowestRubrics: { key: string; label: string; score: number }[]
+  sentimentScore: number | null
+}
+
+/**
+ * The one aggregation rule: pool a set of rating rows, then average the
+ * category averages. Used at every level so a higher-level figure is the
+ * same kind of number as the one below it.
+ */
+export function aggregatePooledResults(
+  ratings: RatingRow[],
+  comments: { sentimentScore: number | null }[] = [],
+): PooledAggregate {
+  const { general, catColumns, rubrics, sentiment } = buildFacultySummary(ratings, comments)
+  return {
+    avgRating: general,
+    remarks: getRemark(general),
+    catColumns,
+    highestRubrics: rubrics.highest,
+    lowestRubrics: rubrics.lowest,
+    sentimentScore: sentiment,
+  }
+}
+
+export interface DepartmentAggregate {
+  totalSubjects: number
+  uniqueFaculty: number
+  totalResponses: number
+  avgRating: number | null
+  remarks: string | null
+  professionalManner: number | null
+  communicationWithStudent: number | null
+  studentEngagement: number | null
+  learningMaterials: number | null
+  timeManagement: number | null
+  experientialLearning: number | null
+  respectUniqueness: number | null
+  assessmentAndFeedback: number | null
+  highestRubrics: { key: string; label: string; score: number }[]
+  lowestRubrics: { key: string; label: string; score: number }[]
+  sentimentScore: number | null
+}
+
+/**
+ * Assemble a department-level aggregate from its subject rows and the
+ * department's pooled rating/comment rows. The averages are pooled, so the
+ * department figure is the same kind of number as the faculty figure below it.
+ */
+export function aggregateDepartmentResults(
+  subjects: { facultyId: string; totalRespondents: number }[],
+  ratings: RatingRow[],
+  comments: { sentimentScore: number | null }[] = [],
+): DepartmentAggregate {
+  const pooled = aggregatePooledResults(ratings, comments)
+  return {
+    totalSubjects: subjects.length,
+    uniqueFaculty: new Set(subjects.map((s) => s.facultyId)).size,
+    totalResponses: subjects.reduce((sum, s) => sum + s.totalRespondents, 0),
+    avgRating: pooled.avgRating,
+    remarks: pooled.remarks,
+    professionalManner: pooled.catColumns.professionalManner ?? null,
+    communicationWithStudent: pooled.catColumns.communicationWithStudent ?? null,
+    studentEngagement: pooled.catColumns.studentEngagement ?? null,
+    learningMaterials: pooled.catColumns.learningMaterials ?? null,
+    timeManagement: pooled.catColumns.timeManagement ?? null,
+    experientialLearning: pooled.catColumns.experientialLearning ?? null,
+    respectUniqueness: pooled.catColumns.respectUniqueness ?? null,
+    assessmentAndFeedback: pooled.catColumns.assessmentAndFeedback ?? null,
+    highestRubrics: pooled.highestRubrics,
+    lowestRubrics: pooled.lowestRubrics,
+    sentimentScore: pooled.sentimentScore,
+  }
+}
+
+export interface FacultyRatingRow extends RatingRow {
+  evaluationId: string
+}
+
+export interface FacultyCommentRow {
+  evaluationId: string
+  sentimentScore: number | null
+}
+
+export interface FacultyAggregate {
+  facultyId: string
+  totalRespondents: number
+  avgRating: number | null
+  remarks: string | null
+  professionalManner: number | null
+  communicationWithStudent: number | null
+  studentEngagement: number | null
+  learningMaterials: number | null
+  timeManagement: number | null
+  experientialLearning: number | null
+  respectUniqueness: number | null
+  assessmentAndFeedback: number | null
+  highestRubrics: { key: string; label: string; score: number }[]
+  lowestRubrics: { key: string; label: string; score: number }[]
+  sentimentScore: number | null
+}
+
+/**
+ * Pool a faculty's evaluation set into one aggregate, keyed by facultyId.
+ * Uses the same chain as the per-facultySubject detail page
+ * (buildFacultySummary), so a faculty headline equals the detail page's
+ * pooled figure instead of a mean of per-subject means.
+ */
+export function aggregateFacultyResults(
+  evals: { id: string; evaluateeId: string }[],
+  ratings: FacultyRatingRow[],
+  comments: FacultyCommentRow[],
+): Record<string, FacultyAggregate> {
+  const evalIdsByFaculty = new Map<string, string[]>()
+  for (const ev of evals) {
+    const list = evalIdsByFaculty.get(ev.evaluateeId)
+    if (list) list.push(ev.id)
+    else evalIdsByFaculty.set(ev.evaluateeId, [ev.id])
+  }
+
+  const out: Record<string, FacultyAggregate> = {}
+  for (const [facultyId, evalIds] of evalIdsByFaculty) {
+    const idSet = new Set(evalIds)
+    const pooled = aggregatePooledResults(
+      ratings.filter((r) => idSet.has(r.evaluationId)),
+      comments.filter((c) => idSet.has(c.evaluationId)),
+    )
+    out[facultyId] = {
+      facultyId,
+      totalRespondents: evalIds.length,
+      avgRating: pooled.avgRating,
+      remarks: pooled.remarks,
+      professionalManner: pooled.catColumns.professionalManner ?? null,
+      communicationWithStudent: pooled.catColumns.communicationWithStudent ?? null,
+      studentEngagement: pooled.catColumns.studentEngagement ?? null,
+      learningMaterials: pooled.catColumns.learningMaterials ?? null,
+      timeManagement: pooled.catColumns.timeManagement ?? null,
+      experientialLearning: pooled.catColumns.experientialLearning ?? null,
+      respectUniqueness: pooled.catColumns.respectUniqueness ?? null,
+      assessmentAndFeedback: pooled.catColumns.assessmentAndFeedback ?? null,
+      highestRubrics: pooled.highestRubrics,
+      lowestRubrics: pooled.lowestRubrics,
+      sentimentScore: pooled.sentimentScore,
+    }
+  }
+  return out
+}
+
 export interface FacultyDeptInput {
   facultyId: string
   deptId: string
@@ -226,51 +378,31 @@ export function buildLiveDeptAverages(inputs: FacultyDeptInput[]): LiveDeptAvera
   const groups = new Map<string, {
     facultyIds: Set<string>
     respondents: number
-    generals: number[]
-    cats: Record<string, number[]>
+    ratings: RatingRow[]
   }>()
   for (const inp of inputs) {
-    const { general, catColumns } = buildFacultySummary(inp.ratings)
+    const { general } = buildFacultySummary(inp.ratings)
     if (general === null) continue
     let g = groups.get(inp.deptId)
     if (!g) {
-      g = {
-        facultyIds: new Set(),
-        respondents: 0,
-        generals: [],
-        cats: Object.fromEntries(CATEGORY_KEYS.map((k) => [k, [] as number[]])),
-      }
+      g = { facultyIds: new Set(), respondents: 0, ratings: [] }
       groups.set(inp.deptId, g)
     }
     g.facultyIds.add(inp.facultyId)
     g.respondents += inp.evalCount
-    g.generals.push(Math.round(general * 100) / 100)
-    for (const key of CATEGORY_KEYS) {
-      const v = catColumns[key]
-      if (v !== null) g.cats[key].push(v)
-    }
+    g.ratings.push(...inp.ratings)
   }
   return [...groups.entries()].map(([departmentId, g]) => {
-    const avgRating = g.generals.length > 0
-      ? Math.round(g.generals.reduce((a, b) => a + b, 0) / g.generals.length * 100) / 100
-      : null
-    const catAverages: Record<string, number | null> = {}
-    for (const key of CATEGORY_KEYS) {
-      const vals = g.cats[key]
-      catAverages[key] = vals.length > 0
-        ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 100) / 100
-        : null
-    }
-    const rubrics = findHighestLowestRubrics(catAverages)
+    const pooled = aggregatePooledResults(g.ratings)
     return {
       departmentId,
       facultyIds: [...g.facultyIds],
       totalRespondents: g.respondents,
-      avgRating,
-      remarks: getRemark(avgRating),
-      catAverages,
-      highestRubrics: rubrics.highest,
-      lowestRubrics: rubrics.lowest,
+      avgRating: pooled.avgRating,
+      remarks: pooled.remarks,
+      catAverages: pooled.catColumns,
+      highestRubrics: pooled.highestRubrics,
+      lowestRubrics: pooled.lowestRubrics,
     }
   })
 }

@@ -18,7 +18,11 @@ import {
   findHighestLowestRubrics,
   computeSentimentScore,
   getRemark,
+  aggregateFacultyResults,
+  aggregateDepartmentResults,
+  type DepartmentAggregate,
 } from "@/lib/evaluation-utils"
+import type { DepartmentSubjectResult } from "@/features/evaluation-results/evaluation-results.service"
 
 export async function GET(
   request: NextRequest,
@@ -45,7 +49,7 @@ export async function GET(
     await evaluationResultRepository.assertPeriodIsActive(evaluationPeriodId)
 
     const facUsers = await userRepository.listByDepartment(departmentId)
-    if (!facUsers || facUsers.length === 0) return NextResponse.json({ department: null, subjects: [] })
+    if (!facUsers || facUsers.length === 0) return NextResponse.json({ department: null, subjects: [], facultyAggregates: {}, departmentAggregate: null })
 
     const facIds = facUsers.map((u) => u.id)
 
@@ -58,7 +62,7 @@ export async function GET(
     const facNameMap = new Map(facUsers.map((u) => [u.id, u]))
 
     const evals = await evaluationRepository.listSubmittedByPeriodAndEvaluatees(evaluationPeriodId, facIds)
-    if (evals.length === 0) return NextResponse.json({ department: null, subjects: [] })
+    if (evals.length === 0) return NextResponse.json({ department: null, subjects: [], facultyAggregates: {}, departmentAggregate: null })
 
     const evaluationIds = evals.map((e) => e.id)
 
@@ -85,6 +89,8 @@ export async function GET(
     return !!fs && fs.faculty_id === ev.evaluateeId
   })
 
+  const facultyAggregates = aggregateFacultyResults(validEvals, ratings, commentsRaw)
+
   const groupEvalMap = new Map<string, string[]>()
   for (const ev of validEvals) {
     const key = ev.facultySubjectId as string
@@ -92,7 +98,7 @@ export async function GET(
     groupEvalMap.get(key)!.push(ev.id)
   }
 
-    const subjectsList: Record<string, unknown>[] = []
+    const subjectsList: DepartmentSubjectResult[] = []
     for (const [fsKey, evalIds] of groupEvalMap) {
       const fs = fsMap.get(fsKey)
       if (!fs) continue
@@ -139,9 +145,13 @@ export async function GET(
       visibilityMap[item.facultyId as string] = visMap.get(item.facultyId as string) ?? false
     }
 
+    const departmentAggregate: DepartmentAggregate = aggregateDepartmentResults(subjectsList, ratings, commentsRaw)
+
     return NextResponse.json({
       department: dept ?? null,
       subjects: subjectsList,
+      facultyAggregates,
+      departmentAggregate,
       visibilityMap,
     })
   } catch (e) {

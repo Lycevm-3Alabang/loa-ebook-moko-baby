@@ -56,9 +56,12 @@ describe("GET /api/dean/evaluation-results/export", () => {
     mockEvalResultRepo.listLiveDeptAverages.mockResolvedValue([
       { departmentId: "dept-1", facultyIds: ["f1"], totalRespondents: 3, avgRating: 4, remarks: "Very Satisfactory", catAverages: {}, highestRubrics: [], lowestRubrics: [] },
     ])
-    mockGetDeptResults.mockResolvedValue([
-      { facultyName: "Ana", facultyEmail: "a@x.com", subjectCode: "IT101", subjectName: "Intro", totalRespondents: 3, avgRating: 4, remarks: "Very Satisfactory", professionalManner: 4, communicationWithStudent: 4, studentEngagement: 4, learningMaterials: 4, timeManagement: 4, experientialLearning: 4, respectUniqueness: 4, assessmentAndFeedback: 4, sentimentScore: 0.5, facultySubjectId: "fs1", facultyId: "f1", subjectId: "s1", highestRubrics: [], lowestRubrics: [] },
-    ])
+    mockGetDeptResults.mockResolvedValue({
+      subjects: [
+        { facultyName: "Ana", facultyEmail: "a@x.com", subjectCode: "IT101", subjectName: "Intro", totalRespondents: 3, avgRating: 4, remarks: "Very Satisfactory", professionalManner: 4, communicationWithStudent: 4, studentEngagement: 4, learningMaterials: 4, timeManagement: 4, experientialLearning: 4, respectUniqueness: 4, assessmentAndFeedback: 4, sentimentScore: 0.5, facultySubjectId: "fs1", facultyId: "f1", subjectId: "s1", highestRubrics: [], lowestRubrics: [] },
+      ],
+      facultyAggregates: {},
+    })
     const res = await GET(req("?evaluationPeriodId=p1"))
     expect(res.status).toBe(200)
     expect(res.headers.get("content-type")).toBe("application/zip")

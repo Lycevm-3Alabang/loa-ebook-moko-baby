@@ -8,10 +8,18 @@ import {
   computeSentimentScore,
   CATEGORY_NAMES,
   getRemarkColor,
+  aggregateFacultyResults,
+  aggregatePooledResults,
 } from "@/lib/evaluation-utils"
-import type { RatingRow } from "@/lib/evaluation-utils"
+import type { RatingRow, FacultyRatingRow } from "@/lib/evaluation-utils"
 
 const row = (cat: string, rating: number): RatingRow => ({
+  rating,
+  rubric_items: { categoryId: "c1", rubric_categories: { name: cat } },
+})
+
+const ratingRow = (evaluationId: string, cat: string, rating: number): FacultyRatingRow => ({
+  evaluationId,
   rating,
   rubric_items: { categoryId: "c1", rubric_categories: { name: cat } },
 })
@@ -116,5 +124,100 @@ describe("getRemarkColor", () => {
   it("returns a class string for known remarks", () => {
     expect(getRemarkColor("Outstanding")).toContain("success")
     expect(getRemarkColor(null)).toContain("surface-tertiary")
+  })
+})
+
+describe("aggregatePooledResults", () => {
+  it("pools the rating rows instead of averaging per-group means", () => {
+    // 3 ratings @ 4 and 1 rating @ 5 -> pooled 4.25, mean of group means 4.50
+    const out = aggregatePooledResults([
+      row("Professional Manner", 4),
+      row("Professional Manner", 4),
+      row("Professional Manner", 4),
+      row("Professional Manner", 5),
+    ])
+    expect(out.avgRating).toBe(4.25)
+    expect(out.avgRating).not.toBe(4.5)
+    expect(out.remarks).toBe("Very Satisfactory")
+  })
+
+  it("averages sentiment over the pooled comments", () => {
+    const out = aggregatePooledResults([row("Professional Manner", 4)], [{ sentimentScore: 0.5 }, { sentimentScore: 0.25 }])
+    expect(out.sentimentScore).toBe(0.38)
+  })
+
+  it("returns nulls when there are no ratings", () => {
+    const out = aggregatePooledResults([])
+    expect(out.avgRating).toBeNull()
+    expect(out.remarks).toBeNull()
+    expect(out.sentimentScore).toBeNull()
+  })
+})
+
+describe("aggregateFacultyResults", () => {
+  it("pools a faculty's ratings instead of averaging per-subject means", () => {
+    const evals = [
+      ...Array.from({ length: 100 }, (_, i) => ({ id: `a${i}`, evaluateeId: "f1" })),
+      ...Array.from({ length: 5 }, (_, i) => ({ id: `b${i}`, evaluateeId: "f1" })),
+    ]
+    const ratings = [
+      ...Array.from({ length: 100 }, (_, i) => ratingRow(`a${i}`, "Professional Manner", 4)),
+      ...Array.from({ length: 5 }, (_, i) => ratingRow(`b${i}`, "Professional Manner", 2)),
+    ]
+
+    const out = aggregateFacultyResults(evals, ratings, [])
+
+    // mean of the two subject averages would be 3.00; pooled is 3.90
+    expect(out.f1.avgRating).toBe(3.9)
+    expect(out.f1.avgRating).not.toBe(3)
+    expect(out.f1.totalRespondents).toBe(105)
+    expect(out.f1.remarks).toBe("Very Satisfactory")
+  })
+
+  it("keeps a category that only one subject has", () => {
+    // subject A: PM only -> 4.0 ; subject B: PM + TM -> 3.5
+    // mean of subject means = 3.75 ; pooled = mean(3, 5) = 4.0
+    const evals = [{ id: "a", evaluateeId: "f1" }, { id: "b", evaluateeId: "f1" }]
+    const ratings = [
+      ratingRow("a", "Professional Manner", 4),
+      ratingRow("b", "Professional Manner", 2),
+      ratingRow("b", "Time Management", 5),
+    ]
+
+    const out = aggregateFacultyResults(evals, ratings, [])
+
+    expect(out.f1.avgRating).toBe(4)
+    expect(out.f1.avgRating).not.toBe(3.75)
+    expect(out.f1.timeManagement).toBe(5)
+  })
+
+  it("equals the subject value for a faculty with a single subject", () => {
+    const evals = [{ id: "a", evaluateeId: "f1" }, { id: "b", evaluateeId: "f1" }]
+    const ratings = [
+      ratingRow("a", "Professional Manner", 4),
+      ratingRow("b", "Professional Manner", 2),
+    ]
+
+    const out = aggregateFacultyResults(evals, ratings, [])
+
+    expect(out.f1.avgRating).toBe(3)
+    expect(out.f1.totalRespondents).toBe(2)
+  })
+
+  it("returns null scores when the faculty has no ratings", () => {
+    const out = aggregateFacultyResults([{ id: "a", evaluateeId: "f1" }], [], [])
+    expect(out.f1.avgRating).toBeNull()
+    expect(out.f1.remarks).toBeNull()
+    expect(out.f1.totalRespondents).toBe(1)
+  })
+
+  it("keeps faculties separate", () => {
+    const evals = [{ id: "a", evaluateeId: "f1" }, { id: "b", evaluateeId: "f2" }]
+    const ratings = [ratingRow("a", "Professional Manner", 5), ratingRow("b", "Professional Manner", 1)]
+
+    const out = aggregateFacultyResults(evals, ratings, [])
+
+    expect(out.f1.avgRating).toBe(5)
+    expect(out.f2.avgRating).toBe(1)
   })
 })

@@ -125,4 +125,25 @@ describe("GET /api/admin/evaluation-results", () => {
     const body = await res.json()
     expect(body.departments[0].sentimentScore).toBe(0.38) // (0.5+0.25)/2 rounded
   })
+
+  it("pools the department's comment sentiment instead of averaging per-faculty averages", async () => {
+    mockEvalResultRepo.list.mockResolvedValue([{ facultyId: "f1", generalRating: 4 }])
+    mockEvalRepo.listSubmittedEvaluateeIds.mockResolvedValue(["f1", "f2"])
+    mockEvalRepo.listSubmittedWithSentiment.mockResolvedValue([
+      { evaluateeId: "f1", sentimentScore: 0.1 },
+      { evaluateeId: "f1", sentimentScore: 0.1 },
+      { evaluateeId: "f1", sentimentScore: 0.1 },
+      { evaluateeId: "f2", sentimentScore: 0.9 },
+    ])
+    mockEvalResultRepo.listLiveDeptAverages.mockResolvedValue([
+      { departmentId: "d1", facultyIds: ["f1", "f2"], totalRespondents: 4, avgRating: 4, remarks: null, catAverages: {}, highestRubrics: [], lowestRubrics: [] },
+    ])
+    mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "CCS", code: "CCS" }])
+
+    const res = await GET(req("?evaluationPeriodId=p1"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    // mean of the two faculty averages would be 0.50; pooled over the comments = 0.30
+    expect(body.departments[0].sentimentScore).toBe(0.3)
+  })
 })

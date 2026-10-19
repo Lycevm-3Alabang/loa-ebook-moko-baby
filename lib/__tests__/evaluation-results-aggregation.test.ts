@@ -47,10 +47,25 @@ describe("buildLiveDeptAverages", () => {
     const d1 = out.find((d) => d.departmentId === "d1")!
     expect(d1.facultyIds).toEqual(["f1", "f2"])
     expect(d1.totalRespondents).toBe(5)
-    expect(d1.avgRating).toBe(4.5)
+    // pooled over the department's rating rows: PM = (4+4+5+5+5)/5 = 4.6
+    expect(d1.avgRating).toBe(4.6)
     expect(d1.remarks).toBe("Outstanding")
     const d2 = out.find((d) => d.departmentId === "d2")!
     expect(d2.avgRating).toBe(3)
+  })
+
+  it("pools the department's rating rows instead of averaging per-faculty means", () => {
+    const inputs = [
+      { facultyId: "f1", deptId: "d1", evalCount: 3, ratings: [row(PM, 4), row(PM, 4), row(PM, 4), row(TM, 4), row(TM, 4), row(TM, 4)] },
+      { facultyId: "f2", deptId: "d1", evalCount: 1, ratings: [row(PM, 5), row(TM, 5)] },
+    ]
+    const out = buildLiveDeptAverages(inputs)
+    const d1 = out.find((d) => d.departmentId === "d1")!
+    // mean of the two faculty means would be 4.50; pooled = (4+4+4+5)/4 = 4.25
+    expect(d1.avgRating).toBe(4.25)
+    expect(d1.avgRating).not.toBe(4.5)
+    expect(d1.totalRespondents).toBe(4)
+    expect(d1.facultyIds).toEqual(["f1", "f2"])
   })
 
   it("skips faculty with no usable ratings (does not blank dept)", () => {
@@ -82,7 +97,7 @@ describe("buildLiveDeptAverages", () => {
     expect(out[0].avgRating).toBe(4)
   })
 
-  it("applies two-stage rounding (dept mean of rounded faculty generals)", () => {
+  it("applies two-stage rounding (pooled category averages)", () => {
     // 3 categories: PM=4, TM=4, SE=5 -> cat mean = 13/3 = 4.333 -> rounded 4.33
     const inputs = [
       { facultyId: "f1", deptId: "d1", evalCount: 1, ratings: [row(PM, 4), row(TM, 4), row(SE, 5)] },
@@ -92,7 +107,7 @@ describe("buildLiveDeptAverages", () => {
     expect(out[0].avgRating).toBe(4.33)
   })
 
-  it("computes per-category means from rounded faculty column values", () => {
+  it("computes pooled per-category means", () => {
     const inputs = [
       { facultyId: "f1", deptId: "d1", evalCount: 1, ratings: [row(PM, 4), row(TM, 4)] },
       { facultyId: "f2", deptId: "d1", evalCount: 1, ratings: [row(PM, 5), row(TM, 3)] },
@@ -103,7 +118,7 @@ describe("buildLiveDeptAverages", () => {
     expect(d1.catAverages.timeManagement).toBe(3.5)
   })
 
-  it("returns highest/lowest rubrics from rounded catAverages", () => {
+  it("returns highest/lowest rubrics from pooled catAverages", () => {
     const inputs = [
       { facultyId: "f1", deptId: "d1", evalCount: 1, ratings: [row(PM, 4), row(TM, 3)] },
     ]

@@ -43,9 +43,12 @@ describe("GET /api/admin/evaluation-results/export", () => {
     mockEvalResultRepo.listLiveDeptAverages.mockResolvedValue([
       { departmentId: "d1", facultyIds: ["f1"], totalRespondents: 5, avgRating: 4, remarks: "Very Satisfactory", catAverages: {}, highestRubrics: [], lowestRubrics: [] },
     ])
-    mockGetDeptResults.mockResolvedValue([
-      { facultyName: "Ana", facultyEmail: "a@x.com", subjectCode: "IT101", subjectName: "Intro", totalRespondents: 5, avgRating: 4, remarks: "Very Satisfactory", professionalManner: 4, communicationWithStudent: 4, studentEngagement: 4, learningMaterials: 4, timeManagement: 4, experientialLearning: 4, respectUniqueness: 4, assessmentAndFeedback: 4, sentimentScore: 0.5, facultySubjectId: "fs1", facultyId: "f1", subjectId: "s1", highestRubrics: [], lowestRubrics: [] },
-    ])
+    mockGetDeptResults.mockResolvedValue({
+      subjects: [
+        { facultyName: "Ana", facultyEmail: "a@x.com", subjectCode: "IT101", subjectName: "Intro", totalRespondents: 5, avgRating: 4, remarks: "Very Satisfactory", professionalManner: 4, communicationWithStudent: 4, studentEngagement: 4, learningMaterials: 4, timeManagement: 4, experientialLearning: 4, respectUniqueness: 4, assessmentAndFeedback: 4, sentimentScore: 0.5, facultySubjectId: "fs1", facultyId: "f1", subjectId: "s1", highestRubrics: [], lowestRubrics: [] },
+      ],
+      facultyAggregates: {},
+    })
 
     const res = await GET(req("?evaluationPeriodId=p1"))
     expect(res.status).toBe(200)
@@ -61,7 +64,7 @@ describe("GET /api/admin/evaluation-results/export", () => {
   it("returns 404 when no data", async () => {
     mockDeptRepo.listAll.mockResolvedValue([])
     mockEvalResultRepo.listLiveDeptAverages.mockResolvedValue([])
-    mockGetDeptResults.mockResolvedValue([])
+    mockGetDeptResults.mockResolvedValue({ subjects: [], facultyAggregates: {} })
     const res = await GET(req("?evaluationPeriodId=p1"))
     expect(res.status).toBe(404)
   })

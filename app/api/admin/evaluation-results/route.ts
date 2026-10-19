@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/route-guard"
 import { logServerError } from "@/lib/services/audit"
 import { evaluationResultRepository, evaluationRepository, departmentRepository } from "@/lib/repositories/factory"
+import { computeSentimentScore } from "@/lib/evaluation-utils"
 
 export async function GET(request: NextRequest) {
   const authErr = await requireAdmin(request)
@@ -30,18 +31,6 @@ export async function GET(request: NextRequest) {
 
     const sentimentRows = await evaluationRepository.listSubmittedWithSentiment(evaluationPeriodId)
 
-    const sentByFaculty = new Map<string, number[]>()
-    for (const row of sentimentRows) {
-      if (row.sentimentScore !== null) {
-        if (!sentByFaculty.has(row.evaluateeId)) sentByFaculty.set(row.evaluateeId, [])
-        sentByFaculty.get(row.evaluateeId)!.push(row.sentimentScore)
-      }
-    }
-    const avgSentByFaculty = new Map<string, number>()
-    for (const [facId, scores] of sentByFaculty) {
-      avgSentByFaculty.set(facId, Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 100) / 100)
-    }
-
     // Live department averages — never read cached generalRating (stale/placeholder nulls).
     const liveAvgs = await evaluationResultRepository.listLiveDeptAverages(evaluationPeriodId)
 
@@ -51,10 +40,8 @@ export async function GET(request: NextRequest) {
 
     const departments = liveAvgs.map((a) => {
       const dept = deptMap.get(a.departmentId)
-      const scores = a.facultyIds.flatMap((id) => {
-        const s = avgSentByFaculty.get(id)
-        return s === undefined ? [] : [s]
-      })
+      const facIds = new Set(a.facultyIds)
+      const scores = sentimentRows.filter((row) => facIds.has(row.evaluateeId))
       return {
         departmentId: a.departmentId,
         departmentName: dept?.name ?? (a.departmentId === "__unknown__" ? "Unassigned" : "Unknown"),
@@ -65,9 +52,7 @@ export async function GET(request: NextRequest) {
         remarks: a.remarks,
         highestRubrics: a.highestRubrics,
         lowestRubrics: a.lowestRubrics,
-        sentimentScore: scores.length > 0
-          ? Math.round(scores.reduce((x, y) => x + y, 0) / scores.length * 100) / 100
-          : null,
+        sentimentScore: computeSentimentScore(scores),
       }
     })
 

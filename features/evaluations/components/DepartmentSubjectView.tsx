@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { getRemarkColor } from "@/lib/evaluation-utils"
+import { getRemarkColor, type FacultyAggregate } from "@/lib/evaluation-utils"
 import { downloadEvalDetailPdf } from "@/lib/evaluation-pdf"
 
 interface SubjectRow {
@@ -39,13 +39,14 @@ interface Props {
   visibilityMap?: Record<string, boolean>
   onVisibilityChange?: (facultyId: string, visible: boolean) => void
   onBulkVisibilityChange?: (visible: boolean) => void
+  facultyAggregates?: Record<string, FacultyAggregate>
 }
 
 type ViewTab = "by_subject" | "by_faculty"
 
 type SortKey = "facultyName" | "subjectName" | "avgRating" | "sentimentScore" | "totalRespondents"
 
-export default function DepartmentSubjectView({ subjects, departmentId, evaluationPeriodId, search, onSearchChange, basePath = "/admin/evaluations/results", visibilityMap = {}, onVisibilityChange, onBulkVisibilityChange }: Props) {
+export default function DepartmentSubjectView({ subjects, departmentId, evaluationPeriodId, search, onSearchChange, basePath = "/admin/evaluations/results", visibilityMap = {}, onVisibilityChange, onBulkVisibilityChange, facultyAggregates = {} }: Props) {
   const router = useRouter()
   const [viewTab, setViewTab] = useState<ViewTab>("by_subject")
   const [sortKey, setSortKey] = useState<SortKey>("avgRating")
@@ -110,21 +111,6 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
     }
     return Array.from(map.values())
   }, [filteredSubjects])
-
-  const computeFacultyAvg = (subjects: SubjectRow[]) => {
-    const ratings = subjects.filter((s) => s.avgRating !== null).map((s) => s.avgRating as number)
-    if (ratings.length === 0) return null
-    return Math.round(ratings.reduce((a, b) => a + b, 0) / ratings.length * 100) / 100
-  }
-
-  const getRemarkForAvg = (avg: number | null) => {
-    if (avg === null) return null
-    if (avg >= 4.5) return "Outstanding"
-    if (avg >= 3.5) return "Very Satisfactory"
-    if (avg >= 2.5) return "Satisfactory"
-    if (avg >= 1.5) return "Unsatisfactory"
-    return "Poor"
-  }
 
   const apiPrefix = basePath.startsWith("/dean") ? "/api/dean" : "/api/admin"
 
@@ -340,9 +326,10 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
       ) : (
         <div className="space-y-3">
           {facultyGroups.map((group) => {
-            const facultyAvg = computeFacultyAvg(group.subjects)
-            const facultyRemark = getRemarkForAvg(facultyAvg)
-            const totalResp = group.subjects.reduce((sum, s) => sum + s.totalRespondents, 0)
+            const agg = facultyAggregates[group.facultyId]
+            const facultyAvg = agg?.avgRating ?? null
+            const facultyRemark = agg?.remarks ?? null
+            const totalResp = agg?.totalRespondents ?? 0
             const isExpanded = expandedFaculty === group.facultyId
 
             return (
