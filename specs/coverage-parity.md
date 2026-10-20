@@ -17,6 +17,14 @@ responses" count, and a dummy account excluded from every roster. The
 **coverage** surfaces were not brought along, and one of them does not work
 at all.
 
+> **Amended 2026-10-20.** The results surfaces' rule was itself changed the
+> same day: the department that owns the evaluated section no longer owns the
+> result — the **teacher's own** department does (the evaluated entity is the
+> faculty), with the section's department as the fallback for a teacher based
+> somewhere that cannot own coverage. The coverage and the results surfaces
+> now resolve through the same helper, `resolveSubjectDepartment`. The
+> paragraph above records the rule as it stood when this spec was written.
+
 ### 1.1 The dean's coverage page is entirely non-functional
 
 Two independent defects, both pre-existing — and **both were specified and
@@ -176,10 +184,11 @@ Slices are independent and shippable in order C1 → C2 → C3 → C4 → C5.
   C1.1 and C1.2 must land together — a working list without the filter is
   worse than the 400 it replaces.
 - **The detail guard becomes stricter or looser depending on the resolver's
-  fallback.** With section-first, a subject whose section cannot be resolved
-  falls back to the teacher's home department, so the Math dean can still
-  open a Math-homed teacher's unresolvable subject. That is the same
-  fallback the results pages use, and it is deliberate.
+  fallback.** With the faculty-driven rule, a subject whose teacher is based
+  somewhere that cannot own coverage falls back to the section's department,
+  so the CS dean can still open a CS-section subject taught by a teacher who
+  owns no coverage. That is the same fallback every surface uses, and it is
+  deliberate.
 - **The warning adds a query to the coverage page's load** (the warning
   loads the period's assignments). The coverage page already polls every 30
   seconds (`CoveragePage.tsx:99`), so the cost is on a path that is already

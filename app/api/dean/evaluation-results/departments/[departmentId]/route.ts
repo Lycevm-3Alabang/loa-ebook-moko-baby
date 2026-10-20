@@ -31,7 +31,7 @@ export async function GET(
     await evaluationResultRepository.assertPeriodIsActive(evaluationPeriodId)
 
     // One implementation for admin and dean: the department's own subjects,
-    // by the department that owns the section.
+    // by the teacher's own department.
     const { subjects, facultyAggregates, departmentAggregate } =
       await getDepartmentSubjectResults(evaluationPeriodId, departmentId)
 

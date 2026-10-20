@@ -62,7 +62,7 @@ departments, no "back" link).
 | 4.2 | The department list's **"Faculty"** count matches the distinct faculty on that department's detail page | the two numbers differ |
 | 4.3 | Clicking the department crumb on a detail page returns to that department **with the period intact** | an empty page, or "periodId is required" |
 | 4.4 | The detail page's **"By Faculty"** cards and **"By Subject & Section"** rows list the same people | a teacher on one view and not the other |
-| 4.5 | A teacher homed elsewhere who teaches a section here appears **here** (the results pages are section-first) | — this is the intended difference from the coverage page |
+| 4.5 | A teacher homed elsewhere who teaches a section here appears **in their own department** on every surface — the coverage page and the results pages agree | a subject filed under the section's department on either page |
 | 4.6 | The **"No responses"** count lists the teachers who received nothing | a name that does not belong to the department |
 | 4.7 | The **"Export"** button (download glyph) produces a ZIP whose per-department CSVs match the pages | an empty folder, or a 500 toast |
 
@@ -83,9 +83,9 @@ departments, no "back" link).
 ## 6. The one number no test can give you
 
 The **home → section matrix** (§7 of this note's companion, below) says how
-many rows the section-first attribution actually moved on your data. Run it
-once per period you care about; it is the only way to know whether the new
-rules changed anything real.
+many rows the faculty-driven attribution actually moved on your data. Run it
+once per period you care about; it is the only way to know whether the rule
+changed anything real.
 
 ---
 
@@ -121,15 +121,14 @@ order by 1, 2;
 | Row | Meaning |
 |---|---|
 | home = section | the ordinary case — the teacher teaches in their own department. Nothing moves. |
-| home ≠ section, both real | the teacher's home is a different academic department. On the **results** pages the subject belongs to the **section's** department (so it moved from the teacher's home); on the **coverage** page it belongs to the **teacher's** department (so it did not move). Expect a small number of these — a teacher genuinely teaching outside their department. |
+| home ≠ section, both real | the teacher's home is a different academic department. On **every** surface the subject belongs to the **teacher's** department; the section's department is only the fallback for a teacher who cannot own coverage. Expect a small number of these — a teacher genuinely teaching outside their department. |
 | home = a placeholder bucket ("Unassigned", "Admin") | the CSV could not place the teacher. Their coverage now falls back to the section's department, so those buckets stop accumulating everyone's coverage. |
 | home = '(no home dept)' | the dummy account and CSV rows with no department — the same fallback applies. |
 | section = '(no section dept)' | a section with no department course — a data defect; the row lands in the "Unresolved" group and the integrity warning names it. |
 
 **The number that matters** is the sum of the `subject_rows` in the
-"home ≠ section" rows: it is how many subject rows the new attribution
-moved between departments on the results pages. If it is zero, the
-attribution change was a no-op on your data and you can stop worrying about
-it. If it is large, compare one period before and after with the check
-lists above, and expect the *departments* to look different while the
-*totals* stay the same.
+"home ≠ section" rows: it is how many subject rows the attribution moved
+between departments. If it is zero, the attribution change was a no-op on
+your data and you can stop worrying about it. If it is large, compare one
+period before and after with the check lists above, and expect the
+*departments* to look different while the *totals* stay the same.

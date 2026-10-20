@@ -133,7 +133,7 @@ describe("CoveragePage single department", () => {
     })
 
     render(<CoveragePage statusBase="/api/dean/evaluation-status" departmentId="d1" />)
-    await waitFor(() => expect(screen.getByText("CCS")).toBeTruthy())
+    await waitFor(() => expect(screen.getByText("CCS (CCS)")).toBeTruthy())
     expect(screen.queryByText(/back to departments/i)).toBeNull()
   })
 
@@ -147,7 +147,7 @@ describe("CoveragePage single department", () => {
     })
 
     render(<CoveragePage statusBase="/api/admin/evaluation-status" />)
-    await waitFor(() => expect(screen.getByText("CCS")).toBeTruthy())
+    await waitFor(() => expect(screen.getByText("CCS (CCS)")).toBeTruthy())
     expect(screen.queryByText(/back to departments/i)).toBeNull()
   })
 })

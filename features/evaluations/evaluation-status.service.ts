@@ -9,7 +9,7 @@ import {
   subjectRepository,
   userRepository,
 } from "@/lib/repositories/factory"
-import { resolveSectionDepartment, UNASSIGNED_FACULTY_EMAIL } from "@/lib/evaluation-utils"
+import { resolveSectionDepartment, resolveSubjectDepartment, UNASSIGNED_FACULTY_EMAIL } from "@/lib/evaluation-utils"
 import type { EvaluationStatusItem } from "@/lib/types"
 import { STATUS_ON_TRACK_PCT } from "./constants"
 
@@ -193,18 +193,13 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
   // THEIR department. The faculty-subject's (section's) department takes
   // priority only when the teacher is based somewhere that cannot own
   // coverage — no home department, or a home with no courses of its own
-  // (the "Unassigned"/"Admin" placeholder buckets).
-  const departmentsWithCourses = new Set(
-    [...subjectCtx.departmentCourses.values()].filter((id): id is string => !!id),
-  )
+  // (the "Unassigned"/"Admin" placeholder buckets). The shared resolver
+  // holds that rule, so the results pages resolve a department the same way.
   const sectionDeptOf = new Map<string, string | null>()
   const coverageDeptOf = new Map<string, string | null>()
   for (const m of mappings) {
-    const sectionDeptId = resolveSectionDepartment(m, subjectCtx)
-    sectionDeptOf.set(m.id, sectionDeptId)
-    const homeDeptId = subjectCtx.userDept.get(m.faculty_id) ?? null
-    const homeOwnsCoverage = !!homeDeptId && departmentsWithCourses.has(homeDeptId)
-    coverageDeptOf.set(m.id, homeOwnsCoverage ? homeDeptId : sectionDeptId)
+    sectionDeptOf.set(m.id, resolveSectionDepartment(m, subjectCtx))
+    coverageDeptOf.set(m.id, resolveSubjectDepartment(m, subjectCtx))
   }
 
   // Index eval status rows by (facultySubjectId, evaluatorId)

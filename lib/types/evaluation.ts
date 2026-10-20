@@ -592,8 +592,8 @@ export interface LiveDeptAverage {
 
 /**
  * The lookups one department decision needs: the faculty's home department,
- * and the section -> department_course -> department chain that owns an
- * evaluated subject.
+ * and the section -> department_course -> department chain an evaluated
+ * subject can fall back to.
  */
 export interface SubjectResolutionContext {
   userDept: Map<string, string | null>
@@ -608,7 +608,7 @@ export interface EvaluationAssignment {
   faculty_id: string
   subject_id: string
   section_id: string | null
-  /** The department that owns the assignment's section; null when unresolvable. */
+  /** The department the assignment counts under — the teacher's own department; null when unresolvable. */
   departmentId: string | null
 }
 
@@ -651,7 +651,7 @@ export interface IEvaluationResultRepository {
   listLiveFacultyResults(evaluationPeriodId: string): Promise<LiveFacultyResult[]>
   /**
    * The evaluated assignments of one department — the department's own
-   * subjects, by the department that owns the section.
+   * subjects, by the teacher's own department.
    */
   listDepartmentAssignments(departmentId: string, evaluationPeriodId: string): Promise<EvaluationAssignment[]>
   /** The lookups a department decision needs, for a set of assignments. */

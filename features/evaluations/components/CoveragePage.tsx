@@ -8,7 +8,7 @@ import IosButton from "@/components/ui/IosButton"
 import Tabs from "@/components/ui/Tabs"
 import { useApiGet } from "@/lib/api/client"
 import { usePagination, Paginator } from "@/components/ui/Paginator"
-import { formatPeriodLabel, sectionLabel } from "@/lib/evaluation-utils"
+import { formatPeriodLabel, sectionLabel, departmentLabel } from "@/lib/evaluation-utils"
 import CoverageDetailModal from "./CoverageDetailModal"
 import { downloadBlob } from "@/lib/zip"
 
@@ -420,8 +420,7 @@ export default function CoveragePage({
                   {sortedDepts.map((d) => (
                     <tr key={d.departmentId} onClick={() => selectDept(d.departmentId)} className="border-b border-default hover:bg-surface-hover cursor-pointer transition-colors">
                       <td className="py-3 pr-4">
-                        <span className="text-sm font-semibold text-primary">{d.departmentName}</span>
-                        {d.departmentCode && <span className="text-[10px] text-tertiary ml-2">({d.departmentCode})</span>}
+                        <span className="text-sm font-semibold text-primary">{departmentLabel(d.departmentName, d.departmentCode)}</span>
                       </td>
                       <td className="py-3 pr-4 text-right text-sm text-secondary">{d.facultyCount}</td>
                       <td className="py-3 pr-4 text-right text-sm text-secondary">{d.subjectsEvaluated} / {d.subjectsTotal}</td>
@@ -445,7 +444,9 @@ export default function CoveragePage({
                 <IosButton variant="plain" size="xs" onClick={clearDept}>Back to departments</IosButton>
               )}
               <div>
-                <h2 className="text-lg font-bold text-primary">{activeDept?.departmentName ?? "Department"}</h2>
+                <h2 className="text-lg font-bold text-primary">
+                  {activeDept ? departmentLabel(activeDept.departmentName, activeDept.departmentCode) : "Department"}
+                </h2>
                 <p className="text-xs text-tertiary mt-1">
                   {activeDept ? `${activeDept.subjectsEvaluated} of ${activeDept.subjectsTotal} subjects evaluated - ${activeDept.submitted}/${activeDept.expected} responses` : ""}
                 </p>

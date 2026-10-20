@@ -61,7 +61,7 @@ export interface DepartmentTeachingFaculty {
 
 /**
  * The people who teach in a department this term: the faculty with an
- * assignment whose section the department owns. The same rule the results
+ * assignment that counts under the department. The same rule the results
  * pages use, so a dean's roster and their results page agree.
  *
  * The term is the active evaluation period's semester, falling back to the
@@ -84,8 +84,8 @@ export async function getDepartmentSubjectResults(
   evaluationPeriodId: string,
   departmentId: string,
 ): Promise<DepartmentResults> {
-  // The department's own subjects: the evaluated assignments whose section
-  // belongs to this department.
+  // The department's own subjects: the evaluated assignments that count
+  // under this department.
   const assignments = await evaluationResultRepository.listDepartmentAssignments(departmentId, evaluationPeriodId)
   if (assignments.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
 
