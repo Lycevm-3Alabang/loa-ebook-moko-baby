@@ -5,6 +5,7 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation"
 import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import IosButton from "@/components/ui/IosButton"
+import Tabs from "@/components/ui/Tabs"
 import { useApiGet } from "@/lib/api/client"
 import { usePagination, Paginator } from "@/components/ui/Paginator"
 import { formatPeriodLabel, sectionLabel } from "@/lib/evaluation-utils"
@@ -36,6 +37,8 @@ interface SubjectRow {
   subjectName: string
   sectionProgram: string | null
   sectionName: string | null
+  /** The department that owns the subject's section, when it is not this row's department. */
+  sectionDepartment: string | null
   facultyId: string
   facultyName: string
   facultyEmail: string
@@ -85,6 +88,12 @@ interface AttributionWarnings {
 // A subject whose department cannot be resolved. Named apart from a real
 // "Unassigned" department, which is a legitimate department with its own id.
 const UNRESOLVED = "__unknown__"
+
+/** The two groupings, with the results page's names for them. */
+const COVERAGE_TABS: { key: "by_subject" | "by_faculty"; label: string }[] = [
+  { key: "by_subject", label: "By Subject & Section" },
+  { key: "by_faculty", label: "By Faculty" },
+]
 
 function formatPct(v: number | null) {
   return v === null ? "-" : `${v.toFixed(1)}%`
@@ -442,22 +451,7 @@ export default function CoveragePage({
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
-                <IosButton
-                  variant={viewTab === "by_subject" ? "primary" : "gray"}
-                  size="xs"
-                  onClick={() => setViewTab("by_subject")}
-                >
-                  By Subject &amp; Section
-                </IosButton>
-                <IosButton
-                  variant={viewTab === "by_faculty" ? "primary" : "gray"}
-                  size="xs"
-                  onClick={() => setViewTab("by_faculty")}
-                >
-                  By Faculty
-                </IosButton>
-              </div>
+              <Tabs tabs={COVERAGE_TABS} active={viewTab} onChange={setViewTab} />
 
               {deptSubjects.length === 0 ? (
                 <p className="text-sm text-tertiary text-center py-8">No evaluated subjects found.</p>
@@ -488,7 +482,12 @@ export default function CoveragePage({
                               <span className="text-sm font-semibold text-primary">{s.subjectCode}</span>
                               <span className="text-xs text-tertiary ml-2">{s.subjectName}</span>
                             </td>
-                            <td className="py-3 pr-4 text-sm text-secondary">{sectionLabel(s.sectionProgram, s.sectionName)}</td>
+                            <td className="py-3 pr-4 text-sm text-secondary">
+                              {sectionLabel(s.sectionProgram, s.sectionName)}
+                              {s.sectionDepartment && (
+                                <span className="ml-2 text-[10px] text-tertiary">{s.sectionDepartment} section</span>
+                              )}
+                            </td>
                             <td className="py-3 pr-4 text-sm text-secondary">{s.facultyName}</td>
                             <td className="py-3 pr-4 text-right text-sm text-secondary">{s.enrolled}</td>
                             <td className="py-3 pr-4 text-right text-sm text-emerald-600 dark:text-emerald-400">{s.participated}</td>
@@ -575,7 +574,12 @@ export default function CoveragePage({
                                 {group.subjects.map((s) => (
                                   <tr key={s.facultySubjectId} className="border-b border-default align-top">
                                     <td className="py-2 pr-3 text-xs text-secondary">{s.subjectCode} {s.subjectName}</td>
-                                    <td className="py-2 pr-3 text-xs text-secondary">{sectionLabel(s.sectionProgram, s.sectionName)}</td>
+                                    <td className="py-2 pr-3 text-xs text-secondary">
+                                      {sectionLabel(s.sectionProgram, s.sectionName)}
+                                      {s.sectionDepartment && (
+                                        <span className="ml-2 text-[10px] text-tertiary">{s.sectionDepartment} section</span>
+                                      )}
+                                    </td>
                                     <td className="py-2 pr-3 text-right text-xs text-secondary">{s.enrolled}</td>
                                     <td className="py-2 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{s.participated}</td>
                                     <td className="py-2 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{s.notParticipated}</td>

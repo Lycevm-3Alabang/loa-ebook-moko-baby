@@ -1,7 +1,7 @@
 # Evaluation Results — Department Attribution & Missing Faculty — Spec
 
-**Version:** 1.0
-**Status:** Final (approved 2026-10-20; D1–D6 resolved) — built, gates green 2026-10-20 (owner-reported)
+**Version:** 1.1
+**Status:** Final (approved 2026-10-20; D1–D6 resolved) — v1.1 records the coverage page's exception (the user: "since it is Faculty-Subject then it's faculty driven")
 **Last Updated:** 2026-10-20
 **Scope:** `app/admin/evaluations/results` (+ its `[departmentId]` detail),
 `app/dean/evaluations/results/[departmentId]`, the coverage surface, and the
@@ -55,6 +55,17 @@ and therefore already files them under the section's department. So today's
 app speaks two languages *inside one page*: dept-agnostic faculty are filed
 by section, homed faculty are filed by home department. Section-first makes
 one language.
+
+> **v1.1 exception — the coverage page.** The coverage page is
+> **faculty-driven** (the user: "since it is Faculty-Subject then it's
+> faculty driven"): a teacher's coverage belongs to **their own** department,
+> with the section's department as the fallback for a teacher based
+> somewhere that cannot own coverage (no home, or a home with no courses —
+> the "Unassigned"/"Admin" placeholder buckets). The coverage page therefore
+> answers "how is my faculty doing?" while the results pages answer "whose
+> evaluation is this?" — different questions, each right for its own. The
+> rule is specified in `coverage-faculty-grouping.md` §1.1 (D5) and
+> implemented in C5 there.
 
 ### 1.3 The dean page omits the dept-agnostic faculty
 

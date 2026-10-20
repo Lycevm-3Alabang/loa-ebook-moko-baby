@@ -9,7 +9,7 @@ import {
   subjectRepository,
   userRepository,
 } from "@/lib/repositories/factory"
-import { resolveSubjectDepartment, UNASSIGNED_FACULTY_EMAIL } from "@/lib/evaluation-utils"
+import { resolveSectionDepartment, UNASSIGNED_FACULTY_EMAIL } from "@/lib/evaluation-utils"
 import type { EvaluationStatusItem } from "@/lib/types"
 import { STATUS_ON_TRACK_PCT } from "./constants"
 
@@ -20,6 +20,8 @@ export interface SubjectStatusRow {
   subjectName: string
   sectionProgram: string | null
   sectionName: string | null
+  /** The department that owns the subject's section, when it is not this row's department. */
+  sectionDepartment: string | null
   facultyId: string
   facultyName: string
   facultyEmail: string
@@ -177,6 +179,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     facName.set(u.id, u.name)
     facEmail.set(u.id, u.email ?? "")
   }
+  const deptNameById = new Map(departments.map((d) => [d.id, d.name]))
   // Sections are few — one lookup for each row's OWN section.
   const sectionById = new Map(allSections.map((s) => [s.id, s]))
 
@@ -186,10 +189,23 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     facUsers.filter((u) => u.email === UNASSIGNED_FACULTY_EMAIL).map((u) => u.id),
   )
 
-  // The department that owns a subject is the one that owns its section — the
-  // same rule the results pages use, so the two surfaces cannot disagree.
-  const deptOf = new Map<string, string | null>()
-  for (const m of mappings) deptOf.set(m.id, resolveSubjectDepartment(m, subjectCtx))
+  // The coverage page is faculty-driven: a teacher's coverage belongs to
+  // THEIR department. The faculty-subject's (section's) department takes
+  // priority only when the teacher is based somewhere that cannot own
+  // coverage — no home department, or a home with no courses of its own
+  // (the "Unassigned"/"Admin" placeholder buckets).
+  const departmentsWithCourses = new Set(
+    [...subjectCtx.departmentCourses.values()].filter((id): id is string => !!id),
+  )
+  const sectionDeptOf = new Map<string, string | null>()
+  const coverageDeptOf = new Map<string, string | null>()
+  for (const m of mappings) {
+    const sectionDeptId = resolveSectionDepartment(m, subjectCtx)
+    sectionDeptOf.set(m.id, sectionDeptId)
+    const homeDeptId = subjectCtx.userDept.get(m.faculty_id) ?? null
+    const homeOwnsCoverage = !!homeDeptId && departmentsWithCourses.has(homeDeptId)
+    coverageDeptOf.set(m.id, homeOwnsCoverage ? homeDeptId : sectionDeptId)
+  }
 
   // Index eval status rows by (facultySubjectId, evaluatorId)
   const statusByKey = new Map<string, EvaluationStatusItem[]>()
@@ -244,12 +260,15 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     const code = subj?.code ?? ""
     const name = subj?.name ?? m.id
     if (q && !`${code} ${name} ${facultyName}`.toLowerCase().includes(q)) continue
-    const rowDepartmentId = deptOf.get(m.id) ?? ""
+    const rowDepartmentId = coverageDeptOf.get(m.id) ?? ""
     // A scoped view shows one department's subjects. The department-less rows
     // belong to no department, so they fall outside the scope.
     if (departmentId && rowDepartmentId !== departmentId) continue
     const agg = aggByFs.get(m.id)
     const section = m.section_id ? sectionById.get(m.section_id) : undefined
+    const sectionDeptId = sectionDeptOf.get(m.id) ?? null
+    const sectionDepartment =
+      sectionDeptId && sectionDeptId !== rowDepartmentId ? (deptNameById.get(sectionDeptId) ?? null) : null
     subjectRows.push({
       facultySubjectId: m.id,
       departmentId: rowDepartmentId,
@@ -257,6 +276,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
       subjectName: name,
       sectionProgram: section?.program ?? null,
       sectionName: section?.name ?? null,
+      sectionDepartment,
       facultyId: m.faculty_id,
       facultyName,
       facultyEmail: facEmail.get(m.faculty_id) ?? "",
@@ -283,7 +303,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     let evaluated = 0
     let submitted = 0
     let expected = 0
-    const deptMappings = mappings.filter((m) => deptOf.get(m.id) === d.id)
+    const deptMappings = mappings.filter((m) => coverageDeptOf.get(m.id) === d.id)
 
     // Distinct student sets across the department's subjects
     const uniqStudents = new Set<string>()

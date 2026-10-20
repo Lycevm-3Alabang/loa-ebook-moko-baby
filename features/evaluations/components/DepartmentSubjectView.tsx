@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
+import Tabs from "@/components/ui/Tabs"
 import { getRemarkColor, sectionLabel, type FacultyAggregate } from "@/lib/evaluation-utils"
 import { downloadEvalDetailPdf } from "@/lib/evaluation-pdf"
 
@@ -153,24 +154,7 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        {tabs.map((t) => {
-          const active = viewTab === t.key
-          return (
-            <button
-              key={t.key}
-              onClick={() => setViewTab(t.key)}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-                active
-                  ? "bg-amber-500 text-white border-amber-500 shadow-sm"
-                  : "bg-surface text-tertiary border-default hover:border-amber-300 hover:text-secondary"
-              }`}
-            >
-              {t.label}
-            </button>
-          )
-        })}
-      </div>
+      <Tabs tabs={tabs} active={viewTab} onChange={setViewTab} />
 
       <div className="flex items-center gap-3">
         <input

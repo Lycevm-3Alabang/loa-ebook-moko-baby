@@ -200,7 +200,7 @@ describe("getEvaluationStatus — new bucket fields", () => {
     expect(res.subjects[0].subjectCode).toBe("IT102")
   })
 
-  it("attributes a subject to the section's department, not the faculty's home department", async () => {
+  it("attributes a teacher's coverage to their own department, not the section's", async () => {
     mockDeptRepo.listAll.mockResolvedValue([
       { id: "d1", name: "MATH", code: "MATH" },
       { id: "d2", name: "CS", code: "CS" },
@@ -209,17 +209,43 @@ describe("getEvaluationStatus — new bucket fields", () => {
       { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec-cs", semesterId: "s1" },
     ])
     // f1 is homed in d1 (MATH) but teaches a section owned by d2 (CS).
+    // The coverage page is faculty-driven: the coverage is MATH's, and the
+    // row says the section belongs to CS.
     mockUserRepo.listByIds.mockResolvedValue([{ id: "f1", name: "Ana", departmentId: "d1" }])
     mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
       userDept: new Map([["f1", "d1"]]),
       sections: new Map([["sec-cs", "dc-cs"]]),
-      departmentCourses: new Map([["dc-cs", "d2"]]),
+      // MATH (d1) has a course of its own, so it can own coverage.
+      departmentCourses: new Map([["dc-cs", "d2"], ["dc-math", "d1"]]),
     })
 
     const res = await getEvaluationStatus("p1")
-    expect(res.subjects[0].departmentId).toBe("d2")
-    expect(res.departments.find((d) => d.departmentId === "d2")?.subjectsTotal).toBe(1)
-    expect(res.departments.find((d) => d.departmentId === "d1")?.subjectsTotal).toBe(0)
+    expect(res.subjects[0].departmentId).toBe("d1")
+    expect(res.subjects[0].sectionDepartment).toBe("CS")
+    expect(res.departments.find((d) => d.departmentId === "d1")?.subjectsTotal).toBe(1)
+    expect(res.departments.find((d) => d.departmentId === "d2")?.subjectsTotal).toBe(0)
+  })
+
+  it("falls back to the section's department when the teacher's home has no courses", async () => {
+    mockDeptRepo.listAll.mockResolvedValue([
+      { id: "d1", name: "CS", code: "CS" },
+      { id: "d9", name: "Unassigned", code: "UNASSIGNED" },
+    ])
+    mockFsRepo.list.mockResolvedValue([
+      { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec-cs", semesterId: "s1" },
+    ])
+    // f1 is homed in the placeholder bucket, which has no course of its own.
+    mockUserRepo.listByIds.mockResolvedValue([{ id: "f1", name: "Ana", departmentId: "d9" }])
+    mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
+      userDept: new Map([["f1", "d9"]]),
+      sections: new Map([["sec-cs", "dc-cs"]]),
+      departmentCourses: new Map([["dc-cs", "d1"]]),
+    })
+
+    const res = await getEvaluationStatus("p1")
+    expect(res.subjects[0].departmentId).toBe("d1")
+    expect(res.subjects[0].sectionDepartment).toBeNull()
+    expect(res.departments.find((d) => d.departmentId === "d9")?.subjectsTotal).toBe(0)
   })
 
   it("attributes a dept-agnostic faculty by the section", async () => {
@@ -239,7 +265,24 @@ describe("getEvaluationStatus — new bucket fields", () => {
     expect(res.subjects[0].facultyName).toBe("Ana")
   })
 
-  it("falls back to the home department when the section cannot be resolved", async () => {
+  it("keeps a subject unassigned when neither the section nor a home with courses resolves", async () => {
+    mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "MATH", code: "MATH" }])
+    mockFsRepo.list.mockResolvedValue([
+      { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec-unknown", semesterId: "s1" },
+    ])
+    // The section is unknown and the home department (d1) has no course of
+    // its own, so nothing can own this coverage: it stays unassigned.
+    mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
+      userDept: new Map([["f1", "d1"]]),
+      sections: new Map(),
+      departmentCourses: new Map(),
+    })
+
+    const res = await getEvaluationStatus("p1")
+    expect(res.subjects[0].departmentId).toBe("")
+  })
+
+  it("uses the home department when the section cannot be resolved but the home has courses", async () => {
     mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "MATH", code: "MATH" }])
     mockFsRepo.list.mockResolvedValue([
       { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec-unknown", semesterId: "s1" },
@@ -247,7 +290,7 @@ describe("getEvaluationStatus — new bucket fields", () => {
     mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
       userDept: new Map([["f1", "d1"]]),
       sections: new Map(),
-      departmentCourses: new Map(),
+      departmentCourses: new Map([["dc-math", "d1"]]),
     })
 
     const res = await getEvaluationStatus("p1")
@@ -358,5 +401,52 @@ describe("getEvaluationStatus — new bucket fields", () => {
 
     const res = await getEvaluationStatus("p1")
     expect(res.facultyAggregates.d1["f-dummy"]).toBeUndefined()
+  })
+
+  it("keeps a teacher who teaches in two departments inside each department's own figures", async () => {
+    mockDeptRepo.listAll.mockResolvedValue([
+      { id: "d1", name: "CCS", code: "CCS" },
+      { id: "d2", name: "MATH", code: "MATH" },
+    ])
+    // Ana teaches a CCS section and a MATH section; Ben only a CCS one.
+    mockFsRepo.list.mockResolvedValue([
+      { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec-cs", semesterId: "s1" },
+      { id: "fs2", faculty_id: "f1", subject_id: "sub1", section_id: "sec-math", semesterId: "s1" },
+      { id: "fs3", faculty_id: "f2", subject_id: "sub1", section_id: "sec-cs", semesterId: "s1" },
+    ])
+    mockUserRepo.listByIds.mockResolvedValue([
+      { id: "f1", name: "Ana", email: "ana@x", departmentId: "d1" },
+      { id: "f2", name: "Ben", email: "ben@x", departmentId: "d1" },
+    ])
+    mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
+      userDept: new Map([["f1", "d1"], ["f2", "d1"]]),
+      sections: new Map([["sec-cs", "dc-cs"], ["sec-math", "dc-math"]]),
+      departmentCourses: new Map([["dc-cs", "d1"], ["dc-math", "d2"]]),
+    })
+    mockEnrollmentRepo.listStudentIdsByFacultySubjectIds.mockResolvedValue(
+      new Map([["fs1", ["s1"]], ["fs2", ["s2"]], ["fs3", ["s3"]]]),
+    )
+    mockEvalRepo.listStatusByPeriodAndFacultySubjectIds.mockResolvedValue([
+      st("s1", "SUBMITTED", false, "fs1"),
+      st("s2", "SUBMITTED", false, "fs2"),
+      st("s3", "SUBMITTED", false, "fs3"),
+    ])
+
+    const res = await getEvaluationStatus("p1")
+
+    // The evaluated entity is the faculty, so coverage is the faculty's own
+    // department: Ana is homed in CCS, so BOTH her sections are counted under
+    // CCS, and the MATH section says whose section it is.
+    expect(res.facultyAggregates.d1.f1.subjects).toBe(2)
+    expect(res.facultyAggregates.d1.f1.students).toBe(2)
+    expect(res.facultyAggregates.d2.f1).toBeUndefined()
+    // Ben is only in CCS.
+    expect(res.facultyAggregates.d1.f2.subjects).toBe(1)
+    expect(res.facultyAggregates.d2.f2).toBeUndefined()
+    // The department's own figures agree with its teachers'.
+    expect(res.departments.find((d) => d.departmentId === "d1")?.uniqueStudents).toBe(3)
+    expect(res.departments.find((d) => d.departmentId === "d2")?.subjectsTotal).toBe(0)
+    // The MATH section is in CCS's list, flagged with its owner.
+    expect(res.subjects.find((s) => s.facultySubjectId === "fs2")?.sectionDepartment).toBe("MATH")
   })
 })

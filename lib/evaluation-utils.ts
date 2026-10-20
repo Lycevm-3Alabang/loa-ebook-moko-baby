@@ -432,9 +432,23 @@ export function classifyWarningAssignments(
 }
 
 /**
+ * The department that owns the subject's SECTION — no home-department
+ * fallback. Null when the section cannot be resolved.
+ */
+export function resolveSectionDepartment(
+  subject: { section_id: string | null },
+  ctx: { sections: Map<string, string | null>; departmentCourses: Map<string, string | null> },
+): string | null {
+  if (!subject.section_id) return null
+  const dcId = ctx.sections.get(subject.section_id)
+  if (!dcId) return null
+  return ctx.departmentCourses.get(dcId) ?? null
+}
+
+/**
  * The department that owns an evaluated subject: the section's department
  * (section -> department_course -> department). The faculty's home
- * department is the fallback for a section whose course cannot be resolved.
+ * department is the fallback when the section cannot be resolved.
  *
  * Unlike the faculty-level rule, this does not depend on the period's
  * semester: a section belongs to its course, and a course belongs to a
@@ -445,14 +459,7 @@ export function resolveSubjectDepartment(
   subject: SubjectDepartmentInput,
   ctx: SubjectResolutionContext,
 ): string | null {
-  if (subject.section_id) {
-    const dcId = ctx.sections.get(subject.section_id)
-    if (dcId) {
-      const deptId = ctx.departmentCourses.get(dcId)
-      if (deptId) return deptId
-    }
-  }
-  return ctx.userDept.get(subject.faculty_id) ?? null
+  return resolveSectionDepartment(subject, ctx) ?? ctx.userDept.get(subject.faculty_id) ?? null
 }
 
 /**
