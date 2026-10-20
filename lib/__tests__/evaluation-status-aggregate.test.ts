@@ -12,6 +12,7 @@ const mockEnrollmentRepo = vi.hoisted(() => ({
   listStudentIdsByFacultySubjectIds: vi.fn(),
 }))
 const mockSubjectRepo = vi.hoisted(() => ({ findByIds: vi.fn() }))
+const mockSectionRepo = vi.hoisted(() => ({ list: vi.fn() }))
 const mockUserRepo = vi.hoisted(() => ({ listByIds: vi.fn(), listByDepartment: vi.fn() }))
 const mockEvalResultRepo = vi.hoisted(() => ({
   buildSubjectContext: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock("@/lib/repositories/factory", () => ({
   evaluationResultRepository: mockEvalResultRepo,
   studentEnrollmentRepository: mockEnrollmentRepo,
   subjectRepository: mockSubjectRepo,
+  sectionRepository: mockSectionRepo,
   userRepository: mockUserRepo,
 }))
 
@@ -45,6 +47,10 @@ beforeEach(() => {
   mockEvalPeriodRepo.findById.mockResolvedValue({ id: "p1", semesterId: "s1" })
   mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "CCS", code: "CCS" }])
   mockSubjectRepo.findByIds.mockResolvedValue([{ id: "sub1", code: "IT101", name: "Intro" }])
+  mockSectionRepo.list.mockResolvedValue([
+    { id: "sec1", name: "1A", program: "BSCS" },
+    { id: "sec2", name: "2A", program: "BSCS" },
+  ])
   mockUserRepo.listByIds.mockResolvedValue([{ id: "f1", name: "Ana Cruz", departmentId: "d1" }])
   // The section owns the subject: sec1 -> dc1 -> d1.
   mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
@@ -281,5 +287,76 @@ describe("getEvaluationStatus — new bucket fields", () => {
     expect(res.warnings.offSemester.count).toBe(1)
     expect(res.warnings.offSemester.faculty[0].name).toBe("Ana")
     expect(mockEvalResultRepo.listAttributionWarnings).toHaveBeenCalledWith("p1", "d1")
+  })
+
+  it("gives each row its faculty and its section", async () => {
+    mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "CCS", code: "CCS" }])
+    mockFsRepo.list.mockResolvedValue([
+      { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec1", semesterId: "s1" },
+    ])
+    mockUserRepo.listByIds.mockResolvedValue([
+      { id: "f1", name: "Ana Cruz", email: "ana@x", departmentId: "d1" },
+    ])
+    mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
+      userDept: new Map([["f1", "d1"]]),
+      sections: new Map([["sec1", "dc1"]]),
+      departmentCourses: new Map([["dc1", "d1"]]),
+    })
+
+    const res = await getEvaluationStatus("p1")
+    expect(res.subjects[0].facultyId).toBe("f1")
+    expect(res.subjects[0].facultyName).toBe("Ana Cruz")
+    expect(res.subjects[0].facultyEmail).toBe("ana@x")
+    expect(res.subjects[0].sectionProgram).toBe("BSCS")
+    expect(res.subjects[0].sectionName).toBe("1A")
+  })
+
+  it("aggregates a teacher's coverage on distinct students, per department", async () => {
+    mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "CCS", code: "CCS" }])
+    mockFsRepo.list.mockResolvedValue([
+      { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec1", semesterId: "s1" },
+      { id: "fs2", faculty_id: "f1", subject_id: "sub1", section_id: "sec2", semesterId: "s1" },
+    ])
+    mockUserRepo.listByIds.mockResolvedValue([
+      { id: "f1", name: "Ana Cruz", email: "ana@x", departmentId: "d1" },
+    ])
+    mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
+      userDept: new Map([["f1", "d1"]]),
+      sections: new Map([["sec1", "dc1"], ["sec2", "dc1"]]),
+      departmentCourses: new Map([["dc1", "d1"]]),
+    })
+    // The SAME two students are enrolled in both of the teacher's sections.
+    mockEnrollmentRepo.listStudentIdsByFacultySubjectIds.mockResolvedValue(
+      new Map([["fs1", ["s1", "s2"]], ["fs2", ["s1", "s2"]]]),
+    )
+    mockEvalRepo.listStatusByPeriodAndFacultySubjectIds.mockResolvedValue([
+      st("s1", "SUBMITTED", false, "fs1"), st("s2", "SUBMITTED", false, "fs1"),
+      st("s1", "SUBMITTED", false, "fs2"), st("s2", "SUBMITTED", false, "fs2"),
+    ])
+
+    const res = await getEvaluationStatus("p1")
+    const agg = res.facultyAggregates.d1.f1
+    expect(agg.subjects).toBe(2)
+    expect(agg.students).toBe(2)
+    expect(agg.participated).toBe(2)
+    expect(agg.completion).toBe(100)
+  })
+
+  it("keeps the dummy account out of the faculty aggregates", async () => {
+    mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "CCS", code: "CCS" }])
+    mockFsRepo.list.mockResolvedValue([
+      { id: "fs1", faculty_id: "f-dummy", subject_id: "sub1", section_id: "sec1", semesterId: "s1" },
+    ])
+    mockUserRepo.listByIds.mockResolvedValue([
+      { id: "f-dummy", name: "Unassigned Faculty", email: "placeholder@lyceumalabang.edu.ph", departmentId: null },
+    ])
+    mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
+      userDept: new Map([["f-dummy", null]]),
+      sections: new Map([["sec1", "dc1"]]),
+      departmentCourses: new Map([["dc1", "d1"]]),
+    })
+
+    const res = await getEvaluationStatus("p1")
+    expect(res.facultyAggregates.d1["f-dummy"]).toBeUndefined()
   })
 })

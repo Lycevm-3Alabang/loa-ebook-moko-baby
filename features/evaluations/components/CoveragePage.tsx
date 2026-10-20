@@ -7,7 +7,7 @@ import ErrorState from "@/components/ui/ErrorState"
 import IosButton from "@/components/ui/IosButton"
 import { useApiGet } from "@/lib/api/client"
 import { usePagination, Paginator } from "@/components/ui/Paginator"
-import { formatPeriodLabel } from "@/lib/evaluation-utils"
+import { formatPeriodLabel, sectionLabel } from "@/lib/evaluation-utils"
 import CoverageDetailModal from "./CoverageDetailModal"
 import { downloadBlob } from "@/lib/zip"
 
@@ -34,7 +34,11 @@ interface SubjectRow {
   departmentId: string
   subjectCode: string
   subjectName: string
+  sectionProgram: string | null
+  sectionName: string | null
+  facultyId: string
   facultyName: string
+  facultyEmail: string
   submitted: number
   expected: number
   pct: number | null
@@ -44,6 +48,16 @@ interface SubjectRow {
   disputed: number
   inProgress: number
   notParticipated: number
+}
+
+interface FacultyCoverageAggregate {
+  subjects: number
+  students: number
+  participated: number
+  disputed: number
+  inProgress: number
+  notParticipated: number
+  completion: number | null
 }
 
 interface Period {
@@ -92,6 +106,8 @@ export default function CoveragePage({
   const [sortKey, setSortKey] = useState<"departmentName" | "completion" | "subjectsTotal" | "submitted">("completion")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [deptFromUrl, setDeptFromUrl] = useState<string | null>(() => searchParams.get("dept"))
+  const [viewTab, setViewTab] = useState<"by_subject" | "by_faculty">("by_subject")
+  const [expandedFaculty, setExpandedFaculty] = useState<string | null>(null)
   const [modalSubject, setModalSubject] = useState<SubjectRow | null>(null)
   const [modalDetail, setModalDetail] = useState<SubjectDetail | "loading" | "error" | null>(null)
 
@@ -108,6 +124,7 @@ export default function CoveragePage({
   const { data: statusData, error: statusError } = useApiGet<{
     departments: DepartmentRow[]
     subjects: SubjectRow[]
+    facultyAggregates?: Record<string, Record<string, FacultyCoverageAggregate>>
     warnings?: AttributionWarnings
   }>(
     selectedPeriod ? `${statusBase}?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}` : null,
@@ -205,6 +222,19 @@ export default function CoveragePage({
   }, [statusData, selectedDept, q])
 
   const subjectPager = usePagination(deptSubjects, 25)
+
+  /** The department's subjects, grouped by their teacher. */
+  const facultyGroups = useMemo(() => {
+    const groups = new Map<string, { id: string; name: string; email: string; subjects: SubjectRow[] }>()
+    for (const s of deptSubjects) {
+      const g = groups.get(s.facultyId) ?? { id: s.facultyId, name: s.facultyName, email: s.facultyEmail, subjects: [] }
+      g.subjects.push(s)
+      groups.set(s.facultyId, g)
+    }
+    return [...groups.values()]
+  }, [deptSubjects])
+
+  const facultyAggregates = statusData?.facultyAggregates ?? {}
 
   const selectDept = (id: string) => { setDeptFromUrl(id); subjectPager.setPage(0); router.replace(`${pathname}?dept=${encodeURIComponent(id)}`) }
   const clearDept = () => { setDeptFromUrl(null); subjectPager.setPage(0); router.replace(pathname) }
@@ -411,14 +441,34 @@ export default function CoveragePage({
                   {activeDept ? `${activeDept.subjectsEvaluated} of ${activeDept.subjectsTotal} subjects evaluated - ${activeDept.submitted}/${activeDept.expected} responses` : ""}
                 </p>
               </div>
+
+              <div className="flex items-center gap-2">
+                <IosButton
+                  variant={viewTab === "by_subject" ? "primary" : "gray"}
+                  size="xs"
+                  onClick={() => setViewTab("by_subject")}
+                >
+                  By Subject &amp; Section
+                </IosButton>
+                <IosButton
+                  variant={viewTab === "by_faculty" ? "primary" : "gray"}
+                  size="xs"
+                  onClick={() => setViewTab("by_faculty")}
+                >
+                  By Faculty
+                </IosButton>
+              </div>
+
               {deptSubjects.length === 0 ? (
                 <p className="text-sm text-tertiary text-center py-8">No evaluated subjects found.</p>
-              ) : (
+              ) : viewTab === "by_subject" ? (
+                <>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
                     <thead>
                       <tr className="text-[10px] font-semibold uppercase tracking-wider text-tertiary border-b border-default">
                         <th className="pb-3 pr-4">Subject</th>
+                        <th className="pb-3 pr-4">Section</th>
                         <th className="pb-3 pr-4">Faculty</th>
                         <th className="pb-3 pr-4 text-right">Enrolled</th>
                         <th className="pb-3 pr-4 text-right">Participated</th>
@@ -438,6 +488,7 @@ export default function CoveragePage({
                               <span className="text-sm font-semibold text-primary">{s.subjectCode}</span>
                               <span className="text-xs text-tertiary ml-2">{s.subjectName}</span>
                             </td>
+                            <td className="py-3 pr-4 text-sm text-secondary">{sectionLabel(s.sectionProgram, s.sectionName)}</td>
                             <td className="py-3 pr-4 text-sm text-secondary">{s.facultyName}</td>
                             <td className="py-3 pr-4 text-right text-sm text-secondary">{s.enrolled}</td>
                             <td className="py-3 pr-4 text-right text-sm text-emerald-600 dark:text-emerald-400">{s.participated}</td>
@@ -461,24 +512,103 @@ export default function CoveragePage({
                       })}
                     </tbody>
                   </table>
-                  <CoverageDetailModal
-                    open={modalSubject !== null}
-                    title={modalSubject ? `${modalSubject.subjectCode} - ${modalSubject.subjectName} - ${modalSubject.facultyName}` : ""}
-                    detail={modalDetail}
-                    onClose={closeDetail}
+                </div>
+                {deptSubjects.length > 0 && (
+                  <Paginator
+                    page={subjectPager.page}
+                    totalPages={subjectPager.totalPages}
+                    pageSize={subjectPager.pageSize}
+                    totalItems={deptSubjects.length}
+                    setPage={subjectPager.setPage}
+                    setPageSize={subjectPager.setPageSize}
                   />
+                )}
+                </>
+              ) : (
+                <div className="space-y-3">
+                  {facultyGroups.map((group) => {
+                    const agg = facultyAggregates[selectedDept]?.[group.id]
+                    const isExpanded = expandedFaculty === group.id
+                    // The card's counts come from the aggregate, like the
+                    // department tiles (unfiltered); the list below it is the
+                    // searched subset.
+                    const subjectCount = agg?.subjects ?? group.subjects.length
+                    return (
+                      <div key={group.id} className="card p-4 space-y-2">
+                        <div
+                          onClick={() => setExpandedFaculty(isExpanded ? null : group.id)}
+                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpandedFaculty(isExpanded ? null : group.id) } }}
+                          role="button"
+                          tabIndex={0}
+                          className="w-full flex items-center justify-between text-left cursor-pointer"
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-primary">{group.name}</span>
+                            <span className="text-[10px] text-tertiary">{group.email}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-right text-xs text-tertiary">
+                              <div>{subjectCount} subject{subjectCount !== 1 ? "s" : ""}</div>
+                              <div>{agg?.students ?? 0} student{(agg?.students ?? 0) !== 1 ? "s" : ""}</div>
+                            </div>
+                            {agg && <span className="text-lg font-bold">{formatPct(agg.completion)}</span>}
+                            {agg && coveragePill(agg.completion)}
+                            <span className="text-tertiary text-xs">{isExpanded ? "\u25B2" : "\u25BC"}</span>
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="border-t border-default pt-3">
+                            <table className="w-full text-left">
+                              <thead>
+                                <tr className="text-[10px] font-semibold uppercase tracking-wider text-tertiary border-b border-default">
+                                  <th className="pb-2 pr-3">Subject</th>
+                                  <th className="pb-2 pr-3">Section</th>
+                                  <th className="pb-2 pr-3 text-right">Enrolled</th>
+                                  <th className="pb-2 pr-3 text-right">Participated</th>
+                                  <th className="pb-2 pr-3 text-right">Not part.</th>
+                                  <th className="pb-2 pr-3 text-right">Completion</th>
+                                  <th className="pb-2 text-right">Details</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {group.subjects.map((s) => (
+                                  <tr key={s.facultySubjectId} className="border-b border-default align-top">
+                                    <td className="py-2 pr-3 text-xs text-secondary">{s.subjectCode} {s.subjectName}</td>
+                                    <td className="py-2 pr-3 text-xs text-secondary">{sectionLabel(s.sectionProgram, s.sectionName)}</td>
+                                    <td className="py-2 pr-3 text-right text-xs text-secondary">{s.enrolled}</td>
+                                    <td className="py-2 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{s.participated}</td>
+                                    <td className="py-2 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{s.notParticipated}</td>
+                                    <td className="py-2 pr-3 text-right text-xs font-semibold">
+                                      {formatPct(s.enrolled > 0 ? (s.participated / s.enrolled) * 100 : null)}
+                                    </td>
+                                    <td className="py-2 text-right">
+                                      <IosButton
+                                        variant="plain"
+                                        size="xs"
+                                        onClick={() => openDetail(s)}
+                                        title={`View student breakdown for ${s.subjectCode ?? s.subjectName ?? "subject"}`}
+                                      >
+                                        Details
+                                      </IosButton>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
-              {deptSubjects.length > 0 && (
-                <Paginator
-                  page={subjectPager.page}
-                  totalPages={subjectPager.totalPages}
-                  pageSize={subjectPager.pageSize}
-                  totalItems={deptSubjects.length}
-                  setPage={subjectPager.setPage}
-                  setPageSize={subjectPager.setPageSize}
-                />
-              )}
+              <CoverageDetailModal
+                open={modalSubject !== null}
+                title={modalSubject ? `${modalSubject.subjectCode} - ${modalSubject.subjectName} - ${modalSubject.facultyName}` : ""}
+                detail={modalDetail}
+                onClose={closeDetail}
+              />
             </div>
           )}
         </>

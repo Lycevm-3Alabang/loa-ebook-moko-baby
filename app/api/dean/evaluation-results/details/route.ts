@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
-import { departmentRepository } from "@/lib/repositories/factory"
+import { departmentRepository, evaluationResultRepository } from "@/lib/repositories/factory"
 import { getStudentBreakdownsForFaculty } from "@/features/evaluation-results/evaluation-results.repository"
 import { logServerError } from "@/lib/services/audit"
 
@@ -26,12 +26,23 @@ export async function GET(request: Request) {
     if (hasRole(role, "DEAN")) {
       const dept = await departmentRepository.findByDeanId(userId)
       if (!dept) return NextResponse.json({ students: [] })
+
+      // The dean may only open a teacher in their OWN department — the same
+      // membership the results page and the visibility toggle use. Without
+      // this, any facultyId in the query string returns another department's
+      // student-level breakdown.
+      const assignments = await evaluationResultRepository.listDepartmentAssignments(dept.id, evaluationPeriodId)
+      const deptFacultyIds = new Set(assignments.map((a) => a.faculty_id))
+      if (!deptFacultyIds.has(facultyId)) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+      }
     }
 
     const students = await getStudentBreakdownsForFaculty(evaluationPeriodId, facultyId)
     const anonymized = students.map((s, i) => ({
-      id: `S${i + 1}`,
       ...s,
+      // The counter must come last: spread after it would restore the real id.
+      id: `S${i + 1}`,
     }))
     return NextResponse.json({ students: anonymized })
   } catch (e) {

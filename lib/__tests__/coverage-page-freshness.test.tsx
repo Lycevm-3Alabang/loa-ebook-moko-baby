@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, fireEvent } from "@testing-library/react"
 
 const mockUseApiGet = vi.hoisted(() => vi.fn())
 
@@ -149,5 +149,90 @@ describe("CoveragePage single department", () => {
     render(<CoveragePage statusBase="/api/admin/evaluation-status" />)
     await waitFor(() => expect(screen.getByText("CCS")).toBeTruthy())
     expect(screen.queryByText(/back to departments/i)).toBeNull()
+  })
+})
+
+describe("CoveragePage groupings", () => {
+  const subjectRow = {
+    facultySubjectId: "fs1",
+    departmentId: "d1",
+    subjectCode: "BS101",
+    subjectName: "Intro",
+    sectionProgram: "BSCS",
+    sectionName: "1A",
+    facultyId: "f1",
+    facultyName: "Ana Cruz",
+    facultyEmail: "ana@x",
+    submitted: 3,
+    expected: 4,
+    pct: 75,
+    evaluated: true,
+    enrolled: 4,
+    participated: 3,
+    disputed: 0,
+    inProgress: 0,
+    notParticipated: 1,
+  }
+
+  const payload = {
+    departments: [{
+      departmentId: "d1",
+      departmentName: "CCS",
+      departmentCode: "CCS",
+      subjectsEvaluated: 1,
+      subjectsTotal: 1,
+      submitted: 3,
+      expected: 4,
+      pct: 75,
+      facultyCount: 1,
+      uniqueStudents: 4,
+      participated: 3,
+      disputed: 0,
+      inProgress: 0,
+      notParticipated: 1,
+      completion: 75,
+    }],
+    subjects: [subjectRow],
+    facultyAggregates: {
+      d1: {
+        f1: { subjects: 1, students: 4, participated: 3, disputed: 0, inProgress: 0, notParticipated: 1, completion: 75 },
+      },
+    },
+  }
+
+  function withPayload() {
+    mockUseApiGet.mockImplementation((url: string | null) => {
+      if (!url) return { data: undefined, error: undefined }
+      if (url.startsWith("/api/evaluation-periods")) {
+        return { data: { periods: PERIODS }, error: undefined }
+      }
+      return { data: payload, error: undefined }
+    })
+  }
+
+  it("shows the two groupings in the department drill-down", async () => {
+    withPayload()
+    render(<CoveragePage statusBase="/api/admin/evaluation-status" departmentId="d1" />)
+    await waitFor(() => expect(screen.getByText(/by subject & section/i)).toBeTruthy())
+    expect(screen.getByText(/by faculty/i)).toBeTruthy()
+  })
+
+  it("lists the subject with its section in the subject grouping", async () => {
+    withPayload()
+    render(<CoveragePage statusBase="/api/admin/evaluation-status" departmentId="d1" />)
+    await waitFor(() => expect(screen.getByText("BS101")).toBeTruthy())
+    expect(screen.getByText("BSCS-1A")).toBeTruthy()
+  })
+
+  it("groups by faculty with the teacher's aggregate", async () => {
+    withPayload()
+    render(<CoveragePage statusBase="/api/admin/evaluation-status" departmentId="d1" />)
+    await waitFor(() => expect(screen.getByText(/by faculty/i)).toBeTruthy())
+    fireEvent.click(screen.getByText(/by faculty/i))
+
+    await waitFor(() => expect(screen.getByText("Ana Cruz")).toBeTruthy())
+    expect(screen.getByText("ana@x")).toBeTruthy()
+    expect(screen.getByText("1 subject")).toBeTruthy()
+    expect(screen.getByText("4 students")).toBeTruthy()
   })
 })

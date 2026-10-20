@@ -4,6 +4,7 @@ import {
   evaluationRepository,
   evaluationResultRepository,
   facultySubjectRepository,
+  sectionRepository,
   studentEnrollmentRepository,
   subjectRepository,
   userRepository,
@@ -17,7 +18,11 @@ export interface SubjectStatusRow {
   departmentId: string
   subjectCode: string
   subjectName: string
+  sectionProgram: string | null
+  sectionName: string | null
+  facultyId: string
   facultyName: string
+  facultyEmail: string
   submitted: number
   expected: number
   pct: number | null
@@ -27,6 +32,17 @@ export interface SubjectStatusRow {
   disputed: number
   inProgress: number
   notParticipated: number
+}
+
+/** One teacher's coverage inside one department. */
+export interface FacultyCoverageAggregate {
+  subjects: number
+  students: number
+  participated: number
+  disputed: number
+  inProgress: number
+  notParticipated: number
+  completion: number | null
 }
 
 export interface DeptStatusRow {
@@ -135,6 +151,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     return {
       departments: [],
       subjects: [] as SubjectStatusRow[],
+      facultyAggregates: {} as Record<string, Record<string, FacultyCoverageAggregate>>,
       warnings: { unattributed: { count: 0, faculty: [] }, offSemester: { count: 0, faculty: [] } },
     }
   }
@@ -142,7 +159,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
   const fsIds = mappings.map((m) => m.id)
   const facultyIds = [...new Set(mappings.map((m) => m.faculty_id))]
 
-  const [submittedCounts, expectedByFs, subjects, enrolledByFs, statusRows, facUsers, subjectCtx] = await Promise.all([
+  const [submittedCounts, expectedByFs, subjects, enrolledByFs, statusRows, facUsers, subjectCtx, allSections] = await Promise.all([
     evaluationRepository.countSubmittedByFacultySubjectIds(evaluationPeriodId, fsIds),
     studentEnrollmentRepository.countByFacultySubjectIdsPaged(fsIds, semesterId),
     subjectRepository.findByIds([...new Set(mappings.map((m) => m.subject_id))]),
@@ -150,11 +167,18 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     evaluationRepository.listStatusByPeriodAndFacultySubjectIds(evaluationPeriodId, fsIds),
     userRepository.listByIds(facultyIds, { includeDeleted: true }),
     evaluationResultRepository.buildSubjectContext(mappings),
+    sectionRepository.list(),
   ])
 
   const subjMap = new Map(subjects.map((s) => [s.id, s]))
   const facName = new Map<string, string>()
-  for (const u of facUsers) facName.set(u.id, u.name)
+  const facEmail = new Map<string, string>()
+  for (const u of facUsers) {
+    facName.set(u.id, u.name)
+    facEmail.set(u.id, u.email ?? "")
+  }
+  // Sections are few — one lookup for each row's OWN section.
+  const sectionById = new Map(allSections.map((s) => [s.id, s]))
 
   // The dummy account owns assignments but is a placeholder, not a person:
   // its subjects stay in the coverage, but it is not a teacher.
@@ -225,12 +249,17 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     // belong to no department, so they fall outside the scope.
     if (departmentId && rowDepartmentId !== departmentId) continue
     const agg = aggByFs.get(m.id)
+    const section = m.section_id ? sectionById.get(m.section_id) : undefined
     subjectRows.push({
       facultySubjectId: m.id,
       departmentId: rowDepartmentId,
       subjectCode: code,
       subjectName: name,
+      sectionProgram: section?.program ?? null,
+      sectionName: section?.name ?? null,
+      facultyId: m.faculty_id,
       facultyName,
+      facultyEmail: facEmail.get(m.faculty_id) ?? "",
       submitted,
       expected,
       pct: pctOf(submitted, expected),
@@ -244,6 +273,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
   }
 
   const deptRows: DeptStatusRow[] = []
+  const facultyAggregates: Record<string, Record<string, FacultyCoverageAggregate>> = {}
   for (const d of departments) {
     if (departmentId && d.id !== departmentId) continue
     const deptSubjects = subjectRows.filter((r) => r.departmentId === d.id)
@@ -294,6 +324,52 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
       notParticipated: dNotParticipated.size,
       completion: pctOf(dParticipated.size, uniqStudents.size),
     })
+
+    // The same union one level down: a teacher's coverage inside this
+    // department. Distinct students again — a teacher who teaches three
+    // sections of one class has 34 students, not 102.
+    const byFaculty = new Map<string, {
+      subjects: number
+      students: Set<string>
+      participated: Set<string>
+      disputed: Set<string>
+      inProgress: Set<string>
+      notParticipated: Set<string>
+    }>()
+    for (const m of deptMappings) {
+      if (placeholderIds.has(m.faculty_id)) continue
+      const agg = aggByFs.get(m.id)
+      if (!agg) continue
+      const g = byFaculty.get(m.faculty_id) ?? {
+        subjects: 0,
+        students: new Set<string>(),
+        participated: new Set<string>(),
+        disputed: new Set<string>(),
+        inProgress: new Set<string>(),
+        notParticipated: new Set<string>(),
+      }
+      g.subjects += 1
+      for (const sid of agg.studentIds) g.students.add(sid)
+      for (const sid of agg.bucketed.participated) g.participated.add(sid)
+      for (const sid of agg.bucketed.disputed) g.disputed.add(sid)
+      for (const sid of agg.bucketed.inProgress) g.inProgress.add(sid)
+      for (const sid of agg.bucketed.notParticipated) g.notParticipated.add(sid)
+      byFaculty.set(m.faculty_id, g)
+    }
+
+    const deptFacultyAggregates: Record<string, FacultyCoverageAggregate> = {}
+    for (const [facultyId, g] of byFaculty) {
+      deptFacultyAggregates[facultyId] = {
+        subjects: g.subjects,
+        students: g.students.size,
+        participated: g.participated.size,
+        disputed: g.disputed.size,
+        inProgress: g.inProgress.size,
+        notParticipated: g.notParticipated.size,
+        completion: pctOf(g.participated.size, g.students.size),
+      }
+    }
+    facultyAggregates[d.id] = deptFacultyAggregates
   }
 
   // The integrity conditions the roster cannot see: an evaluation pointing at
@@ -304,5 +380,5 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     departmentId,
   )
 
-  return { departments: deptRows, subjects: subjectRows, warnings }
+  return { departments: deptRows, subjects: subjectRows, facultyAggregates, warnings }
 }
