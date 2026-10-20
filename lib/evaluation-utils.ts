@@ -377,9 +377,9 @@ export interface DeptResolutionContext extends SubjectResolutionContext {
  * teaching chain.
  *
  * SUPERSEDED for the results surfaces by `resolveSubjectDepartment`, which
- * resolves the department of an evaluated subject by its section. Kept for
- * callers that need a person's department rather than a subject's — do not
- * use it to decide which department owns an evaluation.
+ * resolves the department of an evaluated subject by its teacher's own
+ * department. Kept for callers that need a person's department rather than a
+ * subject's — do not use it to decide which department owns an evaluation.
  */
 export function resolveFacultyDepartment(facultyId: string, ctx: DeptResolutionContext): string | null {
   const direct = ctx.userDept.get(facultyId)
@@ -446,20 +446,41 @@ export function resolveSectionDepartment(
 }
 
 /**
- * The department that owns an evaluated subject: the section's department
- * (section -> department_course -> department). The faculty's home
- * department is the fallback when the section cannot be resolved.
+ * The department that owns an evaluated subject: the TEACHER's own
+ * department when it can own coverage, else the section's department
+ * (section -> department_course -> department).
  *
- * Unlike the faculty-level rule, this does not depend on the period's
- * semester: a section belongs to its course, and a course belongs to a
- * department, in every term. A subject that resolves to null here is an
- * integrity condition, not an unassigned person.
+ * The home branch is gated on the home department owning at least one
+ * course: a placeholder bucket ("Unassigned", "Admin") owns none, so its
+ * teachers fall to the section's department instead of accumulating every
+ * subject. The gate also makes the returned id provably a real department —
+ * a course's department is FK-backed, and a home that owns a course exists —
+ * so a caller can always find that department's row.
+ *
+ * This does not depend on the period's semester: a section belongs to its
+ * course, and a course belongs to a department, in every term. A subject that
+ * resolves to null here is an integrity condition, not an unassigned person.
  */
 export function resolveSubjectDepartment(
   subject: SubjectDepartmentInput,
   ctx: SubjectResolutionContext,
 ): string | null {
-  return resolveSectionDepartment(subject, ctx) ?? ctx.userDept.get(subject.faculty_id) ?? null
+  const homeDeptId = ctx.userDept.get(subject.faculty_id) ?? null
+  if (homeDeptId && homeDepartmentOwnsCourse(homeDeptId, ctx.departmentCourses)) {
+    return homeDeptId
+  }
+  return resolveSectionDepartment(subject, ctx)
+}
+
+/** Whether the department owns at least one course — i.e. can own coverage. */
+function homeDepartmentOwnsCourse(
+  homeDeptId: string,
+  departmentCourses: Map<string, string | null>,
+): boolean {
+  for (const deptId of departmentCourses.values()) {
+    if (deptId === homeDeptId) return true
+  }
+  return false
 }
 
 /**

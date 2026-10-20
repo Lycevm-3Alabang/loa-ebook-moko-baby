@@ -35,7 +35,7 @@ const IN_CHUNK_SIZE = 100
 
 /**
  * The pseudo-department for an assignment whose department cannot be
- * resolved. Under the section-first rule this is an integrity condition
+ * resolved. Under the faculty-driven rule this is an integrity condition
  * (the assignment points outside the period), not a bucket of people.
  */
 const UNKNOWN_DEPARTMENT = "__unknown__"
@@ -57,8 +57,8 @@ interface SemesterRoster {
 
 /**
  * The term's teaching roster: every assignment in the semester, the
- * department that owns it, and the people behind them. The dummy account is
- * left out — it owns assignments, but it is a placeholder, not a person.
+ * department it counts under, and the people behind them. The dummy account
+ * is left out — it owns assignments, but it is a placeholder, not a person.
  */
 async function loadSemesterRoster(semesterId: string): Promise<SemesterRoster> {
   const { data, error } = await supabase
@@ -227,9 +227,9 @@ interface PeriodAssignments {
 }
 
 /**
- * The period's evaluated assignments, each resolved to the department that
- * owns its section, plus the evaluations that still match their assignment's
- * faculty.
+ * The period's evaluated assignments, each resolved to the department it
+ * counts under — the teacher's own department — plus the evaluations that
+ * still match their assignment's faculty.
  */
 async function loadPeriodAssignments(evaluationPeriodId: string): Promise<PeriodAssignments | null> {
   const evals = await listSubmittedEvaluates(evaluationPeriodId)
@@ -289,9 +289,9 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
     const ratingsByEval = await loadRatingsByEval(live.liveEvals.map((e) => e.id))
     const byAssignment = groupEvalsByAssignment(live.liveEvals)
 
-    // Pooled per assignment, then grouped by the department that owns the
-    // assignment's section. A faculty teaching in two departments contributes
-    // each subject to the department that owns it.
+    // Pooled per assignment, then grouped by the department the assignment
+    // counts under — the teacher's own department. A faculty teaching in two
+    // departments contributes every subject to their own department.
     const inputs: FacultyDeptInput[] = []
     for (const [fsId, evalIds] of byAssignment) {
       const assignment = live.assignments.get(fsId)
@@ -381,7 +381,7 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
 
   /**
    * The evaluated assignments of one department: the department's own
-   * subjects, by the department that owns the section. The top-level page
+   * subjects, by the teacher's own department. The top-level page
    * groups the same assignments, so both surfaces cover the same rows and
    * print the same pooled numbers.
    */
@@ -438,8 +438,8 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
 
   /**
    * The people who teach in each department in the given term — the same rule
-   * the results pages use: an assignment belongs to the department that owns
-   * its section.
+   * the results pages use: an assignment counts under the teacher's own
+   * department.
    */
   async listSemesterRoster(
     semesterId: string,

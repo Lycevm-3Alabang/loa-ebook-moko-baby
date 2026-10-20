@@ -1,7 +1,7 @@
 # Evaluation Coverage — "By Subject & Section" / "By Faculty" Groupings — Spec
 
-**Version:** 1.2
-**Status:** Final (approved 2026-10-20; D1–D3 resolved) — v1.1 added D4 (the home department as display context) and was **withdrawn** by the user; v1.2 replaces it with D5 (the coverage page is faculty-driven, with the faculty-subject's department as the fallback)
+**Version:** 1.3
+**Status:** Final (approved 2026-10-20; D1–D3 resolved) — v1.1 added D4 (the home department as display context) and was **withdrawn** by the user; v1.2 replaced it with D5 (the coverage page is faculty-driven, with the faculty-subject's department as the fallback); v1.3 records that the **results surfaces adopted the same rule**, so one resolver governs every surface
 **Last Updated:** 2026-10-20
 **Scope:** `app/admin/evaluations/coverage` (and the dean page that shares
 the component), the coverage service, and the coverage page's component.
@@ -37,10 +37,11 @@ counted under MATH**, and MATH's coverage page legitimately shows a subject
 that belongs to another department. That is not a filter leak; it is the page
 answering "how is my faculty doing?" rather than "whose sections are these?".
 
-The **results** pages answer the other question — "whose evaluation results
-are these?" — and stay **section-first**: the department that owns the section
-owns the result (the attribution spec, §3.1). The two pages differ on
-purpose, and each is right for its own question.
+The **results** surfaces answer the same question now — they are
+**faculty-driven too**, through the same resolver
+(`resolveSubjectDepartment` in `lib/evaluation-utils.ts`). A teacher's results
+are filed under their own department exactly as their coverage is, so the two
+pages cannot disagree about a teacher.
 
 **The fallback.** When the teacher is based somewhere that cannot own
 coverage at all, the **faculty-subject's** department takes priority:
@@ -131,13 +132,15 @@ groupings, as a switch above the table:
    faculty aggregates too, so the card does not show a placeholder teacher.
 8. **The search filters both groupings** — it filters the subject rows, and
    a teacher with no matching subject disappears from tab 2.
-9. **The coverage page attributes to the teacher's home department, with the
+9. **Every surface attributes to the teacher's home department, with the
    faculty-subject's department as the fallback** (§1.1): the home
    department wins unless the teacher has no home, or their home has no
    courses of its own (a placeholder bucket), in which case the section's
-   department takes over.
-10. **The results pages are not changed by this** — they stay section-first
-    (the attribution spec, §3.1). The two pages answer different questions.
+   department takes over. The coverage and the results surfaces resolve
+   through the **same** helper (`resolveSubjectDepartment`), so they cannot
+   disagree about a teacher.
+10. **The results pages use the same rule** (the attribution spec, §3.1) —
+    one resolver, one rule, every surface.
 11. **Tab 1 keeps its pagination; tab 2 does not** — the results page's
     "By Faculty" renders every card, and the number of teachers in a
     department is small.
@@ -153,7 +156,8 @@ groupings, as a switch above the table:
 | C2 | The service returns the per-department faculty aggregates (subjects · distinct students · participated · disputed · in-progress · not-participated · completion), the same union the department rows already do | `features/evaluations/evaluation-status.service.ts` — **done** (`facultyAggregates: departmentId → facultyId → aggregate`) |
 | C3 | The drill-down gains the two-way switch, the **Section** column on tab 1, and the faculty cards on tab 2 | `features/evaluations/components/CoveragePage.tsx` — **done**. The switch is the shared `components/ui/Tabs.tsx`, which the results page now uses too, so the two pages read identically and the switch is no longer hand-rolled button markup |
 | C4 | The tests: the rows carry the new fields, the aggregates are distinct-student based and per department, the switch renders and the card aggregates | `lib/__tests__/evaluation-status-aggregate.test.ts` (+4 cases), `lib/__tests__/coverage-page-freshness.test.tsx` (+3 cases) — **done** |
-| C5 | The coverage service attributes each subject to the **teacher's own department**, falling back to the section's department when the teacher is based somewhere that cannot own coverage (no home, or a home with no courses of its own); the rows carry the section's department so a row from another department can say so | `features/evaluations/evaluation-status.service.ts` + `features/evaluations/components/CoveragePage.tsx` — **done 2026-10-20** (a new pure helper `resolveSectionDepartment` separates the section's department from the home fallback; the tests that pinned the old rule were rewritten, and the new fallback cases added) |
+| C5 | The coverage service attributes each subject to the **teacher's own department**, falling back to the section's department when the teacher is based somewhere that cannot own coverage (no home, or a home with no courses of its own); the rows carry the section's department so a row from another department can say so | `features/evaluations/evaluation-status.service.ts` + `features/evaluations/components/CoveragePage.tsx` — **done 2026-10-20** (a new pure helper `resolveSectionDepartment` separates the section's department from the home fallback; the tests that pinned the old rule were rewritten, and the new fallback cases added). **Amended 2026-10-20** — the rule moved into the shared resolver `resolveSubjectDepartment` (`lib/evaluation-utils.ts`) and the results surfaces adopted it, so there is one implementation |
+| C6 | The **results** surfaces resolve a department through the same helper, so the two pages cannot disagree about a teacher | `lib/evaluation-utils.ts`, `features/evaluation-results/evaluation-results.repository.ts` — **done 2026-10-20** |
 | — | Out of scope | The top-level department table · the coverage CSV export's columns (the export stays per subject) · a cross-department faculty view · the results page's own groupings · schema |
 
 ## 5. Risks
@@ -210,4 +214,4 @@ Manual, on the admin's `/admin/evaluations/coverage`:
 | D2 | **Should the card's headline be the participation percentage, or the counts?** | **Both, on one line (2026-10-20)** — "3 subjects · 42 students · 81%" — the results page's card shows "N subjects / M responses" plus its average, so the coverage card shows its counts plus its percentage. |
 | D3 | **Should the "Not started" case be called out on the card** — a teacher whose every subject has 0 responses? | **Yes (2026-10-20), as the existing pill.** The completion pill already distinguishes "Not started" (0%) from "Lagging"; a teacher's aggregate gets the same pill, so a silent teacher is visible at a glance. |
 | D4 | **A teacher who is homed elsewhere appears in the list without explanation** — the attribution (the section's department) is right, but the card gives no hint. | **WITHDRAWN (2026-10-20).** The user: "since it is Faculty-Subject then it's faculty driven." The card is the teacher, and the teacher's home department is the page you are already on — there is nothing to disclose. Replaced by D5. |
-| D5 | **Should the coverage page be faculty-driven (the teacher's own department) rather than section-first?** | **Yes (2026-10-20).** The coverage page's unit is the faculty-subject, and a teacher's coverage belongs to their department: a MATH-homed teacher teaching a CCS section is counted under MATH, and MATH's page may show a subject that belongs to CS. The **faculty-subject's** department takes priority only when the teacher is based somewhere that cannot own coverage — no home department, or a home with no courses of its own (the "Unassigned"/"Admin" placeholder buckets). The **results** pages stay section-first: they answer "whose evaluation is this?" (contract §3.10). The disclosure moves to the **row** (C5): a subject from another department says whose section it is. **Confirmed by the user (2026-10-20): "since the evaluated entity is the faculty it only makes sense that coverage uses the faculty's own department to show it as part of its own department list" — and the resulting difference between the two pages is correct: a dean who owns a section taught by a teacher homed elsewhere sees that section on their results page, while its coverage sits with the teacher's own department.** |
+| D5 | **Should the coverage page be faculty-driven (the teacher's own department) rather than section-first?** | **Yes (2026-10-20).** The coverage page's unit is the faculty-subject, and a teacher's coverage belongs to their department: a MATH-homed teacher teaching a CCS section is counted under MATH, and MATH's page may show a subject that belongs to CS. The **faculty-subject's** department takes priority only when the teacher is based somewhere that cannot own coverage — no home department, or a home with no courses of its own (the "Unassigned"/"Admin" placeholder buckets). The disclosure moves to the **row** (C5): a subject from another department says whose section it is. **Confirmed by the user (2026-10-20): "since the evaluated entity is the faculty it only makes sense that coverage uses the faculty's own department to show it as part of its own department list."** **Extended the same day (2026-10-20, C6):** the **results** surfaces adopted the same rule and resolve through the same helper, so the difference between the two pages is closed — a dean who owns a section taught by a teacher homed elsewhere sees that section on their **coverage** page, and their results sit with the teacher's own department on both pages. |

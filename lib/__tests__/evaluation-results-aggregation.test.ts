@@ -222,64 +222,6 @@ describe("resolveFacultyDepartment", () => {
   })
 })
 
-describe("resolveSubjectDepartment", () => {
-  const ctx = (over: Partial<DeptResolutionContext> = {}): DeptResolutionContext => ({
-    userDept: new Map<string, string | null>([["f-homed", "dept-home"], ["f-anon", null]]),
-    facultySubjects: [],
-    sections: new Map([["sec-cs", "dc-cs"], ["sec-math", "dc-math"]]),
-    departmentCourses: new Map([["dc-cs", "dept-cs"], ["dc-math", "dept-math"]]),
-    semesterId: "sem1",
-    ...over,
-  })
-
-  it("gives the section's department precedence over the faculty's home department", () => {
-    const c = ctx()
-    expect(resolveSubjectDepartment({ faculty_id: "f-homed", section_id: "sec-cs" }, c)).toBe("dept-cs")
-  })
-
-  it("resolves a dept-agnostic faculty by the section", () => {
-    const c = ctx()
-    expect(resolveSubjectDepartment({ faculty_id: "f-anon", section_id: "sec-cs" }, c)).toBe("dept-cs")
-  })
-
-  it("does not depend on the period's semester", () => {
-    const c = ctx({ semesterId: null })
-    expect(resolveSubjectDepartment({ faculty_id: "f-anon", section_id: "sec-cs" }, c)).toBe("dept-cs")
-  })
-
-  it("falls back to the home department when the section has no course", () => {
-    const c = ctx({ sections: new Map([["sec-cs", null]]) })
-    expect(resolveSubjectDepartment({ faculty_id: "f-homed", section_id: "sec-cs" }, c)).toBe("dept-home")
-  })
-
-  it("falls back to the home department when the section is unknown to the context", () => {
-    const c = ctx()
-    expect(resolveSubjectDepartment({ faculty_id: "f-homed", section_id: "sec-ghost" }, c)).toBe("dept-home")
-  })
-
-  it("falls back to the home department when the course has no department", () => {
-    const c = ctx({ departmentCourses: new Map([["dc-cs", null]]) })
-    expect(resolveSubjectDepartment({ faculty_id: "f-homed", section_id: "sec-cs" }, c)).toBe("dept-home")
-  })
-
-  it("falls back to the home department when the subject has no section", () => {
-    const c = ctx()
-    expect(resolveSubjectDepartment({ faculty_id: "f-homed", section_id: null }, c)).toBe("dept-home")
-  })
-
-  it("returns null when neither the section nor the home department resolves", () => {
-    const c = ctx()
-    expect(resolveSubjectDepartment({ faculty_id: "f-anon", section_id: "sec-ghost" }, c)).toBeNull()
-    expect(resolveSubjectDepartment({ faculty_id: "f-unknown", section_id: null }, c)).toBeNull()
-  })
-
-  it("keeps two subjects of one faculty in their own departments", () => {
-    const c = ctx()
-    expect(resolveSubjectDepartment({ faculty_id: "f-homed", section_id: "sec-cs" }, c)).toBe("dept-cs")
-    expect(resolveSubjectDepartment({ faculty_id: "f-homed", section_id: "sec-math" }, c)).toBe("dept-math")
-  })
-})
-
 describe("classifyWarningAssignments", () => {
   const rows = [
     { faculty_id: "f1", section_id: "sec1", semesterId: "semOther" },

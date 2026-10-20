@@ -111,7 +111,7 @@ describe("GET /api/dean/evaluation-status", () => {
     expect(mockGetDetail).toHaveBeenCalledWith("p1", "fs1")
   })
 
-  it("gives the section's department, not the teacher's home department", async () => {
+  it("gives the section's department when the teacher's home owns no course", async () => {
     mockAuth.mockResolvedValue({ user: { id: "u1", role: "DEAN" } })
     mockHasRole.mockReturnValue(true)
     mockDeptRepo.findByDeanId.mockResolvedValue({ id: "dept-1" })

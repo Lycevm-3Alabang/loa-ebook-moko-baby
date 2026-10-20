@@ -52,7 +52,7 @@ beforeEach(() => {
     { id: "sec2", name: "2A", program: "BSCS" },
   ])
   mockUserRepo.listByIds.mockResolvedValue([{ id: "f1", name: "Ana Cruz", departmentId: "d1" }])
-  // The section owns the subject: sec1 -> dc1 -> d1.
+  // The section belongs to d1: sec1 -> dc1 -> d1.
   mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
     userDept: new Map([["f1", "d1"]]),
     sections: new Map([["sec1", "dc1"], ["sec2", "dc1"]]),

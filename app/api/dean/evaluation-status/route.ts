@@ -30,9 +30,9 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: "Faculty-subject not found" }, { status: 404 })
       }
 
-      // The same rule the list uses: the department that owns the subject's
-      // section owns the subject. The teacher's home department is the
-      // fallback when the section cannot be resolved.
+      // The same rule the list uses: the teacher's own department owns the
+      // subject, and the section's department is the fallback when the
+      // teacher is based somewhere that cannot own coverage.
       const subject = { faculty_id: fs.faculty_id, section_id: fs.section_id }
       const ctx = await evaluationResultRepository.buildSubjectContext([subject])
       if (resolveSubjectDepartment(subject, ctx) !== dept.id) {
