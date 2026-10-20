@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/route-guard"
-import { evaluationRepository, evaluationResultRepository } from "@/lib/repositories/factory"
+import { evaluationRepository } from "@/lib/repositories/factory"
 import { logAuditEvent, logServerError } from "@/lib/services/audit"
 
 export async function POST(request: NextRequest) {
@@ -22,8 +22,6 @@ export async function POST(request: NextRequest) {
     if (!facultyId && !facultySubjectId) return NextResponse.json({ error: "facultyId or facultySubjectId is required" }, { status: 400 })
 
     await evaluationRepository.bulkDisableByPeriod(targetPeriodId, { facultyId, facultySubjectId })
-
-    await evaluationResultRepository.computeAll(targetPeriodId)
 
     await logAuditEvent({ action: "invalidate_evaluations", details: JSON.stringify({ evaluationPeriodId: targetPeriodId, facultyId, facultySubjectId, reason }) }).catch(() => {})
 

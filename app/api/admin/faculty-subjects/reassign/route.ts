@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { requireAdmin } from "@/lib/route-guard"
 import { logAuditEvent } from "@/lib/services/audit"
-import { facultySubjectRepository, evaluationRepository, evaluationPeriodRepository, evaluationResultRepository } from "@/lib/repositories/factory"
+import { facultySubjectRepository, evaluationRepository } from "@/lib/repositories/factory"
 
 export async function POST(request: NextRequest) {
   const authErr = await requireAdmin(request)
@@ -39,12 +39,6 @@ export async function POST(request: NextRequest) {
     const remarks = `Invalidated by user: ${adminName} - change of faculty assigned for the subject/section`
     await evaluationRepository.invalidateByFacultySubject(oldFacultySubjectId, remarks)
 
-    if (oldRecord.semesterId) {
-      const periods = await evaluationPeriodRepository.findBySemester(oldRecord.semesterId)
-      for (const period of periods) {
-        await evaluationResultRepository.computeAll(period.id)
-      }
-    }
 
     const currentUserId = (session!.user as Record<string, unknown>).id as string
     await logAuditEvent({

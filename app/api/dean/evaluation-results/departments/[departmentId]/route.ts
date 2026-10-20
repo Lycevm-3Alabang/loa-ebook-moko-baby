@@ -8,6 +8,7 @@ import {
   evaluationResultRepository,
   facultySubjectRepository,
   subjectRepository,
+  sectionRepository,
 } from "@/lib/repositories/factory"
 import { EvaluationPeriodInactiveError } from "@/features/evaluation-results/evaluation-results.repository"
 import { logServerError } from "@/lib/services/audit"
@@ -83,6 +84,10 @@ export async function GET(
   const fsMap = new Map(facultySubjects.map((fs) => [fs.id, fs]))
   const subjMap = new Map(subjects.map((s) => [s.id, s]))
 
+  // Sections are few, so resolve them in memory from the row's OWN section.
+  const allSections = await sectionRepository.list()
+  const sectionById = new Map(allSections.map((s) => [s.id, s]))
+
   const validEvals = evals.filter((ev) => {
     if (!ev.facultySubjectId) return false
     const fs = fsMap.get(ev.facultySubjectId)
@@ -105,6 +110,7 @@ export async function GET(
 
       const user = facNameMap.get(fs.faculty_id)
       const subj = subjMap.get(fs.subject_id)
+      const section = fs.section_id ? sectionById.get(fs.section_id) : undefined
 
       const groupRatings = ratings.filter((r) => evalIds.includes(r.evaluationId))
       const catAverages = computeCategoryAverages(groupRatings)
@@ -123,6 +129,8 @@ export async function GET(
         subjectId: fs.subject_id,
         subjectCode: subj?.code ?? "",
         subjectName: subj?.name ?? "",
+        sectionProgram: section?.program ?? null,
+        sectionName: section?.name ?? null,
         totalRespondents: evalIds.length,
         avgRating: general,
         remarks: getRemark(general),

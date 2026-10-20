@@ -4,7 +4,7 @@ import { useParams, useSearchParams } from "next/navigation"
 import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import { useApiGet } from "@/lib/api/client"
-import { getRemarkColor, CATEGORY_KEYS, CATEGORY_LABELS } from "@/lib/evaluation-utils"
+import { getRemarkColor, sectionLabel, CATEGORY_KEYS, CATEGORY_LABELS } from "@/lib/evaluation-utils"
 import { SentimentBadge } from "@/features/evaluations/components/evaluation/SentimentBadge"
 import { DownloadEvalPdfButton } from "@/features/evaluations/components/DownloadEvalPdfButton"
 
@@ -29,6 +29,8 @@ interface GroupDetailData {
   department: { id: string; name: string; code: string }
   faculty: { id: string; name: string; email: string }
   subject: { id: string; code: string; name: string }
+  sectionProgram: string | null
+  sectionName: string | null
   summary: {
     totalRespondents: number
     avgRating: number | null
@@ -70,6 +72,8 @@ export default function DeanGroupDetailPage() {
 
   if (!data) return null
 
+  const sectionText = sectionLabel(data.sectionProgram, data.sectionName)
+
   return (
     <div className="w-full space-y-8 pb-12">
 
@@ -100,6 +104,7 @@ export default function DeanGroupDetailPage() {
           <div>
             <p className="text-[10px] text-tertiary">Subject</p>
             <p className="text-sm font-semibold">{data.subject.code} {data.subject.name}</p>
+            {sectionText && <p className="text-[10px] text-tertiary">Section {sectionText}</p>}
           </div>
           <div>
             <p className="text-[10px] text-tertiary">Respondents</p>

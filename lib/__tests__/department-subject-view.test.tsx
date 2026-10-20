@@ -18,6 +18,8 @@ interface Row {
   subjectId: string
   subjectCode: string
   subjectName: string
+  sectionProgram: string | null
+  sectionName: string | null
   totalRespondents: number
   avgRating: number | null
   remarks: string | null
@@ -42,6 +44,8 @@ const row = (overrides: Partial<Row> = {}): Row => ({
   subjectId: "s1",
   subjectCode: "IT101",
   subjectName: "Intro",
+  sectionProgram: null,
+  sectionName: null,
   totalRespondents: 3,
   avgRating: 4,
   remarks: "Outstanding",
@@ -85,22 +89,31 @@ const TWO_SUBJECTS = [
   row({ facultySubjectId: "fs2", subjectCode: "IT102", subjectName: "Advanced", avgRating: 2, totalRespondents: 1 }),
 ]
 
-function renderView(facultyAggregates?: Record<string, FacultyAggregate>) {
+const SECTIONED_SUBJECTS = [
+  row({ facultySubjectId: "fs1", subjectCode: "IT101", subjectName: "Intro", avgRating: 4, totalRespondents: 3, sectionProgram: "BSCS", sectionName: "1A" }),
+  row({ facultySubjectId: "fs2", subjectCode: "IT102", subjectName: "Advanced", avgRating: 2, totalRespondents: 1, sectionProgram: "BSCS", sectionName: "2A" }),
+]
+
+function renderView(opts: {
+  facultyAggregates?: Record<string, FacultyAggregate>
+  subjects?: Row[]
+  search?: string
+} = {}) {
   return render(
     <DepartmentSubjectView
-      subjects={TWO_SUBJECTS}
+      subjects={opts.subjects ?? TWO_SUBJECTS}
       departmentId="d1"
       evaluationPeriodId="p1"
-      search=""
+      search={opts.search ?? ""}
       onSearchChange={() => {}}
-      facultyAggregates={facultyAggregates}
+      facultyAggregates={opts.facultyAggregates}
     />,
   )
 }
 
 describe("DepartmentSubjectView - By Faculty card", () => {
   it("shows the server faculty aggregate instead of the mean of the subject averages", () => {
-    renderView({ f1: aggregate() })
+    renderView({ facultyAggregates: { f1: aggregate() } })
 
     fireEvent.click(screen.getByText("By Faculty"))
 
@@ -120,7 +133,7 @@ describe("DepartmentSubjectView - By Faculty card", () => {
   })
 
   it("keeps the per-subject rows on the subject values when the card is expanded", () => {
-    renderView({ f1: aggregate() })
+    renderView({ facultyAggregates: { f1: aggregate() } })
 
     fireEvent.click(screen.getByText("By Faculty"))
     fireEvent.click(screen.getByText("Ana Reyes"))
@@ -128,5 +141,31 @@ describe("DepartmentSubjectView - By Faculty card", () => {
     expect(screen.getByText("4.00")).toBeTruthy()
     expect(screen.getByText("2.00")).toBeTruthy()
     expect(screen.getByText("3.50")).toBeTruthy()
+  })
+})
+
+describe("DepartmentSubjectView - Section column", () => {
+  it("shows the section label in the By Subject & Section table", () => {
+    renderView({ subjects: SECTIONED_SUBJECTS })
+
+    expect(screen.getByText("BSCS-1A")).toBeTruthy()
+    expect(screen.getByText("BSCS-2A")).toBeTruthy()
+  })
+
+  it("shows the same section label in the By Faculty card's expanded rows", () => {
+    renderView({ subjects: SECTIONED_SUBJECTS })
+
+    fireEvent.click(screen.getByText("By Faculty"))
+    fireEvent.click(screen.getByText("Ana Reyes"))
+
+    expect(screen.getByText("BSCS-1A")).toBeTruthy()
+    expect(screen.getByText("BSCS-2A")).toBeTruthy()
+  })
+
+  it("finds a row by its section label", () => {
+    renderView({ subjects: SECTIONED_SUBJECTS, search: "bscs-1a" })
+
+    expect(screen.getByText("IT101 Intro")).toBeTruthy()
+    expect(screen.queryByText("IT102 Advanced")).toBeNull()
   })
 })

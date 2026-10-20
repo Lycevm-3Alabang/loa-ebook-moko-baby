@@ -12,6 +12,7 @@ import {
   aggregatePooledResults,
   resolveFacultyDepartment,
   resolveDepartmentFaculties,
+  sectionLabel,
 } from "@/lib/evaluation-utils"
 import type { RatingRow, FacultyRatingRow, DeptResolutionContext } from "@/lib/evaluation-utils"
 
@@ -126,6 +127,21 @@ describe("getRemarkColor", () => {
   it("returns a class string for known remarks", () => {
     expect(getRemarkColor("Outstanding")).toContain("success")
     expect(getRemarkColor(null)).toContain("surface-tertiary")
+  })
+})
+
+describe("sectionLabel", () => {
+  it("joins the program and the name", () => {
+    expect(sectionLabel("BSCS", "1A")).toBe("BSCS-1A")
+  })
+  it("falls back to the name when there is no program", () => {
+    expect(sectionLabel(null, "1A")).toBe("1A")
+  })
+  it("falls back to the program when there is no name", () => {
+    expect(sectionLabel("BSCS", null)).toBe("BSCS")
+  })
+  it("returns an empty string when there is no section", () => {
+    expect(sectionLabel(null, null)).toBe("")
   })
 })
 

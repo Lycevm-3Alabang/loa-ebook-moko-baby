@@ -266,7 +266,7 @@ export function SemestersTab() {
                     <span className="text-tertiary">Student Enrollments:</span><span className="font-semibold text-right">{impacts.enrollments}</span>
                     <span className="text-tertiary">Sections:</span><span className="font-semibold text-right">{impacts.sections}</span>
                     <span className="text-tertiary">Evaluations:</span><span className="font-semibold text-right">{impacts.evaluations}</span>
-                    <span className="text-tertiary">Evaluation Results:</span><span className="font-semibold text-right">{impacts.results}</span>
+                    <span className="text-tertiary">Released Results:</span><span className="font-semibold text-right">{impacts.results}</span>
                   </div>
                 </div>
               ) : null}

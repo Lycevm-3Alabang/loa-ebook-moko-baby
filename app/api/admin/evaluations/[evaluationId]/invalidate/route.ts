@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/route-guard"
-import { evaluationRepository, evaluationResultRepository } from "@/lib/repositories/factory"
+import { evaluationRepository } from "@/lib/repositories/factory"
 import { logAuditEvent, logServerError } from "@/lib/services/audit"
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ evaluationId: string }> }) {
@@ -16,8 +16,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!evaluationPeriodId) return NextResponse.json({ error: "evaluationPeriodId is required" }, { status: 400 })
 
     await evaluationRepository.invalidateById(evaluationId, reason || "")
-
-    await evaluationResultRepository.computeAll(evaluationPeriodId)
 
     await logAuditEvent({ action: "invalidate_evaluation", details: JSON.stringify({ evaluationId, evaluationPeriodId, reason }) }).catch(() => {})
 

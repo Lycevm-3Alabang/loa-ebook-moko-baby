@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase"
 import { departmentRepository, evaluationPeriodRepository, evaluationResultRepository, userRepository, facultySubjectRepository, studentEnrollmentRepository, rubricGroupRepository } from "@/lib/repositories/factory"
+import type { LiveDeptAverage } from "@/lib/types"
 
 export interface EvalReportFaculty {
   facultyId: string
@@ -71,15 +72,34 @@ function avg(nums: (number | null)[]): number | null {
   return Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 100) / 100
 }
 
+function liveDeptToReportRow(
+  live: { departmentId: string; facultyIds: string[]; totalRespondents: number; avgRating: number | null; catAverages: Record<string, number | null> },
+  departmentName: string,
+): EvalReportDepartment {
+  const c = live.catAverages
+  return {
+    departmentId: live.departmentId,
+    departmentName,
+    facultyCount: live.facultyIds.length,
+    totalRespondents: live.totalRespondents,
+    avgProfessionalManner: c.professionalManner ?? null,
+    avgCommunicationWithStudent: c.communicationWithStudent ?? null,
+    avgStudentEngagement: c.studentEngagement ?? null,
+    avgLearningMaterials: c.learningMaterials ?? null,
+    avgTimeManagement: c.timeManagement ?? null,
+    avgExperientialLearning: c.experientialLearning ?? null,
+    avgRespectUniqueness: c.respectUniqueness ?? null,
+    avgAssessmentAndFeedback: c.assessmentAndFeedback ?? null,
+    avgGeneralRating: live.avgRating ?? null,
+  }
+}
+
 export async function getAdminEvalReportData(evaluationPeriodId?: string): Promise<EvalReportData> {
   const activePeriodId = evaluationPeriodId ?? (await getActiveEvaluationPeriodId())
   if (!activePeriodId) return { evaluationPeriodId: "", departments: [], facultyResults: [] }
 
-  const { data: results } = await supabase
-    .from("evaluation_results")
-    .select("*")
-    .eq("evaluation_period_id", activePeriodId)
-  const rows = (results ?? []) as Array<Record<string, unknown>>
+  const liveRows = await evaluationResultRepository.listLiveFacultyResults(activePeriodId)
+  const rows = liveRows as unknown as Array<Record<string, unknown>>
 
   const facultyIds = [...new Set(rows.map((r) => r.facultyId as string))]
   const { data: users } = await supabase
@@ -90,14 +110,13 @@ export async function getAdminEvalReportData(evaluationPeriodId?: string): Promi
 
   const deptNameMap = await getDepartmentNameMap()
 
-  const deptMap = new Map<string, EvalReportFaculty[]>()
-  for (const r of rows) {
+  // The faculty rows keep their own department for the NAME; the department
+  // FIGURES come from the pooled live figures - the same numbers the results
+  // page renders - so the two pages cannot disagree about a department.
+  const facultyResults: EvalReportFaculty[] = rows.map((r) => {
     const facultyId = r.facultyId as string
     const user = userMap.get(facultyId)
-    // Live home department — do not use evaluation_results.departmentId (stale snapshot).
-    const deptId = user?.departmentId ?? "unassigned"
-    if (!deptMap.has(deptId)) deptMap.set(deptId, [])
-    deptMap.get(deptId)!.push({
+    return {
       facultyId,
       facultyName: user?.name ?? facultyId,
       totalRespondents: (r.totalRespondents as number) ?? 0,
@@ -111,52 +130,20 @@ export async function getAdminEvalReportData(evaluationPeriodId?: string): Promi
       assessmentAndFeedback: r.assessmentAndFeedback as number | null,
       generalRating: r.generalRating as number | null,
       remarks: r.remarks as string | null,
-    })
-  }
+    }
+  })
 
-  const departments: EvalReportDepartment[] = []
-  for (const [deptId, facultyList] of deptMap) {
-    departments.push({
-      departmentId: deptId,
-      departmentName: deptNameMap.get(deptId) ?? deptId,
-      facultyCount: facultyList.length,
-      totalRespondents: facultyList.reduce((s, f) => s + f.totalRespondents, 0),
-      avgProfessionalManner: avg(facultyList.map((f) => f.professionalManner)),
-      avgCommunicationWithStudent: avg(facultyList.map((f) => f.communicationWithStudent)),
-      avgStudentEngagement: avg(facultyList.map((f) => f.studentEngagement)),
-      avgLearningMaterials: avg(facultyList.map((f) => f.learningMaterials)),
-      avgTimeManagement: avg(facultyList.map((f) => f.timeManagement)),
-      avgExperientialLearning: avg(facultyList.map((f) => f.experientialLearning)),
-      avgRespectUniqueness: avg(facultyList.map((f) => f.respectUniqueness)),
-      avgAssessmentAndFeedback: avg(facultyList.map((f) => f.assessmentAndFeedback)),
-      avgGeneralRating: avg(facultyList.map((f) => f.generalRating)),
-    })
-  }
+  const liveDepts = await evaluationResultRepository.listLiveDeptAverages(activePeriodId)
+  const departments: EvalReportDepartment[] = liveDepts.map((d) =>
+    liveDeptToReportRow(d, d.departmentId === "__unknown__" ? "Unassigned" : (deptNameMap.get(d.departmentId) ?? d.departmentId)),
+  )
 
   departments.sort((a, b) => (b.avgGeneralRating ?? 0) - (a.avgGeneralRating ?? 0))
 
   return {
     evaluationPeriodId: activePeriodId,
     departments,
-    facultyResults: rows.map((r) => {
-      const facultyId = r.facultyId as string
-      const user = userMap.get(facultyId)
-      return {
-        facultyId,
-        facultyName: user?.name ?? facultyId,
-        totalRespondents: (r.totalRespondents as number) ?? 0,
-        professionalManner: r.professionalManner as number | null,
-        communicationWithStudent: r.communicationWithStudent as number | null,
-        studentEngagement: r.studentEngagement as number | null,
-        learningMaterials: r.learningMaterials as number | null,
-        timeManagement: r.timeManagement as number | null,
-        experientialLearning: r.experientialLearning as number | null,
-        respectUniqueness: r.respectUniqueness as number | null,
-        assessmentAndFeedback: r.assessmentAndFeedback as number | null,
-        generalRating: r.generalRating as number | null,
-        remarks: r.remarks as string | null,
-      }
-    }),
+    facultyResults,
   }
 }
 
@@ -167,16 +154,17 @@ export async function getDeanEvalReportData(deanId: string, evaluationPeriodId?:
   const dept = await departmentRepository.findByDeanId(deanId)
   if (!dept) return { evaluationPeriodId: "", departments: [], facultyResults: [] }
 
-  // Live home department — do not filter by evaluation_results.departmentId (stale snapshot).
-  const resultRows = await evaluationResultRepository.list(activePeriodId)
-  const allRows = ((resultRows ?? []) as unknown) as Array<Record<string, unknown>>
+  // The department's faculty AND its figures come from the same live, pooled
+  // source the results page uses - so the two pages cover the same faculty and
+  // print the same numbers.
+  const liveDept = (await evaluationResultRepository.listLiveDeptAverages(activePeriodId))
+    .find((d) => d.departmentId === dept.id)
+  if (!liveDept) return { evaluationPeriodId: activePeriodId, departments: [], facultyResults: [] }
 
-  const allFacIds = [...new Set(allRows.map((r) => r.facultyId as string))]
-  const allUsers = allFacIds.length > 0 ? await userRepository.listByIds(allFacIds) : []
-  const liveDept = new Map(
-    (allUsers ?? []).map((u) => [u.id, (u as { id: string; departmentId: string | null }).departmentId ?? null]),
-  )
-  const rows = allRows.filter((r) => liveDept.get(r.facultyId as string) === dept.id)
+  const liveRows = await evaluationResultRepository.listLiveFacultyResults(activePeriodId)
+  const allRows = liveRows as unknown as Array<Record<string, unknown>>
+  const deptFacultyIds = new Set(liveDept.facultyIds)
+  const rows = allRows.filter((r) => deptFacultyIds.has(r.facultyId as string))
 
   const facultyIds = [...new Set(rows.map((r) => r.facultyId as string))]
   const users = facultyIds.length > 0 ? await userRepository.listByIds(facultyIds) : []
@@ -203,21 +191,7 @@ export async function getDeanEvalReportData(deanId: string, evaluationPeriodId?:
 
   return {
     evaluationPeriodId: activePeriodId,
-    departments: [{
-      departmentId: dept.id,
-      departmentName: dept.name,
-      facultyCount: facultyResults.length,
-      totalRespondents: facultyResults.reduce((s, f) => s + f.totalRespondents, 0),
-      avgProfessionalManner: avg(facultyResults.map((f) => f.professionalManner)),
-      avgCommunicationWithStudent: avg(facultyResults.map((f) => f.communicationWithStudent)),
-      avgStudentEngagement: avg(facultyResults.map((f) => f.studentEngagement)),
-      avgLearningMaterials: avg(facultyResults.map((f) => f.learningMaterials)),
-      avgTimeManagement: avg(facultyResults.map((f) => f.timeManagement)),
-      avgExperientialLearning: avg(facultyResults.map((f) => f.experientialLearning)),
-      avgRespectUniqueness: avg(facultyResults.map((f) => f.respectUniqueness)),
-      avgAssessmentAndFeedback: avg(facultyResults.map((f) => f.assessmentAndFeedback)),
-      avgGeneralRating: avg(facultyResults.map((f) => f.generalRating)),
-    }],
+    departments: [liveDeptToReportRow(liveDept, dept.name)],
     facultyResults,
   }
 }
@@ -226,12 +200,8 @@ export async function getFacultyEvalReportData(facultyId: string, evaluationPeri
   const activePeriodId = evaluationPeriodId ?? (await getActiveEvaluationPeriodId())
   if (!activePeriodId) return { evaluationPeriodId: "", departments: [], facultyResults: [] }
 
-  const { data: results } = await supabase
-    .from("evaluation_results")
-    .select("*")
-    .eq("evaluation_period_id", activePeriodId)
-    .eq("facultyId", facultyId)
-  const rows = (results ?? []) as Array<Record<string, unknown>>
+  const liveRows = await evaluationResultRepository.listLiveFacultyResults(activePeriodId)
+  const rows = liveRows.filter((r) => r.facultyId === facultyId) as unknown as Array<Record<string, unknown>>
 
   const { data: user } = await supabase
     .from("users")
@@ -300,13 +270,12 @@ function remarkOf(g: number | null): string | null {
 }
 
 // Additive dashboard internals — existing report functions above are untouched.
-async function facultyGrainForDept(departmentId: string, periodId: string): Promise<EvalReportFaculty[]> {
-  const resultRows = await evaluationResultRepository.list(periodId)
-  const allRows = ((resultRows ?? []) as unknown) as Array<Record<string, unknown>>
-  const allFacIds = [...new Set(allRows.map((r) => r.facultyId as string))]
-  const allUsers = allFacIds.length > 0 ? await userRepository.listByIds(allFacIds) : []
-  const liveDept = new Map(allUsers.map((u) => [u.id, (u as { id: string; departmentId: string | null }).departmentId ?? null]))
-  const rows = allRows.filter((r) => liveDept.get(r.facultyId as string) === departmentId)
+async function facultyGrainForDept(live: LiveDeptAverage[], departmentId: string, periodId: string): Promise<EvalReportFaculty[]> {
+  const liveDept = live.find((d) => d.departmentId === departmentId)
+  const liveRows = await evaluationResultRepository.listLiveFacultyResults(periodId)
+  const allRows = liveRows as unknown as Array<Record<string, unknown>>
+  const deptFacultyIds = new Set(liveDept?.facultyIds ?? [])
+  const rows = allRows.filter((r) => deptFacultyIds.has(r.facultyId as string))
   const facultyIds = [...new Set(rows.map((r) => r.facultyId as string))]
   const users = facultyIds.length > 0 ? await userRepository.listByIds(facultyIds) : []
   const userMap = new Map(users.map((u) => [u.id, (u as { id: string; name: string }).name]))
@@ -330,20 +299,17 @@ async function facultyGrainForDept(departmentId: string, periodId: string): Prom
   })
 }
 
-async function deptPeriodAverages(departmentId: string, periodId: string) {
-  const resultRows = await evaluationResultRepository.list(periodId)
-  const allRows = ((resultRows ?? []) as unknown) as Array<Record<string, unknown>>
-  const facIds = [...new Set(allRows.map((r) => r.facultyId as string))]
-  const users = facIds.length > 0 ? await userRepository.listByIds(facIds) : []
-  const liveDept = new Map(users.map((u) => [u.id, (u as { id: string; departmentId: string | null }).departmentId ?? null]))
-  const rows = allRows.filter((r) => liveDept.get(r.facultyId as string) === departmentId)
+function deptAveragesFrom(live: LiveDeptAverage[], departmentId: string) {
+  // POOLED over the department's rating rows - the same figures the results
+  // page renders, not a mean of the per-faculty averages.
+  const d = live.find((x) => x.departmentId === departmentId)
   const cats: Record<string, number | null> = {}
-  for (const key of CATEGORY_KEYS) cats[key] = avg(rows.map((r) => (r[key] as number | null) ?? null))
+  for (const key of CATEGORY_KEYS) cats[key] = d ? (d.catAverages[key] ?? null) : null
   return {
-    general: avg(rows.map((r) => (r.generalRating as number | null) ?? null)),
+    general: d?.avgRating ?? null,
     cats,
-    respondents: rows.reduce((s, r) => s + ((r.totalRespondents as number) ?? 0), 0),
-    facultyIds: [...new Set(rows.map((r) => r.facultyId as string))],
+    respondents: d?.totalRespondents ?? 0,
+    facultyIds: d?.facultyIds ?? [],
   }
 }
 
@@ -359,22 +325,35 @@ async function deptExpectedCounts(departmentId: string, semesterId: string | nul
 }
 
 async function buildDeptDashboard(dept: { id: string; name: string }, periodId: string): Promise<DeanDashboardData> {
-  const [grain, cur, period, descList] = await Promise.all([
-    facultyGrainForDept(dept.id, periodId),
-    deptPeriodAverages(dept.id, periodId),
+  const liveCache = new Map<string, LiveDeptAverage[]>()
+  const liveFor = async (pid: string) => {
+    let l = liveCache.get(pid)
+    if (!l) {
+      l = await evaluationResultRepository.listLiveDeptAverages(pid)
+      liveCache.set(pid, l)
+    }
+    return l
+  }
+
+  const [grainSrc, period, descList] = await Promise.all([
+    liveFor(periodId),
     evaluationPeriodRepository.findById(periodId),
     evaluationPeriodRepository.list(),
+  ])
+  const [grain, cur] = await Promise.all([
+    facultyGrainForDept(grainSrc, dept.id, periodId),
+    Promise.resolve(deptAveragesFrom(grainSrc, dept.id)),
   ])
   let rubricGroupName: string | null = null
   if (period?.rubricGroupId) rubricGroupName = (await rubricGroupRepository.findById(period.rubricGroupId))?.name ?? null
   const idx = descList.findIndex((p) => p.id === periodId)
   const prev = idx >= 0 ? (descList[idx + 1] ?? null) : null
-  const prevAvg = prev ? await deptPeriodAverages(dept.id, prev.id) : null
+  const prevAvg = prev ? deptAveragesFrom(await liveFor(prev.id), dept.id) : null
   const deltaFor = (key: string, v: number | null) =>
     v === null || !prevAvg || prevAvg.cats[key] == null ? null : Math.round((v - (prevAvg.cats[key] as number)) * 100) / 100
   const trend = []
   for (const p of descList.slice(0, 4).reverse()) {
-    const a = p.id === periodId ? cur : await deptPeriodAverages(dept.id, p.id)
+    const a = p.id === periodId ? cur : deptAveragesFrom(await liveFor(p.id), dept.id)
     trend.push({
       semesterId: p.semesterId,
       title: [p.semesterTitle, p.name].filter(Boolean).join(" — "),
@@ -426,10 +405,13 @@ export interface AdminDashboardData { evaluationPeriodId: string; departments: A
 export async function getAdminDashboardData(evaluationPeriodId?: string, departmentId?: string): Promise<AdminDashboardData | null> {
   const periodId = evaluationPeriodId ?? await getActiveEvaluationPeriodId()
   if (!periodId) return null
-  const depts = await departmentRepository.listAll()
+  const [depts, liveDepts] = await Promise.all([
+    departmentRepository.listAll(),
+    evaluationResultRepository.listLiveDeptAverages(periodId),
+  ])
   const departments: AdminDeptBar[] = []
   for (const d of depts) {
-    const a = await deptPeriodAverages(d.id, periodId)
+    const a = deptAveragesFrom(liveDepts, d.id)
     departments.push({ departmentId: d.id, departmentName: d.name, general: a.general, remark: remarkOf(a.general), respondents: a.respondents })
   }
   departments.sort((a, b) => (b.general ?? -1) - (a.general ?? -1))

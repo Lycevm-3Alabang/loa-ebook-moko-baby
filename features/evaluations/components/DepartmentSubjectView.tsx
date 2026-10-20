@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { getRemarkColor, type FacultyAggregate } from "@/lib/evaluation-utils"
+import { getRemarkColor, sectionLabel, type FacultyAggregate } from "@/lib/evaluation-utils"
 import { downloadEvalDetailPdf } from "@/lib/evaluation-pdf"
 
 interface SubjectRow {
@@ -13,6 +13,8 @@ interface SubjectRow {
   subjectId: string
   subjectCode: string
   subjectName: string
+  sectionProgram: string | null
+  sectionName: string | null
   totalRespondents: number
   avgRating: number | null
   remarks: string | null
@@ -77,7 +79,8 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
         s.facultyName.toLowerCase().includes(q) ||
         s.facultyEmail.toLowerCase().includes(q) ||
         s.subjectCode.toLowerCase().includes(q) ||
-        s.subjectName.toLowerCase().includes(q),
+        s.subjectName.toLowerCase().includes(q) ||
+        sectionLabel(s.sectionProgram, s.sectionName).toLowerCase().includes(q),
     )
   }, [subjects, search])
 
@@ -220,6 +223,7 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
                 <th className="pb-3 pr-4 cursor-pointer hover:text-secondary" onClick={() => toggleSort("subjectName")}>
                   Subject{sortArrow("subjectName")}
                 </th>
+                <th className="pb-3 pr-4">Section</th>
                 <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("avgRating")}>
                   Avg Rating{sortArrow("avgRating")}
                 </th>
@@ -253,6 +257,9 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
                   </td>
                   <td className="py-3 pr-4">
                     <span className="text-sm text-secondary">{row.subjectCode} {row.subjectName}</span>
+                  </td>
+                  <td className="py-3 pr-4">
+                    <span className="text-sm text-secondary">{sectionLabel(row.sectionProgram, row.sectionName)}</span>
                   </td>
                   <td className="py-3 pr-4 text-right">
                     <span className="text-sm font-bold">{formatScore(row.avgRating)}</span>
@@ -407,6 +414,7 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
                       <thead>
                         <tr className="text-[10px] font-semibold uppercase tracking-wider text-tertiary border-b border-default">
                           <th className="pb-2 pr-3">Subject</th>
+                          <th className="pb-2 pr-3">Section</th>
                           <th className="pb-2 pr-3 text-right">Avg Rating</th>
                           <th className="pb-2 pr-3 text-right">Highest</th>
                           <th className="pb-2 pr-3 text-right">Lowest</th>
@@ -426,6 +434,7 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
                             className="border-b border-default hover:bg-surface-hover cursor-pointer transition-colors"
                           >
                             <td className="py-2 pr-3 text-xs text-secondary">{s.subjectCode} {s.subjectName}</td>
+                            <td className="py-2 pr-3 text-xs text-secondary">{sectionLabel(s.sectionProgram, s.sectionName)}</td>
                             <td className="py-2 pr-3 text-right text-xs font-semibold">{formatScore(s.avgRating)}</td>
                             <td className="py-2 pr-3 text-right text-[10px] text-emerald-600 dark:text-emerald-400">
                               {s.highestRubrics.length > 0 ? `${s.highestRubrics[0].label} (${formatScore(s.highestRubrics[0].score)})` : "\u2014"}

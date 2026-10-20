@@ -13,22 +13,6 @@ export async function GET(request: NextRequest) {
     const evaluationPeriodId = searchParams.get("evaluationPeriodId") || searchParams.get("semesterId")
     if (!evaluationPeriodId) return NextResponse.json({ error: "evaluationPeriodId is required" }, { status: 400 })
 
-    let results = await evaluationResultRepository.list(evaluationPeriodId)
-    const hasCategoryData = results.length > 0 && results.some((r) => r.generalRating !== null)
-    if (!hasCategoryData) {
-      await evaluationResultRepository.computeAll(evaluationPeriodId)
-      results = await evaluationResultRepository.list(evaluationPeriodId)
-      if (results.length === 0) return NextResponse.json({ departments: [] })
-    } else {
-      const submittedIds = await evaluationRepository.listSubmittedEvaluateeIds(evaluationPeriodId)
-      const resultFaculty = new Set(results.map((r) => r.facultyId))
-      const hasMissing = submittedIds.some((id) => !resultFaculty.has(id))
-      if (hasMissing) {
-        await evaluationResultRepository.computeAll(evaluationPeriodId)
-        results = await evaluationResultRepository.list(evaluationPeriodId)
-      }
-    }
-
     const sentimentRows = await evaluationRepository.listSubmittedWithSentiment(evaluationPeriodId)
 
     // Live department averages — never read cached generalRating (stale/placeholder nulls).

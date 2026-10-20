@@ -115,6 +115,11 @@ export function computeSentimentScore(comments: { sentimentScore: number | null 
   return Math.round(scored.reduce((a, b) => a + b, 0) / scored.length * 100) / 100
 }
 
+export function sectionLabel(program: string | null, name: string | null): string {
+  if (program && name) return `${program}-${name}`
+  return program ?? name ?? ""
+}
+
 export function getRemarkColor(remarks: string | null): string {
   switch (remarks) {
     case "Outstanding": return "bg-success-bg text-success-text"

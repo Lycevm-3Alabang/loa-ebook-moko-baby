@@ -4,6 +4,7 @@ import type {
   EvaluationPeriodData,
   EvaluationResultData,
   FacultySubjectWithEmbeds,
+  LiveDeptAverage,
   RubricGroupWithCategories,
   SemesterData,
   UserData,
@@ -27,7 +28,8 @@ const mockEvalPeriodRepo = vi.hoisted(() => ({
 }))
 
 const mockEvalResultRepo = vi.hoisted(() => ({
-  list: vi.fn(),
+  listLiveFacultyResults: vi.fn(),
+  listLiveDeptAverages: vi.fn(),
 }))
 
 const mockFacultySubjectRepo = vi.hoisted(() => ({
@@ -59,6 +61,7 @@ vi.mock("@/lib/supabase", () => ({
 }))
 
 import { getDeanDashboardData, getAdminDashboardData } from "@/features/evaluations/evaluation-report.service"
+import { CATEGORY_KEYS } from "@/lib/evaluation-utils"
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -125,6 +128,34 @@ const RESULTS_BY_PERIOD: Record<string, EvaluationResultData[]> = {
   p1: [resultRow("p1", "f1", 6, 3.5, "Very Satisfactory")],
 }
 
+/** The POOLED department figures the repository produces (not a mean of faculty means). */
+function liveDept(
+  departmentId: string,
+  facultyIds: string[],
+  totalRespondents: number,
+  score: number,
+): LiveDeptAverage {
+  const catAverages: Record<string, number | null> = {}
+  for (const key of CATEGORY_KEYS) catAverages[key] = score
+  return {
+    departmentId,
+    facultyIds,
+    totalRespondents,
+    avgRating: score,
+    remarks: score >= 4.5 ? "Outstanding" : score >= 3.5 ? "Very Satisfactory" : score >= 2.5 ? "Satisfactory" : score >= 1.5 ? "Unsatisfactory" : "Poor",
+    catAverages,
+    highestRubrics: [],
+    lowestRubrics: [],
+  }
+}
+
+const LIVE_DEPTS_BY_PERIOD: Record<string, LiveDeptAverage[]> = {
+  // dept-1: 10 responses @ 4.0 + 3 @ 5.0 + 8 @ 2.0 -> pooled 71/21 = 3.38
+  p3: [liveDept("dept-1", ["f1", "f2", "f3"], 21, 3.38), liveDept("dept-2", ["x1"], 10, 4.6)],
+  p2: [liveDept("dept-1", ["f1"], 6, 3)],
+  p1: [liveDept("dept-1", ["f1"], 6, 3.5)],
+}
+
 const FS_ROWS: FacultySubjectWithEmbeds[] = [
   {
     id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec1", semesterId: "s1",
@@ -173,8 +204,11 @@ function seedDefaults() {
     semesterId === "s1" ? [P3, P2] : semesterId === "s0" ? [P1] : [],
   )
   mockEvalPeriodRepo.list.mockResolvedValue([P3, P2, P1])
-  mockEvalResultRepo.list.mockImplementation(async (periodId: string) =>
+  mockEvalResultRepo.listLiveFacultyResults.mockImplementation(async (periodId: string) =>
     RESULTS_BY_PERIOD[periodId] ?? [],
+  )
+  mockEvalResultRepo.listLiveDeptAverages.mockImplementation(async (periodId: string) =>
+    LIVE_DEPTS_BY_PERIOD[periodId] ?? [],
   )
   mockFacultySubjectRepo.listAllWithEmbeds.mockResolvedValue(FS_ROWS)
   mockEnrollmentRepo.countByFacultySubjectIds.mockResolvedValue({ fs1: 20, fs2: 16 })
@@ -203,8 +237,9 @@ describe("getDeanDashboardData", () => {
     const data = await getDeanDashboardData("dean-1", undefined, "p3")
     expect(data?.semesterId).toBe("s1")
     expect(data?.rubricGroupName).toBe("Default")
-    // dept mean of faculty generals (4.0 + 5.0 + 2.0) / 3 = 3.67
-    expect(data?.kpis.general).toBeCloseTo(3.67, 2)
+    // the POOLED department figure (71/21 over the response rows), not the
+    // mean of the faculty generals (4.0 + 5.0 + 2.0) / 3 = 3.67
+    expect(data?.kpis.general).toBeCloseTo(3.38, 2)
     expect(data?.kpis.remark).toBe("Very Satisfactory")
     expect(data?.kpis.actual).toBe(21)
     expect(data?.kpis.expected).toBe(36)
@@ -237,12 +272,12 @@ describe("getDeanDashboardData", () => {
   it("builds chronological trend with rubric-change flags and category deltas", async () => {
     const data = await getDeanDashboardData("dean-1", undefined, "p3")
     expect(data?.trend.map((t) => t.semesterId)).toEqual(["s0", "s1", "s1"])
-    expect(data?.trend.map((t) => t.general)).toEqual([3.5, 3.0, 3.67])
+    expect(data?.trend.map((t) => t.general)).toEqual([3.5, 3.0, 3.38])
     expect(data?.trend.map((t) => t.rubricChanged)).toEqual([true, false, false])
-    // delta vs p2: 3.67 - 3.0 = 0.67 per category
+    // delta vs p2: 3.38 - 3.0 = 0.38 per category
     for (const c of data?.categories ?? []) {
-      expect(c.value).toBeCloseTo(3.67, 2)
-      expect(c.delta).toBeCloseTo(0.67, 2)
+      expect(c.value).toBeCloseTo(3.38, 2)
+      expect(c.delta).toBeCloseTo(0.38, 2)
     }
   })
 
@@ -264,7 +299,7 @@ describe("getAdminDashboardData", () => {
     expect(data?.evaluationPeriodId).toBe("p3")
     expect(data?.departments.map((d) => d.departmentId)).toEqual(["dept-2", "dept-1"])
     expect(data?.departments[0]).toMatchObject({ departmentName: "COE", general: 4.6 })
-    expect(data?.selected?.kpis.general).toBeCloseTo(3.67, 2)
+    expect(data?.selected?.kpis.general).toBeCloseTo(3.38, 2)
     expect(data?.selected?.rubricGroupName).toBe("Default")
   })
 

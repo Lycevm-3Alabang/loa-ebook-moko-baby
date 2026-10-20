@@ -7,6 +7,7 @@ const mockEvalRepo = vi.hoisted(() => ({
   listCommentsByEvaluationIds: vi.fn(),
 }))
 const mockEvalResultRepo = vi.hoisted(() => ({ listDepartmentFacultyIds: vi.fn() }))
+const mockSectionRepo = vi.hoisted(() => ({ list: vi.fn() }))
 const mockFsRepo = vi.hoisted(() => ({ findByIds: vi.fn() }))
 const mockSubjectRepo = vi.hoisted(() => ({ findByIds: vi.fn() }))
 
@@ -14,13 +15,17 @@ vi.mock("@/lib/repositories/factory", () => ({
   userRepository: mockUserRepo,
   evaluationRepository: mockEvalRepo,
   evaluationResultRepository: mockEvalResultRepo,
+  sectionRepository: mockSectionRepo,
   facultySubjectRepository: mockFsRepo,
   subjectRepository: mockSubjectRepo,
 }))
 
 import { getDepartmentSubjectResults } from "@/features/evaluation-results/evaluation-results.service"
 
-beforeEach(() => vi.resetAllMocks())
+beforeEach(() => {
+  vi.resetAllMocks()
+  mockSectionRepo.list.mockResolvedValue([])
+})
 
 describe("getDepartmentSubjectResults", () => {
   it("excludes stale evals where evaluateeId !== facultySubject.faculty_id", async () => {
@@ -100,5 +105,23 @@ describe("getDepartmentSubjectResults", () => {
     expect(mockEvalResultRepo.listDepartmentFacultyIds).toHaveBeenCalledWith("d1", "p1")
     expect(mockUserRepo.listByIds).toHaveBeenCalledWith(["f1"], { includeDeleted: true })
     expect(mockUserRepo.listByDepartment).not.toHaveBeenCalled()
+  })
+
+  it("carries each row's section (program and name)", async () => {
+    mockEvalResultRepo.listDepartmentFacultyIds.mockResolvedValue(["f1"])
+    mockUserRepo.listByIds.mockResolvedValue([{ id: "f1", name: "F", email: "f@x" }])
+    mockEvalRepo.listSubmittedByPeriodAndEvaluatees.mockResolvedValue([
+      { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1", submittedAt: null },
+    ])
+    mockFsRepo.findByIds.mockResolvedValue([{ id: "fs1", faculty_id: "f1", subject_id: "s1", section_id: "sec1" }])
+    mockSubjectRepo.findByIds.mockResolvedValue([{ id: "s1", code: "C", name: "N" }])
+    mockSectionRepo.list.mockResolvedValue([{ id: "sec1", name: "1A", program: "BSCS" }])
+    mockEvalRepo.listRatingsByEvaluationIds.mockResolvedValue([])
+    mockEvalRepo.listCommentsByEvaluationIds.mockResolvedValue([])
+
+    const { subjects } = await getDepartmentSubjectResults("p1", "d1")
+
+    expect(subjects[0].sectionProgram).toBe("BSCS")
+    expect(subjects[0].sectionName).toBe("1A")
   })
 })

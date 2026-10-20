@@ -18,6 +18,8 @@ interface SubjectRow {
   subjectId: string
   subjectCode: string
   subjectName: string
+  sectionProgram: string | null
+  sectionName: string | null
   totalRespondents: number
   avgRating: number | null
   remarks: string | null

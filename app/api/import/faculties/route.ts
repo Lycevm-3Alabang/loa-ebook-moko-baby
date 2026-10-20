@@ -3,8 +3,7 @@ import { auth } from "@/lib/auth"
 import { requireAdmin } from "@/lib/route-guard"
 import { parseFacultySubjectCsv, importFacultySubjects, importDepartmentsStep, importCoursesStep, importSectionsStep, importSubjectsStep, importFacultyUsersStep, importMappingsStep } from "@/lib/services/etlEvaluation"
 import { logAuditEvent } from "@/lib/services/audit"
-import { semesterRepository, evaluationPeriodRepository } from "@/lib/repositories/factory"
-import { recomputeResultsWorkflow } from "@/lib/workflows/recompute-workflow"
+import { semesterRepository } from "@/lib/repositories/factory"
 
 // Chunked ETL: chunks insert hundreds of rows per request; allow a long
 // execution window on platforms that cap serverless run time.
@@ -199,10 +198,6 @@ export async function POST(request: NextRequest) {
         })(),
       })
       // Best-effort: dummy→real flips change eval ownership; recompute once per period.
-      if (stepResult.inserted > 0) {
-        const periods = await evaluationPeriodRepository.findBySemester(semesterId)
-        for (const p of periods) recomputeResultsWorkflow(p.id, "immediate").catch(() => {})
-      }
       return NextResponse.json({ ...stepResult, fileId })
     }
     const rawRows = body.rows as { email: string; name?: string; subjectCode: string; subjectName?: string; section: string; departmentCode?: string }[] | undefined
@@ -242,10 +237,6 @@ export async function POST(request: NextRequest) {
         ? `Imported chunk ${chunkIndex + 1}/${totalChunks} (file ${fileId}): ${result.matched} mappings (${result.errors.length} errors)`
         : `Imported ${result.matched} faculty-subject-section mappings (${result.errors.length} errors)`,
     })
-    if (result.matched > 0) {
-      const periods = await evaluationPeriodRepository.findBySemester(semesterId)
-      for (const p of periods) recomputeResultsWorkflow(p.id, "immediate").catch(() => {})
-    }
   }
 
   return NextResponse.json({ ...result, parseErrors, chunkIndex, totalChunks, fileId, isLast })

@@ -27,7 +27,7 @@ export async function GET(
 
   const labels = [
     "evaluations",
-    "evaluation_results",
+    "evaluation_visibility",
     "user_permissions",
     "faculty_subjects",
     "appointments",

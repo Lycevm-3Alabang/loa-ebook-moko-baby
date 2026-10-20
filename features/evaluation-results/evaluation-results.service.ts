@@ -1,4 +1,4 @@
-import { evaluationResultRepository, userRepository, evaluationRepository, facultySubjectRepository, subjectRepository } from "@/lib/repositories/factory"
+import { evaluationResultRepository, userRepository, evaluationRepository, facultySubjectRepository, subjectRepository, sectionRepository } from "@/lib/repositories/factory"
 import {
   computeCategoryAverages,
   computeGeneralRating,
@@ -12,22 +12,6 @@ import {
   type DepartmentAggregate,
 } from "@/lib/evaluation-utils"
 
-export async function getEvaluationResults(periodId: string, filters?: { departmentId?: string; facultyId?: string }) {
-  return evaluationResultRepository.list(periodId, filters)
-}
-
-export async function getFacultyEvaluationResult(periodId: string, facultyId: string) {
-  return evaluationResultRepository.findByFaculty(periodId, facultyId)
-}
-
-export async function computeEvaluationResults(periodId: string, facultyId?: string) {
-  return evaluationResultRepository.compute(periodId, facultyId)
-}
-
-export async function recomputeAllResults(periodId: string) {
-  return evaluationResultRepository.computeAll(periodId)
-}
-
 export interface DepartmentSubjectResult {
   facultySubjectId: string
   facultyId: string
@@ -36,6 +20,8 @@ export interface DepartmentSubjectResult {
   subjectId: string
   subjectCode: string
   subjectName: string
+  sectionProgram: string | null
+  sectionName: string | null
   totalRespondents: number
   avgRating: number | null
   remarks: string | null
@@ -79,6 +65,10 @@ export async function getDepartmentSubjectResults(
   const fsMap = new Map(facultySubjects.map((fs) => [fs.id, fs]))
   const subjMap = new Map(subjects.map((s) => [s.id, s]))
 
+  // Sections are few, so resolve them in memory from the row's OWN section.
+  const allSections = await sectionRepository.list()
+  const sectionById = new Map(allSections.map((s) => [s.id, s]))
+
   // Match the detail page's eval set: evaluatee must equal the subject's faculty.
   const validEvals = evals.filter((ev) => {
     if (!ev.facultySubjectId) return false
@@ -113,6 +103,7 @@ export async function getDepartmentSubjectResults(
     if (!fs) continue
     const user = facNameMap.get(fs.faculty_id)
     const subj = subjMap.get(fs.subject_id)
+    const section = fs.section_id ? sectionById.get(fs.section_id) : undefined
 
     const groupRatings = ratings.filter((r) => evalIds.includes(r.evaluationId))
     const catAverages = computeCategoryAverages(groupRatings)
@@ -131,6 +122,8 @@ export async function getDepartmentSubjectResults(
       subjectId: fs.subject_id,
       subjectCode: subj?.code ?? "",
       subjectName: subj?.name ?? "",
+      sectionProgram: section?.program ?? null,
+      sectionName: section?.name ?? null,
       totalRespondents: evalIds.length,
       avgRating: general,
       remarks: getRemark(general),

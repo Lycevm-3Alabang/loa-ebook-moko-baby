@@ -8,6 +8,7 @@ import {
   subjectRepository,
   evaluationRepository,
   evaluationResultRepository,
+  sectionRepository,
 } from "@/lib/repositories/factory"
 import { EvaluationPeriodInactiveError } from "@/features/evaluation-results/evaluation-results.repository"
 import { logServerError } from "@/lib/services/audit"
@@ -47,11 +48,14 @@ export async function GET(
     const fsData = await facultySubjectRepository.findById(facultySubjectId)
     if (!fsData) return NextResponse.json({ error: "Faculty-subject not found" }, { status: 404 })
 
-    const [faculty, subject, deptInfo] = await Promise.all([
+    const [faculty, subject, deptInfo, allSections] = await Promise.all([
       userRepository.findById(fsData.faculty_id),
       subjectRepository.findById(fsData.subject_id),
       departmentRepository.findById(departmentId),
+      sectionRepository.list(),
     ])
+    // Sections are few — one lookup for the row's OWN section.
+    const section = fsData.section_id ? allSections.find((s) => s.id === fsData.section_id) : undefined
 
     const evals = await evaluationRepository.listSubmittedByPeriodAndEvaluateeAndFS(evaluationPeriodId, fsData.faculty_id, facultySubjectId)
     if (evals.length === 0) return NextResponse.json({ error: "No evaluations found" }, { status: 404 })
@@ -98,6 +102,8 @@ export async function GET(
       department: deptInfo ? { id: deptInfo.id, name: deptInfo.name, code: deptInfo.code } : null,
       faculty: faculty ? { id: faculty.id, name: faculty.name, email: faculty.email } : null,
       subject: subject ? { id: subject.id, code: subject.code, name: subject.name } : null,
+      sectionProgram: section?.program ?? null,
+      sectionName: section?.name ?? null,
       summary: {
         totalRespondents: evaluationRows.length,
         avgRating: general,

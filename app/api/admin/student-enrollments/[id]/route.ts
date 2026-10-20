@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { requireAdmin } from "@/lib/route-guard"
 import { logAuditEvent } from "@/lib/services/audit"
-import { studentEnrollmentRepository, evaluationRepository, evaluationPeriodRepository, evaluationResultRepository } from "@/lib/repositories/factory"
+import { studentEnrollmentRepository, evaluationRepository } from "@/lib/repositories/factory"
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const authErr = await requireAdmin(request)
@@ -24,12 +24,6 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       remarks,
     )
 
-    if (enrollment.semesterId) {
-      const periods = await evaluationPeriodRepository.findBySemester(enrollment.semesterId)
-      for (const period of periods) {
-        await evaluationResultRepository.computeAll(period.id)
-      }
-    }
   }
 
   await studentEnrollmentRepository.deleteById(id)

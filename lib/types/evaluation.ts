@@ -588,17 +588,36 @@ export interface LiveDeptAverage {
   lowestRubrics: { key: string; label: string; score: number }[]
 }
 
+export interface EvaluationVisibilityRow {
+  id: string
+  evaluation_period_id: string | null
+  semesterId: string | null
+  facultyId: string
+  is_results_visible: boolean
+}
+
+export interface LiveFacultyResult {
+  facultyId: string
+  totalRespondents: number
+  generalRating: number | null
+  remarks: string | null
+  professionalManner: number | null
+  communicationWithStudent: number | null
+  studentEngagement: number | null
+  learningMaterials: number | null
+  timeManagement: number | null
+  experientialLearning: number | null
+  respectUniqueness: number | null
+  assessmentAndFeedback: number | null
+}
+
 export interface IEvaluationResultRepository {
-  list(evaluationPeriodId: string, filters?: { departmentId?: string; facultyId?: string }): Promise<EvaluationResultData[]>
-  findByFaculty(evaluationPeriodId: string, facultyId: string): Promise<EvaluationResultData | null>
-  compute(evaluationPeriodId: string, facultyId?: string): Promise<void>
-  computeAll(evaluationPeriodId: string): Promise<void>
   listLiveDeptAverages(evaluationPeriodId: string): Promise<LiveDeptAverage[]>
+  listLiveFacultyResults(evaluationPeriodId: string): Promise<LiveFacultyResult[]>
   listDepartmentFacultyIds(departmentId: string, evaluationPeriodId: string): Promise<string[]>
   setVisibility(evaluationPeriodId: string, facultyIds: string[], visible: boolean): Promise<void>
   getVisibilityMap(evaluationPeriodId: string): Promise<Map<string, boolean>>
   countBySemesterId(semesterId: string): Promise<number>
-  getLatestComputedAt(evaluationPeriodId: string): Promise<string | null>
-  listByFacultyId(facultyId: string, limit?: number): Promise<EvaluationResultData[]>
+  listByFacultyId(facultyId: string, limit?: number): Promise<EvaluationVisibilityRow[]>
   assertPeriodIsActive(evaluationPeriodId: string): Promise<void>
 }
