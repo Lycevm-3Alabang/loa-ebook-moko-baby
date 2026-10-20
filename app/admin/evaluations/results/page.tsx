@@ -36,7 +36,7 @@ interface Period {
   isActive?: boolean
 }
 
-type SortKey = "departmentName" | "avgRating" | "facultyCount" | "totalRespondents" | "sentimentScore"
+type SortKey = "departmentName" | "departmentCode" | "avgRating" | "facultyCount" | "totalRespondents" | "sentimentScore"
 
 export default function AdminEvaluationResultsPage() {
   const router = useRouter()
@@ -191,6 +191,9 @@ export default function AdminEvaluationResultsPage() {
                 <th className="pb-3 pr-4 cursor-pointer hover:text-secondary" onClick={() => toggleSort("departmentName")}>
                   Department{sortArrow("departmentName")}
                 </th>
+                <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("departmentCode")}>
+                  Code{sortArrow("departmentCode")}
+                </th>
                 <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("avgRating")}>
                   Avg Rating{sortArrow("avgRating")}
                 </th>
@@ -222,6 +225,7 @@ export default function AdminEvaluationResultsPage() {
                         <span className="text-[10px] text-tertiary ml-2">({dept.departmentCode})</span>
                       )}
                     </div>
+                    <span className="text-[10px] text-tertiary">{dept.departmentCode}</span>
                   </td>
                   <td className="py-3 pr-4 text-right">
                     <span className="text-sm font-bold">{formatScore(dept.avgRating)}</span>
