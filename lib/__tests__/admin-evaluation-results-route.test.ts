@@ -4,7 +4,6 @@ const mockRequireAdmin = vi.hoisted(() => vi.fn())
 const mockEvalResultRepo = vi.hoisted(() => ({
   listLiveDeptAverages: vi.fn(),
   listAttributionWarnings: vi.fn(),
-  listDepartmentRosters: vi.fn(),
 }))
 const mockEvalRepo = vi.hoisted(() => ({
   listSubmittedWithSentiment: vi.fn(),
@@ -39,7 +38,6 @@ beforeEach(() => {
     unattributed: { count: 0, faculty: [] },
     offSemester: { count: 0, faculty: [] },
   })
-  mockEvalResultRepo.listDepartmentRosters.mockResolvedValue({})
   mockUserRepo.listByRole.mockResolvedValue([])
 })
 
@@ -168,14 +166,11 @@ describe("GET /api/admin/evaluation-results", () => {
     expect(body.warnings.offSemester.count).toBe(0)
   })
 
-  it("reports the no-response roster without inflating the department's faculty count", async () => {
+  it("does not serve a no-response roster - the coverage page owns that number", async () => {
     mockEvalRepo.listSubmittedWithSentiment.mockResolvedValue([])
     mockEvalResultRepo.listLiveDeptAverages.mockResolvedValue([
       { departmentId: "d1", facultyIds: ["f1"], totalRespondents: 2, avgRating: 4, remarks: null, catAverages: {}, highestRubrics: [], lowestRubrics: [] },
     ])
-    mockEvalResultRepo.listDepartmentRosters.mockResolvedValue({
-      d1: [{ id: "f2", name: "Ben" }, { id: "f3", name: "Cara" }],
-    })
     mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "CCS", code: "CCS" }])
     mockUserRepo.listByRole.mockResolvedValue([
       { id: "f1", name: "Ana", email: "ana@x", departmentId: "d1", role: "FACULTY" },
@@ -183,13 +178,10 @@ describe("GET /api/admin/evaluation-results", () => {
 
     const res = await GET(req("?evaluationPeriodId=p1"))
     const body = await res.json()
-    // The count is the department's own faculty (f1). The roster is a
-    // separate fact and does not add to it.
+    // The count is the department's own faculty (f1).
     expect(body.departments[0].facultyCount).toBe(1)
-    expect(body.departments[0].noResponses).toEqual([
-      { id: "f2", name: "Ben" },
-      { id: "f3", name: "Cara" },
-    ])
+    // The roster is the coverage page's number, not this payload's.
+    expect(body.departments[0].noResponses).toBeUndefined()
   })
 
   it("counts the department's own faculty, not the teachers it happens to have", async () => {
@@ -197,9 +189,6 @@ describe("GET /api/admin/evaluation-results", () => {
     mockEvalResultRepo.listLiveDeptAverages.mockResolvedValue([
       { departmentId: "d1", facultyIds: ["f1"], totalRespondents: 2, avgRating: 4, remarks: null, catAverages: {}, highestRubrics: [], lowestRubrics: [] },
     ])
-    mockEvalResultRepo.listDepartmentRosters.mockResolvedValue({
-      d1: [{ id: "f9", name: "Zed" }],
-    })
     mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "CCS", code: "CCS" }])
     mockUserRepo.listByRole.mockResolvedValue([
       { id: "f1", name: "Ana", email: "ana@x", departmentId: "d1", role: "FACULTY" },

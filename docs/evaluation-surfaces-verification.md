@@ -44,13 +44,14 @@ departments, no "back" link).
 
 | # | Check | What "wrong" looks like |
 |---|---|---|
-| 3.1 | The department table lists every department, with **"Depts reporting"** and the "No responses" column | a department missing, or "No responses" reading 0 for a department with a silent teacher |
+| 3.1 | The department table lists every department, with **"Depts reporting"** and a **"Faculties"** column | a department missing, or a "Faculties" count that is not the department's headcount |
 | 3.2 | Clicking a department opens the drill-down with the **two groupings** | only one tab, or a tab that does nothing |
 | 3.3 | "By Subject & Section" shows the **Section** column | a section-less table (two rows for one teacher and subject in different sections are indistinguishable) |
 | 3.4 | "By Faculty" cards expand to their subjects, each with the section and a **Details** action | a card that shows counts but no subjects |
-| 3.5 | A teacher with **no** responses anywhere shows up in the **"No responses"** count | a silent teacher missing from the count |
+| 3.5 | A teacher with **no** responses anywhere shows a subject in the **"Not part."** column, and the drill-down's per-subject status reads "Not started" | a silent teacher's subject missing from the department row |
 | 3.6 | The "Unresolved" group reports the faculty it holds, not 0 | "0" next to a non-empty group |
 | 3.7 | The integrity warning appears **only** when a period really has an unresolvable or off-semester evaluation | a permanent warning on a clean period |
+| 3.8 | The **"Faculties"** KPI above the table equals the school-wide faculty headcount — the same number the Admin dashboard's "Faculty" card shows | a KPI larger than the dashboard's number (a teacher counted once per department they teach in) |
 
 ---
 
@@ -59,12 +60,12 @@ departments, no "back" link).
 | # | Check | What "wrong" looks like |
 |---|---|---|
 | 4.1 | The **breadcrumb** reads `Admin / Evaluations / Results / Computer Science (BSCS) / Juan Dela Cruz — CS101 Intro` | a GUID in the trail, or a dead "Unassigned" link |
-| 4.2 | The department list's **"Faculty"** count matches the distinct faculty on that department's detail page | the two numbers differ |
+| 4.2 | The department list's **"Faculty"** count is the department's **headcount** — the same number the Admin > Faculty list shows for that department | a number that differs from the faculty list, or one that counts a teacher homed elsewhere |
 | 4.3 | Clicking the department crumb on a detail page returns to that department **with the period intact** | an empty page, or "periodId is required" |
 | 4.4 | The detail page's **"By Faculty"** cards and **"By Subject & Section"** rows list the same people | a teacher on one view and not the other |
 | 4.5 | A teacher homed elsewhere who teaches a section here appears **in their own department** on every surface — the coverage page and the results pages agree | a subject filed under the section's department on either page |
-| 4.6 | The **"No responses"** count lists the teachers who received nothing | a name that does not belong to the department |
-| 4.7 | The **"Export"** button (download glyph) produces a ZIP whose per-department CSVs match the pages | an empty folder, or a 500 toast |
+| 4.6 | The list has **no** "No responses" or "Responses" column — those numbers live on the coverage page | a column that is back on the results list |
+| 4.7 | The **"Export"** button (download glyph) produces a ZIP whose per-department CSVs match the pages, and whose `summary.csv` "Faculty Count" is the same headcount | an empty folder, a 500 toast, or a summary count that differs from the page |
 
 ---
 
@@ -82,7 +83,18 @@ departments, no "back" link).
 
 ## 6. The one number no test can give you
 
-The **home → section matrix** (§7 of this note's companion, below) says how
+Two checks are left to you, because no test can read your data.
+
+**The headcount (2026-10-20).** A department's faculty count is the number
+of faculty accounts homed in it (`users.departmentId`), soft-deleted
+excluded, counted once — the same number on the results list, the coverage
+page's "Faculties" column and KPI, the export `summary.csv`, the report page
+and the Department Health report. Check it once: pick a department, read its
+"Faculty" on the results list, and compare it with the same department's
+faculty in **Admin > Faculty**. They must be the same number, and the
+coverage KPI must equal the Admin dashboard's school-wide "Faculty" card.
+
+**The home → section matrix** (§7 of this note's companion, below) says how
 many rows the faculty-driven attribution actually moved on your data. Run it
 once per period you care about; it is the only way to know whether the rule
 changed anything real.

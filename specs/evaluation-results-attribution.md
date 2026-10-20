@@ -156,13 +156,22 @@ subjects as "Not started" — but only for people **with an assignment in the
 period's semester**. A person with no assignment (new hire, or an assignment
 in a different semester) appears on no page in the app.
 
-### 1.9 Counts that cannot reconcile
+### 1.9 Counts that could not reconcile
 
-`buildLiveDeptAverages` drops any faculty with no rating rows
-(`lib/evaluation-utils.ts:402-403`), so the list's `facultyCount` can be
-lower than the number of distinct faculty the department's own detail table
-shows. The admin cannot tell which of the two is right, because the two
-tables are computed from different populations.
+Four surfaces counted "the faculty of a department" from four different
+**populations**: the results list counted the faculty with results **plus**
+the no-response roster (two sets that overlap when a person has one evaluated
+and one unevaluated section), the coverage page counted the teachers with an
+assignment in the term and then **summed** those counts across departments (a
+teacher teaching in three departments counted three times), the export CSVs
+and the report page counted the faculty with results only, and the
+Department Health report counted the users homed in the department. The same
+department showed a different number on every surface, and a school with 9
+faculty showed 22.
+
+**Closed 2026-10-20** by the headcount rule (contract §3.14): a department's
+faculty count is the number of faculty accounts homed in it, counted once,
+and every surface reads it from one helper.
 
 ---
 
@@ -214,13 +223,16 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4.
    assignments excludes `placeholder@lyceumalabang.edu.ph`
    (`lib/services/etlEvaluation.ts:20`). The dummy owns real assignments
    and would otherwise be reported as a teacher with zero responses.
-5. **Zero responses is a fact, not a row.** S3 counts people; it does not
-   invent result rows. A person with no evaluation still has no row in the
-   results table — the count and the expandable list are the surface. The
-   roster is **the period's semester assignments** — the same roster
-   coverage uses (`evaluation-status.service.ts:130`) — so results and
-   coverage cannot disagree about who was expected to be evaluated, minus
-   the dummy (§3.4).
+5. **Zero responses is a fact, not a row — and not a results surface.**
+   A person with no evaluation has no row in the results table. The count and
+   the expandable list that used to be the surface are **gone** (2026-10-20):
+   the results list does not show them, the payload does not carry them, and
+   `listDepartmentRosters` no longer exists. Who was expected to be
+   evaluated, and who answered, is the **coverage page's** question, and it
+   answers it per subject. The roster was the period's semester assignments
+   — the same roster coverage uses — but its exclusion was per
+   **assignment**, so a person with one evaluated and one unevaluated
+   section was counted twice. That was the second of the two counting bugs.
 6. **`__unknown__` is not a department id.** It leaves the results grouping
    key and the URL space. The results list's dead-end link to
    `/admin/evaluations/results/__unknown__` is removed by construction.
@@ -255,6 +267,17 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4.
 13. **PostgREST caps.** Every new `.in()` call is chunked at 100
     (AGENTS.md Lesson 7), and an empty id list returns early — never
     `.in.()` with zero values.
+14. **One headcount, one place.** A department's faculty count is the number
+    of faculty accounts homed in that department (`users.departmentId`),
+    soft-deleted accounts excluded, counted once. A teacher who teaches a
+    section owned by another department is counted in their own department.
+    The **teaching roster** (who was assigned to teach this term) is a
+    different number: it lives on the coverage page, per subject, and it is
+    never added to a headcount. Every surface reads the headcount from one
+    helper (`features/users/users.service.ts` →
+    `getFacultyCountsByDepartment()`), so no two surfaces can drift. A
+    `DEAN|FACULTY` account is faculty (it holds a FACULTY role row); a
+    `DEAN`-only account is not.
 
 ---
 
@@ -271,9 +294,10 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4.
 | S1.7 | Group-detail pages render a missing user as "Unknown" instead of crashing on `data.faculty.name` (contract §3.11) | `app/admin/evaluations/results/[departmentId]/[facultySubjectId]/page.tsx`, `app/dean/evaluations/results/[departmentId]/[facultySubjectId]/page.tsx` — **done 2026-10-20** |
 | S2.1 | Repository returns the integrity condition: evaluations whose assignment is outside the period's semester (count + faculty names) | `features/evaluation-results/evaluation-results.repository.ts` — **done 2026-10-20** (`listAttributionWarnings`: also covers an assignment whose department cannot be resolved) |
 | S2.2 | Results list renders **one warning row** naming the affected faculty ("N evaluations could not be attributed to a department"); the pseudo-group row and its dead-end link are gone | `app/api/admin/evaluation-results/route.ts` + `app/admin/evaluations/results/page.tsx` — **done 2026-10-20** |
-| S3.1 | Repository returns, per department, the roster of assignments in the period's semester (dummy excluded) minus those with a submitted evaluation | `features/evaluation-results/evaluation-results.repository.ts` — **done 2026-10-20** (`listDepartmentRosters`) |
-| S3.2 | Results list shows a "No responses" count per department + an expandable list of names | `app/admin/evaluations/results/page.tsx` + `app/api/admin/evaluation-results/route.ts` — **done 2026-10-20** |
-| S4.1 | `facultyCount` on the list = distinct faculty the detail table shows (evaluated ∪ no-response roster) | `features/evaluation-results/evaluation-results.repository.ts` + `app/api/admin/evaluation-results/route.ts` — **done 2026-10-20** (the list also counts a faculty whose evaluation carries no rating rows, and the department's total covers both sets) |
+| S3.1 | Repository returns, per department, the roster of assignments in the period's semester (dummy excluded) minus those with a submitted evaluation | `features/evaluation-results/evaluation-results.repository.ts` — **done 2026-10-20**, then **removed 2026-10-20**: the results surfaces do not show a no-response roster, so the method, its interface entry and its test block are gone (the coverage page answers that question per subject) |
+| S3.2 | Results list shows a "No responses" count per department + an expandable list of names | `app/admin/evaluations/results/page.tsx` + `app/api/admin/evaluation-results/route.ts` — **done 2026-10-20**, then **removed 2026-10-20**: the coverage page owns that number, so the column, the payload field and the query are gone |
+| S4.1 | `facultyCount` on the list = distinct faculty the detail table shows (evaluated ∪ no-response roster) | **superseded 2026-10-20** — the list's `facultyCount` is the department's **headcount** (contract §3.14), the same number the coverage page, the export CSVs, the report page and the Department Health report print. The list also counts a faculty whose evaluation carries no rating rows, and the department's total covers both sets → **the headcount covers every surface** |
+| S4.2 | One shared headcount helper read by every surface | `features/users/users.service.ts` → `getFacultyCountsByDepartment()` — **done 2026-10-20**; readers: the admin results route, the dean results route, the coverage service, the admin results export, the dean results export, the report service, the Department Health report |
 | S2 | **Done 2026-10-20** — the "Unresolved" row is gone from the results list and the dead-end link with it; the integrity condition is now a warning row naming the faculty. The write path (both visibility routes) now **requires** `evaluationPeriodId`: a `semesterId` body would have written a row keyed by a semester id, and made the dean's membership check resolve an empty set. |
 | S3 | **Done 2026-10-20** — the dean's dashboard (`app/dean/page.tsx`) and the dean's evaluation landing page (`app/dean/evaluations/page.tsx`) now count the **teaching roster** (the faculty with an assignment whose section the department owns) instead of the people merely homed there, through the shared `getDepartmentTeachingFaculty`. The card is labelled "Teaching" and the roster "Teaching Roster — Faculty with a section in {dept} this term". The term is the active evaluation period's semester, falling back to the active semester. The consultation workload cards on the same dashboard are a different population and are unchanged. |
 | S4 | **Done 2026-10-20** — the `semesterId` fallback is gone from both visibility routes; a body without `evaluationPeriodId` is a 400. The write path was already corrupting the `evaluation_results` row when given a semester id. |
@@ -337,6 +361,13 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4.
   CSV default bucket whose faculty teach real sections — under S1 those
   subjects move to their section's department, and the "Unassigned"
   department's results row may empty out. Say so in the release note.
+- **The faculty counts drop to the headcount (2026-10-20).** The results
+  list's "Faculty", the coverage page's "Faculties" and its KPI now print the
+  school's headcount instead of a teaching roster. For a school whose
+  teachers teach across departments, every one of those numbers **drops** —
+  the coverage KPI most of all (22 → 9 in the school this was found on). The
+  numbers that do not move: the subjects, the students, the responses, the
+  ratings, the sentiment, the consultation figures.
 
 ---
 
@@ -359,10 +390,12 @@ surfaces agree:
 | `departmentId = NULL` (CSV-unmatched), teaches a section owned by B | subject under **B** | **B** lists it | dean of **B** lists it | under **B** — the home cannot own coverage, so the section's department takes over |
 | The dummy account | absent | absent | absent | absent — and never in a "no responses" count |
 | Assignment outside the period's semester | integrity warning names the faculty | — | — | — |
-| Zero responses in the period | dept row shows "No responses: 1" | n/a (no row) | n/a | subject shows "Not started" |
+| Zero responses in the period | no roster on this surface — the coverage page's per-subject status answers it | n/a (no row) | n/a | subject shows "Not started" |
 
-Then: the list's `facultyCount` equals the number of distinct faculty in
-the department's detail table; and no row in the list is a dead-end link.
+Then: the list's `facultyCount` is the department's **headcount** (contract
+§3.14) — the same number the coverage page's "Faculties" column and its KPI
+print, and the same number the Admin dashboard's "Faculty" card prints for
+the whole school; and no row in the list is a dead-end link.
 
 ---
 
@@ -374,5 +407,5 @@ the department's detail table; and no row in the list is a dead-end link.
 | D2 | **Dean surface.** Retire the dean's duplicated route implementation in favour of the shared service (S1.4)? | **RESOLVED 2026-10-20 — yes, and align all three dean membership rules in one unit** (page, ZIP, visibility). The page is home-only, the ZIP is chain-based, the visibility guard is home-only — the dean feature contradicts itself today. Caveats pinned as contracts §3.9–§3.11 and change S1.7. |
 | D3 | **Coverage in scope.** S1.6 changes the coverage page's attribution, which moves coverage numbers between departments. | **RESOLVED 2026-10-20 — in scope, same unit as S1.2/S1.3.** Leaving coverage on the old rule means the admin's results page and coverage page keep disagreeing about which department owns a subject — the original complaint, moved rather than closed. |
 | D4 | **Integrity warning shape.** S2 replaces the "Unassigned" row with a warning when an evaluation points outside the period's semester. | **RESOLVED 2026-10-20 — one warning row in the results list, naming the affected faculty.** Rare, actionable (fix the period binding), and it replaces a dead-end link with information instead of silence. |
-| D5 | **Zero-response roster source.** Assignments in the period's semester, or the department's homed faculty? | **RESOLVED 2026-10-20 — assignments in the period's semester** (contract §3.5), the same roster coverage uses, so the two surfaces cannot disagree about who was expected to be evaluated. The dummy is excluded (contract §3.4). |
-| D6 | **Should the results detail page also show 0-response faculty as rows?** | **RESOLVED 2026-10-20 — no.** The count and the expandable list on the results list are the surface. A 0-response row in a *results* table reads as a data error, and a second surface means a second implementation to keep in sync. |
+| D5 | **Zero-response roster source.** Assignments in the period's semester, or the department's homed faculty? | **RESOLVED 2026-10-20 — assignments in the period's semester** (contract §3.5), the same roster coverage uses, so the two surfaces cannot disagree about who was expected to be evaluated. The dummy is excluded (contract §3.4). **Superseded later the same day**: the roster is no longer a results surface at all (contract §3.5, §3.14) — the coverage page answers that question per subject, and the results list prints the headcount. |
+| D6 | **Should the results detail page also show 0-response faculty as rows?** | **RESOLVED 2026-10-20 — no.** The count and the expandable list on the results list are the surface. A 0-response row in a *results* table reads as a data error, and a second surface means a second implementation to keep in sync. **Superseded later the same day**: the count and the list are gone too, so neither surface shows a 0-response figure. |

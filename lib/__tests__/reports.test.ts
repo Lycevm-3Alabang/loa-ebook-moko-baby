@@ -7,6 +7,7 @@ const mockDeptRepo = vi.hoisted(() => ({
 
 const mockUserRepo = vi.hoisted(() => ({
   listByDepartment: vi.fn(),
+  listByRole: vi.fn(),
 }))
 
 const mockReportsRepo = vi.hoisted(() => ({
@@ -36,6 +37,7 @@ import type { FacultyStatsData, DepartmentFrequencyEntry, FacultyFrequencyData, 
 
 beforeEach(() => {
   vi.resetAllMocks()
+  mockUserRepo.listByRole.mockResolvedValue([])
 })
 
 const MOCK_DEPARTMENTS = [
@@ -92,6 +94,10 @@ describe("getAdminReportData", () => {
   it("merges data from multiple departments", async () => {
     mockDeptRepo.listAll.mockResolvedValue(MOCK_DEPARTMENTS)
     mockUserRepo.listByDepartment.mockResolvedValue([])
+    // The headcount: one faculty homed in dept-1, nobody in dept-2.
+    mockUserRepo.listByRole.mockResolvedValue([
+      { id: "f1", name: "Dr. Smith", email: "smith@x", departmentId: "dept-1", role: "FACULTY" },
+    ])
 
     const mockSelect = vi.fn().mockResolvedValue({ data: [], error: null })
     const { supabase } = await import("@/lib/supabase")
@@ -122,6 +128,8 @@ describe("getAdminReportData", () => {
     const result = await getAdminReportData()
 
     expect(result.departmentName).toBe("All Departments")
+    expect(result.departments.find((d) => d.id === "dept-1")?.facultyCount).toBe(1)
+    expect(result.departments.find((d) => d.id === "dept-2")?.facultyCount).toBe(0)
     expect(result.stats).toHaveLength(2)
     expect(result.stats[0].facultyId).toBe("f1")
     expect(result.stats[1].facultyId).toBe("f2")

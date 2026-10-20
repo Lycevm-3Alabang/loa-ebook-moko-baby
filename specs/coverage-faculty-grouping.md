@@ -130,6 +130,10 @@ groupings, as a switch above the table:
 7. **The dummy account stays excluded** from the faculty counts
    (the attribution spec's contract §3.4) — and it is excluded from the
    faculty aggregates too, so the card does not show a placeholder teacher.
+   **2026-10-20:** the department's "Faculties" count is the **headcount**
+   (contract 13), and the dummy is in no headcount because it has no home
+   department — the exclusion is now a property of the population, not a
+   filter.
 8. **The search filters both groupings** — it filters the subject rows, and
    a teacher with no matching subject disappears from tab 2.
 9. **Every surface attributes to the teacher's home department, with the
@@ -147,6 +151,16 @@ groupings, as a switch above the table:
 12. **No schema change.** Everything the grouping needs is already in
     `faculty_subjects`, `sections`, `department_courses`, `student_enrollments`
     and `evaluations`.
+13. **The department's "Faculties" count is its headcount** (the attribution
+    spec, contract §3.14): the number of faculty accounts homed in the
+    department, soft-deleted excluded, counted once — the same number the
+    results list, the export CSVs, the report page and the Department
+    Health report print. The **teaching roster** (who was assigned to teach
+    this term) is a different set: it is what the "By Faculty" cards list
+    and what the per-subject status is computed from, and it may be larger
+    than the headcount, because a teacher homed elsewhere still teaches
+    here. The KPI above the table sums the headcounts, which cannot
+    double-count a teacher who teaches in several departments.
 
 ## 4. Changes
 

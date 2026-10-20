@@ -20,6 +20,7 @@ export interface AdminReportResult {
 export async function getDepartmentSummary(
   deptId: string,
   deptName: string,
+  facultyCount: number,
   filters?: { startDate?: string; endDate?: string; status?: string }
 ): Promise<DepartmentSummary> {
   const facultyUsers = (await userRepository.listByDepartment(deptId))
@@ -83,12 +84,15 @@ export async function getDepartmentSummary(
     }
   }
 
-  const inactiveFaculty = facultyIds.length - activeFaculty.size
+  // The inactive count sits under the headcount it is a fraction of, so it
+  // counts the headcount's people - the faculty, not the deans.
+  const headcountIds = facultyUsers.filter((u) => hasRole(u.role, "FACULTY")).map((u) => u.id)
+  const inactiveFaculty = headcountIds.filter((id) => !activeFaculty.has(id)).length
 
   return {
     id: deptId,
     name: deptName,
-    facultyCount: facultyUsers.length,
+    facultyCount,
     total,
     completed,
     pending,

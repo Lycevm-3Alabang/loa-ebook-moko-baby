@@ -401,42 +401,6 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
   },
 
   /**
-   * The faculty who were assigned to teach in this period and received
-   * nothing, per department. The roster is the period's semester assignments
-   * — the same roster the coverage page uses — minus the assignments that
-   * have a submitted evaluation.
-   */
-  async listDepartmentRosters(evaluationPeriodId: string): Promise<Record<string, { id: string; name: string }[]>> {
-    const out: Record<string, { id: string; name: string }[]> = {}
-
-    const { data: period } = await supabase
-      .from("evaluation_periods")
-      .select("semesterId")
-      .eq("id", evaluationPeriodId)
-      .single()
-    const semesterId = (period?.semesterId as string | null) ?? null
-    if (!semesterId) return out
-
-    const roster = await loadSemesterRoster(semesterId)
-    if (roster.rows.length === 0) return out
-
-    const evals = await listSubmittedEvaluates(evaluationPeriodId)
-    const evaluated = new Set(evals.map((e) => e.facultySubjectId).filter(Boolean))
-
-    for (const r of roster.rows) {
-      if (evaluated.has(r.id)) continue
-      const deptId = roster.departmentOf.get(r.id)
-      if (!deptId) continue
-      const user = roster.users.get(r.faculty_id)
-      if (!user || user.email === UNASSIGNED_FACULTY_EMAIL) continue
-      const list = out[deptId] ?? (out[deptId] = [])
-      if (!list.some((f) => f.id === user.id)) list.push({ id: user.id, name: user.name })
-    }
-
-    return out
-  },
-
-  /**
    * The people who teach in each department in the given term — the same rule
    * the results pages use: an assignment counts under the teacher's own
    * department.

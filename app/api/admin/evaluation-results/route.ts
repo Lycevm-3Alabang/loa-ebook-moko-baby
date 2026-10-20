@@ -26,9 +26,8 @@ export async function GET(request: NextRequest) {
     // could not be attributed, and it is reported as a warning instead of a
     // row (a row would link to a page that can only say "no data").
     const attributed = liveAvgs.filter((a) => a.departmentId !== UNKNOWN_DEPARTMENT)
-    const [warnings, rosters, facultyCounts] = await Promise.all([
+    const [warnings, facultyCounts] = await Promise.all([
       evaluationResultRepository.listAttributionWarnings(evaluationPeriodId),
-      evaluationResultRepository.listDepartmentRosters(evaluationPeriodId),
       getFacultyCountsByDepartment(),
     ])
 
@@ -40,7 +39,6 @@ export async function GET(request: NextRequest) {
       const dept = deptMap.get(a.departmentId)
       const facIds = new Set(a.facultyIds)
       const scores = sentimentRows.filter((row) => facIds.has(row.evaluateeId))
-      const noResponses = rosters[a.departmentId] ?? []
       return {
         departmentId: a.departmentId,
         departmentName: dept?.name ?? "Unknown",
@@ -56,7 +54,6 @@ export async function GET(request: NextRequest) {
         highestRubrics: a.highestRubrics,
         lowestRubrics: a.lowestRubrics,
         sentimentScore: computeSentimentScore(scores),
-        noResponses,
       }
     })
 

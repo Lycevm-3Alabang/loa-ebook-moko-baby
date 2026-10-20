@@ -104,6 +104,13 @@ counted as a faculty member — while the results list excludes it (contract
 §3.4 of `evaluation-results-attribution.md`). **The same department reports
 a different "Faculties" number on the two pages.**
 
+**Closed 2026-10-20** — and by a bigger change than the dummy exclusion:
+the coverage counts are now the department's **headcount** (the faculty
+accounts homed in it, `evaluation-results-attribution.md` contract §3.14),
+read from the same helper as every other surface. The dummy has no home
+department, so it is in no headcount; the KPI sums headcounts, which cannot
+double-count a teacher who teaches in several departments.
+
 ### 1.5 The cross-semester condition is invisible
 
 The results list warns when an evaluation points at an assignment from
@@ -171,7 +178,7 @@ Slices are independent and shippable in order C1 → C2 → C3 → C4 → C5.
 | C1.3 | The dean's route passes the dean's department; the coverage page needs no change (it renders whatever it receives) | `app/api/dean/evaluation-status/route.ts` — **done** |
 | C2.1 | The detail guard resolves the subject's department with `resolveSubjectDepartment` over a context built for that assignment | `app/api/dean/evaluation-status/route.ts` — **done** (over `evaluationResultRepository.buildSubjectContext`) |
 | C2.2 | The guard's fetch returns the fields it needs (`faculty_id`, `section_id`) | the guard reads `facultySubjectRepository.findById` (it returns both); `findByIdWithEmbeds` keeps its select for the mappings route — **done** |
-| C3.1 | The dummy is excluded from the department faculty set and the KPI | `features/evaluations/evaluation-status.service.ts` — **done** (the KPI is derived from the department rows, so it follows) |
+| C3.1 | The dummy is excluded from the coverage faculty counts and the KPI | `features/evaluations/evaluation-status.service.ts` — **done** (the KPI is derived from the department rows, so it follows) — **superseded 2026-10-20**: the coverage faculty count is the department's **headcount** (the faculty accounts homed in it, `evaluation-results-attribution.md` contract §3.14), read from the same helper as the results surfaces. The dummy has no home department, so it is in no headcount, and the KPI sums headcounts — a teacher who teaches in three departments is counted once |
 | C4.1 | The service returns the integrity warning (the results list's `listAttributionWarnings`), filtered by the viewer's department | `features/evaluations/evaluation-status.service.ts` — **done**; the rule moved to a pure helper `classifyWarningAssignments` in `lib/evaluation-utils.ts` so the coverage service can classify the data it already holds, at no query cost |
 | C4.2 | The coverage page renders the same warning block as the results list | `features/evaluations/components/CoveragePage.tsx` — **done** (a copy, not a shared component: extracting it would touch the results page, outside this plan) |
 | C5.1 | The "Unresolved" group counts the distinct faculty in it | `features/evaluations/components/CoveragePage.tsx` — **done** |
@@ -221,7 +228,9 @@ Manual:
    subject from another department cannot (try the URL directly → 403).
 4. The admin's coverage page is unchanged, except that the "Faculties" count
    and the KPI **no longer include "Unassigned Faculty"** — and now match
-   the results list's "Faculty" for the same department.
+   the results list's "Faculty" for the same department. **Both are now the
+   department's headcount** (the faculty accounts homed in it), read from one
+   helper, so they cannot drift again.
 5. The coverage page shows the same integrity warning as the results list
    when a period has an unresolvable or cross-semester evaluation.
 6. The "Unresolved" group reports the number of faculty in it, not 0.

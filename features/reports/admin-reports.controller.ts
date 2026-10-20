@@ -1,4 +1,5 @@
 import { departmentRepository, reportsRepository } from "@/lib/repositories/factory"
+import { getFacultyCountsByDepartment } from "@/features/users/users.service"
 import {
   getDepartmentSummary,
   mergeStats,
@@ -14,13 +15,15 @@ export async function getAdminReportData(
   selectedDepartmentId?: string | null
 ): Promise<AdminReportResult> {
   const departments = await departmentRepository.listAll()
+  // One query for the whole page: each department's own faculty headcount.
+  const facultyCounts = await getFacultyCountsByDepartment()
 
   const deptCandidates = selectedDepartmentId
     ? departments.filter((d) => d.id === selectedDepartmentId)
     : departments
 
   const departmentSummaries = await Promise.all(
-    deptCandidates.map((dept) => getDepartmentSummary(dept.id, dept.name, filters))
+    deptCandidates.map((dept) => getDepartmentSummary(dept.id, dept.name, facultyCounts[dept.id] ?? 0, filters))
   )
 
   const allResults = await Promise.all(
