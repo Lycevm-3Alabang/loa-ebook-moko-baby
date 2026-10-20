@@ -25,10 +25,10 @@ function chunkStrIds(ids: string[], size: number): string[][] {
 }
 
 /** The period's submitted, enabled evaluations — the candidate faculty set. */
-async function listSubmittedEvaluates(evaluationPeriodId: string): Promise<{ id: string; evaluateeId: string }[]> {
+async function listSubmittedEvaluates(evaluationPeriodId: string): Promise<{ id: string; evaluateeId: string; facultySubjectId: string | null }[]> {
   const { data, error } = await supabase
     .from("evaluations")
-    .select("id, evaluateeId")
+    .select("id, evaluateeId, facultySubjectId")
     .eq("evaluation_period_id", evaluationPeriodId)
     .eq("status", "SUBMITTED")
     .eq("isDisabled", false)
@@ -136,8 +136,24 @@ async function loadLivePeriodData(evaluationPeriodId: string): Promise<LivePerio
   const evals = await listSubmittedEvaluates(evaluationPeriodId)
   if (evals.length === 0) return null
 
+  // The detail page's rule: an evaluation counts for the faculty the assignment
+  // actually has. A reassigned assignment leaves the old evaluation behind —
+  // drop it here too, so every live surface agrees.
+  const fsIds = [...new Set(evals.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
+  const fsFaculty = new Map<string, string>()
+  for (const chunk of chunkStrIds(fsIds, IN_CHUNK_SIZE)) {
+    const { data: fsRows, error: fsErr } = await supabase
+      .from("faculty_subjects")
+      .select("id, faculty_id")
+      .in("id", chunk)
+    if (fsErr) throw fsErr
+    for (const r of fsRows || []) fsFaculty.set(r.id as string, r.faculty_id as string)
+  }
+  const liveEvals = evals.filter((e) => !!e.facultySubjectId && fsFaculty.get(e.facultySubjectId) === e.evaluateeId)
+  if (liveEvals.length === 0) return null
+
   const facEvalMap = new Map<string, string[]>()
-  for (const ev of evals) {
+  for (const ev of liveEvals) {
     if (!facEvalMap.has(ev.evaluateeId)) facEvalMap.set(ev.evaluateeId, [])
     facEvalMap.get(ev.evaluateeId)!.push(ev.id)
   }
@@ -145,7 +161,7 @@ async function loadLivePeriodData(evaluationPeriodId: string): Promise<LivePerio
 
   const [ctx, ratings] = await Promise.all([
     loadDeptResolutionContext(evaluationPeriodId, facIds),
-    fetchRatingsWithCategories(supabase, evals.map((e) => e.id)),
+    fetchRatingsWithCategories(supabase, liveEvals.map((e) => e.id)),
   ])
 
   const ratingsByEval = new Map<string, RatingRow[]>()

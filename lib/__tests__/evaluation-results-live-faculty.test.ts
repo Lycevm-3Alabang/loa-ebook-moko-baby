@@ -37,13 +37,14 @@ describe("evaluationResultRepository.listLiveFacultyResults", () => {
     respondWith({
       evaluations: {
         data: [
-          { id: "e1", evaluateeId: "f1" },
-          { id: "e2", evaluateeId: "f1" },
-          { id: "e3", evaluateeId: "f1" },
-          { id: "e4", evaluateeId: "f1" },
+          { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" },
+          { id: "e2", evaluateeId: "f1", facultySubjectId: "fs1" },
+          { id: "e3", evaluateeId: "f1", facultySubjectId: "fs1" },
+          { id: "e4", evaluateeId: "f1", facultySubjectId: "fs1" },
         ],
         error: null,
       },
+      faculty_subjects: { data: [{ id: "fs1", faculty_id: "f1" }], error: null },
       evaluation_periods: { data: { semesterId: "sem1" }, error: null },
       users: { data: [{ id: "f1", departmentId: "d1" }], error: null },
       evaluation_ratings: {
@@ -72,9 +73,13 @@ describe("evaluationResultRepository.listLiveFacultyResults", () => {
     respondWith({
       evaluations: {
         data: [
-          { id: "e1", evaluateeId: "f1" },
-          { id: "e2", evaluateeId: "f2" },
+          { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" },
+          { id: "e2", evaluateeId: "f2", facultySubjectId: "fs2" },
         ],
+        error: null,
+      },
+      faculty_subjects: {
+        data: [{ id: "fs1", faculty_id: "f1" }, { id: "fs2", faculty_id: "f2" }],
         error: null,
       },
       evaluation_periods: { data: { semesterId: "sem1" }, error: null },
@@ -101,7 +106,8 @@ describe("evaluationResultRepository.listLiveFacultyResults", () => {
 
   it("skips a faculty with no usable ratings", async () => {
     respondWith({
-      evaluations: { data: [{ id: "e1", evaluateeId: "f1" }], error: null },
+      evaluations: { data: [{ id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" }], error: null },
+      faculty_subjects: { data: [{ id: "fs1", faculty_id: "f1" }], error: null },
       evaluation_periods: { data: { semesterId: "sem1" }, error: null },
       users: { data: [{ id: "f1", departmentId: "d1" }], error: null },
       evaluation_ratings: { data: [], error: null },
@@ -110,6 +116,41 @@ describe("evaluationResultRepository.listLiveFacultyResults", () => {
     const out = await evaluationResultRepository.listLiveFacultyResults("p1")
 
     expect(out).toEqual([])
+  })
+
+  it("drops an evaluation whose assignment now belongs to a different faculty", async () => {
+    respondWith({
+      evaluations: {
+        data: [
+          { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" },
+          { id: "e2", evaluateeId: "f1", facultySubjectId: "fs2" },
+        ],
+        error: null,
+      },
+      // fs1 was reassigned from f1 to f2 — e1 no longer belongs to f1.
+      faculty_subjects: {
+        data: [{ id: "fs1", faculty_id: "f2" }, { id: "fs2", faculty_id: "f1" }],
+        error: null,
+      },
+      evaluation_periods: { data: { semesterId: "sem1" }, error: null },
+      users: { data: [{ id: "f1", departmentId: "d1" }], error: null },
+      evaluation_ratings: {
+        data: [
+          { evaluationId: "e1", rating: 4, itemId: "i1" },
+          { evaluationId: "e2", rating: 2, itemId: "i1" },
+        ],
+        error: null,
+      },
+      rubric_items: { data: [{ id: "i1", categoryId: "c1" }], error: null },
+      rubric_categories: { data: [{ id: "c1", name: "Professional Manner" }], error: null },
+    })
+
+    const out = await evaluationResultRepository.listLiveFacultyResults("p1")
+
+    // only e2 (the assignment that still belongs to f1) counts
+    expect(out).toHaveLength(1)
+    expect(out[0].generalRating).toBe(2)
+    expect(out[0].totalRespondents).toBe(1)
   })
 
   it("returns an empty list when the period has no submitted evaluations", async () => {

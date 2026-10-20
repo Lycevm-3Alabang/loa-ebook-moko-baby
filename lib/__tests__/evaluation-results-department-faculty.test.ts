@@ -39,7 +39,8 @@ beforeEach(() => {
 describe("evaluationResultRepository.listDepartmentFacultyIds", () => {
   it("includes a faculty whose users.departmentId is the department", async () => {
     respondWith({
-      evaluations: { data: [{ id: "e1", evaluateeId: "f1" }], error: null },
+      evaluations: { data: [{ id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" }], error: null },
+      faculty_subjects: { data: [{ id: "fs1", faculty_id: "f1" }], error: null },
       evaluation_periods: { data: { semesterId: "sem1" }, error: null },
       users: { data: [{ id: "f1", departmentId: "d1" }], error: null },
     })
@@ -50,10 +51,10 @@ describe("evaluationResultRepository.listDepartmentFacultyIds", () => {
 
   it("includes a faculty with no users.departmentId but resolvable through the chain", async () => {
     respondWith({
-      evaluations: { data: [{ id: "e1", evaluateeId: "f2" }], error: null },
+      evaluations: { data: [{ id: "e1", evaluateeId: "f2", facultySubjectId: "fs1" }], error: null },
       evaluation_periods: { data: { semesterId: "sem1" }, error: null },
       users: { data: [{ id: "f2", departmentId: null }], error: null },
-      faculty_subjects: { data: [{ faculty_id: "f2", section_id: "sec1" }], error: null },
+      faculty_subjects: { data: [{ id: "fs1", faculty_id: "f2", section_id: "sec1" }], error: null },
       sections: { data: [{ id: "sec1", departmentCourseId: "dc1" }], error: null },
       department_courses: { data: [{ id: "dc1", departmentId: "d1" }], error: null },
     })
@@ -64,7 +65,8 @@ describe("evaluationResultRepository.listDepartmentFacultyIds", () => {
 
   it("excludes a faculty of another department", async () => {
     respondWith({
-      evaluations: { data: [{ id: "e1", evaluateeId: "f3" }], error: null },
+      evaluations: { data: [{ id: "e1", evaluateeId: "f3", facultySubjectId: "fs1" }], error: null },
+      faculty_subjects: { data: [{ id: "fs1", faculty_id: "f3" }], error: null },
       evaluation_periods: { data: { semesterId: "sem1" }, error: null },
       users: { data: [{ id: "f3", departmentId: "d2" }], error: null },
     })
@@ -75,7 +77,8 @@ describe("evaluationResultRepository.listDepartmentFacultyIds", () => {
 
   it("includes a soft-deleted faculty (the chain does not filter deletedAt)", async () => {
     const chains = respondWith({
-      evaluations: { data: [{ id: "e1", evaluateeId: "f4" }], error: null },
+      evaluations: { data: [{ id: "e1", evaluateeId: "f4", facultySubjectId: "fs1" }], error: null },
+      faculty_subjects: { data: [{ id: "fs1", faculty_id: "f4" }], error: null },
       evaluation_periods: { data: { semesterId: "sem1" }, error: null },
       users: { data: [{ id: "f4", departmentId: "d1", deletedAt: "2026-01-01T00:00:00Z" }], error: null },
     })
@@ -87,10 +90,19 @@ describe("evaluationResultRepository.listDepartmentFacultyIds", () => {
 
   it("resolves the same faculty set the top-level page uses", async () => {
     respondWith({
-      evaluations: { data: [{ id: "e1", evaluateeId: "f1" }, { id: "e2", evaluateeId: "f2" }], error: null },
+      evaluations: {
+        data: [
+          { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" },
+          { id: "e2", evaluateeId: "f2", facultySubjectId: "fs2" },
+        ],
+        error: null,
+      },
       evaluation_periods: { data: { semesterId: "sem1" }, error: null },
       users: { data: [{ id: "f1", departmentId: "d1" }, { id: "f2", departmentId: null }], error: null },
-      faculty_subjects: { data: [{ faculty_id: "f2", section_id: "sec1" }], error: null },
+      faculty_subjects: {
+        data: [{ id: "fs1", faculty_id: "f1" }, { id: "fs2", faculty_id: "f2", section_id: "sec1" }],
+        error: null,
+      },
       sections: { data: [{ id: "sec1", departmentCourseId: "dc1" }], error: null },
       department_courses: { data: [{ id: "dc1", departmentId: "d1" }], error: null },
       evaluation_ratings: { data: [{ evaluationId: "e1", rating: 4, itemId: "i1" }, { evaluationId: "e2", rating: 5, itemId: "i1" }], error: null },
