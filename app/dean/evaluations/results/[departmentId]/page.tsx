@@ -7,7 +7,7 @@ import LockedTab from "@/components/ui/LockedTab"
 import IosButton from "@/components/ui/IosButton"
 import { useApiGet } from "@/lib/api/client"
 import { useCrumb } from "@/lib/contexts/breadcrumb"
-import { getRemarkColor, type FacultyAggregate, type DepartmentAggregate } from "@/lib/evaluation-utils"
+import { getRemarkColor, departmentLabel, type FacultyAggregate, type DepartmentAggregate } from "@/lib/evaluation-utils"
 import { downloadDeptPdf } from "@/lib/evaluation-pdf"
 import DepartmentSubjectView from "@/features/evaluations/components/DepartmentSubjectView"
 
@@ -141,7 +141,7 @@ export default function DeanDepartmentDetailPage() {
     <div className="w-full space-y-6 pb-12">
       <div>
         <h1 className="text-2xl font-bold text-primary">
-          {department?.name ?? "Department"} <span className="text-tertiary font-normal">{department?.code}</span>
+          {departmentLabel(department?.name ?? "Department", department?.code)}
         </h1>
         <p className="text-xs text-tertiary mt-1">
           Per-subject evaluation results. Click a row to view individual evaluation details.

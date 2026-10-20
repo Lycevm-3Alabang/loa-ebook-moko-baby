@@ -8,7 +8,7 @@ import ErrorState from "@/components/ui/ErrorState"
 import IosButton from "@/components/ui/IosButton"
 import { useApiGet } from "@/lib/api/client"
 import { useCrumb } from "@/lib/contexts/breadcrumb"
-import { getRemarkColor, type FacultyAggregate, type DepartmentAggregate } from "@/lib/evaluation-utils"
+import { getRemarkColor, departmentLabel, type FacultyAggregate, type DepartmentAggregate } from "@/lib/evaluation-utils"
 import { downloadDeptPdf } from "@/lib/evaluation-pdf"
 import DepartmentSubjectView from "@/features/evaluations/components/DepartmentSubjectView"
 
@@ -151,7 +151,7 @@ export default function DepartmentDetailPage() {
           {loading ? (
             <Skeleton variant="text" className="inline-block w-48 h-7 align-middle" />
           ) : (
-            <>{department?.name ?? "Department"} <span className="text-tertiary font-normal">{department?.code}</span></>
+            <>{departmentLabel(department?.name ?? "Department", department?.code)}</>
           )}
         </h1>
         <p className="text-xs text-tertiary mt-1">

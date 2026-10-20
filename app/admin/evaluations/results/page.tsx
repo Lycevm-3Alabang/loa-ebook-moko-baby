@@ -6,7 +6,7 @@ import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import { useApiGet, dispatchToast, downloadFromApi } from "@/lib/api/client"
 import IosButton from "@/components/ui/IosButton"
-import { getRemarkColor, formatPeriodLabel } from "@/lib/evaluation-utils"
+import { getRemarkColor, formatPeriodLabel, departmentLabel } from "@/lib/evaluation-utils"
 
 interface DepartmentRow {
   departmentId: string
@@ -217,10 +217,7 @@ export default function AdminEvaluationResultsPage() {
                 >
                   <td className="py-3 pr-4">
                     <div>
-                      <span className="text-sm font-semibold text-primary">{dept.departmentName}</span>
-                      {dept.departmentCode && (
-                        <span className="text-[10px] text-tertiary ml-2">({dept.departmentCode})</span>
-                      )}
+                      <span className="text-sm font-semibold text-primary">{departmentLabel(dept.departmentName, dept.departmentCode)}</span>
                     </div>
                   </td>
                   <td className="py-3 pr-4 text-right">

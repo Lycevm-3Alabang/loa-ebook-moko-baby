@@ -127,6 +127,16 @@ export function sectionLabel(program: string | null, name: string | null): strin
   return program ?? name ?? ""
 }
 
+/**
+ * A department's display label: the name, then its code in parentheses —
+ * "Computer Science (BSCS)". The code is dropped when the department has
+ * none. One helper so every surface labels a department the same way.
+ */
+export function departmentLabel(name: string | null | undefined, code?: string | null): string {
+  const n = name ?? ""
+  return code ? `${n} (${code})` : n
+}
+
 export function getRemarkColor(remarks: string | null): string {
   switch (remarks) {
     case "Outstanding": return "bg-success-bg text-success-text"
