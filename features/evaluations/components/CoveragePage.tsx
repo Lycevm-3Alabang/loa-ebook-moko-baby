@@ -234,6 +234,8 @@ export default function CoveragePage({
 
   const subjectPager = usePagination(deptSubjects, 25)
 
+  const facultyAggregates = useMemo(() => statusData?.facultyAggregates ?? {}, [statusData?.facultyAggregates])
+
   /** The department's subjects, grouped by their teacher. */
   const facultyGroups = useMemo(() => {
     const groups = new Map<string, { id: string; name: string; email: string; subjects: SubjectRow[] }>()
@@ -242,10 +244,14 @@ export default function CoveragePage({
       g.subjects.push(s)
       groups.set(s.facultyId, g)
     }
-    return [...groups.values()]
-  }, [deptSubjects])
-
-  const facultyAggregates = statusData?.facultyAggregates ?? {}
+    const all = [...groups.values()]
+    // The pseudo-department is not a department: it has no membership
+    // question, so it keeps every teacher of its subjects.
+    if (!selectedDept || selectedDept === UNRESOLVED) return all
+    // The department's OWN faculty. The aggregate map is the member list:
+    // the service only aggregates the teachers homed here.
+    return all.filter((g) => facultyAggregates[selectedDept]?.[g.id] !== undefined)
+  }, [deptSubjects, selectedDept, facultyAggregates])
 
   const selectDept = (id: string) => { setDeptFromUrl(id); subjectPager.setPage(0); router.replace(`${pathname}?dept=${encodeURIComponent(id)}`) }
   const clearDept = () => { setDeptFromUrl(null); subjectPager.setPage(0); router.replace(pathname) }

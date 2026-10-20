@@ -168,6 +168,59 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
   trimming now would silently kill mismatch detection. Unblocks only via explicit
   product call (drop MISMATCH) or server-side ownership resolution.
 
+## Open — coverage page: two undecided counts (to revisit)
+
+Tracked 2026-10-20 after the faculty-count unification
+(`.opencode/skills/plan-fix/runs/20261020-2230-faculty-count-one-number.md`;
+the rule is `specs/evaluation-results-attribution.md` contract §3.14 — a
+department's faculty count is the number of faculty accounts homed in it,
+counted once, read by every surface from one helper). Both items are on
+`app/admin/evaluations/coverage/`, both are **decisions, not defects**, and
+**no decision is taken yet** — the page prints the headcount everywhere else,
+and these two places still print a teaching-roster number.
+
+- [ ] **The "Unresolved" pseudo-row's "Faculties" cell.**
+  Where: `features/evaluations/components/CoveragePage.tsx:154-172` — the row is
+  built client-side, and the cell is line 165
+  (`facultyCount: new Set(unassigned.map((x) => x.facultyName)).size`).
+  What it is: the subjects whose department resolves to **nothing** (neither a
+  teacher home that owns a course, nor the section's department) are collected
+  into a synthetic row named "Unresolved" (`__unknown__`) and shown next to the
+  real departments, so that coverage is not silently dropped.
+  Why it is open: the column now means "the faculty homed in this department"
+  everywhere else (contract §3.14). A pseudo-department has nobody homed in it,
+  so its headcount is **0** by definition — but the cell prints a
+  teaching-roster number, and it counts distinct teacher **names**, so two
+  different teachers with the same name collapse into one.
+  Options: **(a)** `0` / "—" (honest: no headcount for a group that is not a
+  department); **(b)** count distinct `facultyId` instead of names (one-word
+  fix, keeps the roster meaning, still not a headcount); **(c)** leave it.
+  Known: the row is already excluded from the KPI (`:207`); the "Unresolved"
+  label is free (a real "Unassigned" department is a normal department) — the
+  results list dropped its `__unknown__` row on 2026-10-20.
+
+- [ ] **The drill-down's "By Faculty" cards.**
+  Where: `features/evaluations/components/CoveragePage.tsx:443-620` — the
+  drill-down is the per-department detail view you get by clicking a department
+  row (header: "N of M subjects evaluated — X/Y responses", plus the two tabs);
+  the cards are 530-609, built by `facultyGroups` (`:237-245`).
+  What it is: the cards are built from the department's **subjects** grouped by
+  teacher, i.e. the **teaching roster** — everyone who teaches one of its
+  subjects. A teacher homed in another department who teaches a section here
+  still appears, so the cards can list more people than the "Faculties"
+  headcount printed in the row above (e.g. "Faculties 2" with 5 cards).
+  Why it is open: both numbers are correct answers to different questions
+  ("whose people are these" vs "who is teaching here") — the question is
+  whether the page should say so, or narrow one of them.
+  Options: **(a)** leave it roster-based and make the wording explicit (the tab
+  answers "who teaches here"); **(b)** scope the cards to the department's own
+  faculty (the headcount) and mark the others ("teaching here, homed
+  elsewhere"); **(c)** show both counts on the card.
+  Known: this tab is where the results page's deleted "No responses" column now
+  lives (the per-subject "Not part." column and the "Not started" status), so
+  **(b)** would narrow the only remaining place that shows a teacher who
+  answered nothing.
+
 ## Done this session (do not redo)
 
 C1, C2, D4 (legend + summary relabel), D9 (section preview), D11 (23505 dedupe,

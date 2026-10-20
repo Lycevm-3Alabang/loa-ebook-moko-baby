@@ -278,6 +278,16 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4.
     `getFacultyCountsByDepartment()`), so no two surfaces can drift. A
     `DEAN|FACULTY` account is faculty (it holds a FACULTY role row); a
     `DEAN`-only account is not.
+15. **A drill-down's "By Faculty" tab lists the department's own faculty.**
+    Membership is the teacher's **home** department (`users.departmentId`);
+    the section's department is irrelevant to it. A teacher who teaches a
+    section owned by another department is not a member of that department
+    and gets **no card** there — their subject, its students and its
+    responses stay in the department's **"By Subject & Section"** tab,
+    because that coverage is the department's, and the department's pooled
+    rating is computed over the subjects, not over the faculty list. This
+    binds the coverage drill-down and the results drill-down (the admin
+    page and the dean's twin) to the same set as the headcount in §3.14.
 
 ---
 
@@ -298,6 +308,7 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4.
 | S3.2 | Results list shows a "No responses" count per department + an expandable list of names | `app/admin/evaluations/results/page.tsx` + `app/api/admin/evaluation-results/route.ts` — **done 2026-10-20**, then **removed 2026-10-20**: the coverage page owns that number, so the column, the payload field and the query are gone |
 | S4.1 | `facultyCount` on the list = distinct faculty the detail table shows (evaluated ∪ no-response roster) | **superseded 2026-10-20** — the list's `facultyCount` is the department's **headcount** (contract §3.14), the same number the coverage page, the export CSVs, the report page and the Department Health report print. The list also counts a faculty whose evaluation carries no rating rows, and the department's total covers both sets → **the headcount covers every surface** |
 | S4.2 | One shared headcount helper read by every surface | `features/users/users.service.ts` → `getFacultyCountsByDepartment()` — **done 2026-10-20**; readers: the admin results route, the dean results route, the coverage service, the admin results export, the dean results export, the report service, the Department Health report |
+| S4.3 | The drill-downs' "By Faculty" tab lists the department's **own** faculty (contract §3.15) | `features/evaluations/evaluation-status.service.ts` + `features/evaluations/components/CoveragePage.tsx` (the coverage drill-down) and `features/evaluation-results/evaluation-results.service.ts` + `features/evaluations/components/DepartmentSubjectView.tsx` (the results drill-down, admin + dean) — **done 2026-10-20**: the per-faculty aggregates are the members only, and the cards come from that map. The subject rows, the department's pooled rating, the visibility toggles and the export CSVs are untouched |
 | S2 | **Done 2026-10-20** — the "Unresolved" row is gone from the results list and the dead-end link with it; the integrity condition is now a warning row naming the faculty. The write path (both visibility routes) now **requires** `evaluationPeriodId`: a `semesterId` body would have written a row keyed by a semester id, and made the dean's membership check resolve an empty set. |
 | S3 | **Done 2026-10-20** — the dean's dashboard (`app/dean/page.tsx`) and the dean's evaluation landing page (`app/dean/evaluations/page.tsx`) now count the **teaching roster** (the faculty with an assignment whose section the department owns) instead of the people merely homed there, through the shared `getDepartmentTeachingFaculty`. The card is labelled "Teaching" and the roster "Teaching Roster — Faculty with a section in {dept} this term". The term is the active evaluation period's semester, falling back to the active semester. The consultation workload cards on the same dashboard are a different population and are unchanged. |
 | S4 | **Done 2026-10-20** — the `semesterId` fallback is gone from both visibility routes; a body without `evaluationPeriodId` is a 400. The write path was already corrupting the `evaluation_results` row when given a semester id. |

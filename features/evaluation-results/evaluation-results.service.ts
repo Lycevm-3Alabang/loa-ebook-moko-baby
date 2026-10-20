@@ -185,9 +185,20 @@ export async function getDepartmentSubjectResults(
     })
   }
 
+  const aggregates = aggregateFacultyResults(validEvals, ratings, commentsRaw)
+  // The department's OWN faculty: a teacher homed elsewhere who has an
+  // evaluated subject here is not a member of this department, so they are
+  // not one of its faculty. Their subject and its results stay - the subject
+  // rows and the department aggregate are the department's.
+  const facultyAggregates: Record<string, FacultyAggregate> = {}
+  for (const [facultyId, agg] of Object.entries(aggregates)) {
+    if ((facNameMap.get(facultyId)?.departmentId ?? null) !== departmentId) continue
+    facultyAggregates[facultyId] = agg
+  }
+
   return {
     subjects: out,
-    facultyAggregates: aggregateFacultyResults(validEvals, ratings, commentsRaw),
+    facultyAggregates,
     departmentAggregate: aggregateDepartmentResults(out, ratings, commentsRaw),
   }
 }

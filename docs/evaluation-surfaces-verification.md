@@ -52,6 +52,7 @@ departments, no "back" link).
 | 3.6 | The "Unresolved" group reports the faculty it holds, not 0 | "0" next to a non-empty group |
 | 3.7 | The integrity warning appears **only** when a period really has an unresolvable or off-semester evaluation | a permanent warning on a clean period |
 | 3.8 | The **"Faculties"** KPI above the table equals the school-wide faculty headcount — the same number the Admin dashboard's "Faculty" card shows | a KPI larger than the dashboard's number (a teacher counted once per department they teach in) |
+| 3.9 | The drill-down's **"By Faculty"** tab lists only the department's **own** faculty — a card for a teacher homed in another department is wrong | a card for a teacher who is not in this department's faculty list (their subject still shows in "By Subject & Section" — that is expected) |
 
 ---
 
@@ -62,7 +63,7 @@ departments, no "back" link).
 | 4.1 | The **breadcrumb** reads `Admin / Evaluations / Results / Computer Science (BSCS) / Juan Dela Cruz — CS101 Intro` | a GUID in the trail, or a dead "Unassigned" link |
 | 4.2 | The department list's **"Faculty"** count is the department's **headcount** — the same number the Admin > Faculty list shows for that department | a number that differs from the faculty list, or one that counts a teacher homed elsewhere |
 | 4.3 | Clicking the department crumb on a detail page returns to that department **with the period intact** | an empty page, or "periodId is required" |
-| 4.4 | The detail page's **"By Faculty"** cards and **"By Subject & Section"** rows list the same people | a teacher on one view and not the other |
+| 4.4 | The detail page's **"By Faculty"** cards list the department's **own** faculty, and the **"By Subject & Section"** rows list the department's subjects — a teacher homed elsewhere appears in the rows **without** a card (expected) | a card for a teacher who is not in this department's faculty list; a teacher missing from the rows when they have a subject here |
 | 4.5 | A teacher homed elsewhere who teaches a section here appears **in their own department** on every surface — the coverage page and the results pages agree | a subject filed under the section's department on either page |
 | 4.6 | The list has **no** "No responses" or "Responses" column — those numbers live on the coverage page | a column that is back on the results list |
 | 4.7 | The **"Export"** button (download glyph) produces a ZIP whose per-department CSVs match the pages, and whose `summary.csv` "Faculty Count" is the same headcount | an empty folder, a 500 toast, or a summary count that differs from the page |

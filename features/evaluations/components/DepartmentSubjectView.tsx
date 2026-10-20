@@ -113,8 +113,10 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
       }
       map.get(s.facultyId)!.subjects.push(s)
     }
-    return Array.from(map.values())
-  }, [filteredSubjects])
+    // The department's OWN faculty: the server's aggregate map is the member
+    // list, so a teacher homed elsewhere who has a subject here has no card.
+    return Array.from(map.values()).filter((g) => facultyAggregates[g.facultyId] !== undefined)
+  }, [filteredSubjects, facultyAggregates])
 
   const apiPrefix = basePath.startsWith("/dean") ? "/api/dean" : "/api/admin"
 

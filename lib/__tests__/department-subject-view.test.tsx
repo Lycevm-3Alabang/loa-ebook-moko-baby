@@ -153,13 +153,26 @@ describe("DepartmentSubjectView - Section column", () => {
   })
 
   it("shows the same section label in the By Faculty card's expanded rows", () => {
-    renderView({ subjects: SECTIONED_SUBJECTS })
+    // The server's faculty list is the department's own faculty - the card
+    // exists because f1 is one of them.
+    renderView({ subjects: SECTIONED_SUBJECTS, facultyAggregates: { f1: aggregate() } })
 
     fireEvent.click(screen.getByText("By Faculty"))
     fireEvent.click(screen.getByText("Ana Reyes"))
 
     expect(screen.getByText("BSCS-1A")).toBeTruthy()
     expect(screen.getByText("BSCS-2A")).toBeTruthy()
+  })
+
+  it("gives a card only to a faculty the server counts as one of the department's", () => {
+    // f1 teaches a subject here but the server does not count them as this
+    // department's faculty: no card, and the subject stays in the rows.
+    renderView({ subjects: SECTIONED_SUBJECTS, facultyAggregates: { f2: aggregate({ facultyId: "f2" }) } })
+
+    fireEvent.click(screen.getByText("By Faculty"))
+
+    expect(screen.queryByText("Ana Reyes")).toBeNull()
+    expect(screen.getByText("0 faculties")).toBeTruthy()
   })
 
   it("finds a row by its section label", () => {

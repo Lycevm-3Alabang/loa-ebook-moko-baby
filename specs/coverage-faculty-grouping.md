@@ -155,12 +155,19 @@ groupings, as a switch above the table:
     spec, contract §3.14): the number of faculty accounts homed in the
     department, soft-deleted excluded, counted once — the same number the
     results list, the export CSVs, the report page and the Department
-    Health report print. The **teaching roster** (who was assigned to teach
-    this term) is a different set: it is what the "By Faculty" cards list
-    and what the per-subject status is computed from, and it may be larger
-    than the headcount, because a teacher homed elsewhere still teaches
-    here. The KPI above the table sums the headcounts, which cannot
-    double-count a teacher who teaches in several departments.
+    Health report print. The KPI above the table sums the headcounts, which
+    cannot double-count a teacher who teaches in several departments.
+14. **The drill-down's "By Faculty" tab lists the department's own faculty**
+    (the attribution spec, contract §3.15): the accounts homed in the
+    department, the same set as the headcount above it. The **teaching
+    roster** (who was assigned to teach this term) is a different set — it
+    is what the per-subject status is computed from, and it may be larger,
+    because a teacher homed elsewhere still teaches here. A teacher homed
+    elsewhere gets **no card** in this department; their subject, its
+    students and its responses stay in the **"By Subject & Section"** tab,
+    because that coverage is the department's. The "Unresolved" group is not
+    a department, so it has no membership question: it keeps every teacher
+    of its subjects.
 
 ## 4. Changes
 
