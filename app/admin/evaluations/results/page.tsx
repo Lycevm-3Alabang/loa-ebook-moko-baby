@@ -13,14 +13,11 @@ interface DepartmentRow {
   departmentName: string
   departmentCode: string
   facultyCount: number
-  totalRespondents: number
   avgRating: number | null
   remarks: string | null
   highestRubrics: { key: string; label: string; score: number }[]
   lowestRubrics: { key: string; label: string; score: number }[]
   sentimentScore: number | null
-  /** The faculty who were assigned to teach in this period and received nothing. */
-  noResponses: { id: string; name: string }[]
 }
 
 interface AttributionWarnings {
@@ -36,14 +33,13 @@ interface Period {
   isActive?: boolean
 }
 
-type SortKey = "departmentName" | "avgRating" | "facultyCount" | "totalRespondents" | "sentimentScore"
+type SortKey = "departmentName" | "avgRating" | "facultyCount" | "sentimentScore"
 
 export default function AdminEvaluationResultsPage() {
   const router = useRouter()
   const [selectedPeriod, setSelectedPeriod] = useState("")
   const [sortKey, setSortKey] = useState<SortKey>("avgRating")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
-  const [expandedRoster, setExpandedRoster] = useState<Record<string, boolean>>({})
 
   const { data: periodsData } = useApiGet<{ periods: Period[] }>("/api/evaluation-periods")
   const periods = useMemo(() => periodsData?.periods ?? [], [periodsData])
@@ -202,10 +198,6 @@ export default function AdminEvaluationResultsPage() {
                 <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("facultyCount")}>
                   Faculty{sortArrow("facultyCount")}
                 </th>
-                <th className="pb-3 pr-4 text-right">No responses</th>
-                <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("totalRespondents")}>
-                  Responses{sortArrow("totalRespondents")}
-                </th>
               </tr>
             </thead>
             <tbody>
@@ -256,31 +248,6 @@ export default function AdminEvaluationResultsPage() {
                     )}
                   </td>
                   <td className="py-3 pr-4 text-right text-sm text-secondary">{dept.facultyCount}</td>
-                  <td className="py-3 pr-4 text-right">
-                    {dept.noResponses && dept.noResponses.length > 0 ? (
-                      <div
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setExpandedRoster((prev) => ({ ...prev, [dept.departmentId]: !prev[dept.departmentId] }))
-                        }}
-                        className="cursor-pointer"
-                      >
-                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
-                          {dept.noResponses.length}
-                        </span>
-                        {expandedRoster[dept.departmentId] && (
-                          <div className="mt-1 text-left text-[10px] text-tertiary space-y-0.5">
-                            {dept.noResponses.map((f) => (
-                              <div key={f.id}>{f.name}</div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-[11px] text-tertiary">&mdash;</span>
-                    )}
-                  </td>
-                  <td className="py-3 pr-4 text-right text-sm text-secondary">{dept.totalRespondents}</td>
                 </tr>
               ))}
             </tbody>

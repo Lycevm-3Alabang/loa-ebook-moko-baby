@@ -18,6 +18,7 @@ const mockDeptRepo = vi.hoisted(() => ({
 
 const mockUserRepo = vi.hoisted(() => ({
   listByIds: vi.fn(),
+  listByRole: vi.fn(),
 }))
 
 const mockEvalPeriodRepo = vi.hoisted(() => ({
@@ -196,6 +197,13 @@ function seedDefaults() {
   mockUserRepo.listByIds.mockImplementation(async (ids: string[]) =>
     USERS.filter((u) => ids.includes(u.id)),
   )
+  // The department headcount: Ana, Ben and Cara are homed in CCS.
+  mockUserRepo.listByRole.mockResolvedValue([
+    { id: "f1", name: "Ana Cruz", email: "ana@x", departmentId: "dept-1", role: "FACULTY" },
+    { id: "f2", name: "Ben Lim", email: "ben@x", departmentId: "dept-1", role: "FACULTY" },
+    { id: "f3", name: "Cara Uy", email: "cara@x", departmentId: "dept-1", role: "FACULTY" },
+    { id: "x1", name: "Dan Poe", email: "dan@x", departmentId: "dept-2", role: "FACULTY" },
+  ])
   mockEvalPeriodRepo.findActive.mockResolvedValue(P3)
   mockEvalPeriodRepo.findById.mockImplementation(async (id: string) =>
     id === "p3" ? P3 : id === "p2" ? P2 : id === "p1" ? P1 : null,

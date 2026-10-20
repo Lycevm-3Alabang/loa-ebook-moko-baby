@@ -4,6 +4,7 @@ import { hasRole } from "@/lib/utils/roles"
 import { departmentRepository, evaluationResultRepository } from "@/lib/repositories/factory"
 import { logServerError } from "@/lib/services/audit"
 import { getDepartmentSubjectResults, type DepartmentSubjectResult } from "@/features/evaluation-results/evaluation-results.service"
+import { getFacultyCountsByDepartment } from "@/features/users/users.service"
 import { createZip } from "@/lib/zip"
 
 function csvEscape(v: unknown): string {
@@ -41,6 +42,8 @@ export async function GET(request: NextRequest) {
     const { subjects } = await getDepartmentSubjectResults(evaluationPeriodId, dept.id)
     const liveAvgs = await evaluationResultRepository.listLiveDeptAverages(evaluationPeriodId)
     const avg = liveAvgs.find((a) => a.departmentId === dept.id)
+    // The same headcount the dean's results page shows.
+    const facultyCounts = await getFacultyCountsByDepartment()
 
     const encoder = new TextEncoder()
     const entries: { name: string; data: Uint8Array }[] = []
@@ -55,7 +58,7 @@ export async function GET(request: NextRequest) {
     }
 
     const summaryHeaders = ["Department", "Code", "Faculty Count", "Respondents", "Avg Rating", "Remark"]
-    const summaryRows = [[dept.name, dept.code ?? "", avg?.facultyIds.length ?? 0, avg?.totalRespondents ?? 0, avg?.avgRating ?? "", avg?.remarks ?? ""]]
+    const summaryRows = [[dept.name, dept.code ?? "", facultyCounts[dept.id] ?? 0, avg?.totalRespondents ?? 0, avg?.avgRating ?? "", avg?.remarks ?? ""]]
     const summaryCsv = [summaryHeaders.join(","), ...summaryRows.map((r) => r.map(csvEscape).join(","))].join("\n")
     entries.push({ name: "summary.csv", data: encoder.encode(summaryCsv) })
 

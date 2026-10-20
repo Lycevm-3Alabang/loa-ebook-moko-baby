@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase"
 import { departmentRepository, evaluationPeriodRepository, evaluationResultRepository, userRepository, facultySubjectRepository, studentEnrollmentRepository, rubricGroupRepository } from "@/lib/repositories/factory"
+import { getFacultyCountsByDepartment } from "@/features/users/users.service"
 import type { LiveDeptAverage } from "@/lib/types"
 
 export interface EvalReportFaculty {
@@ -75,12 +76,13 @@ function avg(nums: (number | null)[]): number | null {
 function liveDeptToReportRow(
   live: { departmentId: string; facultyIds: string[]; totalRespondents: number; avgRating: number | null; catAverages: Record<string, number | null> },
   departmentName: string,
+  facultyCount: number,
 ): EvalReportDepartment {
   const c = live.catAverages
   return {
     departmentId: live.departmentId,
     departmentName,
-    facultyCount: live.facultyIds.length,
+    facultyCount,
     totalRespondents: live.totalRespondents,
     avgProfessionalManner: c.professionalManner ?? null,
     avgCommunicationWithStudent: c.communicationWithStudent ?? null,
@@ -134,8 +136,16 @@ export async function getAdminEvalReportData(evaluationPeriodId?: string): Promi
   })
 
   const liveDepts = await evaluationResultRepository.listLiveDeptAverages(activePeriodId)
+  // The department's own faculty - the same headcount the results page shows.
+  const facultyCounts = await getFacultyCountsByDepartment()
   const departments: EvalReportDepartment[] = liveDepts.map((d) =>
-    liveDeptToReportRow(d, d.departmentId === "__unknown__" ? "Unresolved" : (deptNameMap.get(d.departmentId) ?? d.departmentId)),
+    liveDeptToReportRow(
+      d,
+      d.departmentId === "__unknown__" ? "Unresolved" : (deptNameMap.get(d.departmentId) ?? d.departmentId),
+      // The pseudo-department is not a department: it has no headcount, so it
+      // keeps the count of the people it carries.
+      d.departmentId === "__unknown__" ? d.facultyIds.length : (facultyCounts[d.departmentId] ?? 0),
+    ),
   )
 
   departments.sort((a, b) => (b.avgGeneralRating ?? 0) - (a.avgGeneralRating ?? 0))
@@ -189,9 +199,11 @@ export async function getDeanEvalReportData(deanId: string, evaluationPeriodId?:
     }
   })
 
+  const deanFacultyCounts = await getFacultyCountsByDepartment()
+
   return {
     evaluationPeriodId: activePeriodId,
-    departments: [liveDeptToReportRow(liveDept, dept.name)],
+    departments: [liveDeptToReportRow(liveDept, dept.name, deanFacultyCounts[dept.id] ?? 0)],
     facultyResults,
   }
 }

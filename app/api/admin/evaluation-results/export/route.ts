@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/route-guard"
 import { logServerError } from "@/lib/services/audit"
 import { departmentRepository, evaluationResultRepository } from "@/lib/repositories/factory"
 import { getDepartmentSubjectResults, type DepartmentSubjectResult } from "@/features/evaluation-results/evaluation-results.service"
+import { getFacultyCountsByDepartment } from "@/features/users/users.service"
 import { createZip } from "@/lib/zip"
 
 function csvEscape(v: unknown): string {
@@ -34,6 +35,9 @@ export async function GET(request: NextRequest) {
     const departments = await departmentRepository.listAll()
     const liveAvgs = await evaluationResultRepository.listLiveDeptAverages(evaluationPeriodId)
     const avgByDept = new Map(liveAvgs.map((a) => [a.departmentId, a]))
+    // The same headcount the results page shows, so the CSV and the page
+    // cannot disagree about a department.
+    const facultyCounts = await getFacultyCountsByDepartment()
 
     const entries: { name: string; data: Uint8Array }[] = []
     const encoder = new TextEncoder()
@@ -76,7 +80,7 @@ export async function GET(request: NextRequest) {
     const summaryRows = departments.map((dept) => {
       const avg = avgByDept.get(dept.id)
       return [
-        dept.name, dept.code ?? "", avg?.facultyIds.length ?? 0, avg?.totalRespondents ?? 0,
+        dept.name, dept.code ?? "", facultyCounts[dept.id] ?? 0, avg?.totalRespondents ?? 0,
         avg?.avgRating ?? "", avg?.remarks ?? "",
       ]
     })

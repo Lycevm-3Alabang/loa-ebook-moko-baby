@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 const mockRequireAdmin = vi.hoisted(() => vi.fn())
 const mockDeptRepo = vi.hoisted(() => ({ listAll: vi.fn() }))
 const mockEvalResultRepo = vi.hoisted(() => ({ listLiveDeptAverages: vi.fn() }))
+const mockUserRepo = vi.hoisted(() => ({ listByRole: vi.fn() }))
 const mockGetDeptResults = vi.hoisted(() => vi.fn())
 const mockLogServerError = vi.hoisted(() => vi.fn())
 
@@ -10,6 +11,7 @@ vi.mock("@/lib/route-guard", () => ({ requireAdmin: mockRequireAdmin }))
 vi.mock("@/lib/repositories/factory", () => ({
   departmentRepository: mockDeptRepo,
   evaluationResultRepository: mockEvalResultRepo,
+  userRepository: mockUserRepo,
 }))
 vi.mock("@/features/evaluation-results/evaluation-results.service", () => ({
   getDepartmentSubjectResults: mockGetDeptResults,
@@ -23,6 +25,7 @@ function req(qs: string) { return new Request(`http://localhost/api/admin/evalua
 beforeEach(() => {
   vi.resetAllMocks()
   mockRequireAdmin.mockResolvedValue(null)
+  mockUserRepo.listByRole.mockResolvedValue([])
 })
 
 describe("GET /api/admin/evaluation-results/export", () => {

@@ -4,6 +4,7 @@ const mockAuth = vi.hoisted(() => vi.fn())
 const mockHasRole = vi.hoisted(() => vi.fn())
 const mockDeptRepo = vi.hoisted(() => ({ findByDeanId: vi.fn() }))
 const mockEvalResultRepo = vi.hoisted(() => ({ listLiveDeptAverages: vi.fn() }))
+const mockUserRepo = vi.hoisted(() => ({ listByRole: vi.fn() }))
 const mockGetDeptResults = vi.hoisted(() => vi.fn())
 const mockLogServerError = vi.hoisted(() => vi.fn())
 
@@ -12,6 +13,7 @@ vi.mock("@/lib/utils/roles", () => ({ hasRole: mockHasRole }))
 vi.mock("@/lib/repositories/factory", () => ({
   departmentRepository: mockDeptRepo,
   evaluationResultRepository: mockEvalResultRepo,
+  userRepository: mockUserRepo,
 }))
 vi.mock("@/features/evaluation-results/evaluation-results.service", () => ({
   getDepartmentSubjectResults: mockGetDeptResults,
@@ -24,6 +26,7 @@ function req(qs: string) { return new Request(`http://localhost/api/dean/evaluat
 
 beforeEach(() => {
   vi.resetAllMocks()
+  mockUserRepo.listByRole.mockResolvedValue([])
 })
 
 describe("GET /api/dean/evaluation-results/export", () => {
