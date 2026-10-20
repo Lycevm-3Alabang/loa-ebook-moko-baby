@@ -1,25 +1,8 @@
 import { supabase } from "@/lib/db"
 import { fetchRatingsWithCategories } from "@/lib/db/common"
-import {
-  buildLiveDeptAverages,
-  buildFacultySummary,
-  classifyWarningAssignments,
-  getRemark,
-  resolveSubjectDepartment,
-  UNASSIGNED_FACULTY_EMAIL,
-  type FacultyDeptInput,
-  type RatingRow,
-} from "@/lib/evaluation-utils"
-import type {
-  IEvaluationResultRepository,
-  LiveDeptAverage,
-  LiveFacultyResult,
-  StudentBreakdownItem,
-  EvaluationVisibilityRow,
-  EvaluationAssignment,
-  AttributionWarnings,
-  SubjectResolutionContext,
-} from "@/lib/types"
+import { buildLiveDeptAverages, resolveFacultyDepartment } from "@/lib/evaluation-utils"
+import type { RatingRow } from "@/lib/evaluation-utils"
+import type { EvaluationResultData, IEvaluationResultRepository, LiveDeptAverage, StudentBreakdownItem, FacultyEvalDetail } from "@/lib/types"
 import { semesterRepository } from "@/lib/repositories/factory"
 
 export class EvaluationPeriodInactiveError extends Error {
@@ -33,13 +16,6 @@ export class EvaluationPeriodInactiveError extends Error {
 // PostgREST caps URL length (~8KB). Chunk large .in() lists to stay under it.
 const IN_CHUNK_SIZE = 100
 
-/**
- * The pseudo-department for an assignment whose department cannot be
- * resolved. Under the section-first rule this is an integrity condition
- * (the assignment points outside the period), not a bucket of people.
- */
-const UNKNOWN_DEPARTMENT = "__unknown__"
-
 function chunkStrIds(ids: string[], size: number): string[][] {
   const chunks: string[][] = []
   for (let i = 0; i < ids.length; i += size) {
@@ -48,454 +24,403 @@ function chunkStrIds(ids: string[], size: number): string[][] {
   return chunks
 }
 
-interface SemesterRoster {
-  rows: FacultySubjectRow[]
-  /** The department that owns each assignment's section. */
-  departmentOf: Map<string, string | null>
-  users: Map<string, { id: string; name: string; email: string }>
-}
-
-/**
- * The term's teaching roster: every assignment in the semester, the
- * department that owns it, and the people behind them. The dummy account is
- * left out — it owns assignments, but it is a placeholder, not a person.
- */
-async function loadSemesterRoster(semesterId: string): Promise<SemesterRoster> {
-  const { data, error } = await supabase
-    .from("faculty_subjects")
-    .select("id, faculty_id, subject_id, section_id, semesterId")
-    .eq("semesterId", semesterId)
-  if (error) throw error
-
-  const rows: FacultySubjectRow[] = (data || []).map((r) => ({
-    id: r.id as string,
-    faculty_id: r.faculty_id as string,
-    subject_id: r.subject_id as string,
-    section_id: (r.section_id as string | null) ?? null,
-    semesterId: (r.semesterId as string | null) ?? null,
-  }))
-
-  const ctx = await buildSubjectContext(rows)
-  const departmentOf = new Map<string, string | null>()
-  for (const r of rows) departmentOf.set(r.id, resolveSubjectDepartment(r, ctx))
-  const users = await loadUserNames(rows.map((r) => r.faculty_id))
-
-  return { rows, departmentOf, users }
-}
-
-/** The people who teach in a department in the given term, per department. */
-function rosterByDepartment(
-  roster: SemesterRoster,
-): Record<string, { id: string; name: string; email: string }[]> {
-  const out: Record<string, { id: string; name: string; email: string }[]> = {}
-  for (const r of roster.rows) {
-    const deptId = roster.departmentOf.get(r.id)
-    if (!deptId) continue
-    const user = roster.users.get(r.faculty_id)
-    if (!user || user.email === UNASSIGNED_FACULTY_EMAIL) continue
-    const list = out[deptId] ?? (out[deptId] = [])
-    if (!list.some((f) => f.id === user.id)) list.push(user)
-  }
-  return out
-}
-
-/** The lookups a department decision needs, for a set of assignments. */
-async function buildSubjectContext(
-  assignments: { faculty_id: string; section_id: string | null }[],
-): Promise<SubjectResolutionContext> {
-  const [userDept, maps] = await Promise.all([
-    loadUserDepartments(assignments.map((a) => a.faculty_id)),
-    loadSectionMaps(),
-  ])
-  return { userDept, sections: maps.sections, departmentCourses: maps.departmentCourses }
-}
-
-/** The period's submitted, enabled evaluations — the candidate faculty set. */
-async function listSubmittedEvaluates(evaluationPeriodId: string): Promise<{ id: string; evaluateeId: string; facultySubjectId: string | null }[]> {
-  const { data, error } = await supabase
-    .from("evaluations")
-    .select("id, evaluateeId, facultySubjectId")
-    .eq("evaluation_period_id", evaluationPeriodId)
-    .eq("status", "SUBMITTED")
-    .eq("isDisabled", false)
-    .not("facultySubjectId", "is", null)
-  if (error) throw error
-  return data || []
-}
-
-interface FacultySubjectRow {
-  id: string
-  faculty_id: string
-  subject_id: string
-  section_id: string | null
-  semesterId: string | null
-}
-
-/** faculty id -> name and email. Chunked, and soft-deleted users included. */
-async function loadUserNames(facultyIds: string[]): Promise<Map<string, { id: string; name: string; email: string }>> {
-  const names = new Map<string, { id: string; name: string; email: string }>()
-  if (facultyIds.length === 0) return names
-  const results = await Promise.all(
-    chunkStrIds([...new Set(facultyIds)], IN_CHUNK_SIZE).map((ids) =>
-      supabase.from("users").select("id, name, email").in("id", ids),
-    ),
-  )
-  for (const res of results) {
-    if (res.error) throw res.error
-  }
-  for (const res of results) {
-    for (const u of res.data || []) {
-      names.set(u.id as string, {
-        id: u.id as string,
-        name: (u.name as string | null) ?? "Unknown",
-        email: (u.email as string | null) ?? "",
-      })
-    }
-  }
-  return names
-}
-
-/** faculty id -> users.departmentId. Chunked: a department's faculty list overflows PostgREST's URL cap. */
-async function loadUserDepartments(facultyIds: string[]): Promise<Map<string, string | null>> {
-  const map = new Map<string, string | null>()
-  if (facultyIds.length === 0) return map
-  const results = await Promise.all(
-    chunkStrIds([...new Set(facultyIds)], IN_CHUNK_SIZE).map((ids) =>
-      supabase.from("users").select("id, departmentId").in("id", ids),
-    ),
-  )
-  for (const res of results) {
-    if (res.error) throw res.error
-  }
-  for (const res of results) {
-    for (const u of res.data || []) map.set(u.id as string, (u.departmentId as string | null) ?? null)
-  }
-  return map
-}
-
-/**
- * The section -> department_course -> department chain. Both tables are small
- * (one row per section, one per department course), so they are read whole
- * and mapped in memory rather than filtered per query.
- */
-async function loadSectionMaps(): Promise<{
-  sections: Map<string, string | null>
-  departmentCourses: Map<string, string | null>
-}> {
-  const [sectionsRes, coursesRes] = await Promise.all([
-    supabase.from("sections").select("id, departmentCourseId"),
-    supabase.from("department_courses").select("id, departmentId"),
-  ])
-  if (sectionsRes.error) throw sectionsRes.error
-  if (coursesRes.error) throw coursesRes.error
-
-  const sections = new Map<string, string | null>()
-  for (const s of sectionsRes.data || []) sections.set(s.id as string, (s.departmentCourseId as string | null) ?? null)
-  const departmentCourses = new Map<string, string | null>()
-  for (const c of coursesRes.data || []) departmentCourses.set(c.id as string, (c.departmentId as string | null) ?? null)
-  return { sections, departmentCourses }
-}
-
-/** The assignment rows for the given ids. Chunked — PostgREST caps the URL. */
-async function loadAssignmentRows(ids: string[]): Promise<FacultySubjectRow[]> {
-  if (ids.length === 0) return []
-  const rows: FacultySubjectRow[] = []
-  for (const chunk of chunkStrIds([...new Set(ids)], IN_CHUNK_SIZE)) {
-    const { data, error } = await supabase
-      .from("faculty_subjects")
-      .select("id, faculty_id, subject_id, section_id, semesterId")
-      .in("id", chunk)
-    if (error) throw error
-    for (const r of data || []) {
-      rows.push({
-        id: r.id as string,
-        faculty_id: r.faculty_id as string,
-        subject_id: r.subject_id as string,
-        section_id: (r.section_id as string | null) ?? null,
-        semesterId: (r.semesterId as string | null) ?? null,
-      })
-    }
-  }
-  return rows
-}
-
-interface PeriodAssignments {
-  /** faculty_subject id -> the assignment with its owning department. */
-  assignments: Map<string, EvaluationAssignment>
-  /** The evaluations whose assignment still belongs to their evaluatee. */
-  liveEvals: { id: string; evaluateeId: string; facultySubjectId: string | null }[]
-}
-
-/**
- * The period's evaluated assignments, each resolved to the department that
- * owns its section, plus the evaluations that still match their assignment's
- * faculty.
- */
-async function loadPeriodAssignments(evaluationPeriodId: string): Promise<PeriodAssignments | null> {
-  const evals = await listSubmittedEvaluates(evaluationPeriodId)
-  if (evals.length === 0) return null
-
-  const fsIds = [...new Set(evals.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
-  const rows = await loadAssignmentRows(fsIds)
-  const ctx = await buildSubjectContext(rows)
-
-  const assignments = new Map<string, EvaluationAssignment>()
-  for (const row of rows) {
-    assignments.set(row.id, { ...row, departmentId: resolveSubjectDepartment(row, ctx) })
-  }
-
-  // The detail page's rule: an evaluation counts for the faculty the assignment
-  // actually has. A reassigned assignment leaves the old evaluation behind -
-  // drop it here too, so every live surface agrees.
-  const liveEvals = evals.filter(
-    (e) => !!e.facultySubjectId && assignments.get(e.facultySubjectId)?.faculty_id === e.evaluateeId,
-  )
-  if (liveEvals.length === 0) return null
-
-  return { assignments, liveEvals }
-}
-
-/** The ratings of the given evaluations, indexed by evaluation. */
-async function loadRatingsByEval(evalIds: string[]): Promise<Map<string, RatingRow[]>> {
-  const ratingsByEval = new Map<string, RatingRow[]>()
-  if (evalIds.length === 0) return ratingsByEval
-  const ratings = await fetchRatingsWithCategories(supabase, evalIds)
-  for (const r of ratings) {
-    const list = ratingsByEval.get(r.evaluationId)
-    if (list) list.push(r)
-    else ratingsByEval.set(r.evaluationId, [r])
-  }
-  return ratingsByEval
-}
-
-/** The evaluations of a period, grouped by the assignment they belong to. */
-function groupEvalsByAssignment(
-  evals: { id: string; facultySubjectId: string | null }[],
-): Map<string, string[]> {
-  const byAssignment = new Map<string, string[]>()
-  for (const ev of evals) {
-    if (!ev.facultySubjectId) continue
-    const list = byAssignment.get(ev.facultySubjectId)
-    if (list) list.push(ev.id)
-    else byAssignment.set(ev.facultySubjectId, [ev.id])
-  }
-  return byAssignment
-}
-
 export const evaluationResultRepository: IEvaluationResultRepository = {
-  async listLiveDeptAverages(evaluationPeriodId): Promise<LiveDeptAverage[]> {
-    const live = await loadPeriodAssignments(evaluationPeriodId)
-    if (!live) return []
-    const ratingsByEval = await loadRatingsByEval(live.liveEvals.map((e) => e.id))
-    const byAssignment = groupEvalsByAssignment(live.liveEvals)
+  async list(evaluationPeriodId, filters) {
+    let q = supabase.from("evaluation_results").select("*").eq("evaluation_period_id", evaluationPeriodId)
+    if (filters?.departmentId) q = q.eq("departmentId", filters.departmentId)
+    if (filters?.facultyId) q = q.eq("facultyId", filters.facultyId)
+    const { data, error } = await q
+    if (error) throw error
+    return data as EvaluationResultData[]
+  },
 
-    // Pooled per assignment, then grouped by the department that owns the
-    // assignment's section. A faculty teaching in two departments contributes
-    // each subject to the department that owns it.
-    const inputs: FacultyDeptInput[] = []
-    for (const [fsId, evalIds] of byAssignment) {
-      const assignment = live.assignments.get(fsId)
-      if (!assignment) continue
-      const groupRatings = evalIds.flatMap((eid) => ratingsByEval.get(eid) ?? [])
-      inputs.push({
-        facultyId: assignment.faculty_id,
-        deptId: assignment.departmentId ?? UNKNOWN_DEPARTMENT,
-        evalCount: evalIds.length,
-        ratings: groupRatings,
-      })
+  async getLatestComputedAt(evaluationPeriodId) {
+    const { data, error } = await supabase
+      .from("evaluation_results")
+      .select("computedAt")
+      .eq("evaluation_period_id", evaluationPeriodId)
+      .order("computedAt", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (error) throw error
+    return (data?.computedAt as string | null) ?? null
+  },
+
+  async findByFaculty(evaluationPeriodId, facultyId) {
+    const { data, error } = await supabase
+      .from("evaluation_results")
+      .select("*")
+      .eq("evaluation_period_id", evaluationPeriodId)
+      .eq("facultyId", facultyId)
+      .single()
+    if (error) {
+      if (error.code === "PGRST116") return null
+      throw error
+    }
+    return data as EvaluationResultData
+  },
+
+  async compute(evaluationPeriodId, facultyId) {
+    const filterFaculty = facultyId ? { evaluateeId: facultyId } : {}
+    const { data: evals, error: evErr } = await supabase
+      .from("evaluations")
+      .select("id, evaluateeId, facultySubjectId")
+      .eq("evaluation_period_id", evaluationPeriodId)
+      .eq("status", "SUBMITTED")
+      .eq("isDisabled", false)
+      .not("facultySubjectId", "is", null)
+      .match(filterFaculty)
+    if (evErr) throw evErr
+    if (!evals || evals.length === 0) return
+
+    const facEvalMap = new Map<string, string[]>()
+    const allEvalIds: string[] = []
+    for (const ev of evals) {
+      allEvalIds.push(ev.id)
+      if (!facEvalMap.has(ev.evaluateeId)) facEvalMap.set(ev.evaluateeId, [])
+      facEvalMap.get(ev.evaluateeId)!.push(ev.id)
     }
 
-    const groups = new Map<string, LiveDeptAverage>(
-      buildLiveDeptAverages(inputs).map((d) => [d.departmentId, { ...d }]),
-    )
+    const allFacultyIds = Array.from(facEvalMap.keys())
 
-    // The department page shows a row for every faculty with an evaluation —
-    // including one whose evaluation carries no rating rows, which the
-    // pooling above skips. Count those here, so the list's faculty count and
-    // the department's table agree.
-    for (const [fsId, evalIds] of byAssignment) {
-      const assignment = live.assignments.get(fsId)
-      if (!assignment) continue
-      const groupRatings = evalIds.flatMap((eid) => ratingsByEval.get(eid) ?? [])
-      const deptId = assignment.departmentId ?? UNKNOWN_DEPARTMENT
-      let group = groups.get(deptId)
-      if (!group) {
-        group = {
-          departmentId: deptId,
-          facultyIds: [],
-          totalRespondents: 0,
-          avgRating: null,
-          remarks: null,
-          catAverages: {},
-          highestRubrics: [],
-          lowestRubrics: [],
-        }
-        groups.set(deptId, group)
+    const { data: evalPeriod } = await supabase
+      .from("evaluation_periods")
+      .select("semesterId")
+      .eq("id", evaluationPeriodId)
+      .single()
+
+    const semesterId = evalPeriod?.semesterId
+
+    const uniqueFacultyIds = [...new Set(allFacultyIds)]
+    const facultyChunks = chunkStrIds(uniqueFacultyIds, IN_CHUNK_SIZE)
+    const [ratings, usersResults, existingResults] = await Promise.all([
+      fetchRatingsWithCategories(supabase, allEvalIds),
+      Promise.all(
+        facultyChunks.map((ids) =>
+          supabase.from("users").select("id, departmentId").in("id", ids),
+        ),
+      ),
+      Promise.all(
+        facultyChunks.map((ids) =>
+          supabase
+            .from("evaluation_results")
+            .select("id, facultyId")
+            .eq("evaluation_period_id", evaluationPeriodId)
+            .in("facultyId", ids),
+        ),
+      ),
+    ])
+    for (const res of [...usersResults, ...existingResults]) {
+      if (res.error) throw res.error
+    }
+
+    const users = usersResults.flatMap((res) => res.data || [])
+    const existingResultsRows = existingResults.flatMap((res) => res.data || [])
+
+    const evalRatingsMap = new Map<string, typeof ratings>()
+    for (const r of ratings) {
+      if (!evalRatingsMap.has(r.evaluationId)) evalRatingsMap.set(r.evaluationId, [])
+      evalRatingsMap.get(r.evaluationId)!.push(r)
+    }
+
+    const userDeptMap = new Map(users.map((u) => [u.id, u.departmentId]))
+
+    const facIdsWithNullDept = allFacultyIds.filter((id) => !userDeptMap.get(id))
+    if (facIdsWithNullDept.length > 0 && semesterId) {
+      const fsResults = await Promise.all(
+        chunkStrIds([...new Set(facIdsWithNullDept)], IN_CHUNK_SIZE).map((ids) =>
+          supabase
+            .from("faculty_subjects")
+            .select("faculty_id, section_id")
+            .in("faculty_id", ids)
+            .eq("semesterId", semesterId),
+        ),
+      )
+      for (const res of fsResults) {
+        if (res.error) throw res.error
       }
-      if (!group.facultyIds.includes(assignment.faculty_id)) group.facultyIds.push(assignment.faculty_id)
-      if (groupRatings.length === 0) group.totalRespondents += evalIds.length
+      const fsRows = fsResults.flatMap((res) => res.data || [])
+
+      if (fsRows.length > 0) {
+        const sectionIds = [...new Set(fsRows.map((r) => r.section_id).filter(Boolean))]
+        if (sectionIds.length > 0) {
+          const sectionResults = await Promise.all(
+            chunkStrIds(sectionIds as string[], IN_CHUNK_SIZE).map((ids) =>
+              supabase
+                .from("sections")
+                .select("id, departmentCourseId")
+                .in("id", ids),
+            ),
+          )
+          for (const res of sectionResults) {
+            if (res.error) throw res.error
+          }
+          const sectionRows = sectionResults.flatMap((res) => res.data || [])
+
+          if (sectionRows.length > 0) {
+            const dcIds = [...new Set(sectionRows.map((r) => r.departmentCourseId).filter(Boolean))]
+            if (dcIds.length > 0) {
+              const dcResults = await Promise.all(
+                chunkStrIds(dcIds as string[], IN_CHUNK_SIZE).map((ids) =>
+                  supabase
+                    .from("department_courses")
+                    .select("id, departmentId")
+                    .in("id", ids),
+                ),
+              )
+              for (const res of dcResults) {
+                if (res.error) throw res.error
+              }
+              const dcRows = dcResults.flatMap((res) => res.data || [])
+
+              if (dcRows && dcRows.length > 0) {
+                const dcDeptMap = new Map(dcRows.map((r) => [r.id, r.departmentId]))
+                const sectionDeptMap = new Map(
+                  sectionRows.map((r) => [r.id, dcDeptMap.get(r.departmentCourseId)])
+                )
+
+                for (const fs of fsRows) {
+                  const deptId = sectionDeptMap.get(fs.section_id)
+                  if (deptId && !userDeptMap.get(fs.faculty_id)) {
+                    userDeptMap.set(fs.faculty_id, deptId)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
 
-    return [...groups.values()]
+    const existingMap = new Map(existingResultsRows.map((r) => [r.facultyId, r.id]))
+
+    const nameToColumn: Record<string, string> = {
+      "Professional Manner": "professionalManner",
+      "Communication with Students": "communicationWithStudent",
+      "Student Engagement": "studentEngagement",
+      "Learning Materials": "learningMaterials",
+      "Time Management": "timeManagement",
+      "Experiential Learning Provided to Students": "experientialLearning",
+      "Respect the Uniqueness of the Students": "respectUniqueness",
+      "Assessment and Feedback": "assessmentAndFeedback",
+    }
+
+    const toUpdate: Array<{ id: string; data: Record<string, unknown> }> = []
+    const toInsert: Array<Record<string, unknown>> = []
+
+    for (const [facId, evaluationIds] of facEvalMap) {
+      if (evaluationIds.length === 0) continue
+
+      const facRatings = evaluationIds.flatMap((eid) => evalRatingsMap.get(eid) || [])
+
+      const catRatings: Record<string, number[]> = {}
+      for (const r of facRatings as unknown as Array<{ rating: number; rubric_items: { categoryId: string; rubric_categories: { name: string } } }>) {
+        const catName = r.rubric_items.rubric_categories.name
+        if (!catRatings[catName]) catRatings[catName] = []
+        catRatings[catName].push(r.rating)
+      }
+
+      const catAverages: Record<string, number> = {}
+      for (const [cat, vals] of Object.entries(catRatings)) {
+        catAverages[cat] = vals.reduce((a, b) => a + b, 0) / vals.length
+      }
+
+      const general = Object.keys(catAverages).length > 0
+        ? Object.values(catAverages).reduce((a, b) => a + b, 0) / Object.keys(catAverages).length
+        : null
+
+      let remarks: string | null = null
+      if (general !== null) {
+        if (general >= 4.5) remarks = "Outstanding"
+        else if (general >= 3.5) remarks = "Very Satisfactory"
+        else if (general >= 2.5) remarks = "Satisfactory"
+        else if (general >= 1.5) remarks = "Unsatisfactory"
+        else remarks = "Poor"
+      }
+
+      const updateData: Record<string, unknown> = {
+        totalRespondents: evaluationIds.length,
+        generalRating: general ? Math.round(general * 100) / 100 : null,
+        remarks,
+        departmentId: userDeptMap.get(facId) ?? null,
+        computedAt: new Date().toISOString(),
+      }
+
+      for (const [catName, avg] of Object.entries(catAverages)) {
+        const col = nameToColumn[catName]
+        if (col) {
+          updateData[col] = Math.round(avg * 100) / 100
+        }
+      }
+
+      const existingId = existingMap.get(facId)
+      if (existingId) {
+        toUpdate.push({ id: existingId, data: updateData })
+      } else {
+        toInsert.push({ evaluation_period_id: evaluationPeriodId, semesterId, facultyId: facId, ...updateData })
+      }
+    }
+
+    const results = await Promise.all([
+      ...toUpdate.map(({ id, data }) => supabase.from("evaluation_results").update(data).eq("id", id)),
+      ...(toInsert.length > 0 ? [supabase.from("evaluation_results").insert(toInsert)] : []),
+    ])
+    for (const res of results) {
+      if (res.error) throw res.error
+    }
+
+    const { data: allExisting } = await supabase
+      .from("evaluation_results")
+      .select("id, facultyId")
+      .eq("evaluation_period_id", evaluationPeriodId)
+    if (allExisting && allExisting.length > 0) {
+      const staleIds = allExisting
+        .filter((r) => !facEvalMap.has(r.facultyId))
+        .map((r) => r.id)
+      if (staleIds.length > 0) {
+        const { error: delErr } = await supabase
+          .from("evaluation_results")
+          .delete()
+          .in("id", staleIds)
+        if (delErr) throw delErr
+      }
+    }
+  },
+
+  async computeAll(evaluationPeriodId) {
+    await this.compute(evaluationPeriodId)
   },
 
   /**
-   * Per-faculty live results, pooled over that faculty's rating rows with the
-   * same chain the detail page uses. The row shape matches the cached rows the
-   * report service used to read, so it is a source swap, not a rewrite.
+   * Live per-department averages computed from submitted evals (no cache read,
+   * no writes). Same aggregation semantics as compute(): per-faculty pooled
+   * general (rounded 2dp), then the department mean of faculty generals.
+   * Faculty with no usable ratings contribute nothing, so placeholder and
+   * rating-less rows can never blank a department average.
    */
-  async listLiveFacultyResults(evaluationPeriodId: string): Promise<LiveFacultyResult[]> {
-    const live = await loadPeriodAssignments(evaluationPeriodId)
-    if (!live) return []
-    const ratingsByEval = await loadRatingsByEval(live.liveEvals.map((e) => e.id))
+  async listLiveDeptAverages(evaluationPeriodId): Promise<LiveDeptAverage[]> {
+    const { data: evals, error: evErr } = await supabase
+      .from("evaluations")
+      .select("id, evaluateeId")
+      .eq("evaluation_period_id", evaluationPeriodId)
+      .eq("status", "SUBMITTED")
+      .eq("isDisabled", false)
+      .not("facultySubjectId", "is", null)
+    if (evErr) throw evErr
+    if (!evals || evals.length === 0) return []
 
-    const evalIdsByFaculty = new Map<string, string[]>()
-    for (const ev of live.liveEvals) {
-      const list = evalIdsByFaculty.get(ev.evaluateeId)
-      if (list) list.push(ev.id)
-      else evalIdsByFaculty.set(ev.evaluateeId, [ev.id])
+    const facEvalMap = new Map<string, string[]>()
+    for (const ev of evals) {
+      if (!facEvalMap.has(ev.evaluateeId)) facEvalMap.set(ev.evaluateeId, [])
+      facEvalMap.get(ev.evaluateeId)!.push(ev.id)
+    }
+    const facIds = [...facEvalMap.keys()]
+
+    const { data: evalPeriod } = await supabase
+      .from("evaluation_periods")
+      .select("semesterId")
+      .eq("id", evaluationPeriodId)
+      .single()
+    const semesterId = evalPeriod?.semesterId
+
+    const uniqueFacIds = [...new Set(facIds)]
+    const [ratings, usersResults] = await Promise.all([
+      fetchRatingsWithCategories(supabase, evals.map((e) => e.id)),
+      Promise.all(
+        chunkStrIds(uniqueFacIds, IN_CHUNK_SIZE).map((ids) =>
+          supabase.from("users").select("id, departmentId").in("id", ids),
+        ),
+      ),
+    ])
+    for (const res of usersResults) {
+      if (res.error) throw res.error
+    }
+    const usersRows = usersResults.flatMap((res) => res.data || [])
+
+    const ratingsByEval = new Map<string, typeof ratings>()
+    for (const r of ratings) {
+      if (!ratingsByEval.has(r.evaluationId)) ratingsByEval.set(r.evaluationId, [])
+      ratingsByEval.get(r.evaluationId)!.push(r)
     }
 
-    const out: LiveFacultyResult[] = []
-    for (const [facultyId, eids] of evalIdsByFaculty) {
+    // Live home department per faculty, same chain as compute(), resolved via
+    // the pure resolveFacultyDepartment helper (single source of truth).
+    const userDept = new Map(usersRows.map((u) => [u.id, u.departmentId as string | null]))
+    const nullFacIds = facIds.filter((id) => !userDept.get(id))
+    const facultySubjects: { faculty_id: string; section_id: string | null; semesterId: string | null }[] = []
+    const sections = new Map<string, string | null>()
+    const departmentCourses = new Map<string, string | null>()
+
+    if (nullFacIds.length > 0 && semesterId) {
+      const fsResults = await Promise.all(
+        chunkStrIds([...new Set(nullFacIds)], IN_CHUNK_SIZE).map((ids) =>
+          supabase
+            .from("faculty_subjects")
+            .select("faculty_id, section_id")
+            .in("faculty_id", ids)
+            .eq("semesterId", semesterId),
+        ),
+      )
+      for (const res of fsResults) {
+        if (res.error) throw res.error
+      }
+      const fsRows = fsResults.flatMap((res) => res.data || [])
+      facultySubjects.push(...fsRows.map((r) => ({ faculty_id: r.faculty_id, section_id: r.section_id, semesterId })))
+
+      if (fsRows.length > 0) {
+        const sectionIds = [...new Set(fsRows.map((r) => r.section_id).filter(Boolean))]
+        if (sectionIds.length > 0) {
+          const sectionResults = await Promise.all(
+            chunkStrIds(sectionIds as string[], IN_CHUNK_SIZE).map((ids) =>
+              supabase
+                .from("sections")
+                .select("id, departmentCourseId")
+                .in("id", ids),
+            ),
+          )
+          for (const res of sectionResults) {
+            if (res.error) throw res.error
+          }
+          const sectionRows = sectionResults.flatMap((res) => res.data || [])
+          for (const s of sectionRows) sections.set(s.id, s.departmentCourseId)
+
+          if (sectionRows.length > 0) {
+            const dcIds = [...new Set(sectionRows.map((r) => r.departmentCourseId).filter(Boolean))]
+            if (dcIds.length > 0) {
+              const dcResults = await Promise.all(
+                chunkStrIds(dcIds as string[], IN_CHUNK_SIZE).map((ids) =>
+                  supabase
+                    .from("department_courses")
+                    .select("id, departmentId")
+                    .in("id", ids),
+                ),
+              )
+              for (const res of dcResults) {
+                if (res.error) throw res.error
+              }
+              const dcRows = dcResults.flatMap((res) => res.data || [])
+              for (const dc of dcRows) departmentCourses.set(dc.id, dc.departmentId)
+            }
+          }
+        }
+      }
+    }
+
+    const deptOf = new Map<string, string | null>()
+    for (const facId of facIds) {
+      const resolved = resolveFacultyDepartment(facId, { userDept, facultySubjects, sections, departmentCourses, semesterId: semesterId ?? null })
+      deptOf.set(facId, resolved)
+    }
+
+    const inputs: { facultyId: string; deptId: string; evalCount: number; ratings: RatingRow[] }[] = []
+    for (const [facId, eids] of facEvalMap) {
       const facRatings = eids.flatMap((eid) => ratingsByEval.get(eid) ?? [])
       if (facRatings.length === 0) continue
-      const { general, catColumns } = buildFacultySummary(facRatings)
-      out.push({
-        facultyId,
-        totalRespondents: eids.length,
-        generalRating: general,
-        remarks: getRemark(general),
-        professionalManner: catColumns.professionalManner ?? null,
-        communicationWithStudent: catColumns.communicationWithStudent ?? null,
-        studentEngagement: catColumns.studentEngagement ?? null,
-        learningMaterials: catColumns.learningMaterials ?? null,
-        timeManagement: catColumns.timeManagement ?? null,
-        experientialLearning: catColumns.experientialLearning ?? null,
-        respectUniqueness: catColumns.respectUniqueness ?? null,
-        assessmentAndFeedback: catColumns.assessmentAndFeedback ?? null,
-      })
-    }
-    return out
-  },
-
-  /**
-   * The evaluated assignments of one department: the department's own
-   * subjects, by the department that owns the section. The top-level page
-   * groups the same assignments, so both surfaces cover the same rows and
-   * print the same pooled numbers.
-   */
-  async listDepartmentAssignments(departmentId: string, evaluationPeriodId: string): Promise<EvaluationAssignment[]> {
-    const live = await loadPeriodAssignments(evaluationPeriodId)
-    if (!live) return []
-    const out: EvaluationAssignment[] = []
-    for (const assignment of live.assignments.values()) {
-      if (assignment.departmentId === departmentId) out.push(assignment)
-    }
-    return out
-  },
-
-  /** The lookups a department decision needs, for a set of assignments. */
-  async buildSubjectContext(assignments: { faculty_id: string; section_id: string | null }[]): Promise<SubjectResolutionContext> {
-    return buildSubjectContext(assignments)
-  },
-
-  /**
-   * The faculty who were assigned to teach in this period and received
-   * nothing, per department. The roster is the period's semester assignments
-   * — the same roster the coverage page uses — minus the assignments that
-   * have a submitted evaluation.
-   */
-  async listDepartmentRosters(evaluationPeriodId: string): Promise<Record<string, { id: string; name: string }[]>> {
-    const out: Record<string, { id: string; name: string }[]> = {}
-
-    const { data: period } = await supabase
-      .from("evaluation_periods")
-      .select("semesterId")
-      .eq("id", evaluationPeriodId)
-      .single()
-    const semesterId = (period?.semesterId as string | null) ?? null
-    if (!semesterId) return out
-
-    const roster = await loadSemesterRoster(semesterId)
-    if (roster.rows.length === 0) return out
-
-    const evals = await listSubmittedEvaluates(evaluationPeriodId)
-    const evaluated = new Set(evals.map((e) => e.facultySubjectId).filter(Boolean))
-
-    for (const r of roster.rows) {
-      if (evaluated.has(r.id)) continue
-      const deptId = roster.departmentOf.get(r.id)
-      if (!deptId) continue
-      const user = roster.users.get(r.faculty_id)
-      if (!user || user.email === UNASSIGNED_FACULTY_EMAIL) continue
-      const list = out[deptId] ?? (out[deptId] = [])
-      if (!list.some((f) => f.id === user.id)) list.push({ id: user.id, name: user.name })
+      const deptId = deptOf.get(facId) ?? "__unknown__"
+      inputs.push({ facultyId: facId, deptId, evalCount: eids.length, ratings: facRatings as unknown as RatingRow[] })
     }
 
-    return out
-  },
-
-  /**
-   * The people who teach in each department in the given term — the same rule
-   * the results pages use: an assignment belongs to the department that owns
-   * its section.
-   */
-  async listSemesterRoster(
-    semesterId: string,
-  ): Promise<Record<string, { id: string; name: string; email: string }[]>> {
-    if (!semesterId) return {}
-    const roster = await loadSemesterRoster(semesterId)
-    return rosterByDepartment(roster)
-  },
-
-  /**
-   * The evaluations that could not be attributed cleanly: an assignment whose
-   * department cannot be resolved, and an assignment that belongs to another
-   * semester than the period. Both are integrity conditions, not people.
-   *
-   * With a `departmentId`, only that department's conditions are returned —
-   * the counts and the names are computed after the filter, so another
-   * department's faculty never reaches a scoped caller's payload.
-   */
-  async listAttributionWarnings(
-    evaluationPeriodId: string,
-    departmentId?: string,
-  ): Promise<AttributionWarnings> {
-    const empty: AttributionWarnings = {
-      unattributed: { count: 0, faculty: [] },
-      offSemester: { count: 0, faculty: [] },
-    }
-    const evals = await listSubmittedEvaluates(evaluationPeriodId)
-    if (evals.length === 0) return empty
-
-    const { data: period } = await supabase
-      .from("evaluation_periods")
-      .select("semesterId")
-      .eq("id", evaluationPeriodId)
-      .single()
-    const periodSemesterId = (period?.semesterId as string | null) ?? null
-
-    const fsIds = [...new Set(evals.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
-    const rows = await loadAssignmentRows(fsIds)
-    const ctx = await buildSubjectContext(rows)
-
-    const { unattributed, offSemester } = classifyWarningAssignments(
-      rows,
-      (a) => resolveSubjectDepartment(a, ctx),
-      periodSemesterId,
-      departmentId,
-    )
-
-    const facultyIds = [...new Set([...unattributed, ...offSemester].map((r) => r.faculty_id))]
-    const users = await loadUserNames(facultyIds)
-    const named = (list: { faculty_id: string }[]) =>
-      [...new Set(list.map((r) => r.faculty_id))].map((id) => ({ id, name: users.get(id)?.name ?? "Unknown" }))
-
-    return {
-      unattributed: { count: unattributed.length, faculty: named(unattributed) },
-      offSemester: { count: offSemester.length, faculty: named(offSemester) },
-    }
+    return buildLiveDeptAverages(inputs)
   },
 
   async setVisibility(evaluationPeriodId, facultyIds, visible) {
@@ -552,18 +477,17 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
       .from("evaluation_results")
       .select("id", { count: "exact", head: true })
       .eq("semesterId", semesterId)
-      .eq("is_results_visible", true)
     if (error) throw error
     return count ?? 0
   },
   async listByFacultyId(facultyId, limit = 100) {
     const { data, error } = await supabase
       .from("evaluation_results")
-      .select("id, evaluation_period_id, semesterId, facultyId, is_results_visible")
+      .select("*")
       .eq("facultyId", facultyId)
       .limit(limit)
     if (error) throw error
-    return (data || []) as EvaluationVisibilityRow[]
+    return (data || []) as EvaluationResultData[]
   },
 
   async assertPeriodIsActive(evaluationPeriodId: string) {
@@ -702,4 +626,55 @@ async function getStudentBreakdownsForFaculties(
   }
 
   return result
+}
+
+export async function getDeanDetails(
+  evaluationPeriodId: string,
+  departmentId: string,
+): Promise<FacultyEvalDetail[]> {
+  // Live home department — do not filter by evaluation_results.departmentId (stale snapshot).
+  const { data: allResults, error: resErr } = await supabase
+    .from("evaluation_results")
+    .select("*")
+    .eq("evaluation_period_id", evaluationPeriodId)
+  if (resErr) throw resErr
+  if (!allResults || allResults.length === 0) return []
+
+  const allFacIds = allResults.map((r) => r.facultyId)
+  const { data: deptUsers, error: duErr } = await supabase
+    .from("users")
+    .select("id, departmentId")
+    .in("id", allFacIds)
+  if (duErr) throw duErr
+  const liveDept = new Map((deptUsers || []).map((u) => [u.id, u.departmentId as string | null]))
+  const results = allResults.filter((r) => liveDept.get(r.facultyId) === departmentId)
+  if (results.length === 0) return []
+
+  const facultyIds = results.map((r) => r.facultyId)
+
+  const { data: users, error: uErr } = await supabase
+    .from("users")
+    .select("id, name")
+    .in("id", facultyIds)
+  if (uErr) throw uErr
+  const nameMap = new Map((users || []).map((u) => [u.id, u.name]))
+
+  const studentsMap = await getStudentBreakdownsForFaculties(evaluationPeriodId, facultyIds)
+  const details: FacultyEvalDetail[] = results.map((r) => ({
+    facultyId: r.facultyId,
+    facultyName: nameMap.get(r.facultyId) || r.facultyId,
+    totalRespondents: r.totalRespondents,
+    generalRating: r.generalRating,
+    remarks: r.remarks,
+    professionalManner: r.professionalManner,
+    communicationWithStudent: r.communicationWithStudent,
+    studentEngagement: r.studentEngagement,
+    learningMaterials: r.learningMaterials,
+    timeManagement: r.timeManagement,
+    experientialLearning: r.experientialLearning,
+    respectUniqueness: r.respectUniqueness,
+    assessmentAndFeedback: r.assessmentAndFeedback,
+    students: studentsMap.get(r.facultyId) || [],
+  }))
+  return details
 }
