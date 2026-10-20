@@ -333,13 +333,17 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4.
 npx tsc --noEmit; if ($?) { npm run lint }; if ($?) { npx vitest run }; if ($?) { npm run build }
 ```
 
+The manual checks and the **home → section matrix** are in
+`docs/evaluation-surfaces-verification.md` — the matrix is the only number
+that says how much the new attribution actually moved on real data.
+
 Pick one period and one faculty member per scenario; check all four
 surfaces agree:
 
 | Scenario | Admin results list | Admin dept detail | Dean dept page | Coverage |
 |---|---|---|---|---|
-| Homed A, teaches a section owned by B | subject under **B** | **B** lists the subject | dean of **B** lists it | **B** counts the subject |
-| `departmentId = NULL` (CSV-unmatched), teaches a section owned by B | subject under **B** | **B** lists it | dean of **B** lists it | **B** counts it |
+| Homed A, teaches a section owned by B | subject under **B** | **B** lists the subject | dean of **B** lists it | under **A** — the coverage page is faculty-driven (§1.1) |
+| `departmentId = NULL` (CSV-unmatched), teaches a section owned by B | subject under **B** | **B** lists it | dean of **B** lists it | under **B** — the home cannot own coverage, so the section's department takes over |
 | The dummy account | absent | absent | absent | absent — and never in a "no responses" count |
 | Assignment outside the period's semester | integrity warning names the faculty | — | — | — |
 | Zero responses in the period | dept row shows "No responses: 1" | n/a (no row) | n/a | subject shows "Not started" |

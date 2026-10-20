@@ -177,6 +177,11 @@ groupings, as a switch above the table:
 npx tsc --noEmit && npm run lint && npm test
 ```
 
+The manual checks (dean and admin, both pages, both groupings) and the
+**home → section matrix** are in
+`docs/evaluation-surfaces-verification.md` — the matrix is the only number
+that says how much the new attribution actually moved on real data.
+
 Manual, on the admin's `/admin/evaluations/coverage`:
 
 1. Open a department → the switch shows, "By Subject & Section" is the

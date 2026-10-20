@@ -198,6 +198,9 @@ Slices are independent and shippable in order C1 → C2 → C3 → C4 → C5.
 npx tsc --noEmit && npm run lint && npx vitest run && npm run build
 ```
 
+The full manual checklist (dean's page, admin's page, the results pages) is
+in `docs/evaluation-surfaces-verification.md`.
+
 Manual:
 
 1. As a **dean**, `/dean/evaluations/coverage` loads and shows **only**
