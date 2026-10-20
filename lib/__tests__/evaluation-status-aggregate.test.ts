@@ -13,7 +13,7 @@ const mockEnrollmentRepo = vi.hoisted(() => ({
 }))
 const mockSubjectRepo = vi.hoisted(() => ({ findByIds: vi.fn() }))
 const mockSectionRepo = vi.hoisted(() => ({ list: vi.fn() }))
-const mockUserRepo = vi.hoisted(() => ({ listByIds: vi.fn(), listByDepartment: vi.fn() }))
+const mockUserRepo = vi.hoisted(() => ({ listByIds: vi.fn(), listByDepartment: vi.fn(), listByRole: vi.fn() }))
 const mockEvalResultRepo = vi.hoisted(() => ({
   buildSubjectContext: vi.fn(),
   listAttributionWarnings: vi.fn(),
@@ -52,6 +52,10 @@ beforeEach(() => {
     { id: "sec2", name: "2A", program: "BSCS" },
   ])
   mockUserRepo.listByIds.mockResolvedValue([{ id: "f1", name: "Ana Cruz", departmentId: "d1" }])
+  // The department's headcount: Ana is homed in d1.
+  mockUserRepo.listByRole.mockResolvedValue([
+    { id: "f1", name: "Ana Cruz", email: "ana@x", departmentId: "d1", role: "FACULTY" },
+  ])
   // The section belongs to d1: sec1 -> dc1 -> d1.
   mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
     userDept: new Map([["f1", "d1"]]),
@@ -311,10 +315,42 @@ describe("getEvaluationStatus — new bucket fields", () => {
       sections: new Map([["sec1", "dc1"]]),
       departmentCourses: new Map([["dc1", "d1"]]),
     })
+    // The dummy holds a FACULTY role row, but no home department: it belongs
+    // to no department and is in no department's headcount.
+    mockUserRepo.listByRole.mockResolvedValue([
+      { id: "f1", name: "Ana", email: "ana@x", departmentId: "d1", role: "FACULTY" },
+      { id: "f-dummy", name: "Unassigned Faculty", email: "placeholder@lyceumalabang.edu.ph", departmentId: null, role: "FACULTY" },
+    ])
 
     const res = await getEvaluationStatus("p1")
     expect(res.departments[0].facultyCount).toBe(1)
     expect(res.subjects).toHaveLength(2)
+  })
+
+  it("counts a department's own faculty, not the teachers who teach its subjects", async () => {
+    mockDeptRepo.listAll.mockResolvedValue([
+      { id: "d1", name: "MATH", code: "MATH" },
+      { id: "d2", name: "CS", code: "CS" },
+    ])
+    mockFsRepo.list.mockResolvedValue([
+      { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec-cs", semesterId: "s1" },
+    ])
+    // Ana is homed in MATH but teaches a CS section.
+    mockUserRepo.listByIds.mockResolvedValue([{ id: "f1", name: "Ana", email: "ana@x", departmentId: "d1" }])
+    mockUserRepo.listByRole.mockResolvedValue([
+      { id: "f1", name: "Ana", email: "ana@x", departmentId: "d1", role: "FACULTY" },
+    ])
+    mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
+      userDept: new Map([["f1", "d1"]]),
+      sections: new Map([["sec-cs", "dc-cs"]]),
+      departmentCourses: new Map([["dc-cs", "d2"], ["dc-math", "d1"]]),
+    })
+
+    const res = await getEvaluationStatus("p1")
+    // The headcount follows the home department: MATH has Ana, CS has nobody
+    // of its own even though Ana teaches a CS section.
+    expect(res.departments.find((d) => d.departmentId === "d1")?.facultyCount).toBe(1)
+    expect(res.departments.find((d) => d.departmentId === "d2")?.facultyCount).toBe(0)
   })
 
   it("returns the integrity warning, scoped to the caller", async () => {

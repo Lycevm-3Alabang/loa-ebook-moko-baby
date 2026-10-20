@@ -206,6 +206,8 @@ export default function CoveragePage({
   const kpis = useMemo(() => {
     const depts = filteredDepts.filter((d) => d.departmentId !== UNRESOLVED)
     const reporting = depts.filter((d) => d.subjectsEvaluated > 0).length
+    // Each faculty is homed in exactly one department, so the departments'
+    // headcounts add up to the school's faculty count — no double counting.
     const facultyCount = depts.reduce((a, d) => a + d.facultyCount, 0)
     const uniqueStudents = depts.reduce((a, d) => a + d.uniqueStudents, 0)
     const participated = depts.reduce((a, d) => a + d.participated, 0)

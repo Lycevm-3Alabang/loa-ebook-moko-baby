@@ -12,6 +12,9 @@ const mockEvalRepo = vi.hoisted(() => ({
 const mockDeptRepo = vi.hoisted(() => ({
   listAll: vi.fn(),
 }))
+const mockUserRepo = vi.hoisted(() => ({
+  listByRole: vi.fn(),
+}))
 const mockLogServerError = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/route-guard", () => ({ requireAdmin: mockRequireAdmin }))
@@ -19,6 +22,7 @@ vi.mock("@/lib/repositories/factory", () => ({
   evaluationResultRepository: mockEvalResultRepo,
   evaluationRepository: mockEvalRepo,
   departmentRepository: mockDeptRepo,
+  userRepository: mockUserRepo,
 }))
 vi.mock("@/lib/services/audit", () => ({ logServerError: mockLogServerError }))
 
@@ -36,6 +40,7 @@ beforeEach(() => {
     offSemester: { count: 0, faculty: [] },
   })
   mockEvalResultRepo.listDepartmentRosters.mockResolvedValue({})
+  mockUserRepo.listByRole.mockResolvedValue([])
 })
 
 describe("GET /api/admin/evaluation-results", () => {
@@ -163,7 +168,7 @@ describe("GET /api/admin/evaluation-results", () => {
     expect(body.warnings.offSemester.count).toBe(0)
   })
 
-  it("counts the faculty who got no responses in the department's faculty total", async () => {
+  it("reports the no-response roster without inflating the department's faculty count", async () => {
     mockEvalRepo.listSubmittedWithSentiment.mockResolvedValue([])
     mockEvalResultRepo.listLiveDeptAverages.mockResolvedValue([
       { departmentId: "d1", facultyIds: ["f1"], totalRespondents: 2, avgRating: 4, remarks: null, catAverages: {}, highestRubrics: [], lowestRubrics: [] },
@@ -172,13 +177,39 @@ describe("GET /api/admin/evaluation-results", () => {
       d1: [{ id: "f2", name: "Ben" }, { id: "f3", name: "Cara" }],
     })
     mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "CCS", code: "CCS" }])
+    mockUserRepo.listByRole.mockResolvedValue([
+      { id: "f1", name: "Ana", email: "ana@x", departmentId: "d1", role: "FACULTY" },
+    ])
 
     const res = await GET(req("?evaluationPeriodId=p1"))
     const body = await res.json()
-    expect(body.departments[0].facultyCount).toBe(3)
+    // The count is the department's own faculty (f1). The roster is a
+    // separate fact and does not add to it.
+    expect(body.departments[0].facultyCount).toBe(1)
     expect(body.departments[0].noResponses).toEqual([
       { id: "f2", name: "Ben" },
       { id: "f3", name: "Cara" },
     ])
+  })
+
+  it("counts the department's own faculty, not the teachers it happens to have", async () => {
+    mockEvalRepo.listSubmittedWithSentiment.mockResolvedValue([])
+    mockEvalResultRepo.listLiveDeptAverages.mockResolvedValue([
+      { departmentId: "d1", facultyIds: ["f1"], totalRespondents: 2, avgRating: 4, remarks: null, catAverages: {}, highestRubrics: [], lowestRubrics: [] },
+    ])
+    mockEvalResultRepo.listDepartmentRosters.mockResolvedValue({
+      d1: [{ id: "f9", name: "Zed" }],
+    })
+    mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "CCS", code: "CCS" }])
+    mockUserRepo.listByRole.mockResolvedValue([
+      { id: "f1", name: "Ana", email: "ana@x", departmentId: "d1", role: "FACULTY" },
+      { id: "f2", name: "Ben", email: "ben@x", departmentId: "d2", role: "FACULTY" },
+      { id: "f3", name: "Cara", email: "cara@x", departmentId: null, role: "FACULTY" },
+    ])
+
+    const res = await GET(req("?evaluationPeriodId=p1"))
+    const body = await res.json()
+    // f2 is homed in d2 and f3 has no home department: neither is d1's.
+    expect(body.departments[0].facultyCount).toBe(1)
   })
 })

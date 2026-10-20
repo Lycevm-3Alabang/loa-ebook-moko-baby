@@ -26,6 +26,23 @@ export async function listDeletedUsers(): Promise<UserData[]> {
   return userRepository.listDeleted()
 }
 
+/**
+ * The faculty a department has: its own faculty users, by home department.
+ * The same population the admin dashboard ("Faculty") and the Department
+ * Health report count, so every "faculty" number in the app means the same
+ * people. A faculty account with no home department is in no department's
+ * count — the row is where the data is missing, not a place to hide it.
+ */
+export async function getFacultyCountsByDepartment(): Promise<Record<string, number>> {
+  const faculty = await userRepository.listByRole("FACULTY")
+  const counts: Record<string, number> = {}
+  for (const u of faculty) {
+    if (!u.departmentId) continue
+    counts[u.departmentId] = (counts[u.departmentId] ?? 0) + 1
+  }
+  return counts
+}
+
 // ── Bulk User ETL ─────────────────────────────────────────
 
 export interface BulkUserRow {

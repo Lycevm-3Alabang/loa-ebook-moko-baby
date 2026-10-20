@@ -15,6 +15,9 @@ const mockEvalResultRepo = vi.hoisted(() => ({
 const mockEvalRepo = vi.hoisted(() => ({
   listSubmittedWithSentiment: vi.fn(),
 }))
+const mockUserRepo = vi.hoisted(() => ({
+  listByRole: vi.fn(),
+}))
 const mockLogServerError = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }))
@@ -24,6 +27,7 @@ vi.mock("@/lib/repositories/factory", () => ({
   departmentRepository: mockDeptRepo,
   evaluationResultRepository: mockEvalResultRepo,
   evaluationRepository: mockEvalRepo,
+  userRepository: mockUserRepo,
 }))
 vi.mock("@/lib/services/audit", () => ({ logServerError: mockLogServerError }))
 
@@ -60,6 +64,10 @@ beforeEach(() => {
     offSemester: { count: 0, faculty: [] },
   })
   mockEvalResultRepo.listDepartmentRosters.mockResolvedValue({})
+  mockUserRepo.listByRole.mockResolvedValue([
+    { id: "f1", name: "Ana", email: "ana@x", departmentId: "dept-1", role: "FACULTY" },
+    { id: "f2", name: "Ben", email: "ben@x", departmentId: "dept-1", role: "FACULTY" },
+  ])
   mockEvalRepo.listSubmittedWithSentiment.mockResolvedValue([
     { evaluateeId: "f1", sentimentScore: 0.5 },
     { evaluateeId: "f2", sentimentScore: 0.1 },

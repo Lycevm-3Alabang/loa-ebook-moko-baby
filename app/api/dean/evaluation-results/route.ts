@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
 import { departmentRepository, evaluationResultRepository, evaluationRepository } from "@/lib/repositories/factory"
+import { getFacultyCountsByDepartment } from "@/features/users/users.service"
 import { computeSentimentScore } from "@/lib/evaluation-utils"
 import { logServerError } from "@/lib/services/audit"
 
@@ -22,9 +23,10 @@ export async function GET(request: NextRequest) {
 
     // The same live, POOLED department figures the admin route renders - the
     // dean's page and the admin's page must not disagree about a department.
-    const [liveAvgs, rosters] = await Promise.all([
+    const [liveAvgs, rosters, facultyCounts] = await Promise.all([
       evaluationResultRepository.listLiveDeptAverages(evaluationPeriodId),
       evaluationResultRepository.listDepartmentRosters(evaluationPeriodId),
+      getFacultyCountsByDepartment(),
     ])
     const live = liveAvgs.find((a) => a.departmentId === dept.id)
     if (!live) return NextResponse.json({ departments: [] })
@@ -39,8 +41,8 @@ export async function GET(request: NextRequest) {
         departmentId: dept.id,
         departmentName: dept.name,
         departmentCode: dept.code ?? "",
-        // Same rule as the admin route: everyone the department accounts for.
-        facultyCount: live.facultyIds.length + noResponses.length,
+        // Same rule as the admin route: the department's own faculty.
+        facultyCount: facultyCounts[dept.id] ?? 0,
         totalRespondents: live.totalRespondents,
         avgRating: live.avgRating,
         remarks: live.remarks,

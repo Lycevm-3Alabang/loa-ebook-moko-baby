@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/route-guard"
 import { logServerError } from "@/lib/services/audit"
 import { evaluationResultRepository, evaluationRepository, departmentRepository } from "@/lib/repositories/factory"
+import { getFacultyCountsByDepartment } from "@/features/users/users.service"
 import { computeSentimentScore } from "@/lib/evaluation-utils"
 
 /** The pseudo-department for evaluations that could not be attributed. */
@@ -25,9 +26,10 @@ export async function GET(request: NextRequest) {
     // could not be attributed, and it is reported as a warning instead of a
     // row (a row would link to a page that can only say "no data").
     const attributed = liveAvgs.filter((a) => a.departmentId !== UNKNOWN_DEPARTMENT)
-    const [warnings, rosters] = await Promise.all([
+    const [warnings, rosters, facultyCounts] = await Promise.all([
       evaluationResultRepository.listAttributionWarnings(evaluationPeriodId),
       evaluationResultRepository.listDepartmentRosters(evaluationPeriodId),
+      getFacultyCountsByDepartment(),
     ])
 
     const deptIds = [...new Set(attributed.map((a) => a.departmentId))]
@@ -43,9 +45,11 @@ export async function GET(request: NextRequest) {
         departmentId: a.departmentId,
         departmentName: dept?.name ?? "Unknown",
         departmentCode: dept?.code ?? "",
-        // Everyone the department accounts for: the faculty with results and
-        // the faculty who were assigned to teach and got nothing.
-        facultyCount: a.facultyIds.length + noResponses.length,
+        // The department's own faculty — the same people the admin dashboard
+        // and the Department Health report count. The teaching roster below is
+        // a different fact (assigned to teach, got nothing) and is not added
+        // to it: a teacher homed elsewhere counts in their own department.
+        facultyCount: facultyCounts[a.departmentId] ?? 0,
         totalRespondents: a.totalRespondents,
         avgRating: a.avgRating,
         remarks: a.remarks,

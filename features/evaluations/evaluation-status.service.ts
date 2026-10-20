@@ -10,6 +10,7 @@ import {
   userRepository,
 } from "@/lib/repositories/factory"
 import { resolveSectionDepartment, resolveSubjectDepartment, UNASSIGNED_FACULTY_EMAIL } from "@/lib/evaluation-utils"
+import { getFacultyCountsByDepartment } from "@/features/users/users.service"
 import type { EvaluationStatusItem } from "@/lib/types"
 import { STATUS_ON_TRACK_PCT } from "./constants"
 
@@ -161,7 +162,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
   const fsIds = mappings.map((m) => m.id)
   const facultyIds = [...new Set(mappings.map((m) => m.faculty_id))]
 
-  const [submittedCounts, expectedByFs, subjects, enrolledByFs, statusRows, facUsers, subjectCtx, allSections] = await Promise.all([
+  const [submittedCounts, expectedByFs, subjects, enrolledByFs, statusRows, facUsers, subjectCtx, allSections, facultyCounts] = await Promise.all([
     evaluationRepository.countSubmittedByFacultySubjectIds(evaluationPeriodId, fsIds),
     studentEnrollmentRepository.countByFacultySubjectIdsPaged(fsIds, semesterId),
     subjectRepository.findByIds([...new Set(mappings.map((m) => m.subject_id))]),
@@ -170,6 +171,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     userRepository.listByIds(facultyIds, { includeDeleted: true }),
     evaluationResultRepository.buildSubjectContext(mappings),
     sectionRepository.list(),
+    getFacultyCountsByDepartment(),
   ])
 
   const subjMap = new Map(subjects.map((s) => [s.id, s]))
@@ -306,13 +308,11 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     const dDisputed = new Set<string>()
     const dInProgress = new Set<string>()
     const dNotParticipated = new Set<string>()
-    const deptFacultyIds = new Set<string>()
     for (const m of deptMappings) {
       const s = submittedCounts[m.id] ?? 0
       if (s > 0) evaluated += 1
       submitted += s
       expected += expectedByFs[m.id] ?? 0
-      if (!placeholderIds.has(m.faculty_id)) deptFacultyIds.add(m.faculty_id)
       const agg = aggByFs.get(m.id)
       if (!agg) continue
       for (const sid of agg.studentIds) uniqStudents.add(sid)
@@ -331,7 +331,11 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
       submitted,
       expected,
       pct: pctOf(submitted, expected),
-      facultyCount: deptFacultyIds.size,
+      // The department's own faculty, the same headcount the results list and
+      // the admin dashboard show. The teachers who happen to teach its
+      // subjects are a different set (a teacher homed elsewhere lands in their
+      // own department), so they are not counted here.
+      facultyCount: facultyCounts[d.id] ?? 0,
       uniqueStudents: uniqStudents.size,
       participated: dParticipated.size,
       disputed: dDisputed.size,
