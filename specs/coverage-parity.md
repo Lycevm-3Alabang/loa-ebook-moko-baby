@@ -20,10 +20,13 @@ at all.
 > **Amended 2026-10-20.** The results surfaces' rule was itself changed the
 > same day: the department that owns the evaluated section no longer owns the
 > result — the **teacher's own** department does (the evaluated entity is the
-> faculty), with the section's department as the fallback for a teacher based
-> somewhere that cannot own coverage. The coverage and the results surfaces
-> now resolve through the same helper, `resolveSubjectDepartment`. The
-> paragraph above records the rule as it stood when this spec was written.
+> faculty). The coverage and the results surfaces now resolve through the same
+> helper, `resolveSubjectDepartment`. **Amended again the same day** — the
+> section's department is no longer a fallback either: the teacher's home is
+> the whole rule, and a teacher with no home department has no department
+> (their subject is unattributed, surfaced by the "Unresolved" group and the
+> integrity warning). The paragraph above records the rule as it stood when
+> this spec was written.
 
 ### 1.1 The dean's coverage page is entirely non-functional
 
@@ -190,12 +193,11 @@ Slices are independent and shippable in order C1 → C2 → C3 → C4 → C5.
 - **Opening the dean's coverage page exposes a scope hole if C1.2 is missed.**
   C1.1 and C1.2 must land together — a working list without the filter is
   worse than the 400 it replaces.
-- **The detail guard becomes stricter or looser depending on the resolver's
-  fallback.** With the faculty-driven rule, a subject whose teacher is based
-  somewhere that cannot own coverage falls back to the section's department,
-  so the CS dean can still open a CS-section subject taught by a teacher who
-  owns no coverage. That is the same fallback every surface uses, and it is
-  deliberate.
+- **The detail guard becomes stricter or looser depending on the resolver.**
+  With the home-only rule (2026-10-20), a subject whose teacher is homed
+  elsewhere is **not** the CS dean's to open, even when the section belongs
+  to CS. That is the same rule every surface uses, and it is deliberate: the
+  teaching belongs to the teacher, and the teacher to their department.
 - **The warning adds a query to the coverage page's load** (the warning
   loads the period's assignments). The coverage page already polls every 30
   seconds (`CoveragePage.tsx:99`), so the cost is on a path that is already

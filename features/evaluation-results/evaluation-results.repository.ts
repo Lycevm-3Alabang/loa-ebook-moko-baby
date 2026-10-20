@@ -56,11 +56,10 @@ interface SemesterRoster {
 }
 
 /**
- * The term's teaching roster: every assignment in the semester, the
- * department it counts under, and the people behind them. The dummy account
- * is left out — it owns assignments, but it is a placeholder, not a person.
+ * The term's assignments and the department each one counts under. The
+ * department is the teacher's own when it owns a course, else the section's.
  */
-async function loadSemesterRoster(semesterId: string): Promise<SemesterRoster> {
+async function loadSemesterAssignments(semesterId: string): Promise<{ rows: FacultySubjectRow[]; departmentOf: Map<string, string | null> }> {
   const { data, error } = await supabase
     .from("faculty_subjects")
     .select("id, faculty_id, subject_id, section_id, semesterId")
@@ -78,6 +77,16 @@ async function loadSemesterRoster(semesterId: string): Promise<SemesterRoster> {
   const ctx = await buildSubjectContext(rows)
   const departmentOf = new Map<string, string | null>()
   for (const r of rows) departmentOf.set(r.id, resolveSubjectDepartment(r, ctx))
+  return { rows, departmentOf }
+}
+
+/**
+ * The term's teaching roster: every assignment in the semester, the
+ * department it counts under, and the people behind them. The dummy account
+ * is left out — it owns assignments, but it is a placeholder, not a person.
+ */
+async function loadSemesterRoster(semesterId: string): Promise<SemesterRoster> {
+  const { rows, departmentOf } = await loadSemesterAssignments(semesterId)
   const users = await loadUserNames(rows.map((r) => r.faculty_id))
 
   return { rows, departmentOf, users }
@@ -393,6 +402,26 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
       if (assignment.departmentId === departmentId) out.push(assignment)
     }
     return out
+  },
+
+  /**
+   * The department's assignments in the term: every subject that counts
+   * under it, evaluated or not. The same rule as
+   * `listDepartmentAssignments` (the teacher's own department, else the
+   * section's), over the term's whole roster instead of only the evaluated
+   * ones.
+   */
+  async listDepartmentTeachingAssignments(departmentId: string, semesterId: string): Promise<EvaluationAssignment[]> {
+    const { rows, departmentOf } = await loadSemesterAssignments(semesterId)
+    return rows
+      .filter((r) => departmentOf.get(r.id) === departmentId)
+      .map((r) => ({
+        id: r.id,
+        faculty_id: r.faculty_id,
+        subject_id: r.subject_id,
+        section_id: r.section_id,
+        departmentId,
+      }))
   },
 
   /** The lookups a department decision needs, for a set of assignments. */

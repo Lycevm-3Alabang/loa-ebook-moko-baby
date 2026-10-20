@@ -162,6 +162,19 @@ describe("GET /api/dean/evaluation-results/departments/[departmentId]", () => {
     expect(res.status).toBe(403)
   })
 
+  it("does not release the page for a subject with no responses", async () => {
+    // A member's subject that nobody answered is a row, not a result: it
+    // cannot release the page.
+    mockEvalResultRepo.getVisibilityMap.mockResolvedValue(new Map([["f1", true]]))
+    mockGetDeptResults.mockResolvedValue({
+      subjects: [{ ...subject("f1", "fs1"), totalRespondents: 0 }],
+      facultyAggregates: {},
+      departmentAggregate: { totalSubjects: 1, uniqueFaculty: 1, totalResponses: 0, avgRating: null },
+    })
+    const res = await GET(req("?evaluationPeriodId=p1"), params())
+    expect(res.status).toBe(403)
+  })
+
   it("releases the page when a result's faculty is visible", async () => {
     mockEvalResultRepo.getVisibilityMap.mockResolvedValue(new Map([["f1", true]]))
     const res = await GET(req("?evaluationPeriodId=p1"), params())

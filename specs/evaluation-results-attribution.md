@@ -29,8 +29,10 @@ The question "whose results are these?" therefore has three different
 answers depending on which page the admin opens. The **results** surface
 answers it at the **person** level; the **coverage** surface answers it at
 the **subject** level. Both attribute a subject to the faculty's *home*
-department — but only the results surface has a chain fallback, and only the
-results surface is person-level.
+department — but only the results surface had a chain fallback, and only the
+results surface was person-level. **2026-10-20: one rule, no chain** — the
+home is the whole rule everywhere (contract §3.1), so the three answers are
+one answer.
 
 ### 1.2 A subject belongs to the teacher's own department
 
@@ -51,12 +53,14 @@ Every CS surface is blind to that evaluation, and Math's surfaces show a
 subject it does not own — but the **teacher** is the one being evaluated, and
 the coverage and the results pages now say the same thing about them.
 
-**The chain is the fallback.** For a faculty with **no** `users.departmentId`
-— the CSV-unmatched population — or one whose home department owns no course
-of its own (the placeholder buckets), the rule falls through to the chain and
-files them under the section's department. The chain answers "whose section is
-this?"; the home department answers "whose teacher is this?"; the evaluated
-entity is the teacher, so the home department comes first.
+**No chain (2026-10-20).** For a faculty with **no** `users.departmentId`
+— the CSV-unmatched population — there is no department, so their subject is
+**unattributed**: the coverage page's "Unresolved" group and the results
+list's integrity warning name them, and no department's row counts them. The
+same goes for a placeholder bucket as a home: the bucket holds the teaching
+of the faculty homed in it, and nobody else's. The home department answers
+"whose teacher is this?"; the evaluated entity is the teacher, so the home is
+the whole rule.
 
 > **v1.2 — the coverage page joins the same rule.** The coverage page was
 > already **faculty-driven** (the user: "since it is Faculty-Subject then
@@ -71,8 +75,10 @@ entity is the teacher, so the home department comes first.
 `departmentId = NULL` — created dept-agnostic by the faculty CSV import when
 the department code is unknown (`lib/services/etlEvaluation.ts:318-336`) —
 is **invisible on the dean's page** while being **visible on the admin's**
-page (chain fallback). The admin and the dean of the same section are
-looking at different faculty.
+page (the chain fallback, then). The admin and the dean of the same section
+are looking at different faculty. **2026-10-20: the chain is gone** — such
+a faculty has no department, so their subject is unattributed on **both**
+surfaces, and the integrity warning names them.
 
 ### 1.4 What "Unassigned" actually is: the dummy account
 
@@ -179,8 +185,8 @@ and every surface reads it from one helper.
 
 **One attribution rule, applied at the level the data actually belongs to,
 implemented once and shared by every surface.** The faculty's own department
-owns the result (D1, resolved 2026-10-20); the section's department is a
-**fallback** for a teacher based somewhere that cannot own coverage.
+owns the result (D1, resolved 2026-10-20 — and amended the same day: the
+home is the **only** rule; the section's department is no longer a fallback).
 
 - **S1 — Faculty-level attribution + one implementation.** A department's
   results are the **faculty-subjects whose teacher belongs to that
@@ -205,12 +211,17 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4.
 
 1. **One resolver, one rule.** `resolveSubjectDepartment(facultySubject, ctx)`
    lives beside `resolveFacultyDepartment` in `lib/evaluation-utils.ts` and is
-   the only place a department is decided for a subject. Precedence: the
-   faculty's `users.departmentId` **when that department owns at least one
-   course**, else `section → department_course → department`, else `null`. The
-   gate keeps the placeholder buckets ("Unassigned", "Admin") from
-   accumulating everyone's results, and it makes every returned id a real
-   `departments.id`.
+   the only place a department is decided for a subject. It returns the
+   faculty's `users.departmentId`, or `null` when the teacher has no home
+   department. **Amended 2026-10-20** — the rule is the home, always: a
+   department's teaching is the teaching of the faculty homed in it, so the
+   section's department is no longer a fallback. The old gate ("the home must
+   own at least one course") existed to stop the placeholder buckets
+   ("Unassigned", "Admin") from accumulating everyone's subjects; the
+   membership rule does that on its own — a bucket holds its own members'
+   teaching. A teacher with **no home** has no department: their subject is
+   **unattributed** (the coverage page's "Unresolved" group, the results
+   list's integrity warning), not filed under whoever owns the section.
 2. **Section-level beats person-level.** Where a surface shows *subjects*
    (results detail, coverage), the department comes from the subject. Where
    a surface shows *people* (the dean's aggregate), the person's own
@@ -282,12 +293,25 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4.
     Membership is the teacher's **home** department (`users.departmentId`);
     the section's department is irrelevant to it. A teacher who teaches a
     section owned by another department is not a member of that department
-    and gets **no card** there — their subject, its students and its
-    responses stay in the department's **"By Subject & Section"** tab,
-    because that coverage is the department's, and the department's pooled
-    rating is computed over the subjects, not over the faculty list. This
-    binds the coverage drill-down and the results drill-down (the admin
-    page and the dean's twin) to the same set as the headcount in §3.14.
+    and gets **no card** there. This binds the coverage drill-down and the
+    results drill-down (the admin page and the dean's twin) to the same set
+    as the headcount in §3.14.
+16. **A drill-down's "By Subject & Section" tab lists the members' subjects,
+    flat — evaluated or not.** One row per (member, subject, section): a
+    member who taught something nobody answered is still a row, with 0
+    responses and no rating. The rows are the members' teaching, not only
+    what was evaluated, so a member never disappears from the tab. The
+    department's pooled rating and the "Responses" figure are computed from
+    the **results**, not from the rows, so they do not move. The **export
+    CSVs stay the results** (the rows with responses): a row with no
+    responses has no rating, no rubric and no sentiment to report.
+17. **The dean's guards read the same set.** The release gate, the visibility
+    scope and the student-breakdown scope all read the department's **own
+    faculty** (`getDepartmentMemberTeaching`), so the dean can never be
+    refused a teacher their own page lists — nor allowed one that is not
+    theirs. The release gate additionally requires `totalRespondents > 0`: a
+    row with no responses is a subject, not a result, and cannot release the
+    page.
 
 ---
 
@@ -309,6 +333,10 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4.
 | S4.1 | `facultyCount` on the list = distinct faculty the detail table shows (evaluated ∪ no-response roster) | **superseded 2026-10-20** — the list's `facultyCount` is the department's **headcount** (contract §3.14), the same number the coverage page, the export CSVs, the report page and the Department Health report print. The list also counts a faculty whose evaluation carries no rating rows, and the department's total covers both sets → **the headcount covers every surface** |
 | S4.2 | One shared headcount helper read by every surface | `features/users/users.service.ts` → `getFacultyCountsByDepartment()` — **done 2026-10-20**; readers: the admin results route, the dean results route, the coverage service, the admin results export, the dean results export, the report service, the Department Health report |
 | S4.3 | The drill-downs' "By Faculty" tab lists the department's **own** faculty (contract §3.15) | `features/evaluations/evaluation-status.service.ts` + `features/evaluations/components/CoveragePage.tsx` (the coverage drill-down) and `features/evaluation-results/evaluation-results.service.ts` + `features/evaluations/components/DepartmentSubjectView.tsx` (the results drill-down, admin + dean) — **done 2026-10-20**: the per-faculty aggregates are the members only, and the cards come from that map. The subject rows, the department's pooled rating, the visibility toggles and the export CSVs are untouched |
+| S4.4 | The results drill-down's "By Subject & Section" tab lists the **members' subjects, evaluated or not**, flat (contract §3.16) | `features/evaluation-results/evaluation-results.service.ts` (the rows are built from the department's teaching assignments, with the results attached where they exist) + `features/evaluation-results/evaluation-results.repository.ts` (`listDepartmentTeachingAssignments`) — **done 2026-10-20** |
+| S4.5 | The dean's guards read the same membership set (contract §3.17) | `features/evaluation-results/evaluation-results.service.ts` (`getDepartmentMemberTeaching`) + `app/api/dean/evaluation-results/departments/[departmentId]/route.ts` (the release gate) + `app/api/dean/evaluation-results/visibility/route.ts` + `app/api/dean/evaluation-results/details/route.ts` — **done 2026-10-20** |
+| S4.6 | The export CSVs stay the results | `app/api/admin/evaluation-results/export/route.ts` + `app/api/dean/evaluation-results/export/route.ts` — **done 2026-10-20**: the per-department CSVs carry the rows with responses only |
+| S4.7 | The attribution rule is the home, always (contract §3.1) | `lib/evaluation-utils.ts` (`resolveSubjectDepartment`) — **done 2026-10-20**: the section's department is no longer a fallback, and the "the home must own a course" gate is gone. The buckets hold their own members' teaching; a teacher with no home is unattributed |
 | S2 | **Done 2026-10-20** — the "Unresolved" row is gone from the results list and the dead-end link with it; the integrity condition is now a warning row naming the faculty. The write path (both visibility routes) now **requires** `evaluationPeriodId`: a `semesterId` body would have written a row keyed by a semester id, and made the dean's membership check resolve an empty set. |
 | S3 | **Done 2026-10-20** — the dean's dashboard (`app/dean/page.tsx`) and the dean's evaluation landing page (`app/dean/evaluations/page.tsx`) now count the **teaching roster** (the faculty with an assignment whose section the department owns) instead of the people merely homed there, through the shared `getDepartmentTeachingFaculty`. The card is labelled "Teaching" and the roster "Teaching Roster — Faculty with a section in {dept} this term". The term is the active evaluation period's semester, falling back to the active semester. The consultation workload cards on the same dashboard are a different population and are unchanged. |
 | S4 | **Done 2026-10-20** — the `semesterId` fallback is gone from both visibility routes; a body without `evaluationPeriodId` is a 400. The write path was already corrupting the `evaluation_results` row when given a semester id. |
@@ -325,6 +353,14 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4.
   faculty homed in A, teaching a section owned by B, moves from B to A.
   Mitigation: ship S1 alone first, compare one period's numbers by hand
   (§6), and keep the release note explicit.
+- **The buckets and the home-less (2026-10-20).** With the home as the only
+  rule, a teacher homed in a **placeholder bucket** has their subjects counted
+  under that bucket (not under the section's department), and a teacher with
+  **no home** has their subjects **unattributed** — surfaced by the coverage
+  page's "Unresolved" group and the results list's integrity warning instead
+  of sitting in a department's row. For faculty homed in a real department
+  that owns courses, **nothing moves**. Check your data with
+  `docs/evaluation-surfaces-verification.md` §7 before the release note.
 - **The dean's page changes shape.** S1.4 replaces home-department
   membership with section ownership, so a dean may see faculty they did not
   see before, and lose faculty they did. The dean's release gate
@@ -388,9 +424,9 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4.
 npx tsc --noEmit; if ($?) { npm run lint }; if ($?) { npx vitest run }; if ($?) { npm run build }
 ```
 
-The manual checks and the **home → section matrix** are in
-`docs/evaluation-surfaces-verification.md` — the matrix is the only number
-that says how much the new attribution actually moved on real data.
+The manual checks and the **home-less teachers** check are in
+`docs/evaluation-surfaces-verification.md` — that check is the only number
+that says how much the attribution actually moved on real data.
 
 Pick one period and one faculty member per scenario; check all four
 surfaces agree:
@@ -398,7 +434,7 @@ surfaces agree:
 | Scenario | Admin results list | Admin dept detail | Dean dept page | Coverage |
 |---|---|---|---|---|
 | Homed A, teaches a section owned by B | subject under **A** | **A** lists the subject | dean of **A** lists it | under **A** — both pages are faculty-driven (§1.2) |
-| `departmentId = NULL` (CSV-unmatched), teaches a section owned by B | subject under **B** | **B** lists it | dean of **B** lists it | under **B** — the home cannot own coverage, so the section's department takes over |
+| `departmentId = NULL` (CSV-unmatched) | **no row** — the results list's integrity warning names the faculty | — | — | in the **"Unresolved"** group — they have no department |
 | The dummy account | absent | absent | absent | absent — and never in a "no responses" count |
 | Assignment outside the period's semester | integrity warning names the faculty | — | — | — |
 | Zero responses in the period | no roster on this surface — the coverage page's per-subject status answers it | n/a (no row) | n/a | subject shows "Not started" |
@@ -414,7 +450,7 @@ the whole school; and no row in the list is a dead-end link.
 
 | # | Question | Recommendation |
 |---|---|---|
-| D1 | **Precedence.** Section's department first, or the faculty's home department first? | **RESOLVED 2026-10-20 — the faculty's own department first** (when that department owns at least one course), the section's department as the fallback. The evaluated entity is the faculty, so the teacher's department groups the results; the chain answers "whose section is this?" and is the fallback for a teacher based somewhere that cannot own coverage (no home, or a home with no courses). Later the same day the coverage page's rule was adopted for the results pages too, so the two surfaces share one resolver (`resolveSubjectDepartment`). Movement = the home→section matrix's off-diagonal. |
+| D1 | **Precedence.** Section's department first, or the faculty's home department first? | **RESOLVED 2026-10-20 — the faculty's own department first** (when that department owns at least one course), the section's department as the fallback. The evaluated entity is the faculty, so the teacher's department groups the results; the chain answers "whose section is this?" and is the fallback for a teacher based somewhere that cannot own coverage (no home, or a home with no courses). Later the same day the coverage page's rule was adopted for the results pages too, so the two surfaces share one resolver (`resolveSubjectDepartment`). Movement = the home→section matrix's off-diagonal. **Amended 2026-10-20 — the home, always:** the section's department is no longer a fallback, and the gate is gone. A department's teaching is the teaching of the faculty homed in it; a bucket holds its own members' subjects; a teacher with no home is unattributed (the coverage page's "Unresolved" group, the results list's warning). |
 | D2 | **Dean surface.** Retire the dean's duplicated route implementation in favour of the shared service (S1.4)? | **RESOLVED 2026-10-20 — yes, and align all three dean membership rules in one unit** (page, ZIP, visibility). The page is home-only, the ZIP is chain-based, the visibility guard is home-only — the dean feature contradicts itself today. Caveats pinned as contracts §3.9–§3.11 and change S1.7. |
 | D3 | **Coverage in scope.** S1.6 changes the coverage page's attribution, which moves coverage numbers between departments. | **RESOLVED 2026-10-20 — in scope, same unit as S1.2/S1.3.** Leaving coverage on the old rule means the admin's results page and coverage page keep disagreeing about which department owns a subject — the original complaint, moved rather than closed. |
 | D4 | **Integrity warning shape.** S2 replaces the "Unassigned" row with a warning when an evaluation points outside the period's semester. | **RESOLVED 2026-10-20 — one warning row in the results list, naming the affected faculty.** Rare, actionable (fix the period binding), and it replaces a dead-end link with information instead of silence. |

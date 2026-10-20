@@ -56,7 +56,7 @@ describe("evaluationResultRepository.listDepartmentAssignments", () => {
     expect(assignments[0].departmentId).toBe("d1")
   })
 
-  it("gives the section's department when the teacher's home owns no course", async () => {
+  it("gives the teacher's home department, even when the home owns no course", async () => {
     respondWith({
       evaluations: { data: [{ id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" }], error: null },
       faculty_subjects: { data: [{ id: "fs1", faculty_id: "f1", subject_id: "s1", section_id: "sec1" }], error: null },
@@ -65,14 +65,16 @@ describe("evaluationResultRepository.listDepartmentAssignments", () => {
       department_courses: { data: [{ id: "dc1", departmentId: "d-section" }], error: null },
     })
 
-    const inSection = await evaluationResultRepository.listDepartmentAssignments("d-section", "p1")
-    expect(inSection.map((a) => a.id)).toEqual(["fs1"])
-
+    // A department's teaching is its members' teaching: the home wins, and
+    // the section's department does not take it.
     const inHome = await evaluationResultRepository.listDepartmentAssignments("d-home", "p1")
-    expect(inHome).toEqual([])
+    expect(inHome.map((a) => a.id)).toEqual(["fs1"])
+
+    const inSection = await evaluationResultRepository.listDepartmentAssignments("d-section", "p1")
+    expect(inSection).toEqual([])
   })
 
-  it("includes a dept-agnostic faculty by the section", async () => {
+  it("leaves a teacher with no home department unattributed", async () => {
     respondWith({
       evaluations: { data: [{ id: "e1", evaluateeId: "f2", facultySubjectId: "fs1" }], error: null },
       faculty_subjects: { data: [{ id: "fs1", faculty_id: "f2", subject_id: "s1", section_id: "sec1" }], error: null },
@@ -81,8 +83,9 @@ describe("evaluationResultRepository.listDepartmentAssignments", () => {
       department_courses: { data: [{ id: "dc1", departmentId: "d1" }], error: null },
     })
 
+    // No home, no department: the subject is unattributed, not the section's.
     const assignments = await evaluationResultRepository.listDepartmentAssignments("d1", "p1")
-    expect(assignments.map((a) => a.faculty_id)).toEqual(["f2"])
+    expect(assignments).toEqual([])
   })
 
   it("includes a soft-deleted faculty (the lookup does not filter deletedAt)", async () => {
@@ -97,6 +100,27 @@ describe("evaluationResultRepository.listDepartmentAssignments", () => {
     const assignments = await evaluationResultRepository.listDepartmentAssignments("d1", "p1")
     expect(assignments.map((a) => a.id)).toEqual(["fs1"])
     expect(chains.flatMap((c) => c.is.mock.calls)).toEqual([])
+  })
+
+  it("lists the department's assignments in the term, evaluated or not", async () => {
+    respondWith({
+      faculty_subjects: {
+        data: [
+          { id: "fs1", faculty_id: "f1", subject_id: "s1", section_id: "sec1", semesterId: "sem1" },
+          { id: "fs2", faculty_id: "f2", subject_id: "s2", section_id: "sec2", semesterId: "sem1" },
+        ],
+        error: null,
+      },
+      users: { data: [{ id: "f1", name: "Ana", email: "ana@x", departmentId: "d1" }], error: null },
+      sections: { data: [{ id: "sec1", departmentCourseId: "dc1" }], error: null },
+      department_courses: { data: [{ id: "dc1", departmentId: "d1" }], error: null },
+    })
+
+    const assignments = await evaluationResultRepository.listDepartmentTeachingAssignments("d1", "sem1")
+
+    // f1 is homed in d1, so their subject counts here; f2's does not resolve.
+    expect(assignments.map((a) => a.id)).toEqual(["fs1"])
+    expect(assignments[0].departmentId).toBe("d1")
   })
 
   it("groups the live averages by the teacher's own department", async () => {
@@ -137,11 +161,12 @@ describe("evaluationResultRepository.listDepartmentAssignments", () => {
 
     const live = await evaluationResultRepository.listLiveDeptAverages("p1")
 
-    // f1 is homed in d-math, which owns a course, so their subject belongs to
-    // d-math even though the section is a d-cs one. f2 is dept-agnostic and
-    // teaches a d-math section.
-    expect(live.find((d) => d.departmentId === "d-math")?.facultyIds).toEqual(["f1", "f2"])
+    // f1 is homed in d-math, so their subject belongs to d-math even though
+    // the section is a d-cs one. f2 has no home department: their subject is
+    // unattributed, not the section's.
+    expect(live.find((d) => d.departmentId === "d-math")?.facultyIds).toEqual(["f1"])
     expect(live.find((d) => d.departmentId === "d-cs")).toBeUndefined()
+    expect(live.find((d) => d.departmentId === "__unknown__")?.facultyIds).toEqual(["f2"])
   })
 
   it("counts a faculty whose evaluation carries no rating rows", async () => {
@@ -180,7 +205,7 @@ describe("evaluationResultRepository.listDepartmentAssignments", () => {
         ],
         error: null,
       },
-      users: { data: [{ id: "f1", departmentId: "d1" }, { id: "f2", departmentId: null }], error: null },
+      users: { data: [{ id: "f1", departmentId: "d1" }, { id: "f2", departmentId: "d1" }], error: null },
       sections: { data: [{ id: "sec1", departmentCourseId: "dc1" }], error: null },
       department_courses: { data: [{ id: "dc1", departmentId: "d1" }], error: null },
       evaluation_ratings: { data: [{ evaluationId: "e1", rating: 4, itemId: "i1" }, { evaluationId: "e2", rating: 5, itemId: "i1" }], error: null },
@@ -234,9 +259,9 @@ describe("evaluationResultRepository.listSemesterRoster", () => {
     })
 
     const roster = await evaluationResultRepository.listSemesterRoster("sem1")
-    // f1 teaches two CS sections but is homed in Math, which owns a course:
-    // they belong to Math. f2 is dept-agnostic and teaches a Math section.
-    expect(roster["d-math"].map((f) => f.id)).toEqual(["f1", "f2"])
+    // f1 teaches two CS sections but is homed in Math: they belong to Math.
+    // f2 has no home department, so their Math section belongs to nobody.
+    expect(roster["d-math"].map((f) => f.id)).toEqual(["f1"])
     expect(roster["d-cs"] ?? []).toEqual([])
   })
 

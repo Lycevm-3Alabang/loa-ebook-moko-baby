@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 const mockAuth = vi.hoisted(() => vi.fn())
 const mockHasRole = vi.hoisted(() => vi.fn())
 const mockDeptRepo = vi.hoisted(() => ({ findByDeanId: vi.fn() }))
-const mockEvalResultRepo = vi.hoisted(() => ({ listDepartmentAssignments: vi.fn() }))
+const mockGetMemberTeaching = vi.hoisted(() => vi.fn())
 const mockGetBreakdowns = vi.hoisted(() => vi.fn())
 const mockLogServerError = vi.hoisted(() => vi.fn())
 
@@ -11,7 +11,9 @@ vi.mock("@/lib/auth", () => ({ auth: mockAuth }))
 vi.mock("@/lib/utils/roles", () => ({ hasRole: mockHasRole }))
 vi.mock("@/lib/repositories/factory", () => ({
   departmentRepository: mockDeptRepo,
-  evaluationResultRepository: mockEvalResultRepo,
+}))
+vi.mock("@/features/evaluation-results/evaluation-results.service", () => ({
+  getDepartmentMemberTeaching: mockGetMemberTeaching,
 }))
 vi.mock("@/features/evaluation-results/evaluation-results.repository", () => ({
   getStudentBreakdownsForFaculty: mockGetBreakdowns,
@@ -31,9 +33,12 @@ beforeEach(() => {
   mockAuth.mockResolvedValue({ user: { id: "dean-1", role: "DEAN" } })
   mockHasRole.mockImplementation((role: string, want: string) => role === want)
   mockDeptRepo.findByDeanId.mockResolvedValue(DEPT)
-  mockEvalResultRepo.listDepartmentAssignments.mockResolvedValue([
-    { id: "fs1", faculty_id: "f1", subject_id: "s1", section_id: "sec1", departmentId: "dept-1" },
-  ])
+  mockGetMemberTeaching.mockResolvedValue({
+    assignments: [
+      { id: "fs1", faculty_id: "f1", subject_id: "s1", section_id: "sec1", departmentId: "dept-1" },
+    ],
+    users: new Map(),
+  })
   mockGetBreakdowns.mockResolvedValue([{ id: "stu-1", name: "Ann", email: "ann@x", rating: 5 }])
 })
 
@@ -54,7 +59,7 @@ describe("GET /api/dean/evaluation-results/details", () => {
 
   it("scopes the membership to the dean's own department and period", async () => {
     await GET(req("?evaluationPeriodId=p1&facultyId=f1"))
-    expect(mockEvalResultRepo.listDepartmentAssignments).toHaveBeenCalledWith("dept-1", "p1")
+    expect(mockGetMemberTeaching).toHaveBeenCalledWith("dept-1", "p1")
   })
 
   it("returns 400 when the params are missing", async () => {

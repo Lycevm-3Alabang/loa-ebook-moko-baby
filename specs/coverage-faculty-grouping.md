@@ -1,7 +1,7 @@
 # Evaluation Coverage — "By Subject & Section" / "By Faculty" Groupings — Spec
 
 **Version:** 1.3
-**Status:** Final (approved 2026-10-20; D1–D3 resolved) — v1.1 added D4 (the home department as display context) and was **withdrawn** by the user; v1.2 replaced it with D5 (the coverage page is faculty-driven, with the faculty-subject's department as the fallback); v1.3 records that the **results surfaces adopted the same rule**, so one resolver governs every surface
+**Status:** Final (approved 2026-10-20; D1–D3 resolved) — v1.1 added D4 (the home department as display context) and was **withdrawn** by the user; v1.2 replaced it with D5 (the coverage page is faculty-driven, with the faculty-subject's department as the fallback); v1.3 records that the **results surfaces adopted the same rule**, so one resolver governs every surface; v1.4 records the **home as the only rule** (no fallback) and the membership contract — a department's teaching is the teaching of the faculty homed in it, and a teacher with no home is unattributed
 **Last Updated:** 2026-10-20
 **Scope:** `app/admin/evaluations/coverage` (and the dean page that shares
 the component), the coverage service, and the coverage page's component.
@@ -43,19 +43,18 @@ The **results** surfaces answer the same question now — they are
 are filed under their own department exactly as their coverage is, so the two
 pages cannot disagree about a teacher.
 
-**The fallback.** When the teacher is based somewhere that cannot own
-coverage at all, the **faculty-subject's** department takes priority:
+**No fallback (2026-10-20).** The home is the whole rule: a department's
+teaching is the teaching of the faculty homed in it. Two cases used to fall
+elsewhere — the teacher has **no home department** (the dummy account, a CSV
+row with no department), or their home department **has no courses of its
+own** (the placeholder buckets "Unassigned" and "Admin"). Both now stay
+where they are:
 
-- the teacher has **no home department** (the dummy account, a CSV row with
-  no department), or
-- their home department **has no courses of its own** — the placeholder
-  buckets ("Unassigned", "Admin") that the CSV import and the admin
-  accounts accumulate in. A department with no courses has no sections, no
-  subjects and no coverage of its own, so attributing its teachers
-  elsewhere loses nothing.
-
-This is the case that was quietly piling every unmatched teacher's coverage
-into the placeholder buckets.
+- a teacher homed in a **bucket** owns their subjects in that bucket, and the
+  bucket holds its own members' teaching — not everyone's;
+- a teacher with **no home** owns no department, so their subject is
+  **unattributed**: the coverage page's "Unresolved" group, and the results
+  list's integrity warning, name them.
 
 **What the reviewer sees.** A section that belongs to another department can
 appear in a drill-down (the teacher's home), so the row says whose section
@@ -136,13 +135,16 @@ groupings, as a switch above the table:
    filter.
 8. **The search filters both groupings** — it filters the subject rows, and
    a teacher with no matching subject disappears from tab 2.
-9. **Every surface attributes to the teacher's home department, with the
-   faculty-subject's department as the fallback** (§1.1): the home
-   department wins unless the teacher has no home, or their home has no
-   courses of its own (a placeholder bucket), in which case the section's
-   department takes over. The coverage and the results surfaces resolve
-   through the **same** helper (`resolveSubjectDepartment`), so they cannot
-   disagree about a teacher.
+9. **Every surface attributes to the teacher's home department** (§1.1) —
+    the home, **always**: a department's teaching is the teaching of the
+    faculty homed in it. **Amended 2026-10-20** — the section's department is
+    no longer a fallback, and the old gate ("the home must own a course") is
+    gone: the membership rule already stops the placeholder buckets from
+    accumulating everyone's subjects. A teacher with **no home** has no
+    department: their subject is unattributed and lands in the "Unresolved"
+    group. The coverage and the results surfaces resolve through the **same**
+    helper (`resolveSubjectDepartment`), so they cannot disagree about a
+    teacher.
 10. **The results pages use the same rule** (the attribution spec, §3.1) —
     one resolver, one rule, every surface.
 11. **Tab 1 keeps its pagination; tab 2 does not** — the results page's
@@ -159,15 +161,13 @@ groupings, as a switch above the table:
     cannot double-count a teacher who teaches in several departments.
 14. **The drill-down's "By Faculty" tab lists the department's own faculty**
     (the attribution spec, contract §3.15): the accounts homed in the
-    department, the same set as the headcount above it. The **teaching
-    roster** (who was assigned to teach this term) is a different set — it
-    is what the per-subject status is computed from, and it may be larger,
-    because a teacher homed elsewhere still teaches here. A teacher homed
-    elsewhere gets **no card** in this department; their subject, its
-    students and its responses stay in the **"By Subject & Section"** tab,
-    because that coverage is the department's. The "Unresolved" group is not
-    a department, so it has no membership question: it keeps every teacher
-    of its subjects.
+    department, the same set as the headcount above it. A teacher homed
+    elsewhere gets **no card** in this department, and — with the home as the
+    only rule (contract 9) — their subject is not in this department's rows
+    either: the coverage of a department is its own faculty's teaching. A
+    teacher with **no home** has no department, so their subject is
+    unattributed and lands in the "Unresolved" group, which is not a
+    department and therefore has no membership question.
 
 ## 4. Changes
 
@@ -177,7 +177,7 @@ groupings, as a switch above the table:
 | C2 | The service returns the per-department faculty aggregates (subjects · distinct students · participated · disputed · in-progress · not-participated · completion), the same union the department rows already do | `features/evaluations/evaluation-status.service.ts` — **done** (`facultyAggregates: departmentId → facultyId → aggregate`) |
 | C3 | The drill-down gains the two-way switch, the **Section** column on tab 1, and the faculty cards on tab 2 | `features/evaluations/components/CoveragePage.tsx` — **done**. The switch is the shared `components/ui/Tabs.tsx`, which the results page now uses too, so the two pages read identically and the switch is no longer hand-rolled button markup |
 | C4 | The tests: the rows carry the new fields, the aggregates are distinct-student based and per department, the switch renders and the card aggregates | `lib/__tests__/evaluation-status-aggregate.test.ts` (+4 cases), `lib/__tests__/coverage-page-freshness.test.tsx` (+3 cases) — **done** |
-| C5 | The coverage service attributes each subject to the **teacher's own department**, falling back to the section's department when the teacher is based somewhere that cannot own coverage (no home, or a home with no courses of its own); the rows carry the section's department so a row from another department can say so | `features/evaluations/evaluation-status.service.ts` + `features/evaluations/components/CoveragePage.tsx` — **done 2026-10-20** (a new pure helper `resolveSectionDepartment` separates the section's department from the home fallback; the tests that pinned the old rule were rewritten, and the new fallback cases added). **Amended 2026-10-20** — the rule moved into the shared resolver `resolveSubjectDepartment` (`lib/evaluation-utils.ts`) and the results surfaces adopted it, so there is one implementation |
+| C5 | The coverage service attributes each subject to the **teacher's own department**; the rows carry the section's department so a row from another department can say so | `features/evaluations/evaluation-status.service.ts` + `features/evaluations/components/CoveragePage.tsx` — **done 2026-10-20** (a new pure helper `resolveSectionDepartment` separates the section's department from the home; the tests that pinned the old rule were rewritten, and the new fallback cases added). **Amended 2026-10-20** — the rule moved into the shared resolver `resolveSubjectDepartment` (`lib/evaluation-utils.ts`) and the results surfaces adopted it, so there is one implementation. **Amended again the same day** — the section's department is no longer a fallback: the teacher's home is the whole rule, and a teacher with no home department is unattributed (the "Unresolved" group) |
 | C6 | The **results** surfaces resolve a department through the same helper, so the two pages cannot disagree about a teacher | `lib/evaluation-utils.ts`, `features/evaluation-results/evaluation-results.repository.ts` — **done 2026-10-20** |
 | — | Out of scope | The top-level department table · the coverage CSV export's columns (the export stays per subject) · a cross-department faculty view · the results page's own groupings · schema |
 

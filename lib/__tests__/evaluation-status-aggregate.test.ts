@@ -230,7 +230,7 @@ describe("getEvaluationStatus — new bucket fields", () => {
     expect(res.departments.find((d) => d.departmentId === "d2")?.subjectsTotal).toBe(0)
   })
 
-  it("falls back to the section's department when the teacher's home has no courses", async () => {
+  it("gives the teacher's home department, even when the home has no courses", async () => {
     mockDeptRepo.listAll.mockResolvedValue([
       { id: "d1", name: "CS", code: "CS" },
       { id: "d9", name: "Unassigned", code: "UNASSIGNED" },
@@ -238,7 +238,8 @@ describe("getEvaluationStatus — new bucket fields", () => {
     mockFsRepo.list.mockResolvedValue([
       { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec-cs", semesterId: "s1" },
     ])
-    // f1 is homed in the placeholder bucket, which has no course of its own.
+    // f1 is homed in the placeholder bucket: a bucket holds the teaching of
+    // the faculty homed in it, and nobody else's.
     mockUserRepo.listByIds.mockResolvedValue([{ id: "f1", name: "Ana", departmentId: "d9" }])
     mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
       userDept: new Map([["f1", "d9"]]),
@@ -247,12 +248,13 @@ describe("getEvaluationStatus — new bucket fields", () => {
     })
 
     const res = await getEvaluationStatus("p1")
-    expect(res.subjects[0].departmentId).toBe("d1")
-    expect(res.subjects[0].sectionDepartment).toBeNull()
-    expect(res.departments.find((d) => d.departmentId === "d9")?.subjectsTotal).toBe(0)
+    expect(res.subjects[0].departmentId).toBe("d9")
+    expect(res.subjects[0].sectionDepartment).toBe("CS")
+    expect(res.departments.find((d) => d.departmentId === "d9")?.subjectsTotal).toBe(1)
+    expect(res.departments.find((d) => d.departmentId === "d1")?.subjectsTotal).toBe(0)
   })
 
-  it("attributes a dept-agnostic faculty by the section", async () => {
+  it("leaves a teacher with no home department unattributed", async () => {
     mockDeptRepo.listAll.mockResolvedValue([{ id: "d2", name: "CS", code: "CS" }])
     mockFsRepo.list.mockResolvedValue([
       { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec-cs", semesterId: "s1" },
@@ -265,17 +267,20 @@ describe("getEvaluationStatus — new bucket fields", () => {
     })
 
     const res = await getEvaluationStatus("p1")
-    expect(res.subjects[0].departmentId).toBe("d2")
+    // No home, no department: the subject is unattributed, and it lands in the
+    // "Unresolved" group rather than in CS's coverage.
+    expect(res.subjects[0].departmentId).toBe("")
     expect(res.subjects[0].facultyName).toBe("Ana")
+    expect(res.departments.find((d) => d.departmentId === "d2")?.subjectsTotal).toBe(0)
   })
 
-  it("keeps a subject unassigned when neither the section nor a home with courses resolves", async () => {
+  it("gives the home department even when the section cannot be resolved", async () => {
     mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "MATH", code: "MATH" }])
     mockFsRepo.list.mockResolvedValue([
       { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec-unknown", semesterId: "s1" },
     ])
-    // The section is unknown and the home department (d1) has no course of
-    // its own, so nothing can own this coverage: it stays unassigned.
+    // The section is unknown, but the teacher is homed in d1: the home owns
+    // the coverage.
     mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
       userDept: new Map([["f1", "d1"]]),
       sections: new Map(),
@@ -283,7 +288,7 @@ describe("getEvaluationStatus — new bucket fields", () => {
     })
 
     const res = await getEvaluationStatus("p1")
-    expect(res.subjects[0].departmentId).toBe("")
+    expect(res.subjects[0].departmentId).toBe("d1")
   })
 
   it("uses the home department when the section cannot be resolved but the home has courses", async () => {

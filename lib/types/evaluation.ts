@@ -654,6 +654,11 @@ export interface IEvaluationResultRepository {
    * subjects, by the teacher's own department.
    */
   listDepartmentAssignments(departmentId: string, evaluationPeriodId: string): Promise<EvaluationAssignment[]>
+  /**
+   * The department's assignments in the term: every subject that counts under
+   * it, evaluated or not.
+   */
+  listDepartmentTeachingAssignments(departmentId: string, semesterId: string): Promise<EvaluationAssignment[]>
   /** The lookups a department decision needs, for a set of assignments. */
   buildSubjectContext(assignments: { faculty_id: string; section_id: string | null }[]): Promise<SubjectResolutionContext>
   /** The evaluations that could not be attributed cleanly. */

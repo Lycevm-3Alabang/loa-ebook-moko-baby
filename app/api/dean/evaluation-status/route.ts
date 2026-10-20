@@ -31,8 +31,8 @@ export async function GET(request: NextRequest) {
       }
 
       // The same rule the list uses: the teacher's own department owns the
-      // subject, and the section's department is the fallback when the
-      // teacher is based somewhere that cannot own coverage.
+      // subject - always. A teacher homed elsewhere is not this dean's, even
+      // when the section belongs to the dean's department.
       const subject = { faculty_id: fs.faculty_id, section_id: fs.section_id }
       const ctx = await evaluationResultRepository.buildSubjectContext([subject])
       if (resolveSubjectDepartment(subject, ctx) !== dept.id) {

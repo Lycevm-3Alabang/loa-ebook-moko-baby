@@ -168,16 +168,14 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
   trimming now would silently kill mismatch detection. Unblocks only via explicit
   product call (drop MISMATCH) or server-side ownership resolution.
 
-## Open — coverage page: two undecided counts (to revisit)
+## Open — coverage page: the "Unresolved" pseudo-row's count (to revisit)
 
 Tracked 2026-10-20 after the faculty-count unification
 (`.opencode/skills/plan-fix/runs/20261020-2230-faculty-count-one-number.md`;
 the rule is `specs/evaluation-results-attribution.md` contract §3.14 — a
 department's faculty count is the number of faculty accounts homed in it,
-counted once, read by every surface from one helper). Both items are on
-`app/admin/evaluations/coverage/`, both are **decisions, not defects**, and
-**no decision is taken yet** — the page prints the headcount everywhere else,
-and these two places still print a teaching-roster number.
+counted once, read by every surface from one helper). **One** item is still
+open; it is a **decision, not a defect**, and **no decision is taken yet**.
 
 - [ ] **The "Unresolved" pseudo-row's "Faculties" cell.**
   Where: `features/evaluations/components/CoveragePage.tsx:154-172` — the row is
@@ -197,31 +195,38 @@ and these two places still print a teaching-roster number.
   fix, keeps the roster meaning, still not a headcount); **(c)** leave it.
   Known: the row is already excluded from the KPI (`:207`); the "Unresolved"
   label is free (a real "Unassigned" department is a normal department) — the
-  results list dropped its `__unknown__` row on 2026-10-20.
-
-- [ ] **The drill-down's "By Faculty" cards.**
-  Where: `features/evaluations/components/CoveragePage.tsx:443-620` — the
-  drill-down is the per-department detail view you get by clicking a department
-  row (header: "N of M subjects evaluated — X/Y responses", plus the two tabs);
-  the cards are 530-609, built by `facultyGroups` (`:237-245`).
-  What it is: the cards are built from the department's **subjects** grouped by
-  teacher, i.e. the **teaching roster** — everyone who teaches one of its
-  subjects. A teacher homed in another department who teaches a section here
-  still appears, so the cards can list more people than the "Faculties"
-  headcount printed in the row above (e.g. "Faculties 2" with 5 cards).
-  Why it is open: both numbers are correct answers to different questions
-  ("whose people are these" vs "who is teaching here") — the question is
-  whether the page should say so, or narrow one of them.
-  Options: **(a)** leave it roster-based and make the wording explicit (the tab
-  answers "who teaches here"); **(b)** scope the cards to the department's own
-  faculty (the headcount) and mark the others ("teaching here, homed
-  elsewhere"); **(c)** show both counts on the card.
-  Known: this tab is where the results page's deleted "No responses" column now
-  lives (the per-subject "Not part." column and the "Not started" status), so
-  **(b)** would narrow the only remaining place that shows a teacher who
-  answered nothing.
+  results list dropped its `__unknown__` row on 2026-10-20. The row's
+  **drill-down** keeps every teacher of its subjects (it is not a department,
+  so it has no membership question) — see the rule below.
 
 ## Done this session (do not redo)
+
+- [x] **The drill-down's "By Faculty" cards — decided and implemented 2026-10-20**
+  (`.opencode/skills/plan-fix/runs/20261020-2300-drill-down-faculty-cards.md`).
+  Option **(b)**: a drill-down's "By Faculty" tab lists the department's **own**
+  faculty — the accounts homed in it (`users.departmentId`). The section's
+  department is irrelevant to membership: a teacher homed in A who teaches a
+  section owned by B is a member of **A**, and B's drill-down gives them **no
+  card**. Their subject, its students and its responses stay in the
+  department's "By Subject & Section" tab, and the department's pooled rating
+  is computed over the subjects, not over the faculty list.
+  Shipped on both drill-downs — the coverage one
+  (`features/evaluations/evaluation-status.service.ts` +
+  `features/evaluations/components/CoveragePage.tsx`) and the results one
+  (`features/evaluation-results/evaluation-results.service.ts` +
+  `features/evaluations/components/DepartmentSubjectView.tsx`, admin + dean) —
+  each as one atomic service+client change: the service's per-faculty
+  aggregates are the member list, and the cards come from that map.
+  The rule is now pinned as `specs/evaluation-results-attribution.md` contract
+  §3.15 and `specs/coverage-faculty-grouping.md` contract 14, and checked in
+  `docs/evaluation-surfaces-verification.md` §3.9 and §4.4 (the latter was
+  stale: it said the cards and the rows list the same people).
+  Unchanged on purpose: the subject rows, the department's pooled rating, the
+  per-subject and per-card visibility toggles, the export CSVs, and the two
+  deans' **"Teaching" / "Faculty Teaching"** cards — those are the teaching
+  roster by name and by label, and the dean's "Evaluated" figure is computed
+  over it.
+
 
 C1, C2, D4 (legend + summary relabel), D9 (section preview), D11 (23505 dedupe,
 both layers), 504 mitigation (`STUDENT_CHUNK_SIZE` 500 → 100), inactive-semester

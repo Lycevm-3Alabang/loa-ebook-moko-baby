@@ -4,9 +4,9 @@ const mockAuth = vi.hoisted(() => vi.fn())
 const mockHasRole = vi.hoisted(() => vi.fn())
 const mockDeptRepo = vi.hoisted(() => ({ findByDeanId: vi.fn() }))
 const mockEvalResultRepo = vi.hoisted(() => ({
-  listDepartmentAssignments: vi.fn(),
   setVisibility: vi.fn(),
 }))
+const mockGetMemberTeaching = vi.hoisted(() => vi.fn())
 const mockLogServerError = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }))
@@ -14,6 +14,9 @@ vi.mock("@/lib/utils/roles", () => ({ hasRole: mockHasRole }))
 vi.mock("@/lib/repositories/factory", () => ({
   departmentRepository: mockDeptRepo,
   evaluationResultRepository: mockEvalResultRepo,
+}))
+vi.mock("@/features/evaluation-results/evaluation-results.service", () => ({
+  getDepartmentMemberTeaching: mockGetMemberTeaching,
 }))
 vi.mock("@/lib/services/audit", () => ({ logServerError: mockLogServerError }))
 
@@ -41,7 +44,7 @@ beforeEach(() => {
   mockAuth.mockResolvedValue({ user: { id: "dean-1", role: "DEAN" } })
   mockHasRole.mockReturnValue(true)
   mockDeptRepo.findByDeanId.mockResolvedValue(DEPT)
-  mockEvalResultRepo.listDepartmentAssignments.mockResolvedValue([assignment("f1"), assignment("f2")])
+  mockGetMemberTeaching.mockResolvedValue({ assignments: [assignment("f1"), assignment("f2")], users: new Map() })
   mockEvalResultRepo.setVisibility.mockResolvedValue(undefined)
 })
 
@@ -71,9 +74,9 @@ describe("POST /api/dean/evaluation-results/visibility", () => {
     expect(res.status).toBe(404)
   })
 
-  it("scopes the membership to the department's OWN assignments", async () => {
+  it("scopes the membership to the department's OWN faculty", async () => {
     await POST(body({ evaluationPeriodId: "p1", facultyIds: ["f1"], visible: true }))
-    expect(mockEvalResultRepo.listDepartmentAssignments).toHaveBeenCalledWith("dept-1", "p1")
+    expect(mockGetMemberTeaching).toHaveBeenCalledWith("dept-1", "p1")
   })
 
   it("allows a toggle for a faculty of the department's assignments", async () => {
@@ -88,8 +91,8 @@ describe("POST /api/dean/evaluation-results/visibility", () => {
     expect(mockEvalResultRepo.setVisibility).not.toHaveBeenCalled()
   })
 
-  it("rejects every toggle when the department has no evaluated assignments", async () => {
-    mockEvalResultRepo.listDepartmentAssignments.mockResolvedValue([])
+  it("rejects every toggle when the department has no faculty of its own", async () => {
+    mockGetMemberTeaching.mockResolvedValue({ assignments: [], users: new Map() })
     const res = await POST(body({ evaluationPeriodId: "p1", facultyIds: ["f1"], visible: true }))
     expect(res.status).toBe(403)
     expect(mockEvalResultRepo.setVisibility).not.toHaveBeenCalled()

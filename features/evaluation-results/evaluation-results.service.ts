@@ -3,7 +3,6 @@ import {
   userRepository,
   evaluationRepository,
   evaluationPeriodRepository,
-  facultySubjectRepository,
   subjectRepository,
   sectionRepository,
   semesterRepository,
@@ -20,6 +19,7 @@ import {
   type FacultyAggregate,
   type DepartmentAggregate,
 } from "@/lib/evaluation-utils"
+import type { EvaluationAssignment, UserData } from "@/lib/types"
 
 export interface DepartmentSubjectResult {
   facultySubjectId: string
@@ -80,33 +80,57 @@ export async function getDepartmentTeachingFaculty(
   return roster[departmentId] ?? []
 }
 
+/**
+ * The department's own teaching: the assignments of the faculty homed in it
+ * (contract §3.15). The one place the membership set is decided - the
+ * results page, the dean's release gate and the dean's guards all read it.
+ */
+export async function getDepartmentMemberTeaching(
+  departmentId: string,
+  evaluationPeriodId: string,
+): Promise<{ assignments: EvaluationAssignment[]; users: Map<string, UserData> }> {
+  const period = await evaluationPeriodRepository.findById(evaluationPeriodId)
+  if (!period) return { assignments: [], users: new Map() }
+  const assignments = await evaluationResultRepository.listDepartmentTeachingAssignments(departmentId, period.semesterId)
+  if (assignments.length === 0) return { assignments: [], users: new Map() }
+
+  // The chain does not filter deletedAt, so a soft-deleted faculty can be in
+  // the set - fetch their row too, or their rows would read "Unknown".
+  const facUsers = await userRepository.listByIds(
+    [...new Set(assignments.map((a) => a.faculty_id))],
+    { includeDeleted: true },
+  )
+  const users = new Map(facUsers.map((u) => [u.id, u]))
+
+  // The department's OWN teaching: the assignments of the faculty homed in it
+  // (contract §3.15). The resolver files a subject under the teacher's home
+  // department, so these assignments are its members' - and the filter makes
+  // the rows' population explicit here, where the rows are built.
+  const members = assignments.filter(
+    (a) => (users.get(a.faculty_id)?.departmentId ?? null) === departmentId,
+  )
+  return { assignments: members, users }
+}
+
 export async function getDepartmentSubjectResults(
   evaluationPeriodId: string,
   departmentId: string,
 ): Promise<DepartmentResults> {
-  // The department's own subjects: the evaluated assignments that count
-  // under this department.
-  const assignments = await evaluationResultRepository.listDepartmentAssignments(departmentId, evaluationPeriodId)
-  if (assignments.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
+  // The department's own teaching this term: every subject its members
+  // teach, evaluated or not - flat, one row each.
+  const { assignments: members, users: facNameMap } = await getDepartmentMemberTeaching(departmentId, evaluationPeriodId)
+  if (members.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
 
-  const assignmentIds = new Set(assignments.map((a) => a.id))
-  const facIds = [...new Set(assignments.map((a) => a.faculty_id))]
-
-  // The chain does not filter deletedAt, so a soft-deleted faculty can be in
-  // the set - fetch their row too, or their rows would read "Unknown".
-  const facUsers = await userRepository.listByIds(facIds, { includeDeleted: true })
-  const facNameMap = new Map(facUsers.map((u) => [u.id, u]))
+  const memberIds = new Set(members.map((a) => a.id))
+  const memberById = new Map(members.map((a) => [a.id, a]))
+  const facIds = [...new Set(members.map((a) => a.faculty_id))]
 
   const evals = await evaluationRepository.listSubmittedByPeriodAndEvaluatees(evaluationPeriodId, facIds)
   // Keep only the evaluations of THIS department's assignments: a faculty may
   // teach in more than one department.
-  const deptEvals = evals.filter((e) => !!e.facultySubjectId && assignmentIds.has(e.facultySubjectId))
-  if (deptEvals.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
+  const deptEvals = evals.filter((e) => !!e.facultySubjectId && memberIds.has(e.facultySubjectId))
 
-  const fsIds = [...new Set(deptEvals.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
-  const facultySubjects = await facultySubjectRepository.findByIds(fsIds)
-  const subjects = await subjectRepository.findByIds([...new Set(facultySubjects.map((fs) => fs.subject_id))])
-  const fsMap = new Map(facultySubjects.map((fs) => [fs.id, fs]))
+  const subjects = await subjectRepository.findByIds([...new Set(members.map((a) => a.subject_id))])
   const subjMap = new Map(subjects.map((s) => [s.id, s]))
 
   // Sections are few, so resolve them in memory from the row's OWN section.
@@ -116,10 +140,9 @@ export async function getDepartmentSubjectResults(
   // Match the detail page's eval set: evaluatee must equal the subject's faculty.
   const validEvals = deptEvals.filter((ev) => {
     if (!ev.facultySubjectId) return false
-    const fs = fsMap.get(ev.facultySubjectId)
-    return !!fs && fs.faculty_id === ev.evaluateeId
+    const a = memberById.get(ev.facultySubjectId)
+    return !!a && a.faculty_id === ev.evaluateeId
   })
-  if (validEvals.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
 
   const evaluationIds = validEvals.map((e) => e.id)
 
@@ -142,14 +165,15 @@ export async function getDepartmentSubjectResults(
   }
 
   const out: DepartmentSubjectResult[] = []
-  for (const [fsKey, evalIds] of groupEvalMap) {
-    const fs = fsMap.get(fsKey)
-    if (!fs) continue
-    const user = facNameMap.get(fs.faculty_id)
-    const subj = subjMap.get(fs.subject_id)
-    const section = fs.section_id ? sectionById.get(fs.section_id) : undefined
+  // One row per member's subject: the evaluated ones carry their results, the
+  // others show no rating.
+  for (const a of members) {
+    const evalIds = groupEvalMap.get(a.id) ?? []
+    const user = facNameMap.get(a.faculty_id)
+    const subj = subjMap.get(a.subject_id)
+    const section = a.section_id ? sectionById.get(a.section_id) : undefined
 
-    const groupRatings = ratings.filter((r) => evalIds.includes(r.evaluationId))
+    const groupRatings = evalIds.length > 0 ? ratings.filter((r) => evalIds.includes(r.evaluationId)) : []
     const catAverages = computeCategoryAverages(groupRatings)
     const general = computeGeneralRating(catAverages)
     const catColumns = mapCategoryAveragesToColumns(catAverages)
@@ -159,11 +183,11 @@ export async function getDepartmentSubjectResults(
     const sentiment = computeSentimentScore(groupComments)
 
     out.push({
-      facultySubjectId: fsKey,
-      facultyId: fs.faculty_id,
+      facultySubjectId: a.id,
+      facultyId: a.faculty_id,
       facultyName: user?.name ?? "Unknown",
       facultyEmail: user?.email ?? "",
-      subjectId: fs.subject_id,
+      subjectId: a.subject_id,
       subjectCode: subj?.code ?? "",
       subjectName: subj?.name ?? "",
       sectionProgram: section?.program ?? null,
@@ -185,20 +209,11 @@ export async function getDepartmentSubjectResults(
     })
   }
 
-  const aggregates = aggregateFacultyResults(validEvals, ratings, commentsRaw)
-  // The department's OWN faculty: a teacher homed elsewhere who has an
-  // evaluated subject here is not a member of this department, so they are
-  // not one of its faculty. Their subject and its results stay - the subject
-  // rows and the department aggregate are the department's.
-  const facultyAggregates: Record<string, FacultyAggregate> = {}
-  for (const [facultyId, agg] of Object.entries(aggregates)) {
-    if ((facNameMap.get(facultyId)?.departmentId ?? null) !== departmentId) continue
-    facultyAggregates[facultyId] = agg
-  }
-
   return {
     subjects: out,
-    facultyAggregates,
+    // The members' pooled figures. A member with no evaluation has none yet:
+    // they are in the subject rows, not on a card.
+    facultyAggregates: aggregateFacultyResults(validEvals, ratings, commentsRaw),
     departmentAggregate: aggregateDepartmentResults(out, ratings, commentsRaw),
   }
 }

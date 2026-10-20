@@ -52,7 +52,8 @@ departments, no "back" link).
 | 3.6 | The "Unresolved" group reports the faculty it holds, not 0 | "0" next to a non-empty group |
 | 3.7 | The integrity warning appears **only** when a period really has an unresolvable or off-semester evaluation | a permanent warning on a clean period |
 | 3.8 | The **"Faculties"** KPI above the table equals the school-wide faculty headcount — the same number the Admin dashboard's "Faculty" card shows | a KPI larger than the dashboard's number (a teacher counted once per department they teach in) |
-| 3.9 | The drill-down's **"By Faculty"** tab lists only the department's **own** faculty — a card for a teacher homed in another department is wrong | a card for a teacher who is not in this department's faculty list (their subject still shows in "By Subject & Section" — that is expected) |
+| 3.9 | The drill-down's **"By Faculty"** tab lists only the department's **own** faculty — a card for a teacher homed in another department is wrong | a card for a teacher who is not in this department's faculty list |
+| 3.10 | The drill-down's **"By Subject & Section"** rows are the department's **own** teaching — a teacher homed elsewhere has no row here, and a teacher with **no home department** has no row in any department (their coverage is in the "Unresolved" group) | a row for a teacher who is not one of this department's faculty |
 
 ---
 
@@ -63,10 +64,10 @@ departments, no "back" link).
 | 4.1 | The **breadcrumb** reads `Admin / Evaluations / Results / Computer Science (BSCS) / Juan Dela Cruz — CS101 Intro` | a GUID in the trail, or a dead "Unassigned" link |
 | 4.2 | The department list's **"Faculty"** count is the department's **headcount** — the same number the Admin > Faculty list shows for that department | a number that differs from the faculty list, or one that counts a teacher homed elsewhere |
 | 4.3 | Clicking the department crumb on a detail page returns to that department **with the period intact** | an empty page, or "periodId is required" |
-| 4.4 | The detail page's **"By Faculty"** cards list the department's **own** faculty, and the **"By Subject & Section"** rows list the department's subjects — a teacher homed elsewhere appears in the rows **without** a card (expected) | a card for a teacher who is not in this department's faculty list; a teacher missing from the rows when they have a subject here |
+| 4.4 | The detail page's **"By Faculty"** cards list the department's **own** faculty, and the **"By Subject & Section"** rows list that faculty's subjects — **every** subject, evaluated or not (a member with no responses still has a row, with 0 responses and no rating) | a card for a teacher who is not in this department's faculty list; a member's subject missing from the rows |
 | 4.5 | A teacher homed elsewhere who teaches a section here appears **in their own department** on every surface — the coverage page and the results pages agree | a subject filed under the section's department on either page |
 | 4.6 | The list has **no** "No responses" or "Responses" column — those numbers live on the coverage page | a column that is back on the results list |
-| 4.7 | The **"Export"** button (download glyph) produces a ZIP whose per-department CSVs match the pages, and whose `summary.csv` "Faculty Count" is the same headcount | an empty folder, a 500 toast, or a summary count that differs from the page |
+| 4.7 | The **"Export"** button (download glyph) produces a ZIP whose per-department CSVs hold the **results** (a member's subject with no responses is not a row in the CSV), and whose `summary.csv` "Faculty Count" is the same headcount | an empty folder, a 500 toast, a summary count that differs from the page, or an empty row in a CSV |
 
 ---
 
@@ -95,53 +96,49 @@ and the Department Health report. Check it once: pick a department, read its
 faculty in **Admin > Faculty**. They must be the same number, and the
 coverage KPI must equal the Admin dashboard's school-wide "Faculty" card.
 
-**The home → section matrix** (§7 of this note's companion, below) says how
-many rows the faculty-driven attribution actually moved on your data. Run it
-once per period you care about; it is the only way to know whether the rule
-changed anything real.
+**The home-less teachers (§7 of this note's companion, below)** are the only
+rows the attribution rule moves. A teacher homed in a real department owns
+their subjects there, whoever owns the section; a teacher with **no home
+department** owns none, so their subjects are unattributed and surface in the
+coverage page's "Unresolved" group and the results list's integrity warning.
+Run the check once per period you care about; it is the only way to know
+whether the rule changed anything real.
 
 ---
 
-## 7. The home → section matrix
+## 7. The home-less teachers
 
 Run it in the Supabase SQL editor, per evaluation period.
 
 ```sql
-with ev as (
-  select distinct fs.id as fs_id, fs.faculty_id, fs.section_id
-  from evaluations e
-  join faculty_subjects fs on fs.id = e."facultySubjectId"
-  where e."evaluation_period_id" = '<periodId>'
-    and e.status = 'SUBMITTED' and e."isDisabled" = false
-)
 select
   coalesce(hd.name, '(no home dept)') as home_dept,
-  coalesce(sd.name, '(no section dept)') as section_dept,
-  count(*) as subject_rows,
-  count(distinct ev.faculty_id) as teachers
-from ev
-join users u on u.id = ev.faculty_id
+  count(distinct fs.id) as subject_rows,
+  count(distinct fs.faculty_id) as teachers,
+  count(distinct e.id) as evaluations
+from faculty_subjects fs
+join users u on u.id = fs.faculty_id
 left join departments hd on hd.id = u."departmentId"
-left join sections s on s.id = ev.section_id
-left join department_courses dc on dc.id = s."departmentCourseId"
-left join departments sd on sd.id = dc."departmentId"
-group by 1, 2
-order by 1, 2;
+left join evaluations e
+  on e."facultySubjectId" = fs.id
+ and e.evaluation_period_id = '<periodId>'
+ and e.status = 'SUBMITTED' and e."isDisabled" = false
+where fs."semesterId" = '<semesterId>'
+group by 1
+order by 2 desc;
 ```
 
 **How to read it**
 
 | Row | Meaning |
 |---|---|
-| home = section | the ordinary case — the teacher teaches in their own department. Nothing moves. |
-| home ≠ section, both real | the teacher's home is a different academic department. On **every** surface the subject belongs to the **teacher's** department; the section's department is only the fallback for a teacher who cannot own coverage. Expect a small number of these — a teacher genuinely teaching outside their department. |
-| home = a placeholder bucket ("Unassigned", "Admin") | the CSV could not place the teacher. Their coverage now falls back to the section's department, so those buckets stop accumulating everyone's coverage. |
-| home = '(no home dept)' | the dummy account and CSV rows with no department — the same fallback applies. |
-| section = '(no section dept)' | a section with no department course — a data defect; the row lands in the "Unresolved" group and the integrity warning names it. |
+| home = a real department | the ordinary case — the teacher owns their subjects, whoever owns the section. Nothing moves. |
+| home = a placeholder bucket ("Unassigned", "Admin") | the teacher is a member of that bucket, so their subjects are counted there — the bucket holds its own members' teaching and nobody else's. |
+| home = '(no home dept)' | **the only rows that move.** These teachers have no department, so their subjects are unattributed: the coverage page's "Unresolved" group and the results list's integrity warning name them, and no department's row counts them. |
 
-**The number that matters** is the sum of the `subject_rows` in the
-"home ≠ section" rows: it is how many subject rows the attribution moved
-between departments. If it is zero, the attribution change was a no-op on
-your data and you can stop worrying about it. If it is large, compare one
-period before and after with the check lists above, and expect the
-*departments* to look different while the *totals* stay the same.
+**The number that matters** is the `subject_rows` (and `evaluations`) in the
+"(no home dept)" row: it is how much coverage leaves the departments. If it is
+zero, the rule was a no-op on your data and you can stop worrying about it.
+If it is not, compare one period before and after with the check lists above,
+and expect the *departments* to look different while the *totals* stay the
+same.

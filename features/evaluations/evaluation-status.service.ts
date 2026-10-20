@@ -357,11 +357,6 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     }>()
     for (const m of deptMappings) {
       if (placeholderIds.has(m.faculty_id)) continue
-      // The department's OWN faculty: a teacher homed elsewhere who teaches a
-      // section here is not a member of this department, so they are not one
-      // of its faculty. Their subject and its students stay in the coverage
-      // (the subject rows are untouched).
-      if ((subjectCtx.userDept.get(m.faculty_id) ?? null) !== d.id) continue
       const agg = aggByFs.get(m.id)
       if (!agg) continue
       const g = byFaculty.get(m.faculty_id) ?? {

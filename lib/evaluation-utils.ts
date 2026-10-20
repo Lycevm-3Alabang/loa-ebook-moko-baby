@@ -457,40 +457,26 @@ export function resolveSectionDepartment(
 
 /**
  * The department that owns an evaluated subject: the TEACHER's own
- * department when it can own coverage, else the section's department
- * (section -> department_course -> department).
+ * department, always.
  *
- * The home branch is gated on the home department owning at least one
- * course: a placeholder bucket ("Unassigned", "Admin") owns none, so its
- * teachers fall to the section's department instead of accumulating every
- * subject. The gate also makes the returned id provably a real department —
- * a course's department is FK-backed, and a home that owns a course exists —
- * so a caller can always find that department's row.
+ * A department's teaching is the teaching of the faculty homed in it
+ * (contract §3.15), so the home department is the whole rule. The section's
+ * department (section -> department_course -> department) is no longer a
+ * fallback: a teacher with no home department has no department, and their
+ * subject is unattributed — an integrity condition the coverage page's
+ * "Unresolved" group and the results list's warning surface — rather than
+ * filed under whoever owns the section.
  *
- * This does not depend on the period's semester: a section belongs to its
- * course, and a course belongs to a department, in every term. A subject that
- * resolves to null here is an integrity condition, not an unassigned person.
+ * The old gate ("the home must own a course") existed to stop the
+ * placeholder buckets ("Unassigned", "Admin") from accumulating everyone's
+ * subjects. The membership rule does that on its own: a bucket holds the
+ * teaching of the faculty homed in it, and nobody else's.
  */
 export function resolveSubjectDepartment(
   subject: SubjectDepartmentInput,
   ctx: SubjectResolutionContext,
 ): string | null {
-  const homeDeptId = ctx.userDept.get(subject.faculty_id) ?? null
-  if (homeDeptId && homeDepartmentOwnsCourse(homeDeptId, ctx.departmentCourses)) {
-    return homeDeptId
-  }
-  return resolveSectionDepartment(subject, ctx)
-}
-
-/** Whether the department owns at least one course — i.e. can own coverage. */
-function homeDepartmentOwnsCourse(
-  homeDeptId: string,
-  departmentCourses: Map<string, string | null>,
-): boolean {
-  for (const deptId of departmentCourses.values()) {
-    if (deptId === homeDeptId) return true
-  }
-  return false
+  return ctx.userDept.get(subject.faculty_id) ?? null
 }
 
 /**

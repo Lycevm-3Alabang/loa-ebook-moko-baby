@@ -36,9 +36,10 @@ export async function GET(
       await getDepartmentSubjectResults(evaluationPeriodId, departmentId)
 
     // The release gate reads the RESULTS, not the roster: a roster change
-    // must never make released results look unreleased.
+    // must never make released results look unreleased. A row with no
+    // responses is a subject, not a result: it cannot release the page.
     const visMap = await evaluationResultRepository.getVisibilityMap(evaluationPeriodId)
-    const anyVisible = subjects.some((s) => visMap.get(s.facultyId))
+    const anyVisible = subjects.some((s) => s.totalRespondents > 0 && visMap.get(s.facultyId))
     if (!anyVisible) {
       return NextResponse.json({ error: `ADMIN hasn't released results for ${dept.name} yet` }, { status: 403 })
     }
