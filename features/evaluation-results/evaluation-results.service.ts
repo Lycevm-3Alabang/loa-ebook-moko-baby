@@ -1,4 +1,13 @@
-import { evaluationResultRepository, userRepository, evaluationRepository, facultySubjectRepository, subjectRepository } from "@/lib/repositories/factory"
+import {
+  evaluationResultRepository,
+  userRepository,
+  evaluationRepository,
+  evaluationPeriodRepository,
+  facultySubjectRepository,
+  subjectRepository,
+  sectionRepository,
+  semesterRepository,
+} from "@/lib/repositories/factory"
 import {
   computeCategoryAverages,
   computeGeneralRating,
@@ -12,22 +21,6 @@ import {
   type DepartmentAggregate,
 } from "@/lib/evaluation-utils"
 
-export async function getEvaluationResults(periodId: string, filters?: { departmentId?: string; facultyId?: string }) {
-  return evaluationResultRepository.list(periodId, filters)
-}
-
-export async function getFacultyEvaluationResult(periodId: string, facultyId: string) {
-  return evaluationResultRepository.findByFaculty(periodId, facultyId)
-}
-
-export async function computeEvaluationResults(periodId: string, facultyId?: string) {
-  return evaluationResultRepository.compute(periodId, facultyId)
-}
-
-export async function recomputeAllResults(periodId: string) {
-  return evaluationResultRepository.computeAll(periodId)
-}
-
 export interface DepartmentSubjectResult {
   facultySubjectId: string
   facultyId: string
@@ -36,6 +29,8 @@ export interface DepartmentSubjectResult {
   subjectId: string
   subjectCode: string
   subjectName: string
+  sectionProgram: string | null
+  sectionName: string | null
   totalRespondents: number
   avgRating: number | null
   remarks: string | null
@@ -58,33 +53,68 @@ export interface DepartmentResults {
   departmentAggregate: DepartmentAggregate | null
 }
 
-export async function getDepartmentTeachingFaculty(departmentId: string) {
-  const facUsers = await userRepository.listByDepartment(departmentId)
-  if (!facUsers || facUsers.length === 0) return []
-  return facUsers.map((u) => ({ id: u.id, name: u.name, email: u.email }))
+export interface DepartmentTeachingFaculty {
+  id: string
+  name: string
+  email: string
+}
+
+/**
+ * The people who teach in a department this term: the faculty with an
+ * assignment whose section the department owns. The same rule the results
+ * pages use, so a dean's roster and their results page agree.
+ *
+ * The term is the active evaluation period's semester, falling back to the
+ * active semester when no period is open.
+ */
+export async function getDepartmentTeachingFaculty(
+  departmentId: string,
+): Promise<DepartmentTeachingFaculty[]> {
+  const [period, activeSemester] = await Promise.all([
+    evaluationPeriodRepository.findActive(),
+    semesterRepository.findActive(),
+  ])
+  const semesterId = period?.semesterId ?? activeSemester?.id ?? null
+  if (!semesterId) return []
+  const roster = await evaluationResultRepository.listSemesterRoster(semesterId)
+  return roster[departmentId] ?? []
 }
 
 export async function getDepartmentSubjectResults(
   evaluationPeriodId: string,
   departmentId: string,
 ): Promise<DepartmentResults> {
-  const facUsers = await userRepository.listByDepartment(departmentId)
-  if (!facUsers || facUsers.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
+  // The department's own subjects: the evaluated assignments whose section
+  // belongs to this department.
+  const assignments = await evaluationResultRepository.listDepartmentAssignments(departmentId, evaluationPeriodId)
+  if (assignments.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
 
-  const facIds = facUsers.map((u) => u.id)
+  const assignmentIds = new Set(assignments.map((a) => a.id))
+  const facIds = [...new Set(assignments.map((a) => a.faculty_id))]
+
+  // The chain does not filter deletedAt, so a soft-deleted faculty can be in
+  // the set - fetch their row too, or their rows would read "Unknown".
+  const facUsers = await userRepository.listByIds(facIds, { includeDeleted: true })
   const facNameMap = new Map(facUsers.map((u) => [u.id, u]))
 
   const evals = await evaluationRepository.listSubmittedByPeriodAndEvaluatees(evaluationPeriodId, facIds)
-  if (evals.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
+  // Keep only the evaluations of THIS department's assignments: a faculty may
+  // teach in more than one department.
+  const deptEvals = evals.filter((e) => !!e.facultySubjectId && assignmentIds.has(e.facultySubjectId))
+  if (deptEvals.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
 
-  const fsIds = [...new Set(evals.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
+  const fsIds = [...new Set(deptEvals.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
   const facultySubjects = await facultySubjectRepository.findByIds(fsIds)
   const subjects = await subjectRepository.findByIds([...new Set(facultySubjects.map((fs) => fs.subject_id))])
   const fsMap = new Map(facultySubjects.map((fs) => [fs.id, fs]))
   const subjMap = new Map(subjects.map((s) => [s.id, s]))
 
+  // Sections are few, so resolve them in memory from the row's OWN section.
+  const allSections = await sectionRepository.list()
+  const sectionById = new Map(allSections.map((s) => [s.id, s]))
+
   // Match the detail page's eval set: evaluatee must equal the subject's faculty.
-  const validEvals = evals.filter((ev) => {
+  const validEvals = deptEvals.filter((ev) => {
     if (!ev.facultySubjectId) return false
     const fs = fsMap.get(ev.facultySubjectId)
     return !!fs && fs.faculty_id === ev.evaluateeId
@@ -117,6 +147,7 @@ export async function getDepartmentSubjectResults(
     if (!fs) continue
     const user = facNameMap.get(fs.faculty_id)
     const subj = subjMap.get(fs.subject_id)
+    const section = fs.section_id ? sectionById.get(fs.section_id) : undefined
 
     const groupRatings = ratings.filter((r) => evalIds.includes(r.evaluationId))
     const catAverages = computeCategoryAverages(groupRatings)
@@ -135,6 +166,8 @@ export async function getDepartmentSubjectResults(
       subjectId: fs.subject_id,
       subjectCode: subj?.code ?? "",
       subjectName: subj?.name ?? "",
+      sectionProgram: section?.program ?? null,
+      sectionName: section?.name ?? null,
       totalRespondents: evalIds.length,
       avgRating: general,
       remarks: getRemark(general),
