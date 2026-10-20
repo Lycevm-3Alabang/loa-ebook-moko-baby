@@ -8,7 +8,7 @@ import {
   subjectRepository,
   userRepository,
 } from "@/lib/repositories/factory"
-import { resolveSubjectDepartment } from "@/lib/evaluation-utils"
+import { resolveSubjectDepartment, UNASSIGNED_FACULTY_EMAIL } from "@/lib/evaluation-utils"
 import type { EvaluationStatusItem } from "@/lib/types"
 import { STATUS_ON_TRACK_PCT } from "./constants"
 
@@ -122,7 +122,7 @@ function bucketOf(rows: EvaluationStatusItem[] | undefined): Bucket {
   return "notParticipated"
 }
 
-export async function getEvaluationStatus(evaluationPeriodId: string, search?: string) {
+export async function getEvaluationStatus(evaluationPeriodId: string, search?: string, departmentId?: string) {
   const period = await evaluationPeriodRepository.findById(evaluationPeriodId)
   if (!period) throw new Error("Evaluation period not found")
   const semesterId = period.semesterId
@@ -131,7 +131,13 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     departmentRepository.listAll(),
     facultySubjectRepository.list({ semesterId }),
   ])
-  if (mappings.length === 0) return { departments: [], subjects: [] as SubjectStatusRow[] }
+  if (mappings.length === 0) {
+    return {
+      departments: [],
+      subjects: [] as SubjectStatusRow[],
+      warnings: { unattributed: { count: 0, faculty: [] }, offSemester: { count: 0, faculty: [] } },
+    }
+  }
 
   const fsIds = mappings.map((m) => m.id)
   const facultyIds = [...new Set(mappings.map((m) => m.faculty_id))]
@@ -149,6 +155,12 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
   const subjMap = new Map(subjects.map((s) => [s.id, s]))
   const facName = new Map<string, string>()
   for (const u of facUsers) facName.set(u.id, u.name)
+
+  // The dummy account owns assignments but is a placeholder, not a person:
+  // its subjects stay in the coverage, but it is not a teacher.
+  const placeholderIds = new Set(
+    facUsers.filter((u) => u.email === UNASSIGNED_FACULTY_EMAIL).map((u) => u.id),
+  )
 
   // The department that owns a subject is the one that owns its section — the
   // same rule the results pages use, so the two surfaces cannot disagree.
@@ -208,10 +220,14 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     const code = subj?.code ?? ""
     const name = subj?.name ?? m.id
     if (q && !`${code} ${name} ${facultyName}`.toLowerCase().includes(q)) continue
+    const rowDepartmentId = deptOf.get(m.id) ?? ""
+    // A scoped view shows one department's subjects. The department-less rows
+    // belong to no department, so they fall outside the scope.
+    if (departmentId && rowDepartmentId !== departmentId) continue
     const agg = aggByFs.get(m.id)
     subjectRows.push({
       facultySubjectId: m.id,
-      departmentId: deptOf.get(m.id) ?? "",
+      departmentId: rowDepartmentId,
       subjectCode: code,
       subjectName: name,
       facultyName,
@@ -229,6 +245,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
 
   const deptRows: DeptStatusRow[] = []
   for (const d of departments) {
+    if (departmentId && d.id !== departmentId) continue
     const deptSubjects = subjectRows.filter((r) => r.departmentId === d.id)
     const deptNameHit = `${d.name} ${d.code ?? ""}`.toLowerCase().includes(q)
     if (q && deptSubjects.length === 0 && !deptNameHit) continue
@@ -250,7 +267,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
       if (s > 0) evaluated += 1
       submitted += s
       expected += expectedByFs[m.id] ?? 0
-      deptFacultyIds.add(m.faculty_id)
+      if (!placeholderIds.has(m.faculty_id)) deptFacultyIds.add(m.faculty_id)
       const agg = aggByFs.get(m.id)
       if (!agg) continue
       for (const sid of agg.studentIds) uniqStudents.add(sid)
@@ -279,5 +296,13 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     })
   }
 
-  return { departments: deptRows, subjects: subjectRows }
+  // The integrity conditions the roster cannot see: an evaluation pointing at
+  // an assignment from another semester is outside the period's roster, so its
+  // subject is missing from the coverage and its responses are uncounted.
+  const warnings = await evaluationResultRepository.listAttributionWarnings(
+    evaluationPeriodId,
+    departmentId,
+  )
+
+  return { departments: deptRows, subjects: subjectRows, warnings }
 }

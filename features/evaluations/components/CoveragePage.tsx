@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { useState, useMemo, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams, usePathname } from "next/navigation"
 import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import IosButton from "@/components/ui/IosButton"
@@ -63,6 +63,11 @@ export interface SubjectDetail {
   inProgress: Student[]
 }
 
+interface AttributionWarnings {
+  unattributed: { count: number; faculty: { id: string; name: string }[] }
+  offSemester: { count: number; faculty: { id: string; name: string }[] }
+}
+
 // A subject whose department cannot be resolved. Named apart from a real
 // "Unassigned" department, which is a legitimate department with its own id.
 const UNRESOLVED = "__unknown__"
@@ -71,14 +76,22 @@ function formatPct(v: number | null) {
   return v === null ? "-" : `${v.toFixed(1)}%`
 }
 
-export default function CoveragePage({ statusBase }: { statusBase: string }) {
+export default function CoveragePage({
+  statusBase,
+  departmentId = null,
+}: {
+  statusBase: string
+  /** When set, the page opens on this department and offers no department list. */
+  departmentId?: string | null
+}) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const pathname = usePathname()
   const [selectedPeriod, setSelectedPeriod] = useState("")
   const [search, setSearch] = useState("")
   const [sortKey, setSortKey] = useState<"departmentName" | "completion" | "subjectsTotal" | "submitted">("completion")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
-  const [selectedDept, setSelectedDept] = useState<string | null>(() => searchParams.get("dept"))
+  const [deptFromUrl, setDeptFromUrl] = useState<string | null>(() => searchParams.get("dept"))
   const [modalSubject, setModalSubject] = useState<SubjectRow | null>(null)
   const [modalDetail, setModalDetail] = useState<SubjectDetail | "loading" | "error" | null>(null)
 
@@ -92,7 +105,11 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
     }
   }, [periods, selectedPeriod])
 
-  const { data: statusData, error: statusError } = useApiGet<{ departments: DepartmentRow[]; subjects: SubjectRow[] }>(
+  const { data: statusData, error: statusError } = useApiGet<{
+    departments: DepartmentRow[]
+    subjects: SubjectRow[]
+    warnings?: AttributionWarnings
+  }>(
     selectedPeriod ? `${statusBase}?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}` : null,
     // Freshness: the global SWRConfig sets revalidateOnFocus:false, which leaves
     // this page frozen after mount. Coverage is a live-progress report (students
@@ -119,7 +136,7 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
         submitted: unassigned.reduce((a, x) => a + x.submitted, 0),
         expected: unassigned.reduce((a, x) => a + x.expected, 0),
         pct: null,
-        facultyCount: 0,
+        facultyCount: new Set(unassigned.map((x) => x.facultyName)).size,
         uniqueStudents: unassigned.reduce((a, x) => a + x.enrolled, 0),
         participated: unassigned.reduce((a, x) => a + x.participated, 0),
         disputed: unassigned.reduce((a, x) => a + x.disputed, 0),
@@ -173,7 +190,11 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
   }, [filteredDepts])
   const completion = kpis.uniqueStudents > 0 ? (kpis.participated / kpis.uniqueStudents) * 100 : null
 
+  // A caller that names a department gets that department's coverage, not a list.
+  const selectedDept = departmentId ?? deptFromUrl
+
   const activeDept = sortedDepts.find((d) => d.departmentId === selectedDept) ?? null
+
   const deptSubjects = useMemo(() => {
     if (!selectedDept) return []
     const key = selectedDept === UNRESOLVED ? "" : selectedDept
@@ -185,8 +206,8 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
 
   const subjectPager = usePagination(deptSubjects, 25)
 
-  const selectDept = (id: string) => { setSelectedDept(id); subjectPager.setPage(0); router.replace(`/admin/evaluations/coverage?dept=${encodeURIComponent(id)}`) }
-  const clearDept = () => { setSelectedDept(null); subjectPager.setPage(0); router.replace("/admin/evaluations/coverage") }
+  const selectDept = (id: string) => { setDeptFromUrl(id); subjectPager.setPage(0); router.replace(`${pathname}?dept=${encodeURIComponent(id)}`) }
+  const clearDept = () => { setDeptFromUrl(null); subjectPager.setPage(0); router.replace(pathname) }
 
   const exportCsv = () => {
     const subjects = statusData?.subjects ?? []
@@ -264,6 +285,31 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
       </div>
 
       {error && <ErrorState message={error} onRetry={() => window.location.reload()} />}
+
+      {statusData?.warnings &&
+        (statusData.warnings.unattributed.count > 0 || statusData.warnings.offSemester.count > 0) && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-4 space-y-1">
+            <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+              Some evaluations could not be attributed to a department
+            </p>
+            {statusData.warnings.unattributed.count > 0 && (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                {statusData.warnings.unattributed.count} evaluation(s) point at a subject whose department could not be resolved
+                {statusData.warnings.unattributed.faculty.length > 0 && (
+                  <> — {statusData.warnings.unattributed.faculty.map((f) => f.name).join(", ")}</>
+                )}
+              </p>
+            )}
+            {statusData.warnings.offSemester.count > 0 && (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                {statusData.warnings.offSemester.count} evaluation(s) point at a subject from another semester
+                {statusData.warnings.offSemester.faculty.length > 0 && (
+                  <> — {statusData.warnings.offSemester.faculty.map((f) => f.name).join(", ")}</>
+                )}
+              </p>
+            )}
+          </div>
+        )}
 
       {loading && (
         <div className="space-y-4">
@@ -356,7 +402,9 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
 
           {selectedDept && (
             <div className="space-y-4">
-              <IosButton variant="plain" size="xs" onClick={clearDept}>Back to departments</IosButton>
+              {!departmentId && (
+                <IosButton variant="plain" size="xs" onClick={clearDept}>Back to departments</IosButton>
+              )}
               <div>
                 <h2 className="text-lg font-bold text-primary">{activeDept?.departmentName ?? "Department"}</h2>
                 <p className="text-xs text-tertiary mt-1">

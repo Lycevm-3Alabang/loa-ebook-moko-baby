@@ -3,6 +3,7 @@ import { fetchRatingsWithCategories } from "@/lib/db/common"
 import {
   buildLiveDeptAverages,
   buildFacultySummary,
+  classifyWarningAssignments,
   getRemark,
   resolveSubjectDepartment,
   UNASSIGNED_FACULTY_EMAIL,
@@ -452,8 +453,15 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
    * The evaluations that could not be attributed cleanly: an assignment whose
    * department cannot be resolved, and an assignment that belongs to another
    * semester than the period. Both are integrity conditions, not people.
+   *
+   * With a `departmentId`, only that department's conditions are returned —
+   * the counts and the names are computed after the filter, so another
+   * department's faculty never reaches a scoped caller's payload.
    */
-  async listAttributionWarnings(evaluationPeriodId: string): Promise<AttributionWarnings> {
+  async listAttributionWarnings(
+    evaluationPeriodId: string,
+    departmentId?: string,
+  ): Promise<AttributionWarnings> {
     const empty: AttributionWarnings = {
       unattributed: { count: 0, faculty: [] },
       offSemester: { count: 0, faculty: [] },
@@ -472,14 +480,16 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
     const rows = await loadAssignmentRows(fsIds)
     const ctx = await buildSubjectContext(rows)
 
-    const unattributed = rows.filter((r) => resolveSubjectDepartment(r, ctx) === null)
-    const offSemester = periodSemesterId
-      ? rows.filter((r) => r.semesterId !== periodSemesterId)
-      : []
+    const { unattributed, offSemester } = classifyWarningAssignments(
+      rows,
+      (a) => resolveSubjectDepartment(a, ctx),
+      periodSemesterId,
+      departmentId,
+    )
 
     const facultyIds = [...new Set([...unattributed, ...offSemester].map((r) => r.faculty_id))]
     const users = await loadUserNames(facultyIds)
-    const named = (list: FacultySubjectRow[]) =>
+    const named = (list: { faculty_id: string }[]) =>
       [...new Set(list.map((r) => r.faculty_id))].map((id) => ({ id, name: users.get(id)?.name ?? "Unknown" }))
 
     return {

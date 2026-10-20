@@ -655,7 +655,7 @@ export interface IEvaluationResultRepository {
   /** The lookups a department decision needs, for a set of assignments. */
   buildSubjectContext(assignments: { faculty_id: string; section_id: string | null }[]): Promise<SubjectResolutionContext>
   /** The evaluations that could not be attributed cleanly. */
-  listAttributionWarnings(evaluationPeriodId: string): Promise<AttributionWarnings>
+  listAttributionWarnings(evaluationPeriodId: string, departmentId?: string): Promise<AttributionWarnings>
   /** The faculty who were assigned to teach in the period and received nothing, per department. */
   listDepartmentRosters(evaluationPeriodId: string): Promise<Record<string, { id: string; name: string }[]>>
   /** The people who teach in each department in a term. */

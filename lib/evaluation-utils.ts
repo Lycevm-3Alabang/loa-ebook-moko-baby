@@ -397,6 +397,40 @@ export interface SubjectDepartmentInput {
   section_id: string | null
 }
 
+export interface WarningAssignment {
+  faculty_id: string
+  section_id: string | null
+  semesterId: string | null
+}
+
+/**
+ * The integrity conditions in a set of assignments: the ones whose department
+ * cannot be resolved, and the ones that belong to another semester than the
+ * period. With a scope, only that department's conditions come back — the
+ * department-less assignments belong to no department, so they fall outside
+ * every scope.
+ *
+ * Pure: the caller decides how a department is resolved, and supplies the
+ * assignments it already holds.
+ */
+export function classifyWarningAssignments(
+  assignments: WarningAssignment[],
+  departmentOf: (assignment: WarningAssignment) => string | null,
+  periodSemesterId: string | null,
+  scopeDepartmentId?: string,
+): { unattributed: WarningAssignment[]; offSemester: WarningAssignment[] } {
+  const unattributed = assignments.filter((a) => departmentOf(a) === null)
+  const offSemester = periodSemesterId
+    ? assignments.filter((a) => a.semesterId !== periodSemesterId)
+    : []
+  return {
+    unattributed: scopeDepartmentId ? [] : unattributed,
+    offSemester: scopeDepartmentId
+      ? offSemester.filter((a) => departmentOf(a) === scopeDepartmentId)
+      : offSemester,
+  }
+}
+
 /**
  * The department that owns an evaluated subject: the section's department
  * (section -> department_course -> department). The faculty's home

@@ -1,7 +1,7 @@
 # Evaluation Results — Department Attribution & Missing Faculty — Spec
 
 **Version:** 1.0
-**Status:** Final (approved 2026-10-20; D1–D6 resolved)
+**Status:** Final (approved 2026-10-20; D1–D6 resolved) — built, gates green 2026-10-20 (owner-reported)
 **Last Updated:** 2026-10-20
 **Scope:** `app/admin/evaluations/results` (+ its `[departmentId]` detail),
 `app/dean/evaluations/results/[departmentId]`, the coverage surface, and the

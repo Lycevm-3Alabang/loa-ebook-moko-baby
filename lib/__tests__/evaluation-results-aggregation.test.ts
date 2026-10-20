@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   buildLiveDeptAverages,
   buildFacultySummary,
+  classifyWarningAssignments,
   resolveFacultyDepartment,
   resolveSubjectDepartment,
 } from "@/lib/evaluation-utils"
@@ -276,6 +277,32 @@ describe("resolveSubjectDepartment", () => {
     const c = ctx()
     expect(resolveSubjectDepartment({ faculty_id: "f-homed", section_id: "sec-cs" }, c)).toBe("dept-cs")
     expect(resolveSubjectDepartment({ faculty_id: "f-homed", section_id: "sec-math" }, c)).toBe("dept-math")
+  })
+})
+
+describe("classifyWarningAssignments", () => {
+  const rows = [
+    { faculty_id: "f1", section_id: "sec1", semesterId: "semOther" },
+    { faculty_id: "f2", section_id: "sec2", semesterId: "sem1" },
+  ]
+  const deptOf = (a: { section_id: string | null }) => (a.section_id === "sec1" ? "d1" : "d2")
+
+  it("splits the unresolvable from the off-semester assignments", () => {
+    const out = classifyWarningAssignments(rows, deptOf, "sem1")
+    expect(out.offSemester.map((a) => a.faculty_id)).toEqual(["f1"])
+    expect(out.unattributed).toEqual([])
+  })
+
+  it("scopes to one department and drops the department-less ones", () => {
+    const withUnresolvable = [...rows, { faculty_id: "f3", section_id: null, semesterId: "sem1" }]
+    const out = classifyWarningAssignments(withUnresolvable, deptOf, "sem1", "d1")
+    expect(out.offSemester.map((a) => a.faculty_id)).toEqual(["f1"])
+    expect(out.unattributed).toEqual([])
+  })
+
+  it("keeps every off-semester assignment when unscoped", () => {
+    const out = classifyWarningAssignments(rows, deptOf, "sem1")
+    expect(out.offSemester).toHaveLength(1)
   })
 })
 

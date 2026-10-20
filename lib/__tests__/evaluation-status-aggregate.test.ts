@@ -13,7 +13,10 @@ const mockEnrollmentRepo = vi.hoisted(() => ({
 }))
 const mockSubjectRepo = vi.hoisted(() => ({ findByIds: vi.fn() }))
 const mockUserRepo = vi.hoisted(() => ({ listByIds: vi.fn(), listByDepartment: vi.fn() }))
-const mockEvalResultRepo = vi.hoisted(() => ({ buildSubjectContext: vi.fn() }))
+const mockEvalResultRepo = vi.hoisted(() => ({
+  buildSubjectContext: vi.fn(),
+  listAttributionWarnings: vi.fn(),
+}))
 
 vi.mock("@/lib/repositories/factory", () => ({
   evaluationPeriodRepository: mockEvalPeriodRepo,
@@ -48,6 +51,10 @@ beforeEach(() => {
     userDept: new Map([["f1", "d1"]]),
     sections: new Map([["sec1", "dc1"], ["sec2", "dc1"]]),
     departmentCourses: new Map([["dc1", "d1"]]),
+  })
+  mockEvalResultRepo.listAttributionWarnings.mockResolvedValue({
+    unattributed: { count: 0, faculty: [] },
+    offSemester: { count: 0, faculty: [] },
   })
   mockEvalRepo.countSubmittedByFacultySubjectIds.mockResolvedValue({})
   mockEnrollmentRepo.countByFacultySubjectIdsPaged.mockResolvedValue({})
@@ -239,5 +246,40 @@ describe("getEvaluationStatus — new bucket fields", () => {
 
     const res = await getEvaluationStatus("p1")
     expect(res.subjects[0].departmentId).toBe("d1")
+  })
+
+  it("does not count the dummy account as a teacher, but keeps its subjects", async () => {    mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "CCS", code: "CCS" }])
+    mockFsRepo.list.mockResolvedValue([
+      { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec1", semesterId: "s1" },
+      { id: "fs2", faculty_id: "f-dummy", subject_id: "sub1", section_id: "sec1", semesterId: "s1" },
+    ])
+    mockUserRepo.listByIds.mockResolvedValue([
+      { id: "f1", name: "Ana", email: "ana@x", departmentId: "d1" },
+      { id: "f-dummy", name: "Unassigned Faculty", email: "placeholder@lyceumalabang.edu.ph", departmentId: null },
+    ])
+    mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
+      userDept: new Map([["f1", "d1"], ["f-dummy", null]]),
+      sections: new Map([["sec1", "dc1"]]),
+      departmentCourses: new Map([["dc1", "d1"]]),
+    })
+
+    const res = await getEvaluationStatus("p1")
+    expect(res.departments[0].facultyCount).toBe(1)
+    expect(res.subjects).toHaveLength(2)
+  })
+
+  it("returns the integrity warning, scoped to the caller", async () => {
+    mockFsRepo.list.mockResolvedValue([
+      { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec1", semesterId: "s1" },
+    ])
+    mockEvalResultRepo.listAttributionWarnings.mockResolvedValue({
+      unattributed: { count: 0, faculty: [] },
+      offSemester: { count: 1, faculty: [{ id: "f1", name: "Ana" }] },
+    })
+
+    const res = await getEvaluationStatus("p1", undefined, "d1")
+    expect(res.warnings.offSemester.count).toBe(1)
+    expect(res.warnings.offSemester.faculty[0].name).toBe("Ana")
+    expect(mockEvalResultRepo.listAttributionWarnings).toHaveBeenCalledWith("p1", "d1")
   })
 })

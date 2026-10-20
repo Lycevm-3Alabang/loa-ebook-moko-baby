@@ -388,4 +388,70 @@ describe("evaluationResultRepository.listAttributionWarnings", () => {
     // The section still resolves, so the evaluation is attributed, not orphaned.
     expect(warnings.unattributed.count).toBe(0)
   })
+
+  it("scopes the warning to one department", async () => {
+    respondWith({
+      evaluations: {
+        data: [
+          { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" },
+          { id: "e2", evaluateeId: "f2", facultySubjectId: "fs2" },
+        ],
+        error: null,
+      },
+      faculty_subjects: {
+        data: [
+          { id: "fs1", faculty_id: "f1", subject_id: "s1", section_id: "sec1", semesterId: "semOTHER" },
+          { id: "fs2", faculty_id: "f2", subject_id: "s2", section_id: "sec2", semesterId: "semOTHER" },
+        ],
+        error: null,
+      },
+      evaluation_periods: { data: { semesterId: "sem1" }, error: null },
+      users: {
+        data: [
+          { id: "f1", departmentId: "d1", name: "Ana", email: "ana@x" },
+          { id: "f2", departmentId: "d2", name: "Ben", email: "ben@x" },
+        ],
+        error: null,
+      },
+      sections: {
+        data: [
+          { id: "sec1", departmentCourseId: "dc1" },
+          { id: "sec2", departmentCourseId: "dc2" },
+        ],
+        error: null,
+      },
+      department_courses: {
+        data: [
+          { id: "dc1", departmentId: "d1" },
+          { id: "dc2", departmentId: "d2" },
+        ],
+        error: null,
+      },
+    })
+
+    const scoped = await evaluationResultRepository.listAttributionWarnings("p1", "d1")
+    expect(scoped.offSemester.count).toBe(1)
+    expect(scoped.offSemester.faculty.map((f) => f.id)).toEqual(["f1"])
+
+    const unscoped = await evaluationResultRepository.listAttributionWarnings("p1")
+    expect(unscoped.offSemester.count).toBe(2)
+  })
+
+  it("drops the department-less assignments from a scoped warning", async () => {
+    respondWith({
+      evaluations: { data: [{ id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" }], error: null },
+      faculty_subjects: { data: [{ id: "fs1", faculty_id: "f1", subject_id: "s1", section_id: "sec1", semesterId: "sem1" }], error: null },
+      evaluation_periods: { data: { semesterId: "sem1" }, error: null },
+      users: { data: [{ id: "f1", departmentId: null, name: "Ana", email: "ana@x" }], error: null },
+      sections: { data: [{ id: "sec1", departmentCourseId: null }], error: null },
+      department_courses: { data: [], error: null },
+    })
+
+    const scoped = await evaluationResultRepository.listAttributionWarnings("p1", "d1")
+    expect(scoped.unattributed.count).toBe(0)
+    expect(scoped.unattributed.faculty).toEqual([])
+
+    const unscoped = await evaluationResultRepository.listAttributionWarnings("p1")
+    expect(unscoped.unattributed.count).toBe(1)
+  })
 })

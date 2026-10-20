@@ -3,23 +3,36 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 const mockAuth = vi.hoisted(() => vi.fn())
 const mockHasRole = vi.hoisted(() => vi.fn())
 const mockDeptRepo = vi.hoisted(() => ({ findByDeanId: vi.fn() }))
-const mockFsRepo = vi.hoisted(() => ({ findByIdWithEmbeds: vi.fn() }))
+const mockFsRepo = vi.hoisted(() => ({ findById: vi.fn() }))
+const mockEvalResultRepo = vi.hoisted(() => ({ buildSubjectContext: vi.fn() }))
 const mockGetDetail = vi.hoisted(() => vi.fn())
+const mockGetStatus = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }))
 vi.mock("@/lib/utils/roles", () => ({ hasRole: mockHasRole }))
 vi.mock("@/lib/repositories/factory", () => ({
   departmentRepository: mockDeptRepo,
   facultySubjectRepository: mockFsRepo,
+  evaluationResultRepository: mockEvalResultRepo,
 }))
 vi.mock("@/features/evaluations/evaluation-status.service", () => ({
   getEvaluationStatusDetail: mockGetDetail,
+  getEvaluationStatus: mockGetStatus,
 }))
 vi.mock("@/lib/services/audit", () => ({ logServerError: vi.fn() }))
 
 import { GET } from "@/app/api/dean/evaluation-status/route"
 
 function req(qs: string) { return new Request(`http://localhost/api/dean/evaluation-status${qs}`) as never }
+
+/** A resolution context where the section "sec1" belongs to the given department. */
+function ctxFor(deptId: string) {
+  return {
+    userDept: new Map<string, string | null>([["f1", null]]),
+    sections: new Map<string, string | null>([["sec1", "dc1"]]),
+    departmentCourses: new Map<string, string | null>([["dc1", deptId]]),
+  }
+}
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -39,20 +52,42 @@ describe("GET /api/dean/evaluation-status", () => {
     expect(res.status).toBe(403)
   })
 
-  it("returns 400 when params missing", async () => {
+  it("returns 400 when the period is missing", async () => {
     mockAuth.mockResolvedValue({ user: { id: "u1", role: "DEAN" } })
     mockHasRole.mockReturnValue(true)
-    const res = await GET(req("?evaluationPeriodId=p1"))
+    const res = await GET(req(""))
     expect(res.status).toBe(400)
   })
 
-  it("returns 403 when fs belongs to another department", async () => {
+  it("returns the dean's own department coverage, scoped", async () => {
     mockAuth.mockResolvedValue({ user: { id: "u1", role: "DEAN" } })
     mockHasRole.mockReturnValue(true)
     mockDeptRepo.findByDeanId.mockResolvedValue({ id: "dept-1" })
-    mockFsRepo.findByIdWithEmbeds.mockResolvedValue({ id: "fs1", faculty: { departmentId: "dept-2" } })
+    mockGetStatus.mockResolvedValue({ departments: [{ departmentId: "dept-1" }], subjects: [] })
+
+    const res = await GET(req("?evaluationPeriodId=p1"))
+    expect(res.status).toBe(200)
+    expect(mockGetStatus).toHaveBeenCalledWith("p1", undefined, "dept-1")
+  })
+
+  it("returns 403 when the subject belongs to another department", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", role: "DEAN" } })
+    mockHasRole.mockReturnValue(true)
+    mockDeptRepo.findByDeanId.mockResolvedValue({ id: "dept-1" })
+    mockFsRepo.findById.mockResolvedValue({ id: "fs1", faculty_id: "f1", section_id: "sec1" })
+    mockEvalResultRepo.buildSubjectContext.mockResolvedValue(ctxFor("dept-2"))
     const res = await GET(req("?evaluationPeriodId=p1&facultySubjectId=fs1"))
     expect(res.status).toBe(403)
+    expect(mockGetDetail).not.toHaveBeenCalled()
+  })
+
+  it("returns 404 when the assignment does not exist", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", role: "DEAN" } })
+    mockHasRole.mockReturnValue(true)
+    mockDeptRepo.findByDeanId.mockResolvedValue({ id: "dept-1" })
+    mockFsRepo.findById.mockResolvedValue(null)
+    const res = await GET(req("?evaluationPeriodId=p1&facultySubjectId=fs1"))
+    expect(res.status).toBe(404)
     expect(mockGetDetail).not.toHaveBeenCalled()
   })
 
@@ -64,14 +99,30 @@ describe("GET /api/dean/evaluation-status", () => {
     expect(res.status).toBe(403)
   })
 
-  it("returns detail when fs belongs to dean's department", async () => {
+  it("returns detail when the subject's section is the dean's", async () => {
     mockAuth.mockResolvedValue({ user: { id: "u1", role: "DEAN" } })
     mockHasRole.mockReturnValue(true)
     mockDeptRepo.findByDeanId.mockResolvedValue({ id: "dept-1" })
-    mockFsRepo.findByIdWithEmbeds.mockResolvedValue({ id: "fs1", faculty: { departmentId: "dept-1" } })
+    mockFsRepo.findById.mockResolvedValue({ id: "fs1", faculty_id: "f1", section_id: "sec1" })
+    mockEvalResultRepo.buildSubjectContext.mockResolvedValue(ctxFor("dept-1"))
     mockGetDetail.mockResolvedValue({ facultySubjectId: "fs1", participated: [], notParticipated: [], disputed: [], inProgress: [] })
     const res = await GET(req("?evaluationPeriodId=p1&facultySubjectId=fs1"))
     expect(res.status).toBe(200)
     expect(mockGetDetail).toHaveBeenCalledWith("p1", "fs1")
+  })
+
+  it("gives the section's department, not the teacher's home department", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", role: "DEAN" } })
+    mockHasRole.mockReturnValue(true)
+    mockDeptRepo.findByDeanId.mockResolvedValue({ id: "dept-1" })
+    mockFsRepo.findById.mockResolvedValue({ id: "fs1", faculty_id: "f1", section_id: "sec1" })
+    // f1 is homed in dept-other; the section belongs to dept-1.
+    mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
+      ...ctxFor("dept-1"),
+      userDept: new Map([["f1", "dept-other"]]),
+    })
+    mockGetDetail.mockResolvedValue({ facultySubjectId: "fs1", participated: [], notParticipated: [], disputed: [], inProgress: [] })
+    const res = await GET(req("?evaluationPeriodId=p1&facultySubjectId=fs1"))
+    expect(res.status).toBe(200)
   })
 })
