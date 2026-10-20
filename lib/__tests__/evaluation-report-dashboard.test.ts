@@ -240,7 +240,8 @@ describe("getDeanDashboardData", () => {
     // the POOLED department figure (71/21 over the response rows), not the
     // mean of the faculty generals (4.0 + 5.0 + 2.0) / 3 = 3.67
     expect(data?.kpis.general).toBeCloseTo(3.38, 2)
-    expect(data?.kpis.remark).toBe("Very Satisfactory")
+    // 3.38 is below the 3.5 threshold, so the remark is Satisfactory.
+    expect(data?.kpis.remark).toBe("Satisfactory")
     expect(data?.kpis.actual).toBe(21)
     expect(data?.kpis.expected).toBe(36)
     expect(data?.kpis.responsePct).toBe(58)

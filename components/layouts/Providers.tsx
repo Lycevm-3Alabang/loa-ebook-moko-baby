@@ -7,6 +7,7 @@ import { SWRConfig } from "swr"
 import { fetcher, setUserRole } from "@/lib/api/client"
 import { SidebarProvider } from "@/lib/contexts/sidebar"
 import { PageTitleProvider } from "@/lib/contexts/page-title"
+import { BreadcrumbProvider } from "@/lib/contexts/breadcrumb"
 import ToastContainer from "@/components/ui/Toast"
 
 function SessionRoleSetter({ children }: { children: React.ReactNode }) {
@@ -34,10 +35,12 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         <SessionRoleSetter>
           <SidebarProvider>
             <PageTitleProvider>
-              <RefreshListener>
-                {children}
-                <ToastContainer />
-              </RefreshListener>
+              <BreadcrumbProvider>
+                <RefreshListener>
+                  {children}
+                  <ToastContainer />
+                </RefreshListener>
+              </BreadcrumbProvider>
             </PageTitleProvider>
           </SidebarProvider>
         </SessionRoleSetter>

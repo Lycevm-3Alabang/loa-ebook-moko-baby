@@ -3,6 +3,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 const mockSupabase = vi.hoisted(() => ({ from: vi.fn() }))
 
 vi.mock("@/lib/db", () => ({ supabase: mockSupabase }))
+// The repository imports the factory for the semester lookup; stub it so the
+// test does not need SUPABASE_URL in the environment.
+vi.mock("@/lib/repositories/factory", () => ({
+  semesterRepository: { findActive: vi.fn() },
+}))
 
 import { evaluationResultRepository } from "@/features/evaluation-results/evaluation-results.repository"
 

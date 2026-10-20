@@ -4,6 +4,7 @@ import { useParams, useSearchParams } from "next/navigation"
 import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import { useApiGet } from "@/lib/api/client"
+import { useCrumb } from "@/lib/contexts/breadcrumb"
 import { getRemarkColor, sectionLabel, CATEGORY_KEYS, CATEGORY_LABELS } from "@/lib/evaluation-utils"
 import { SentimentBadge } from "@/features/evaluations/components/evaluation/SentimentBadge"
 import { DownloadEvalPdfButton } from "@/features/evaluations/components/DownloadEvalPdfButton"
@@ -26,9 +27,9 @@ interface EvaluationRow {
 }
 
 interface GroupDetailData {
-  department: { id: string; name: string; code: string }
-  faculty: { id: string; name: string; email: string }
-  subject: { id: string; code: string; name: string }
+  department: { id: string; name: string; code: string } | null
+  faculty: { id: string; name: string; email: string } | null
+  subject: { id: string; code: string; name: string } | null
   sectionProgram: string | null
   sectionName: string | null
   summary: {
@@ -57,6 +58,24 @@ export default function DeanGroupDetailPage() {
   const error = dataError?.message || ""
   const loading = isLoading && !!evaluationPeriodId
 
+  const department = data?.department ?? null
+  const faculty = data?.faculty ?? null
+  const subject = data?.subject ?? null
+
+  useCrumb(
+    departmentId,
+    department
+      ? {
+          label: `${department.name}${department.code ? ` (${department.code})` : ""}`,
+          href: `/dean/evaluations/results/${departmentId}?evaluationPeriodId=${encodeURIComponent(evaluationPeriodId)}`,
+        }
+      : null,
+  )
+  useCrumb(
+    facultySubjectId,
+    faculty && subject ? { label: `${faculty.name} \u2014 ${subject.code} ${subject.name}` } : null,
+  )
+
   const formatScore = (v: number | null) => (v !== null ? v.toFixed(2) : "\u2014")
 
   if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />
@@ -73,18 +92,25 @@ export default function DeanGroupDetailPage() {
   if (!data) return null
 
   const sectionText = sectionLabel(data.sectionProgram, data.sectionName)
+  // A missing user row must render, not crash the page.
+  const facultyName = data.faculty?.name ?? "Unknown"
+  const facultyEmail = data.faculty?.email ?? ""
+  const subjectCode = data.subject?.code ?? ""
+  const subjectName = data.subject?.name ?? ""
+  const departmentName = data.department?.name ?? "Department"
+  const departmentCode = data.department?.code ?? ""
 
   return (
     <div className="w-full space-y-8 pb-12">
 
       <div className="flex items-center justify-between">
         <DownloadEvalPdfButton
-          facultyName={data.faculty.name}
-          facultyEmail={data.faculty.email}
-          subjectCode={data.subject.code}
-          subjectName={data.subject.name}
-          departmentName={data.department.name}
-          departmentCode={data.department.code}
+          facultyName={facultyName}
+          facultyEmail={facultyEmail}
+          subjectCode={subjectCode}
+          subjectName={subjectName}
+          departmentName={departmentName}
+          departmentCode={departmentCode}
           summary={data.summary}
           evaluations={data.evaluations}
         />
@@ -94,16 +120,16 @@ export default function DeanGroupDetailPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
             <p className="text-[10px] text-tertiary">Department</p>
-            <p className="text-sm font-semibold">{data.department.name} ({data.department.code})</p>
+            <p className="text-sm font-semibold">{departmentName} ({departmentCode})</p>
           </div>
           <div>
             <p className="text-[10px] text-tertiary">Faculty</p>
-            <p className="text-sm font-semibold">{data.faculty.name}</p>
-            <p className="text-[10px] text-tertiary">{data.faculty.email}</p>
+            <p className="text-sm font-semibold">{facultyName}</p>
+            <p className="text-[10px] text-tertiary">{facultyEmail}</p>
           </div>
           <div>
             <p className="text-[10px] text-tertiary">Subject</p>
-            <p className="text-sm font-semibold">{data.subject.code} {data.subject.name}</p>
+            <p className="text-sm font-semibold">{subjectCode} {subjectName}</p>
             {sectionText && <p className="text-[10px] text-tertiary">Section {sectionText}</p>}
           </div>
           <div>

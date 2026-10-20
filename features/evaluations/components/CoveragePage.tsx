@@ -63,7 +63,9 @@ export interface SubjectDetail {
   inProgress: Student[]
 }
 
-const UNASSIGNED = "__unknown__"
+// A subject whose department cannot be resolved. Named apart from a real
+// "Unassigned" department, which is a legitimate department with its own id.
+const UNRESOLVED = "__unknown__"
 
 function formatPct(v: number | null) {
   return v === null ? "-" : `${v.toFixed(1)}%`
@@ -109,8 +111,8 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
     const unassigned = subjects.filter((s) => !s.departmentId)
     if (unassigned.length > 0) {
       withUnassigned.push({
-        departmentId: UNASSIGNED,
-        departmentName: "Unassigned",
+        departmentId: UNRESOLVED,
+        departmentName: "Unresolved",
         departmentCode: "",
         subjectsEvaluated: unassigned.filter((x) => x.evaluated).length,
         subjectsTotal: unassigned.length,
@@ -129,7 +131,7 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
     if (!q) return withUnassigned
     return withUnassigned.filter((d) => {
       if (`${d.departmentName} ${d.departmentCode}`.toLowerCase().includes(q)) return true
-      const key = d.departmentId === UNASSIGNED ? "" : d.departmentId
+      const key = d.departmentId === UNRESOLVED ? "" : d.departmentId
       return subjects.some(
         (s) => s.departmentId === key &&
           `${s.subjectCode} ${s.subjectName} ${s.facultyName}`.toLowerCase().includes(q),
@@ -159,7 +161,7 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
   const sortArrow = (key: typeof sortKey) => sortKey !== key ? "" : sortDir === "desc" ? " v" : " ^"
 
   const kpis = useMemo(() => {
-    const depts = filteredDepts.filter((d) => d.departmentId !== UNASSIGNED)
+    const depts = filteredDepts.filter((d) => d.departmentId !== UNRESOLVED)
     const reporting = depts.filter((d) => d.subjectsEvaluated > 0).length
     const facultyCount = depts.reduce((a, d) => a + d.facultyCount, 0)
     const uniqueStudents = depts.reduce((a, d) => a + d.uniqueStudents, 0)
@@ -174,7 +176,7 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
   const activeDept = sortedDepts.find((d) => d.departmentId === selectedDept) ?? null
   const deptSubjects = useMemo(() => {
     if (!selectedDept) return []
-    const key = selectedDept === UNASSIGNED ? "" : selectedDept
+    const key = selectedDept === UNRESOLVED ? "" : selectedDept
     return (statusData?.subjects ?? []).filter(
       (s) => s.departmentId === key &&
         (!q || `${s.subjectCode} ${s.subjectName} ${s.facultyName}`.toLowerCase().includes(q)),
@@ -191,7 +193,7 @@ export default function CoveragePage({ statusBase }: { statusBase: string }) {
     if (subjects.length === 0) return
     const headers = ["Department", "Subject Code", "Subject", "Faculty", "Enrolled", "Participated", "Disputed", "In-progress", "Not Participated", "Completion %"]
     const rows = subjects.map((s) => {
-      const dept = filteredDepts.find((d) => d.departmentId === (s.departmentId || UNASSIGNED))
+      const dept = filteredDepts.find((d) => d.departmentId === (s.departmentId || UNRESOLVED))
       const completionPct = s.enrolled > 0 ? (s.participated / s.enrolled) * 100 : null
       return [
         dept?.departmentName ?? (s.departmentId || "Unassigned"),

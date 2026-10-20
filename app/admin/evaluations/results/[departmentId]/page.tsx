@@ -7,6 +7,7 @@ import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import IosButton from "@/components/ui/IosButton"
 import { useApiGet } from "@/lib/api/client"
+import { useCrumb } from "@/lib/contexts/breadcrumb"
 import { getRemarkColor, type FacultyAggregate, type DepartmentAggregate } from "@/lib/evaluation-utils"
 import { downloadDeptPdf } from "@/lib/evaluation-pdf"
 import DepartmentSubjectView from "@/features/evaluations/components/DepartmentSubjectView"
@@ -62,6 +63,11 @@ export default function DepartmentDetailPage() {
   const departmentAggregate = resultsData?.departmentAggregate ?? null
   const error = resultsError?.message || ""
   const loading = !resultsData && !resultsError && !!evaluationPeriodId
+
+  useCrumb(
+    departmentId,
+    department ? { label: `${department.name}${department.code ? ` (${department.code})` : ""}` } : null,
+  )
 
   useEffect(() => {
     const map = resultsData?.visibilityMap ?? {}

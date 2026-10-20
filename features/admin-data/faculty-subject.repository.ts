@@ -1,6 +1,9 @@
 import { supabase } from "@/lib/db"
 import type { FacultySubjectData, FacultySubjectWithEmbeds, FacultySubjectWithSubjectsSections, IFacultySubjectRepository } from "@/lib/types"
 
+// PostgREST caps URL length (~8KB). Chunk large .in() lists to stay under it.
+const IN_CHUNK_SIZE = 100
+
 export const facultySubjectRepository: IFacultySubjectRepository = {
   async list(filters) {
     let q = supabase.from("faculty_subjects").select("*")
@@ -186,9 +189,18 @@ export const facultySubjectRepository: IFacultySubjectRepository = {
 
   async findByIds(ids) {
     if (ids.length === 0) return []
-    const { data, error } = await supabase.from("faculty_subjects").select("*").in("id", ids)
-    if (error) throw error
-    return (data || []) as FacultySubjectData[]
+    // PostgREST caps the URL (~8KB): a department's full assignment list
+    // overflows it and answers 400, which surfaces as a 500 on the route.
+    const rows: FacultySubjectData[] = []
+    for (let i = 0; i < ids.length; i += IN_CHUNK_SIZE) {
+      const { data, error } = await supabase
+        .from("faculty_subjects")
+        .select("*")
+        .in("id", ids.slice(i, i + IN_CHUNK_SIZE))
+      if (error) throw error
+      rows.push(...(data || []) as FacultySubjectData[])
+    }
+    return rows
   },
 
   async findByFacultyIdWithEmbeds(facultyId) {

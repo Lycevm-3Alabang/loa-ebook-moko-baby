@@ -4,6 +4,9 @@ import { logServerError } from "@/lib/services/audit"
 import { evaluationResultRepository, evaluationRepository, departmentRepository } from "@/lib/repositories/factory"
 import { computeSentimentScore } from "@/lib/evaluation-utils"
 
+/** The pseudo-department for evaluations that could not be attributed. */
+const UNKNOWN_DEPARTMENT = "__unknown__"
+
 export async function GET(request: NextRequest) {
   const authErr = await requireAdmin(request)
   if (authErr) return authErr
@@ -18,29 +21,42 @@ export async function GET(request: NextRequest) {
     // Live department averages — never read cached generalRating (stale/placeholder nulls).
     const liveAvgs = await evaluationResultRepository.listLiveDeptAverages(evaluationPeriodId)
 
-    const deptIds = [...new Set(liveAvgs.map((a) => a.departmentId).filter((id) => id !== "__unknown__"))]
+    // The pseudo-department is not a department: it carries evaluations that
+    // could not be attributed, and it is reported as a warning instead of a
+    // row (a row would link to a page that can only say "no data").
+    const attributed = liveAvgs.filter((a) => a.departmentId !== UNKNOWN_DEPARTMENT)
+    const [warnings, rosters] = await Promise.all([
+      evaluationResultRepository.listAttributionWarnings(evaluationPeriodId),
+      evaluationResultRepository.listDepartmentRosters(evaluationPeriodId),
+    ])
+
+    const deptIds = [...new Set(attributed.map((a) => a.departmentId))]
     const allDepts = await departmentRepository.listAll()
     const deptMap = new Map(allDepts.filter((d) => deptIds.includes(d.id)).map((d) => [d.id, d]))
 
-    const departments = liveAvgs.map((a) => {
+    const departments = attributed.map((a) => {
       const dept = deptMap.get(a.departmentId)
       const facIds = new Set(a.facultyIds)
       const scores = sentimentRows.filter((row) => facIds.has(row.evaluateeId))
+      const noResponses = rosters[a.departmentId] ?? []
       return {
         departmentId: a.departmentId,
-        departmentName: dept?.name ?? (a.departmentId === "__unknown__" ? "Unassigned" : "Unknown"),
+        departmentName: dept?.name ?? "Unknown",
         departmentCode: dept?.code ?? "",
-        facultyCount: a.facultyIds.length,
+        // Everyone the department accounts for: the faculty with results and
+        // the faculty who were assigned to teach and got nothing.
+        facultyCount: a.facultyIds.length + noResponses.length,
         totalRespondents: a.totalRespondents,
         avgRating: a.avgRating,
         remarks: a.remarks,
         highestRubrics: a.highestRubrics,
         lowestRubrics: a.lowestRubrics,
         sentimentScore: computeSentimentScore(scores),
+        noResponses,
       }
     })
 
-    return NextResponse.json({ departments })
+    return NextResponse.json({ departments, warnings })
   } catch (e) {
     // PostgrestErrors are plain objects ({ message, code, details, hint }),
     // which Vercel serializes as { message } only — extract all fields so

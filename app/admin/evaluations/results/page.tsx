@@ -19,6 +19,13 @@ interface DepartmentRow {
   highestRubrics: { key: string; label: string; score: number }[]
   lowestRubrics: { key: string; label: string; score: number }[]
   sentimentScore: number | null
+  /** The faculty who were assigned to teach in this period and received nothing. */
+  noResponses: { id: string; name: string }[]
+}
+
+interface AttributionWarnings {
+  unattributed: { count: number; faculty: { id: string; name: string }[] }
+  offSemester: { count: number; faculty: { id: string; name: string }[] }
 }
 
 interface Period {
@@ -36,6 +43,7 @@ export default function AdminEvaluationResultsPage() {
   const [selectedPeriod, setSelectedPeriod] = useState("")
   const [sortKey, setSortKey] = useState<SortKey>("avgRating")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+  const [expandedRoster, setExpandedRoster] = useState<Record<string, boolean>>({})
 
   const { data: periodsData } = useApiGet<{ periods: Period[] }>("/api/evaluation-periods")
   const periods = useMemo(() => periodsData?.periods ?? [], [periodsData])
@@ -47,10 +55,11 @@ export default function AdminEvaluationResultsPage() {
     }
   }, [periods, selectedPeriod])
 
-  const { data: resultsData, error: resultsError } = useApiGet<{ departments: DepartmentRow[] }>(
+  const { data: resultsData, error: resultsError } = useApiGet<{ departments: DepartmentRow[]; warnings?: AttributionWarnings }>(
     selectedPeriod ? `/api/admin/evaluation-results?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}` : null,
   )
   const departments = useMemo(() => resultsData?.departments ?? [], [resultsData])
+  const warnings = resultsData?.warnings ?? null
   const error = resultsError?.message || ""
   const loading = !resultsData && !resultsError
 
@@ -135,6 +144,30 @@ export default function AdminEvaluationResultsPage() {
 
       {error && <ErrorState message={error} onRetry={() => window.location.reload()} />}
 
+      {warnings && (warnings.unattributed.count > 0 || warnings.offSemester.count > 0) && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-4 space-y-1">
+          <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+            Some evaluations could not be attributed to a department
+          </p>
+          {warnings.unattributed.count > 0 && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              {warnings.unattributed.count} evaluation(s) point at a subject whose department could not be resolved
+              {warnings.unattributed.faculty.length > 0 && (
+                <> — {warnings.unattributed.faculty.map((f) => f.name).join(", ")}</>
+              )}
+            </p>
+          )}
+          {warnings.offSemester.count > 0 && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              {warnings.offSemester.count} evaluation(s) point at a subject from another semester
+              {warnings.offSemester.faculty.length > 0 && (
+                <> — {warnings.offSemester.faculty.map((f) => f.name).join(", ")}</>
+              )}
+            </p>
+          )}
+        </div>
+      )}
+
       {loading && (
         <div className="space-y-4">
           <Skeleton variant="table-row" />
@@ -166,6 +199,7 @@ export default function AdminEvaluationResultsPage() {
                 <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("facultyCount")}>
                   Faculty{sortArrow("facultyCount")}
                 </th>
+                <th className="pb-3 pr-4 text-right">No responses</th>
                 <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("totalRespondents")}>
                   Responses{sortArrow("totalRespondents")}
                 </th>
@@ -222,6 +256,30 @@ export default function AdminEvaluationResultsPage() {
                     )}
                   </td>
                   <td className="py-3 pr-4 text-right text-sm text-secondary">{dept.facultyCount}</td>
+                  <td className="py-3 pr-4 text-right">
+                    {dept.noResponses && dept.noResponses.length > 0 ? (
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setExpandedRoster((prev) => ({ ...prev, [dept.departmentId]: !prev[dept.departmentId] }))
+                        }}
+                        className="cursor-pointer"
+                      >
+                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                          {dept.noResponses.length}
+                        </span>
+                        {expandedRoster[dept.departmentId] && (
+                          <div className="mt-1 text-left text-[10px] text-tertiary space-y-0.5">
+                            {dept.noResponses.map((f) => (
+                              <div key={f.id}>{f.name}</div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-tertiary">&mdash;</span>
+                    )}
+                  </td>
                   <td className="py-3 pr-4 text-right text-sm text-secondary">{dept.totalRespondents}</td>
                 </tr>
               ))}

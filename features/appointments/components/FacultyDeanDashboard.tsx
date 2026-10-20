@@ -24,6 +24,8 @@ interface Props {
   departmentName?: string
   departmentStats?: {
     facultyCount: number
+    /** What the faculty count counts, e.g. "Teaching" vs "Faculty". */
+    facultyLabel?: string
     total: number
     pending: number
     completed: number
@@ -436,7 +438,7 @@ export default function FacultyDeanDashboard({
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                { label: "Faculty", value: departmentStats.facultyCount, icon: "👥" },
+                { label: departmentStats.facultyLabel ?? "Faculty", value: departmentStats.facultyCount, icon: "👥" },
                 { label: "Consultations", value: departmentStats.total, icon: "📋" },
                 { label: "Pending", value: departmentStats.pending, icon: "⏳" },
                 { label: "Completed", value: departmentStats.completed, icon: "✅" },

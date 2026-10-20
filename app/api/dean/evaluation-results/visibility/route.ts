@@ -4,7 +4,6 @@ import { hasRole } from "@/lib/utils/roles"
 import { logServerError } from "@/lib/services/audit"
 import {
   departmentRepository,
-  userRepository,
   evaluationResultRepository,
 } from "@/lib/repositories/factory"
 
@@ -17,28 +16,31 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { evaluationPeriodId, semesterId, facultyIds, visible } = body as {
+    const { evaluationPeriodId, facultyIds, visible } = body as {
       evaluationPeriodId?: string
-      semesterId?: string
       facultyIds: string[]
       visible: boolean
     }
 
-    const periodId = evaluationPeriodId || semesterId
-    if (!periodId || !facultyIds?.length) {
+    // A period id, not a semester id: the membership check and setVisibility
+    // both key on evaluation_period_id.
+    if (!evaluationPeriodId || !facultyIds?.length) {
       return NextResponse.json({ error: "evaluationPeriodId and facultyIds are required" }, { status: 400 })
     }
 
     const dept = await departmentRepository.findByDeanId(userId)
     if (!dept) return NextResponse.json({ error: "Department not found" }, { status: 404 })
 
-    const facUsers = await userRepository.listByDepartment(dept.id)
-    const deptFacIds = new Set((facUsers || []).map((u) => u.id))
+    // The dean's membership set is the department's own subjects — the same
+    // rule the results page uses, so the toggle never 403s a faculty the
+    // dean can actually see.
+    const assignments = await evaluationResultRepository.listDepartmentAssignments(dept.id, evaluationPeriodId)
+    const deptFacIds = new Set(assignments.map((a) => a.faculty_id))
     if (facultyIds.some((id) => !deptFacIds.has(id))) {
       return NextResponse.json({ error: "You can only manage visibility for faculty in your own department" }, { status: 403 })
     }
 
-    await evaluationResultRepository.setVisibility(periodId, facultyIds, visible)
+    await evaluationResultRepository.setVisibility(evaluationPeriodId, facultyIds, visible)
     return NextResponse.json({ success: true })
   } catch (e) {
     console.error("Dean visibility toggle error:", e)

@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation"
 import Link from "next/link"
 import { useSession } from "next-auth/react"
 import { useEffect, useState, useCallback, useMemo } from "react"
+import { useBreadcrumbs } from "@/lib/contexts/breadcrumb"
 
 const LABELS: Record<string, string> = {
   admin: "Admin",
@@ -34,9 +35,15 @@ function isUuid(s: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
 }
 
+/** An unresolved GUID is noise, not an identifier — show a stub, keep the full id in the tooltip. */
+function shortenUuid(s: string) {
+  return s.length > 12 ? `${s.slice(0, 8)}…` : s
+}
+
 export default function NavigationBar(_props: { title?: string }) {
   const pathname = usePathname()
   const { data: session } = useSession()
+  const crumbs = useBreadcrumbs()
   const [mounted, setMounted] = useState(false)
   const [dark, setDark] = useState(false)
   const role = (session?.user as Record<string, unknown> | undefined)?.role as string | undefined
@@ -95,8 +102,16 @@ export default function NavigationBar(_props: { title?: string }) {
         <div className="flex items-center gap-1 min-w-0">
           {segments.map((seg, index) => {
             const href = "/" + segments.slice(0, index + 1).join("/")
-            const label = LABELS[seg] || seg.charAt(0).toUpperCase() + seg.slice(1)
+            const crumb = crumbs[seg]
+            const isUuidSeg = isUuid(seg)
+            const label =
+              crumb?.label ??
+              (isUuidSeg
+                ? shortenUuid(seg)
+                : LABELS[seg] || seg.charAt(0).toUpperCase() + seg.slice(1))
             const active = href === pathname
+            // A registered crumb without an href is the current segment: text.
+            const asText = active || (isUuidSeg && !crumb?.href)
             return (
               <span key={href} className="flex items-center gap-1 min-w-0">
                 {index > 0 && (
@@ -104,10 +119,21 @@ export default function NavigationBar(_props: { title?: string }) {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                   </svg>
                 )}
-                {isUuid(seg) ? (
-                  <span className={active ? "text-secondary font-semibold truncate" : "truncate"}>{label}</span>
+                {asText ? (
+                  <span
+                    className={`${active ? "text-secondary font-semibold" : ""} truncate`}
+                    title={isUuidSeg ? seg : undefined}
+                  >
+                    {label}
+                  </span>
                 ) : (
-                  <Link href={href} className={`${active ? "text-secondary font-semibold" : ""} truncate hover:underline`}>{label}</Link>
+                  <Link
+                    href={crumb?.href ?? href}
+                    className="truncate hover:underline"
+                    title={isUuidSeg ? seg : undefined}
+                  >
+                    {label}
+                  </Link>
                 )}
               </span>
             )

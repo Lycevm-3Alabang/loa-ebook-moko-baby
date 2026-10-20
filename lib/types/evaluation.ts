@@ -588,6 +588,39 @@ export interface LiveDeptAverage {
   lowestRubrics: { key: string; label: string; score: number }[]
 }
 
+/**
+ * The lookups one department decision needs: the faculty's home department,
+ * and the section -> department_course -> department chain that owns an
+ * evaluated subject.
+ */
+export interface SubjectResolutionContext {
+  userDept: Map<string, string | null>
+  sections: Map<string, string | null>
+  departmentCourses: Map<string, string | null>
+}
+
+/** A teaching assignment (a faculty_subjects row) with its owning department. */
+export interface EvaluationAssignment {
+  /** faculty_subjects.id */
+  id: string
+  faculty_id: string
+  subject_id: string
+  section_id: string | null
+  /** The department that owns the assignment's section; null when unresolvable. */
+  departmentId: string | null
+}
+
+/**
+ * The evaluations that could not be attributed cleanly. Both are integrity
+ * conditions in the data, not buckets of people.
+ */
+export interface AttributionWarnings {
+  /** The assignment's department could not be resolved. */
+  unattributed: { count: number; faculty: { id: string; name: string }[] }
+  /** The assignment belongs to another semester than the period. */
+  offSemester: { count: number; faculty: { id: string; name: string }[] }
+}
+
 export interface EvaluationVisibilityRow {
   id: string
   evaluation_period_id: string | null
@@ -614,7 +647,19 @@ export interface LiveFacultyResult {
 export interface IEvaluationResultRepository {
   listLiveDeptAverages(evaluationPeriodId: string): Promise<LiveDeptAverage[]>
   listLiveFacultyResults(evaluationPeriodId: string): Promise<LiveFacultyResult[]>
-  listDepartmentFacultyIds(departmentId: string, evaluationPeriodId: string): Promise<string[]>
+  /**
+   * The evaluated assignments of one department — the department's own
+   * subjects, by the department that owns the section.
+   */
+  listDepartmentAssignments(departmentId: string, evaluationPeriodId: string): Promise<EvaluationAssignment[]>
+  /** The lookups a department decision needs, for a set of assignments. */
+  buildSubjectContext(assignments: { faculty_id: string; section_id: string | null }[]): Promise<SubjectResolutionContext>
+  /** The evaluations that could not be attributed cleanly. */
+  listAttributionWarnings(evaluationPeriodId: string): Promise<AttributionWarnings>
+  /** The faculty who were assigned to teach in the period and received nothing, per department. */
+  listDepartmentRosters(evaluationPeriodId: string): Promise<Record<string, { id: string; name: string }[]>>
+  /** The people who teach in each department in a term. */
+  listSemesterRoster(semesterId: string): Promise<Record<string, { id: string; name: string; email: string }[]>>
   setVisibility(evaluationPeriodId: string, facultyIds: string[], visible: boolean): Promise<void>
   getVisibilityMap(evaluationPeriodId: string): Promise<Map<string, boolean>>
   countBySemesterId(semesterId: string): Promise<number>

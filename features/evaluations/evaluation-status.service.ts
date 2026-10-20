@@ -2,11 +2,13 @@ import {
   departmentRepository,
   evaluationPeriodRepository,
   evaluationRepository,
+  evaluationResultRepository,
   facultySubjectRepository,
   studentEnrollmentRepository,
   subjectRepository,
   userRepository,
 } from "@/lib/repositories/factory"
+import { resolveSubjectDepartment } from "@/lib/evaluation-utils"
 import type { EvaluationStatusItem } from "@/lib/types"
 import { STATUS_ON_TRACK_PCT } from "./constants"
 
@@ -132,23 +134,26 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
   if (mappings.length === 0) return { departments: [], subjects: [] as SubjectStatusRow[] }
 
   const fsIds = mappings.map((m) => m.id)
+  const facultyIds = [...new Set(mappings.map((m) => m.faculty_id))]
 
-  const [submittedCounts, expectedByFs, subjects, enrolledByFs, statusRows, ...deptFacultyPages] = await Promise.all([
+  const [submittedCounts, expectedByFs, subjects, enrolledByFs, statusRows, facUsers, subjectCtx] = await Promise.all([
     evaluationRepository.countSubmittedByFacultySubjectIds(evaluationPeriodId, fsIds),
     studentEnrollmentRepository.countByFacultySubjectIdsPaged(fsIds, semesterId),
     subjectRepository.findByIds([...new Set(mappings.map((m) => m.subject_id))]),
     studentEnrollmentRepository.listStudentIdsByFacultySubjectIds(fsIds, semesterId ?? undefined),
     evaluationRepository.listStatusByPeriodAndFacultySubjectIds(evaluationPeriodId, fsIds),
-    ...departments.map((d) => userRepository.listByDepartment(d.id)),
+    userRepository.listByIds(facultyIds, { includeDeleted: true }),
+    evaluationResultRepository.buildSubjectContext(mappings),
   ])
 
   const subjMap = new Map(subjects.map((s) => [s.id, s]))
   const facName = new Map<string, string>()
-  const facDept = new Map<string, string>()
-  deptFacultyPages.flat().forEach((u) => {
-    facName.set(u.id, u.name)
-    if (u.departmentId) facDept.set(u.id, u.departmentId)
-  })
+  for (const u of facUsers) facName.set(u.id, u.name)
+
+  // The department that owns a subject is the one that owns its section — the
+  // same rule the results pages use, so the two surfaces cannot disagree.
+  const deptOf = new Map<string, string | null>()
+  for (const m of mappings) deptOf.set(m.id, resolveSubjectDepartment(m, subjectCtx))
 
   // Index eval status rows by (facultySubjectId, evaluatorId)
   const statusByKey = new Map<string, EvaluationStatusItem[]>()
@@ -206,7 +211,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     const agg = aggByFs.get(m.id)
     subjectRows.push({
       facultySubjectId: m.id,
-      departmentId: facDept.get(m.faculty_id) ?? "",
+      departmentId: deptOf.get(m.id) ?? "",
       subjectCode: code,
       subjectName: name,
       facultyName,
@@ -231,7 +236,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     let evaluated = 0
     let submitted = 0
     let expected = 0
-    const deptMappings = mappings.filter((m) => facDept.get(m.faculty_id) === d.id)
+    const deptMappings = mappings.filter((m) => deptOf.get(m.id) === d.id)
 
     // Distinct student sets across the department's subjects
     const uniqStudents = new Set<string>()

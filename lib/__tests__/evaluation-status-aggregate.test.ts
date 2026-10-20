@@ -12,13 +12,15 @@ const mockEnrollmentRepo = vi.hoisted(() => ({
   listStudentIdsByFacultySubjectIds: vi.fn(),
 }))
 const mockSubjectRepo = vi.hoisted(() => ({ findByIds: vi.fn() }))
-const mockUserRepo = vi.hoisted(() => ({ listByDepartment: vi.fn() }))
+const mockUserRepo = vi.hoisted(() => ({ listByIds: vi.fn(), listByDepartment: vi.fn() }))
+const mockEvalResultRepo = vi.hoisted(() => ({ buildSubjectContext: vi.fn() }))
 
 vi.mock("@/lib/repositories/factory", () => ({
   evaluationPeriodRepository: mockEvalPeriodRepo,
   departmentRepository: mockDeptRepo,
   facultySubjectRepository: mockFsRepo,
   evaluationRepository: mockEvalRepo,
+  evaluationResultRepository: mockEvalResultRepo,
   studentEnrollmentRepository: mockEnrollmentRepo,
   subjectRepository: mockSubjectRepo,
   userRepository: mockUserRepo,
@@ -40,7 +42,13 @@ beforeEach(() => {
   mockEvalPeriodRepo.findById.mockResolvedValue({ id: "p1", semesterId: "s1" })
   mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "CCS", code: "CCS" }])
   mockSubjectRepo.findByIds.mockResolvedValue([{ id: "sub1", code: "IT101", name: "Intro" }])
-  mockUserRepo.listByDepartment.mockResolvedValue([{ id: "f1", name: "Ana Cruz", departmentId: "d1" }])
+  mockUserRepo.listByIds.mockResolvedValue([{ id: "f1", name: "Ana Cruz", departmentId: "d1" }])
+  // The section owns the subject: sec1 -> dc1 -> d1.
+  mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
+    userDept: new Map([["f1", "d1"]]),
+    sections: new Map([["sec1", "dc1"], ["sec2", "dc1"]]),
+    departmentCourses: new Map([["dc1", "d1"]]),
+  })
   mockEvalRepo.countSubmittedByFacultySubjectIds.mockResolvedValue({})
   mockEnrollmentRepo.countByFacultySubjectIdsPaged.mockResolvedValue({})
   mockEvalRepo.listStatusByPeriodAndFacultySubjectIds.mockResolvedValue([])
@@ -151,9 +159,6 @@ describe("getEvaluationStatus — new bucket fields", () => {
       { id: "d1", name: "CCS", code: "CCS" },
       { id: "d9", name: "EMPTY", code: "EMP" },
     ])
-    mockUserRepo.listByDepartment.mockImplementation(async (id: string) =>
-      id === "d1" ? [{ id: "f1", name: "Ana", departmentId: "d1" }] : [],
-    )
     mockFsRepo.list.mockResolvedValue([
       { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec1", semesterId: "s1" },
     ])
@@ -180,5 +185,59 @@ describe("getEvaluationStatus — new bucket fields", () => {
     const res = await getEvaluationStatus("p1", "IT102")
     expect(res.subjects).toHaveLength(1)
     expect(res.subjects[0].subjectCode).toBe("IT102")
+  })
+
+  it("attributes a subject to the section's department, not the faculty's home department", async () => {
+    mockDeptRepo.listAll.mockResolvedValue([
+      { id: "d1", name: "MATH", code: "MATH" },
+      { id: "d2", name: "CS", code: "CS" },
+    ])
+    mockFsRepo.list.mockResolvedValue([
+      { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec-cs", semesterId: "s1" },
+    ])
+    // f1 is homed in d1 (MATH) but teaches a section owned by d2 (CS).
+    mockUserRepo.listByIds.mockResolvedValue([{ id: "f1", name: "Ana", departmentId: "d1" }])
+    mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
+      userDept: new Map([["f1", "d1"]]),
+      sections: new Map([["sec-cs", "dc-cs"]]),
+      departmentCourses: new Map([["dc-cs", "d2"]]),
+    })
+
+    const res = await getEvaluationStatus("p1")
+    expect(res.subjects[0].departmentId).toBe("d2")
+    expect(res.departments.find((d) => d.departmentId === "d2")?.subjectsTotal).toBe(1)
+    expect(res.departments.find((d) => d.departmentId === "d1")?.subjectsTotal).toBe(0)
+  })
+
+  it("attributes a dept-agnostic faculty by the section", async () => {
+    mockDeptRepo.listAll.mockResolvedValue([{ id: "d2", name: "CS", code: "CS" }])
+    mockFsRepo.list.mockResolvedValue([
+      { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec-cs", semesterId: "s1" },
+    ])
+    mockUserRepo.listByIds.mockResolvedValue([{ id: "f1", name: "Ana", departmentId: null }])
+    mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
+      userDept: new Map([["f1", null]]),
+      sections: new Map([["sec-cs", "dc-cs"]]),
+      departmentCourses: new Map([["dc-cs", "d2"]]),
+    })
+
+    const res = await getEvaluationStatus("p1")
+    expect(res.subjects[0].departmentId).toBe("d2")
+    expect(res.subjects[0].facultyName).toBe("Ana")
+  })
+
+  it("falls back to the home department when the section cannot be resolved", async () => {
+    mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "MATH", code: "MATH" }])
+    mockFsRepo.list.mockResolvedValue([
+      { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec-unknown", semesterId: "s1" },
+    ])
+    mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
+      userDept: new Map([["f1", "d1"]]),
+      sections: new Map(),
+      departmentCourses: new Map(),
+    })
+
+    const res = await getEvaluationStatus("p1")
+    expect(res.subjects[0].departmentId).toBe("d1")
   })
 })

@@ -135,7 +135,7 @@ export async function getAdminEvalReportData(evaluationPeriodId?: string): Promi
 
   const liveDepts = await evaluationResultRepository.listLiveDeptAverages(activePeriodId)
   const departments: EvalReportDepartment[] = liveDepts.map((d) =>
-    liveDeptToReportRow(d, d.departmentId === "__unknown__" ? "Unassigned" : (deptNameMap.get(d.departmentId) ?? d.departmentId)),
+    liveDeptToReportRow(d, d.departmentId === "__unknown__" ? "Unresolved" : (deptNameMap.get(d.departmentId) ?? d.departmentId)),
   )
 
   departments.sort((a, b) => (b.avgGeneralRating ?? 0) - (a.avgGeneralRating ?? 0))

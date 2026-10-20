@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest"
-import { buildLiveDeptAverages, buildFacultySummary, resolveFacultyDepartment } from "@/lib/evaluation-utils"
+import {
+  buildLiveDeptAverages,
+  buildFacultySummary,
+  resolveFacultyDepartment,
+  resolveSubjectDepartment,
+} from "@/lib/evaluation-utils"
 import type { DeptResolutionContext } from "@/lib/evaluation-utils"
 import type { RatingRow } from "@/lib/evaluation-utils"
 
@@ -47,8 +52,10 @@ describe("buildLiveDeptAverages", () => {
     const d1 = out.find((d) => d.departmentId === "d1")!
     expect(d1.facultyIds).toEqual(["f1", "f2"])
     expect(d1.totalRespondents).toBe(5)
-    // pooled over the department's rating rows: PM = (4+4+5+5+5)/5 = 4.6
-    expect(d1.avgRating).toBe(4.6)
+    // Pooled over the department's rating rows: PM = (4+5)/2 = 4.5,
+    // TM = (4+5)/2 = 4.5, so the general is 4.5 (not the mean of the faculty
+    // means, 4.6 — see the "pools" case below).
+    expect(d1.avgRating).toBe(4.5)
     expect(d1.remarks).toBe("Outstanding")
     const d2 = out.find((d) => d.departmentId === "d2")!
     expect(d2.avgRating).toBe(3)
@@ -214,6 +221,64 @@ describe("resolveFacultyDepartment", () => {
   })
 })
 
+describe("resolveSubjectDepartment", () => {
+  const ctx = (over: Partial<DeptResolutionContext> = {}): DeptResolutionContext => ({
+    userDept: new Map<string, string | null>([["f-homed", "dept-home"], ["f-anon", null]]),
+    facultySubjects: [],
+    sections: new Map([["sec-cs", "dc-cs"], ["sec-math", "dc-math"]]),
+    departmentCourses: new Map([["dc-cs", "dept-cs"], ["dc-math", "dept-math"]]),
+    semesterId: "sem1",
+    ...over,
+  })
+
+  it("gives the section's department precedence over the faculty's home department", () => {
+    const c = ctx()
+    expect(resolveSubjectDepartment({ faculty_id: "f-homed", section_id: "sec-cs" }, c)).toBe("dept-cs")
+  })
+
+  it("resolves a dept-agnostic faculty by the section", () => {
+    const c = ctx()
+    expect(resolveSubjectDepartment({ faculty_id: "f-anon", section_id: "sec-cs" }, c)).toBe("dept-cs")
+  })
+
+  it("does not depend on the period's semester", () => {
+    const c = ctx({ semesterId: null })
+    expect(resolveSubjectDepartment({ faculty_id: "f-anon", section_id: "sec-cs" }, c)).toBe("dept-cs")
+  })
+
+  it("falls back to the home department when the section has no course", () => {
+    const c = ctx({ sections: new Map([["sec-cs", null]]) })
+    expect(resolveSubjectDepartment({ faculty_id: "f-homed", section_id: "sec-cs" }, c)).toBe("dept-home")
+  })
+
+  it("falls back to the home department when the section is unknown to the context", () => {
+    const c = ctx()
+    expect(resolveSubjectDepartment({ faculty_id: "f-homed", section_id: "sec-ghost" }, c)).toBe("dept-home")
+  })
+
+  it("falls back to the home department when the course has no department", () => {
+    const c = ctx({ departmentCourses: new Map([["dc-cs", null]]) })
+    expect(resolveSubjectDepartment({ faculty_id: "f-homed", section_id: "sec-cs" }, c)).toBe("dept-home")
+  })
+
+  it("falls back to the home department when the subject has no section", () => {
+    const c = ctx()
+    expect(resolveSubjectDepartment({ faculty_id: "f-homed", section_id: null }, c)).toBe("dept-home")
+  })
+
+  it("returns null when neither the section nor the home department resolves", () => {
+    const c = ctx()
+    expect(resolveSubjectDepartment({ faculty_id: "f-anon", section_id: "sec-ghost" }, c)).toBeNull()
+    expect(resolveSubjectDepartment({ faculty_id: "f-unknown", section_id: null }, c)).toBeNull()
+  })
+
+  it("keeps two subjects of one faculty in their own departments", () => {
+    const c = ctx()
+    expect(resolveSubjectDepartment({ faculty_id: "f-homed", section_id: "sec-cs" }, c)).toBe("dept-cs")
+    expect(resolveSubjectDepartment({ faculty_id: "f-homed", section_id: "sec-math" }, c)).toBe("dept-math")
+  })
+})
+
 describe("performance smoke", () => {
   it("buildLiveDeptAverages handles 500 faculties x 8 categories within 100ms", () => {
     const inputs = Array.from({ length: 500 }, (_, i) => ({
@@ -239,6 +304,22 @@ describe("performance smoke", () => {
     }
     const t0 = performance.now()
     for (let i = 0; i < 1000; i++) resolveFacultyDepartment(`f${i}`, ctx)
+    const elapsed = performance.now() - t0
+    expect(elapsed).toBeLessThan(50)
+  })
+
+  it("resolveSubjectDepartment handles 1000 lookups within 50ms", () => {
+    const ctx: DeptResolutionContext = {
+      userDept: new Map(Array.from({ length: 1000 }, (_, i) => [`f${i}`, null] as [string, null])),
+      facultySubjects: [],
+      sections: new Map(Array.from({ length: 1000 }, (_, i) => [`sec${i}`, `dc${i}`] as [string, string])),
+      departmentCourses: new Map(Array.from({ length: 1000 }, (_, i) => [`dc${i}`, `dept${i % 5}`] as [string, string])),
+      semesterId: "sem1",
+    }
+    const t0 = performance.now()
+    for (let i = 0; i < 1000; i++) {
+      resolveSubjectDepartment({ faculty_id: `f${i}`, section_id: `sec${i}` }, ctx)
+    }
     const elapsed = performance.now() - t0
     expect(elapsed).toBeLessThan(50)
   })

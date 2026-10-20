@@ -3,6 +3,7 @@ import { userRepository, sectionRepository, subjectRepository, facultySubjectRep
 import { cleanCell, cleanSubjectCode, isExcelErrorCell } from "@/lib/csv-utils"
 import { distinctSubjectCodes } from "@/lib/utils/distinct-subjects"
 import { distinctFacultyUsers } from "@/lib/utils/distinct-faculty-users"
+import { UNASSIGNED_FACULTY_EMAIL } from "@/lib/evaluation-utils"
 
 function parseSectionIdentifier(raw: string): { name: string; program: string } {
   const dashIdx = raw.indexOf("-")
@@ -17,7 +18,7 @@ function parseSectionIdentifier(raw: string): { name: string; program: string } 
   }
 }
 
-export const DUMMY_FACULTY_EMAIL = "placeholder@lyceumalabang.edu.ph"
+export const DUMMY_FACULTY_EMAIL = UNASSIGNED_FACULTY_EMAIL
 
 // ── Faculty-Subject CSV ──────────────────────────────────
 // Required columns: faculty email, name, section, subject code, subject name, department code

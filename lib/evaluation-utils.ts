@@ -1,7 +1,14 @@
-import type { LiveDeptAverage } from "@/lib/types"
+import type { LiveDeptAverage, SubjectResolutionContext } from "@/lib/types"
 
-export const CATEGORY_NAMES: Record<string, string> = {
-  "Professional Manner": "professionalManner",
+/**
+ * The shared dummy account the CSV import parks a faculty row on when the
+ * row carries no faculty email. It is a real `users` row that owns real
+ * `faculty_subjects` rows, so any roster built from assignments must
+ * exclude it — it is a placeholder, not a person.
+ */
+export const UNASSIGNED_FACULTY_EMAIL = "placeholder@lyceumalabang.edu.ph"
+
+export const CATEGORY_NAMES: Record<string, string> = {  "Professional Manner": "professionalManner",
   "Communication with Students": "communicationWithStudent",
   "Student Engagement": "studentEngagement",
   "Learning Materials": "learningMaterials",
@@ -360,14 +367,20 @@ export interface FacultyDeptInput {
   ratings: RatingRow[]
 }
 
-export interface DeptResolutionContext {
-  userDept: Map<string, string | null>
+export interface DeptResolutionContext extends SubjectResolutionContext {
   facultySubjects: { faculty_id: string; section_id: string | null; semesterId: string | null }[]
-  sections: Map<string, string | null>
-  departmentCourses: Map<string, string | null>
   semesterId: string | null
 }
 
+/**
+ * The faculty-level department rule: the user's home department, else the
+ * teaching chain.
+ *
+ * SUPERSEDED for the results surfaces by `resolveSubjectDepartment`, which
+ * resolves the department of an evaluated subject by its section. Kept for
+ * callers that need a person's department rather than a subject's — do not
+ * use it to decide which department owns an evaluation.
+ */
 export function resolveFacultyDepartment(facultyId: string, ctx: DeptResolutionContext): string | null {
   const direct = ctx.userDept.get(facultyId)
   if (direct) return direct
@@ -377,6 +390,35 @@ export function resolveFacultyDepartment(facultyId: string, ctx: DeptResolutionC
   const dcId = ctx.sections.get(fs.section_id)
   if (!dcId) return null
   return ctx.departmentCourses.get(dcId) ?? null
+}
+
+export interface SubjectDepartmentInput {
+  faculty_id: string
+  section_id: string | null
+}
+
+/**
+ * The department that owns an evaluated subject: the section's department
+ * (section -> department_course -> department). The faculty's home
+ * department is the fallback for a section whose course cannot be resolved.
+ *
+ * Unlike the faculty-level rule, this does not depend on the period's
+ * semester: a section belongs to its course, and a course belongs to a
+ * department, in every term. A subject that resolves to null here is an
+ * integrity condition, not an unassigned person.
+ */
+export function resolveSubjectDepartment(
+  subject: SubjectDepartmentInput,
+  ctx: SubjectResolutionContext,
+): string | null {
+  if (subject.section_id) {
+    const dcId = ctx.sections.get(subject.section_id)
+    if (dcId) {
+      const deptId = ctx.departmentCourses.get(dcId)
+      if (deptId) return deptId
+    }
+  }
+  return ctx.userDept.get(subject.faculty_id) ?? null
 }
 
 /**

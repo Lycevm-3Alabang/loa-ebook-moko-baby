@@ -3,8 +3,8 @@ import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { listFacultyAppointments } from "@/features/appointments/appointments.service"
 import { userRepository, departmentRepository, reportsRepository } from "@/lib/repositories/factory"
+import { getDepartmentTeachingFaculty } from "@/features/evaluation-results/evaluation-results.service"
 import { OnboardingWalkthrough } from "@/features/users/components/OnboardingWalkthrough"
-import { hasRole } from "@/lib/utils/roles"
 import FacultyDeanDashboard from "@/features/appointments/components/FacultyDeanDashboard"
 import { SkeletonCard } from "@/components/ui/Skeleton"
 
@@ -24,18 +24,18 @@ async function DeanMainSection({ userId }: { userId: string }) {
 
   const { data: appointments } = await listFacultyAppointments(userId)
 
-  let departmentStats: { facultyCount: number; total: number; pending: number; completed: number } | undefined
+  let departmentStats:
+    | { facultyCount: number; facultyLabel?: string; total: number; pending: number; completed: number }
+    | undefined
 
   if (department) {
-    const [facultyUsers, workload] = await Promise.all([
-      userRepository.listByDepartment(department.id),
+    const [teachingFaculty, workload] = await Promise.all([
+      getDepartmentTeachingFaculty(department.id),
       reportsRepository.getWorkloadDistribution(department.id),
     ])
-    const facultyMembers = facultyUsers.filter(
-      (u) => hasRole(u.role, "FACULTY") || hasRole(u.role, "DEAN")
-    )
     departmentStats = {
-      facultyCount: facultyMembers.length,
+      facultyCount: teachingFaculty.length,
+      facultyLabel: "Teaching",
       total: workload.departmentTotal,
       pending: workload.entries.reduce((s, e) => s + e.pending, 0),
       completed: workload.entries.reduce((s, e) => s + e.completed, 0),

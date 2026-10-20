@@ -1,7 +1,8 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { hasRole } from "@/lib/utils/roles"
-import { departmentRepository, userRepository, evaluationRepository } from "@/lib/repositories/factory"
+import { departmentRepository, evaluationRepository } from "@/lib/repositories/factory"
+import { getDepartmentTeachingFaculty } from "@/features/evaluation-results/evaluation-results.service"
 import Link from "next/link"
 
 export default async function DeanEvaluationsPage() {
@@ -21,7 +22,9 @@ export default async function DeanEvaluationsPage() {
     )
   }
 
-  const facultyUsers = await userRepository.listByDepartment(dept.id)
+  // The faculty who teach in this department this term — the same rule the
+  // results pages use, not the people merely homed here.
+  const facultyUsers = await getDepartmentTeachingFaculty(dept.id)
   const facultyCount = facultyUsers.length
   const facultyIds = facultyUsers.map((u) => u.id)
 
@@ -37,7 +40,7 @@ export default async function DeanEvaluationsPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <p className="text-xs font-semibold text-tertiary uppercase tracking-wider">Faculty Members</p>
+          <p className="text-xs font-semibold text-tertiary uppercase tracking-wider">Faculty Teaching</p>
           <p className="text-2xl font-bold text-primary mt-1">{facultyCount}</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-5">
@@ -67,7 +70,8 @@ export default async function DeanEvaluationsPage() {
       {facultyUsers && facultyUsers.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-200 bg-slate-50">
-            <h3 className="text-sm font-bold text-primary">Faculty Roster</h3>
+            <h3 className="text-sm font-bold text-primary">Teaching Roster</h3>
+            <p className="text-xs text-tertiary mt-0.5">Faculty with a section in {dept.name} this term</p>
           </div>
           <div className="divide-y divide-slate-100">
             {facultyUsers.map((u) => (

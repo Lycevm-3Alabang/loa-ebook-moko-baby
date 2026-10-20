@@ -6,6 +6,7 @@ import Skeleton from "@/components/ui/Skeleton"
 import LockedTab from "@/components/ui/LockedTab"
 import IosButton from "@/components/ui/IosButton"
 import { useApiGet } from "@/lib/api/client"
+import { useCrumb } from "@/lib/contexts/breadcrumb"
 import { getRemarkColor, type FacultyAggregate, type DepartmentAggregate } from "@/lib/evaluation-utils"
 import { downloadDeptPdf } from "@/lib/evaluation-pdf"
 import DepartmentSubjectView from "@/features/evaluations/components/DepartmentSubjectView"
@@ -61,6 +62,11 @@ export default function DeanDepartmentDetailPage() {
   const departmentAggregate = resultsData?.departmentAggregate ?? null
   const isLocked = !!resultsError && !!evaluationPeriodId
   const loading = !resultsData && !resultsError && !!evaluationPeriodId
+
+  useCrumb(
+    departmentId,
+    department ? { label: `${department.name}${department.code ? ` (${department.code})` : ""}` } : null,
+  )
 
   useEffect(() => {
     const map = resultsData?.visibilityMap ?? {}

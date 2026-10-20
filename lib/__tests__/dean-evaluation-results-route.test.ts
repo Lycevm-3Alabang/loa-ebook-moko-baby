@@ -9,6 +9,8 @@ const mockDeptRepo = vi.hoisted(() => ({
 }))
 const mockEvalResultRepo = vi.hoisted(() => ({
   listLiveDeptAverages: vi.fn(),
+  listAttributionWarnings: vi.fn(),
+  listDepartmentRosters: vi.fn(),
 }))
 const mockEvalRepo = vi.hoisted(() => ({
   listSubmittedWithSentiment: vi.fn(),
@@ -53,6 +55,11 @@ beforeEach(() => {
   mockDeptRepo.findByDeanId.mockResolvedValue(DEPT)
   mockDeptRepo.listAll.mockResolvedValue([DEPT])
   mockEvalResultRepo.listLiveDeptAverages.mockResolvedValue([LIVE_AVG])
+  mockEvalResultRepo.listAttributionWarnings.mockResolvedValue({
+    unattributed: { count: 0, faculty: [] },
+    offSemester: { count: 0, faculty: [] },
+  })
+  mockEvalResultRepo.listDepartmentRosters.mockResolvedValue({})
   mockEvalRepo.listSubmittedWithSentiment.mockResolvedValue([
     { evaluateeId: "f1", sentimentScore: 0.5 },
     { evaluateeId: "f2", sentimentScore: 0.1 },

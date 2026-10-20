@@ -1,29 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
-import {
-  departmentRepository,
-  userRepository,
-  evaluationRepository,
-  evaluationResultRepository,
-  facultySubjectRepository,
-  subjectRepository,
-  sectionRepository,
-} from "@/lib/repositories/factory"
+import { departmentRepository, evaluationResultRepository } from "@/lib/repositories/factory"
 import { EvaluationPeriodInactiveError } from "@/features/evaluation-results/evaluation-results.repository"
 import { logServerError } from "@/lib/services/audit"
-import {
-  computeCategoryAverages,
-  computeGeneralRating,
-  mapCategoryAveragesToColumns,
-  findHighestLowestRubrics,
-  computeSentimentScore,
-  getRemark,
-  aggregateFacultyResults,
-  aggregateDepartmentResults,
-  type DepartmentAggregate,
-} from "@/lib/evaluation-utils"
-import type { DepartmentSubjectResult } from "@/features/evaluation-results/evaluation-results.service"
+import { getDepartmentSubjectResults } from "@/features/evaluation-results/evaluation-results.service"
 
 export async function GET(
   request: NextRequest,
@@ -33,7 +14,7 @@ export async function GET(
   if (!session?.user || !hasRole((session.user as Record<string, unknown>).role as string, "DEAN")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
-  const userId = (session.user as Record<string, unknown>).id as string
+  const userId = (session.user as unknown as { id?: string | null } | undefined)?.id as string
   const dept = await departmentRepository.findByDeanId(userId)
   if (!dept) return NextResponse.json({ error: "Department not found" }, { status: 404 })
 
@@ -49,115 +30,27 @@ export async function GET(
 
     await evaluationResultRepository.assertPeriodIsActive(evaluationPeriodId)
 
-    const facUsers = await userRepository.listByDepartment(departmentId)
-    if (!facUsers || facUsers.length === 0) return NextResponse.json({ department: null, subjects: [], facultyAggregates: {}, departmentAggregate: null })
+    // One implementation for admin and dean: the department's own subjects,
+    // by the department that owns the section.
+    const { subjects, facultyAggregates, departmentAggregate } =
+      await getDepartmentSubjectResults(evaluationPeriodId, departmentId)
 
-    const facIds = facUsers.map((u) => u.id)
-
+    // The release gate reads the RESULTS, not the roster: a roster change
+    // must never make released results look unreleased.
     const visMap = await evaluationResultRepository.getVisibilityMap(evaluationPeriodId)
-    const anyVisible = facIds.some((id) => visMap.get(id))
+    const anyVisible = subjects.some((s) => visMap.get(s.facultyId))
     if (!anyVisible) {
       return NextResponse.json({ error: `ADMIN hasn't released results for ${dept.name} yet` }, { status: 403 })
     }
 
-    const facNameMap = new Map(facUsers.map((u) => [u.id, u]))
-
-    const evals = await evaluationRepository.listSubmittedByPeriodAndEvaluatees(evaluationPeriodId, facIds)
-    if (evals.length === 0) return NextResponse.json({ department: null, subjects: [], facultyAggregates: {}, departmentAggregate: null })
-
-    const evaluationIds = evals.map((e) => e.id)
-
-    const [ratings, commentsRaw] = await Promise.all([
-      evaluationRepository.listRatingsByEvaluationIds(evaluationIds),
-      evaluationRepository.listCommentsByEvaluationIds(evaluationIds),
-    ])
-
-    const commentsByEval = new Map<string, { sentimentScore: number | null }[]>()
-    for (const c of commentsRaw) {
-      if (!commentsByEval.has(c.evaluationId)) commentsByEval.set(c.evaluationId, [])
-      commentsByEval.get(c.evaluationId)!.push(c)
-    }
-
-    const fsIds = [...new Set(evals.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
-    const facultySubjects = await facultySubjectRepository.findByIds(fsIds)
-    const subjects = await subjectRepository.findByIds([...new Set(facultySubjects.map((fs) => fs.subject_id))])
-  const fsMap = new Map(facultySubjects.map((fs) => [fs.id, fs]))
-  const subjMap = new Map(subjects.map((s) => [s.id, s]))
-
-  // Sections are few, so resolve them in memory from the row's OWN section.
-  const allSections = await sectionRepository.list()
-  const sectionById = new Map(allSections.map((s) => [s.id, s]))
-
-  const validEvals = evals.filter((ev) => {
-    if (!ev.facultySubjectId) return false
-    const fs = fsMap.get(ev.facultySubjectId)
-    return !!fs && fs.faculty_id === ev.evaluateeId
-  })
-
-  const facultyAggregates = aggregateFacultyResults(validEvals, ratings, commentsRaw)
-
-  const groupEvalMap = new Map<string, string[]>()
-  for (const ev of validEvals) {
-    const key = ev.facultySubjectId as string
-    if (!groupEvalMap.has(key)) groupEvalMap.set(key, [])
-    groupEvalMap.get(key)!.push(ev.id)
-  }
-
-    const subjectsList: DepartmentSubjectResult[] = []
-    for (const [fsKey, evalIds] of groupEvalMap) {
-      const fs = fsMap.get(fsKey)
-      if (!fs) continue
-
-      const user = facNameMap.get(fs.faculty_id)
-      const subj = subjMap.get(fs.subject_id)
-      const section = fs.section_id ? sectionById.get(fs.section_id) : undefined
-
-      const groupRatings = ratings.filter((r) => evalIds.includes(r.evaluationId))
-      const catAverages = computeCategoryAverages(groupRatings)
-      const general = computeGeneralRating(catAverages)
-      const catColumns = mapCategoryAveragesToColumns(catAverages)
-      const rubrics = findHighestLowestRubrics(catColumns)
-
-      const groupComments = evalIds.flatMap((eid) => commentsByEval.get(eid) ?? [])
-      const sentiment = computeSentimentScore(groupComments)
-
-      subjectsList.push({
-        facultySubjectId: fsKey,
-        facultyId: fs.faculty_id,
-        facultyName: user?.name ?? "Unknown",
-        facultyEmail: user?.email ?? "",
-        subjectId: fs.subject_id,
-        subjectCode: subj?.code ?? "",
-        subjectName: subj?.name ?? "",
-        sectionProgram: section?.program ?? null,
-        sectionName: section?.name ?? null,
-        totalRespondents: evalIds.length,
-        avgRating: general,
-        remarks: getRemark(general),
-        professionalManner: catColumns.professionalManner,
-        communicationWithStudent: catColumns.communicationWithStudent,
-        studentEngagement: catColumns.studentEngagement,
-        learningMaterials: catColumns.learningMaterials,
-        timeManagement: catColumns.timeManagement,
-        experientialLearning: catColumns.experientialLearning,
-        respectUniqueness: catColumns.respectUniqueness,
-        assessmentAndFeedback: catColumns.assessmentAndFeedback,
-        highestRubrics: rubrics.highest,
-        lowestRubrics: rubrics.lowest,
-        sentimentScore: sentiment,
-      })
-    }
-
     const visibilityMap: Record<string, boolean> = {}
-    for (const item of subjectsList) {
-      visibilityMap[item.facultyId as string] = visMap.get(item.facultyId as string) ?? false
+    for (const item of subjects) {
+      visibilityMap[item.facultyId as string] = visMap.get(item.facultyId) ?? false
     }
-
-    const departmentAggregate: DepartmentAggregate = aggregateDepartmentResults(subjectsList, ratings, commentsRaw)
 
     return NextResponse.json({
-      department: dept ?? null,
-      subjects: subjectsList,
+      department: dept,
+      subjects,
       facultyAggregates,
       departmentAggregate,
       visibilityMap,
@@ -171,8 +64,8 @@ export async function GET(
       route: "/api/dean/evaluation-results/departments/[departmentId]",
       method: request.method,
       params: Object.fromEntries(new URL(request.url).searchParams),
-      email: (session?.user as unknown as { email?: string | null } | undefined)?.email ?? null,
-      role: (session?.user as unknown as { role?: string | null } | undefined)?.role ?? null,
+      email: (session.user as unknown as { email?: string | null } | undefined)?.email ?? null,
+      role: (session.user as unknown as { role?: string | null } | undefined)?.role ?? null,
       error: e,
     })
     return NextResponse.json({ error: "Failed to fetch department evaluation results" }, { status: 500 })

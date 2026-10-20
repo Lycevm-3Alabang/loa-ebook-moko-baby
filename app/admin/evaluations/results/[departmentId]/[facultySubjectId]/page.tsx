@@ -6,6 +6,7 @@ import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import IosButton from "@/components/ui/IosButton"
 import { useApiGet } from "@/lib/api/client"
+import { useCrumb } from "@/lib/contexts/breadcrumb"
 import { getRemarkColor, sectionLabel, CATEGORY_KEYS, CATEGORY_LABELS } from "@/lib/evaluation-utils"
 import { SentimentBadge } from "@/features/evaluations/components/evaluation/SentimentBadge"
 import { DownloadEvalPdfButton } from "@/features/evaluations/components/DownloadEvalPdfButton"
@@ -30,9 +31,9 @@ interface EvaluationRow {
 }
 
 interface GroupDetailData {
-  department: { id: string; name: string; code: string }
-  faculty: { id: string; name: string; email: string }
-  subject: { id: string; code: string; name: string }
+  department: { id: string; name: string; code: string } | null
+  faculty: { id: string; name: string; email: string } | null
+  subject: { id: string; code: string; name: string } | null
   sectionProgram: string | null
   sectionName: string | null
   summary: {
@@ -82,6 +83,24 @@ export default function GroupDetailPage() {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [showInvalidateConfirm, setShowInvalidateConfirm] = useState(false)
   const [invalidating, setInvalidating] = useState(false)
+
+  const department = data?.department ?? null
+  const faculty = data?.faculty ?? null
+  const subject = data?.subject ?? null
+
+  useCrumb(
+    departmentId,
+    department
+      ? {
+          label: `${department.name}${department.code ? ` (${department.code})` : ""}`,
+          href: `/admin/evaluations/results/${departmentId}?evaluationPeriodId=${encodeURIComponent(evaluationPeriodId)}`,
+        }
+      : null,
+  )
+  useCrumb(
+    facultySubjectId,
+    faculty && subject ? { label: `${faculty.name} \u2014 ${subject.code} ${subject.name}` } : null,
+  )
 
   const formatScore = (v: number | null) => (v !== null ? v.toFixed(2) : "\u2014")
 
@@ -137,6 +156,13 @@ export default function GroupDetailPage() {
   if (!data) return null
 
   const sectionText = sectionLabel(data.sectionProgram, data.sectionName)
+  // A missing user row must render, not crash the page.
+  const facultyName = data.faculty?.name ?? "Unknown"
+  const facultyEmail = data.faculty?.email ?? ""
+  const subjectCode = data.subject?.code ?? ""
+  const subjectName = data.subject?.name ?? ""
+  const departmentName = data.department?.name ?? "Department"
+  const departmentCode = data.department?.code ?? ""
 
   return (
     <div className="w-full space-y-8 pb-12">
@@ -145,15 +171,15 @@ export default function GroupDetailPage() {
           href={`/admin/evaluations/results/${departmentId}?evaluationPeriodId=${encodeURIComponent(evaluationPeriodId)}`}
           className="text-xs text-amber-600 hover:underline"
         >
-          &larr; Back to department
+          &larr; Back to {department?.name ?? "department"}
         </Link>
         <DownloadEvalPdfButton
-          facultyName={data.faculty.name}
-          facultyEmail={data.faculty.email}
-          subjectCode={data.subject.code}
-          subjectName={data.subject.name}
-          departmentName={data.department.name}
-          departmentCode={data.department.code}
+          facultyName={facultyName}
+          facultyEmail={facultyEmail}
+          subjectCode={subjectCode}
+          subjectName={subjectName}
+          departmentName={departmentName}
+          departmentCode={departmentCode}
           summary={data.summary}
           evaluations={data.evaluations}
         />
@@ -167,16 +193,16 @@ export default function GroupDetailPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
             <p className="text-[10px] text-tertiary">Department</p>
-            <p className="text-sm font-semibold">{data.department.name} ({data.department.code})</p>
+            <p className="text-sm font-semibold">{departmentName} ({departmentCode})</p>
           </div>
           <div>
             <p className="text-[10px] text-tertiary">Faculty</p>
-            <p className="text-sm font-semibold">{data.faculty.name}</p>
-            <p className="text-[10px] text-tertiary">{data.faculty.email}</p>
+            <p className="text-sm font-semibold">{facultyName}</p>
+            <p className="text-[10px] text-tertiary">{facultyEmail}</p>
           </div>
           <div>
             <p className="text-[10px] text-tertiary">Subject</p>
-            <p className="text-sm font-semibold">{data.subject.code} {data.subject.name}</p>
+            <p className="text-sm font-semibold">{subjectCode} {subjectName}</p>
             {sectionText && <p className="text-[10px] text-tertiary">Section {sectionText}</p>}
           </div>
           <div>
@@ -333,7 +359,7 @@ export default function GroupDetailPage() {
                   <IosButton variant="plain" size="xs" onClick={() => { setSelectedEvaluationId(null); setEvalDetail(null) }}>Close</IosButton>
                 </div>
                 <p className="text-xs text-tertiary">
-                  {data.faculty.name} &mdash; {data.subject.code} {data.subject.name}
+                  {facultyName} &mdash; {subjectCode} {subjectName}
                   {evalDetail.submittedAt && ` | ${new Date(evalDetail.submittedAt).toLocaleString()}`}
                 </p>
                 {evalDetail.categories.map((cat) => (

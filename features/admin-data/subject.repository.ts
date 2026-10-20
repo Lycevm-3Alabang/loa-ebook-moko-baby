@@ -1,6 +1,9 @@
 import { supabase } from "@/lib/db"
 import type { SubjectData, ISubjectRepository } from "@/lib/types"
 
+// PostgREST caps URL length (~8KB). Chunk large .in() lists to stay under it.
+const IN_CHUNK_SIZE = 100
+
 export const subjectRepository: ISubjectRepository = {
   async list() {
     const { data, error } = await supabase.from("subjects").select("*").order("code", { ascending: true })
@@ -63,9 +66,18 @@ export const subjectRepository: ISubjectRepository = {
   },
   async findByIds(ids) {
     if (ids.length === 0) return []
-    const { data, error } = await supabase.from("subjects").select("*").in("id", ids)
-    if (error) throw error
-    return (data || []) as SubjectData[]
+    // PostgREST caps the URL (~8KB): a department's full subject list
+    // overflows it and answers 400, which surfaces as a 500 on the route.
+    const rows: SubjectData[] = []
+    for (let i = 0; i < ids.length; i += IN_CHUNK_SIZE) {
+      const { data, error } = await supabase
+        .from("subjects")
+        .select("*")
+        .in("id", ids.slice(i, i + IN_CHUNK_SIZE))
+      if (error) throw error
+      rows.push(...(data || []) as SubjectData[])
+    }
+    return rows
   },
   async create(fields) {
     const { data, error } = await supabase.from("subjects").insert(fields).select("*").single()

@@ -1,4 +1,13 @@
-import { evaluationResultRepository, userRepository, evaluationRepository, facultySubjectRepository, subjectRepository, sectionRepository } from "@/lib/repositories/factory"
+import {
+  evaluationResultRepository,
+  userRepository,
+  evaluationRepository,
+  evaluationPeriodRepository,
+  facultySubjectRepository,
+  subjectRepository,
+  sectionRepository,
+  semesterRepository,
+} from "@/lib/repositories/factory"
 import {
   computeCategoryAverages,
   computeGeneralRating,
@@ -44,22 +53,57 @@ export interface DepartmentResults {
   departmentAggregate: DepartmentAggregate | null
 }
 
+export interface DepartmentTeachingFaculty {
+  id: string
+  name: string
+  email: string
+}
+
+/**
+ * The people who teach in a department this term: the faculty with an
+ * assignment whose section the department owns. The same rule the results
+ * pages use, so a dean's roster and their results page agree.
+ *
+ * The term is the active evaluation period's semester, falling back to the
+ * active semester when no period is open.
+ */
+export async function getDepartmentTeachingFaculty(
+  departmentId: string,
+): Promise<DepartmentTeachingFaculty[]> {
+  const [period, activeSemester] = await Promise.all([
+    evaluationPeriodRepository.findActive(),
+    semesterRepository.findActive(),
+  ])
+  const semesterId = period?.semesterId ?? activeSemester?.id ?? null
+  if (!semesterId) return []
+  const roster = await evaluationResultRepository.listSemesterRoster(semesterId)
+  return roster[departmentId] ?? []
+}
+
 export async function getDepartmentSubjectResults(
   evaluationPeriodId: string,
   departmentId: string,
 ): Promise<DepartmentResults> {
-  const facIds = await evaluationResultRepository.listDepartmentFacultyIds(departmentId, evaluationPeriodId)
-  if (facIds.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
+  // The department's own subjects: the evaluated assignments whose section
+  // belongs to this department.
+  const assignments = await evaluationResultRepository.listDepartmentAssignments(departmentId, evaluationPeriodId)
+  if (assignments.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
+
+  const assignmentIds = new Set(assignments.map((a) => a.id))
+  const facIds = [...new Set(assignments.map((a) => a.faculty_id))]
 
   // The chain does not filter deletedAt, so a soft-deleted faculty can be in
-  // the set — fetch their row too, or their rows would read "Unknown".
+  // the set - fetch their row too, or their rows would read "Unknown".
   const facUsers = await userRepository.listByIds(facIds, { includeDeleted: true })
   const facNameMap = new Map(facUsers.map((u) => [u.id, u]))
 
   const evals = await evaluationRepository.listSubmittedByPeriodAndEvaluatees(evaluationPeriodId, facIds)
-  if (evals.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
+  // Keep only the evaluations of THIS department's assignments: a faculty may
+  // teach in more than one department.
+  const deptEvals = evals.filter((e) => !!e.facultySubjectId && assignmentIds.has(e.facultySubjectId))
+  if (deptEvals.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
 
-  const fsIds = [...new Set(evals.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
+  const fsIds = [...new Set(deptEvals.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
   const facultySubjects = await facultySubjectRepository.findByIds(fsIds)
   const subjects = await subjectRepository.findByIds([...new Set(facultySubjects.map((fs) => fs.subject_id))])
   const fsMap = new Map(facultySubjects.map((fs) => [fs.id, fs]))
@@ -70,7 +114,7 @@ export async function getDepartmentSubjectResults(
   const sectionById = new Map(allSections.map((s) => [s.id, s]))
 
   // Match the detail page's eval set: evaluatee must equal the subject's faculty.
-  const validEvals = evals.filter((ev) => {
+  const validEvals = deptEvals.filter((ev) => {
     if (!ev.facultySubjectId) return false
     const fs = fsMap.get(ev.facultySubjectId)
     return !!fs && fs.faculty_id === ev.evaluateeId

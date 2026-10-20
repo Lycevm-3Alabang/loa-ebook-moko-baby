@@ -6,7 +6,7 @@ const mockEvalRepo = vi.hoisted(() => ({
   listRatingsByEvaluationIds: vi.fn(),
   listCommentsByEvaluationIds: vi.fn(),
 }))
-const mockEvalResultRepo = vi.hoisted(() => ({ listDepartmentFacultyIds: vi.fn() }))
+const mockEvalResultRepo = vi.hoisted(() => ({ listDepartmentAssignments: vi.fn() }))
 const mockSectionRepo = vi.hoisted(() => ({ list: vi.fn() }))
 const mockFsRepo = vi.hoisted(() => ({ findByIds: vi.fn() }))
 const mockSubjectRepo = vi.hoisted(() => ({ findByIds: vi.fn() }))
@@ -22,6 +22,16 @@ vi.mock("@/lib/repositories/factory", () => ({
 
 import { getDepartmentSubjectResults } from "@/features/evaluation-results/evaluation-results.service"
 
+/** The department's own assignment: the section is owned by the department. */
+const assignment = (over: Partial<{ id: string; faculty_id: string; subject_id: string; section_id: string | null; departmentId: string | null }> = {}) => ({
+  id: "fs1",
+  faculty_id: "f1",
+  subject_id: "s1",
+  section_id: null,
+  departmentId: "d1",
+  ...over,
+})
+
 beforeEach(() => {
   vi.resetAllMocks()
   mockSectionRepo.list.mockResolvedValue([])
@@ -29,7 +39,7 @@ beforeEach(() => {
 
 describe("getDepartmentSubjectResults", () => {
   it("excludes stale evals where evaluateeId !== facultySubject.faculty_id", async () => {
-    mockEvalResultRepo.listDepartmentFacultyIds.mockResolvedValue(["f1"])
+    mockEvalResultRepo.listDepartmentAssignments.mockResolvedValue([assignment()])
     mockUserRepo.listByIds.mockResolvedValue([{ id: "f1", name: "F", email: "f@x" }])
     mockEvalRepo.listSubmittedByPeriodAndEvaluatees.mockResolvedValue([
       { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1", submittedAt: null },
@@ -52,7 +62,10 @@ describe("getDepartmentSubjectResults", () => {
   })
 
   it("returns a pooled faculty aggregate, not a mean of per-subject means", async () => {
-    mockEvalResultRepo.listDepartmentFacultyIds.mockResolvedValue(["f1"])
+    mockEvalResultRepo.listDepartmentAssignments.mockResolvedValue([
+      assignment({ id: "fs1", subject_id: "s1" }),
+      assignment({ id: "fs2", subject_id: "s2" }),
+    ])
     mockUserRepo.listByIds.mockResolvedValue([{ id: "f1", name: "F", email: "f@x" }])
     mockEvalRepo.listSubmittedByPeriodAndEvaluatees.mockResolvedValue([
       { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1", submittedAt: null },
@@ -89,8 +102,8 @@ describe("getDepartmentSubjectResults", () => {
     expect(departmentAggregate?.avgRating).not.toBe(3)
   })
 
-  it("resolves the department's faculty through the shared chain, not listByDepartment", async () => {
-    mockEvalResultRepo.listDepartmentFacultyIds.mockResolvedValue(["f1"])
+  it("resolves the department's assignments through the shared service, not listByDepartment", async () => {
+    mockEvalResultRepo.listDepartmentAssignments.mockResolvedValue([assignment()])
     mockUserRepo.listByIds.mockResolvedValue([{ id: "f1", name: "F", email: "f@x" }])
     mockEvalRepo.listSubmittedByPeriodAndEvaluatees.mockResolvedValue([
       { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1", submittedAt: null },
@@ -102,13 +115,32 @@ describe("getDepartmentSubjectResults", () => {
 
     await getDepartmentSubjectResults("p1", "d1")
 
-    expect(mockEvalResultRepo.listDepartmentFacultyIds).toHaveBeenCalledWith("d1", "p1")
+    expect(mockEvalResultRepo.listDepartmentAssignments).toHaveBeenCalledWith("d1", "p1")
     expect(mockUserRepo.listByIds).toHaveBeenCalledWith(["f1"], { includeDeleted: true })
     expect(mockUserRepo.listByDepartment).not.toHaveBeenCalled()
   })
 
+  it("keeps another department's assignment out, even for the same faculty", async () => {
+    mockEvalResultRepo.listDepartmentAssignments.mockResolvedValue([assignment({ id: "fs1" })])
+    mockUserRepo.listByIds.mockResolvedValue([{ id: "f1", name: "F", email: "f@x" }])
+    mockEvalRepo.listSubmittedByPeriodAndEvaluatees.mockResolvedValue([
+      { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1", submittedAt: null },
+      { id: "e2", evaluateeId: "f1", facultySubjectId: "fs-other", submittedAt: null },
+    ])
+    mockFsRepo.findByIds.mockResolvedValue([{ id: "fs1", faculty_id: "f1", subject_id: "s1" }])
+    mockSubjectRepo.findByIds.mockResolvedValue([{ id: "s1", code: "C", name: "N" }])
+    mockEvalRepo.listRatingsByEvaluationIds.mockResolvedValue([])
+    mockEvalRepo.listCommentsByEvaluationIds.mockResolvedValue([])
+
+    const { subjects, departmentAggregate } = await getDepartmentSubjectResults("p1", "d1")
+
+    expect(subjects).toHaveLength(1)
+    expect(subjects[0].totalRespondents).toBe(1)
+    expect(departmentAggregate?.totalResponses).toBe(1)
+  })
+
   it("carries each row's section (program and name)", async () => {
-    mockEvalResultRepo.listDepartmentFacultyIds.mockResolvedValue(["f1"])
+    mockEvalResultRepo.listDepartmentAssignments.mockResolvedValue([assignment({ section_id: "sec1" })])
     mockUserRepo.listByIds.mockResolvedValue([{ id: "f1", name: "F", email: "f@x" }])
     mockEvalRepo.listSubmittedByPeriodAndEvaluatees.mockResolvedValue([
       { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1", submittedAt: null },

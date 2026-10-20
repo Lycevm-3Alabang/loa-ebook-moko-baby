@@ -9,19 +9,19 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { evaluationPeriodId, semesterId, facultyIds, visible } = body as {
+    const { evaluationPeriodId, facultyIds, visible } = body as {
       evaluationPeriodId?: string
-      semesterId?: string
       facultyIds: string[]
       visible: boolean
     }
 
-    const periodId = evaluationPeriodId || semesterId
-    if (!periodId || !facultyIds?.length) {
+    // A period id, not a semester id: setVisibility writes the row keyed by
+    // evaluation_period_id, and a semester id there corrupts the record.
+    if (!evaluationPeriodId || !facultyIds?.length) {
       return NextResponse.json({ error: "evaluationPeriodId and facultyIds are required" }, { status: 400 })
     }
 
-    await evaluationResultRepository.setVisibility(periodId, facultyIds, visible)
+    await evaluationResultRepository.setVisibility(evaluationPeriodId, facultyIds, visible)
     return NextResponse.json({ success: true })
   } catch (e) {
     console.error("Visibility toggle error:", e)
