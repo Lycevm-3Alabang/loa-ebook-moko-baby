@@ -58,6 +58,12 @@ export interface DepartmentResults {
   departmentAggregate: DepartmentAggregate | null
 }
 
+export async function getDepartmentTeachingFaculty(departmentId: string) {
+  const facUsers = await userRepository.listByDepartment(departmentId)
+  if (!facUsers || facUsers.length === 0) return []
+  return facUsers.map((u) => ({ id: u.id, name: u.name, email: u.email }))
+}
+
 export async function getDepartmentSubjectResults(
   evaluationPeriodId: string,
   departmentId: string,
