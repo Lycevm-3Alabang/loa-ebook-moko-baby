@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
-import { getOrCreateEvaluation, getEvaluation, getMyEvaluations } from "@/features/evaluations/evaluations.service"
+import { getOrCreateEvaluation, getEvaluation, getMyEvaluations, isDummyAssignment } from "@/features/evaluations/evaluations.service"
 import { getActiveEvaluationPeriod } from "@/features/admin-data/evaluation-periods.service"
 import { userRepository, facultySubjectRepository, subjectRepository, evaluationPeriodRepository, studentEnrollmentRepository } from "@/lib/repositories/factory"
 import type { EvaluationData } from "@/lib/types"
@@ -71,6 +71,12 @@ export async function POST(request: Request) {
 
   try {
     const { periodId, evaluateeId, facultySubjectId, source, id } = await request.json()
+
+    // The shared dummy account is a placeholder, not a person: a student must
+    // never be able to open or rate one of its classes.
+    if (facultySubjectId && (await isDummyAssignment(facultySubjectId))) {
+      return NextResponse.json({ error: "This assignment cannot be evaluated" }, { status: 403 })
+    }
 
     if (id) {
       const existing = await getEvaluation(id)

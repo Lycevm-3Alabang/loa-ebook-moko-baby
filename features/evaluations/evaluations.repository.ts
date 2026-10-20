@@ -76,6 +76,30 @@ function toEligiblePendingItem(
 }
 
 export const evaluationRepository: IEvaluationRepository = {
+  /**
+   * True when the assignment belongs to the shared dummy account. The dummy
+   * owns real classes (the CSV parks a faculty-less class on it) but it is a
+   * placeholder, never a person: it must not be shown to a student as the
+   * evaluated entity, and it must not be rated.
+   */
+  async isDummyAssignment(facultySubjectId) {
+    if (!facultySubjectId) return false
+    const { data: fs, error: fsErr } = await supabase
+      .from("faculty_subjects")
+      .select("faculty_id")
+      .eq("id", facultySubjectId)
+      .maybeSingle()
+    if (fsErr) throw fsErr
+    if (!fs) return false
+    const { data: dummyUser, error: dummyErr } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", DUMMY_FACULTY_EMAIL_EVAL)
+      .maybeSingle()
+    if (dummyErr) throw dummyErr
+    return !!dummyUser && fs.faculty_id === dummyUser.id
+  },
+
   async findPending(evaluatorId, evaluationPeriodId, activeSemesterId?: string | null) {
     const { data: enrollments, error: enrollErr } = await supabase
       .from("student_enrollments")

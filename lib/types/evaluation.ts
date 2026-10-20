@@ -459,6 +459,8 @@ export interface IRubricRepository {
 
 export interface IEvaluationRepository {
   findPending(evaluatorId: string, evaluationPeriodId: string, activeSemesterId?: string | null): Promise<PendingEvaluationItem[]>
+  /** True when the assignment belongs to the shared dummy (placeholder) account. */
+  isDummyAssignment(facultySubjectId: string): Promise<boolean>
   findByEvaluator(evaluatorId: string, evaluationPeriodId?: string): Promise<EvaluationData[]>
   findByEvaluatorBrief(evaluatorId: string): Promise<EvaluationData[]>
   findById(id: string): Promise<EvaluationData | null>

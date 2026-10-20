@@ -36,6 +36,7 @@ departments, no "back" link).
 | 2.5 | A card's student count is **distinct** — a teacher teaching three sections of one class shows that class's students once | three times the students (a summed `enrolled`) |
 | 2.6 | Clicking **Details** opens the participation breakdown | an empty modal, or a 403 |
 | 2.7 | A teacher of another department is refused by the API | a 200 with their students' names |
+| 2.8 | A class with **no assigned teacher** (the "Unassigned Faculty" placeholder) is never offered to a student, cannot be opened, and cannot be rated | a student seeing "Professor: Unassigned Faculty", or a rating that lands in the department's average |
 
 ---
 

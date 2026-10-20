@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
-import { getEvaluation, getEvaluationRatings, getEvaluationComment } from "@/features/evaluations/evaluations.service"
+import { getEvaluation, getEvaluationRatings, getEvaluationComment, isDummyAssignment } from "@/features/evaluations/evaluations.service"
 import { rubricGroupRepository, userRepository, facultySubjectRepository, subjectRepository, sectionRepository } from "@/lib/repositories/factory"
 import { groupSnapshotRows } from "@/lib/evaluation-utils"
 import { logServerError } from "@/lib/services/audit"
@@ -21,6 +21,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (evaluation.evaluatorId !== userId) return NextResponse.json({ error: "Not found" }, { status: 404 })
     if (evaluation.status !== "SUBMITTED" && evaluation.status !== "DRAFT") return NextResponse.json({ error: "Not found" }, { status: 404 })
     if (evaluation.isDisabled) return NextResponse.json({ error: "Not found" }, { status: 404 })
+    // The shared dummy account is a placeholder, not a person: it must never be
+    // shown to a student as the evaluated entity.
+    if (evaluation.facultySubjectId && (await isDummyAssignment(evaluation.facultySubjectId))) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
 
     const [facultyUser, fsData] = await Promise.all([
       userRepository.findById(evaluation.evaluateeId),

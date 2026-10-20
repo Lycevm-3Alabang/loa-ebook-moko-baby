@@ -95,6 +95,19 @@ exclude it**, or the admin sees a teacher named "Unassigned Faculty" with 0
 responses. Its email constant is the only reliable marker (no department,
 no role distinction).
 
+**The dummy is never an evaluated entity for a student.** The list of
+assignments a student may evaluate already drops it
+(`features/evaluations/evaluations.repository.ts:150,188` — "Unassigned loads
+(shared dummy) are never evaluatable"). That invariant now also sits on the
+**write** path, where it belongs: creating an evaluation against a dummy
+assignment is refused (`app/api/evaluations/route.ts`), opening one is
+refused (`app/api/evaluations/[id]/route.ts` — the student never sees
+"Professor: Unassigned Faculty"), and submitting one is refused
+(`app/api/evaluations/[id]/submit/route.ts`). The check is
+`evaluationRepository.isDummyAssignment` (the assignment's faculty is the
+dummy account) — the same fact the load path uses. Covered by
+`lib/__tests__/evaluations-dummy-guard.test.ts`.
+
 ### 1.5 The "Unassigned" label is overloaded
 
 Three different things can wear that name:

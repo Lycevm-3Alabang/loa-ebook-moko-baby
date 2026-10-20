@@ -8,6 +8,15 @@ export async function getPendingEvaluations(
   return evaluationRepository.findPending(evaluatorId, evaluationPeriodId, activeSemesterId)
 }
 
+/**
+ * The shared dummy account owns real classes but is a placeholder, never a
+ * person: it must not be shown to a student as the evaluated entity, and it
+ * must not be rated.
+ */
+export async function isDummyAssignment(facultySubjectId: string) {
+  return evaluationRepository.isDummyAssignment(facultySubjectId)
+}
+
 export async function getMyEvaluations(evaluatorId: string, evaluationPeriodId?: string) {
   return evaluationRepository.findByEvaluator(evaluatorId, evaluationPeriodId)
 }
