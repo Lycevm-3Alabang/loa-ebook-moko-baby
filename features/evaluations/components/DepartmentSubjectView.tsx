@@ -47,7 +47,7 @@ interface Props {
 
 type ViewTab = "by_subject" | "by_faculty"
 
-type SortKey = "facultyName" | "subjectName" | "avgRating" | "sentimentScore" | "totalRespondents"
+type SortKey = "facultyName" | "subjectName" | "avgRating" | "totalRespondents"
 
 export default function DepartmentSubjectView({ subjects, departmentId, evaluationPeriodId, search, onSearchChange, basePath = "/admin/evaluations/results", visibilityMap = {}, onVisibilityChange, onBulkVisibilityChange, facultyAggregates = {} }: Props) {
   const router = useRouter()
@@ -90,7 +90,7 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
     sorted.sort((a, b) => {
       let aVal: number | string = a[sortKey] ?? ""
       let bVal: number | string = b[sortKey] ?? ""
-      if (sortKey === "avgRating" || sortKey === "sentimentScore") {
+      if (sortKey === "avgRating") {
         aVal = (a[sortKey] as number | null) ?? -1
         bVal = (b[sortKey] as number | null) ?? -1
         return sortDir === "desc" ? (bVal as number) - (aVal as number) : (aVal as number) - (bVal as number)
@@ -215,9 +215,6 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
                 </th>
                 <th className="pb-3 pr-4 text-right">Highest Rubric</th>
                 <th className="pb-3 pr-4 text-right">Lowest Rubric</th>
-                <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("sentimentScore")}>
-                  Sentiment{sortArrow("sentimentScore")}
-                </th>
                 <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("totalRespondents")}>
                   Responses{sortArrow("totalRespondents")}
                 </th>
@@ -267,19 +264,6 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
                       <span className="text-[11px] text-red-600 dark:text-red-400">
                         {row.lowestRubrics[0].label} ({formatScore(row.lowestRubrics[0].score)})
                       </span>
-                    )}
-                  </td>
-                  <td className="py-3 pr-4 text-right">
-                    {row.sentimentScore !== null ? (
-                      <span className={`text-[11px] font-semibold ${
-                        row.sentimentScore >= 0.05 ? "text-emerald-600 dark:text-emerald-400" :
-                        row.sentimentScore <= -0.05 ? "text-red-600 dark:text-red-400" :
-                        "text-amber-600 dark:text-amber-400"
-                      }`}>
-                        {row.sentimentScore.toFixed(4)}
-                      </span>
-                    ) : (
-                      <span className="text-[11px] text-tertiary">&mdash;</span>
                     )}
                   </td>
                   <td className="py-3 pr-4 text-right text-sm text-secondary">{row.totalRespondents}</td>
@@ -404,7 +388,6 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
                           <th className="pb-2 pr-3 text-right">Avg Rating</th>
                           <th className="pb-2 pr-3 text-right">Highest</th>
                           <th className="pb-2 pr-3 text-right">Lowest</th>
-                          <th className="pb-2 pr-3 text-right">Sentiment</th>
                           <th className="pb-2 text-right">Resp.</th>
                         </tr>
                       </thead>
@@ -427,17 +410,6 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
                             </td>
                             <td className="py-2 pr-3 text-right text-[10px] text-red-600 dark:text-red-400">
                               {s.lowestRubrics.length > 0 ? `${s.lowestRubrics[0].label} (${formatScore(s.lowestRubrics[0].score)})` : "\u2014"}
-                            </td>
-                            <td className="py-2 pr-3 text-right text-[10px]">
-                              {s.sentimentScore !== null ? (
-                                <span className={`font-semibold ${
-                                  s.sentimentScore >= 0.05 ? "text-emerald-600 dark:text-emerald-400" :
-                                  s.sentimentScore <= -0.05 ? "text-red-600 dark:text-red-400" :
-                                  "text-amber-600 dark:text-amber-400"
-                                }`}>
-                                  {s.sentimentScore.toFixed(4)}
-                                </span>
-                              ) : "\u2014"}
                             </td>
                             <td className="py-2 text-right text-xs text-secondary">{s.totalRespondents}</td>
                           </tr>

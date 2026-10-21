@@ -110,7 +110,6 @@ export default function FacultyEvaluationResultsPage() {
                 <th className="pb-3 pr-4 text-right">Avg Rating</th>
                 <th className="pb-3 pr-4 text-right">Highest Rubric</th>
                 <th className="pb-3 pr-4 text-right">Lowest Rubric</th>
-                <th className="pb-3 pr-4 text-right">Sentiment</th>
                 <th className="pb-3 pr-4 text-right">Responses</th>
               </tr>
             </thead>
@@ -148,15 +147,6 @@ export default function FacultyEvaluationResultsPage() {
                       <span className="text-[11px] text-red-600 dark:text-red-400">
                         {row.lowestRubrics[0].label} ({formatScore(row.lowestRubrics[0].score)})
                       </span>
-                    )}
-                  </td>
-                  <td className="py-3 pr-4 text-right">
-                    {row.sentimentScore !== null ? (
-                      <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                        {row.sentimentScore.toFixed(4)}
-                      </span>
-                    ) : (
-                      <span className="text-[11px] text-tertiary">&mdash;</span>
                     )}
                   </td>
                   <td className="py-3 pr-4 text-right text-sm text-secondary">{row.totalRespondents}</td>

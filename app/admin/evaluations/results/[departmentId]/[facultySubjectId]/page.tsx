@@ -8,7 +8,6 @@ import IosButton from "@/components/ui/IosButton"
 import { useApiGet } from "@/lib/api/client"
 import { useCrumb } from "@/lib/contexts/breadcrumb"
 import { getRemarkColor, sectionLabel, CATEGORY_KEYS, CATEGORY_LABELS } from "@/lib/evaluation-utils"
-import { SentimentBadge } from "@/features/evaluations/components/evaluation/SentimentBadge"
 import { DownloadEvalPdfButton } from "@/features/evaluations/components/DownloadEvalPdfButton"
 import ReasonModal from "@/components/ui/ReasonModal"
 import { useState } from "react"
@@ -241,12 +240,6 @@ export default function GroupDetailPage() {
               </p>
             ))}
           </div>
-          <div>
-            <p className="text-[10px] text-tertiary">Sentiment Score</p>
-            <p className="text-sm font-semibold">
-              {data.summary.sentimentScore !== null ? data.summary.sentimentScore.toFixed(4) : "\u2014"}
-            </p>
-          </div>
         </div>
 
         <div className="border-t border-default pt-3">
@@ -278,7 +271,6 @@ export default function GroupDetailPage() {
                   <th key={key} className="pb-3 pr-3 text-right">{CATEGORY_LABELS[key]}</th>
                 ))}
                 <th className="pb-3 pr-3">Comment</th>
-                <th className="pb-3">Sentiment</th>
                 <th className="pb-3">Action</th>
               </tr>
             </thead>
@@ -295,13 +287,6 @@ export default function GroupDetailPage() {
                   ))}
                   <td className="py-2.5 pr-3 text-xs text-secondary max-w-[200px] truncate" title={ev.comment ?? ""}>
                     {ev.comment ?? "\u2014"}
-                  </td>
-                  <td className="py-2.5">
-                    {ev.sentimentLabel ? (
-                      <SentimentBadge label={ev.sentimentLabel} />
-                    ) : (
-                      <span className="text-[10px] text-tertiary">&mdash;</span>
-                    )}
                   </td>
                   <td className="py-2.5">
                     <IosButton
@@ -338,7 +323,6 @@ export default function GroupDetailPage() {
                     <span className="text-[10px] text-tertiary">
                       {ev.submittedAt ? new Date(ev.submittedAt).toLocaleDateString() : ""}
                     </span>
-                    {ev.sentimentLabel && <SentimentBadge label={ev.sentimentLabel} />}
                   </div>
                   <p className="text-xs text-primary whitespace-pre-wrap">{ev.comment}</p>
                 </div>
@@ -377,12 +361,6 @@ export default function GroupDetailPage() {
                   <div className="space-y-1">
                     <p className="text-xs font-semibold text-secondary">Comment</p>
                     <p className="text-xs text-primary whitespace-pre-wrap p-3 rounded-lg bg-surface-muted">{evalDetail.comment}</p>
-                  </div>
-                )}
-                {evalDetail.sentimentLabel && (
-                  <div className="flex items-center gap-2">
-                    <p className="text-xs font-semibold text-secondary">Sentiment:</p>
-                    <SentimentBadge label={evalDetail.sentimentLabel} />
                   </div>
                 )}
                 {!evalDetail.isDisabled && (

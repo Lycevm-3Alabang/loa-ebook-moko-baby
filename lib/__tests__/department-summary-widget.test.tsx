@@ -87,11 +87,12 @@ describe("Department results page - Department Summary widget", () => {
     expect(screen.getByText("Very Satisfactory")).toBeTruthy()
   })
 
-  it("shows the server pooled sentiment, not a mean of the subject sentiments", async () => {
+  it("no longer shows a sentiment figure", async () => {
     render(<DepartmentDetailPage />)
 
-    await waitFor(() => expect(screen.getByText("0.4000")).toBeTruthy())
-    expect(screen.queryByText("0.3000")).toBeNull()
+    await waitFor(() => expect(screen.getByText("3.50")).toBeTruthy())
+    expect(screen.queryByText("Overall Sentiment")).toBeNull()
+    expect(screen.queryByText("0.4000")).toBeNull()
   })
 
   it("labels the response count as responses", async () => {

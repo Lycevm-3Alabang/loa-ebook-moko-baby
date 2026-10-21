@@ -17,7 +17,6 @@ interface DepartmentRow {
   remarks: string | null
   highestRubrics: { key: string; label: string; score: number }[]
   lowestRubrics: { key: string; label: string; score: number }[]
-  sentimentScore: number | null
 }
 
 /** One department's figures, read on their own so a row can fill early. */
@@ -51,7 +50,7 @@ interface Period {
   isActive?: boolean
 }
 
-type SortKey = "departmentName" | "avgRating" | "facultyCount" | "sentimentScore"
+type SortKey = "departmentName" | "avgRating" | "facultyCount"
 
 export default function AdminEvaluationResultsPage() {
   const router = useRouter()
@@ -168,7 +167,7 @@ export default function AdminEvaluationResultsPage() {
     sorted.sort((a, b) => {
       let aVal: number | string = a[sortKey] ?? ""
       let bVal: number | string = b[sortKey] ?? ""
-      if (sortKey === "avgRating" || sortKey === "sentimentScore") {
+      if (sortKey === "avgRating") {
         aVal = (a[sortKey] as number | null) ?? -1
         bVal = (b[sortKey] as number | null) ?? -1
         return sortDir === "desc" ? (bVal as number) - (aVal as number) : (aVal as number) - (bVal as number)
@@ -330,9 +329,6 @@ export default function AdminEvaluationResultsPage() {
                 </th>
                 <th className="pb-3 pr-4 text-right">Highest Rubric</th>
                 <th className="pb-3 pr-4 text-right">Lowest Rubric</th>
-                <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("sentimentScore")}>
-                  Sentiment{sortArrow("sentimentScore")}
-                </th>
                 <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("facultyCount")}>
                   Faculty{sortArrow("facultyCount")}
                 </th>
@@ -385,23 +381,6 @@ export default function AdminEvaluationResultsPage() {
                         <span className="text-[11px] text-red-600 dark:text-red-400">
                           {dept.lowestRubrics[0].label} ({formatScore(dept.lowestRubrics[0].score)})
                         </span>
-                      )
-                    )}
-                  </td>
-                  <td className="py-3 pr-4 text-right">
-                    {pending ? (
-                      <div className="ml-auto w-12"><Skeleton variant="text" /></div>
-                    ) : (
-                      dept.sentimentScore !== null ? (
-                        <span className={`text-[11px] font-semibold ${
-                          dept.sentimentScore >= 0.05 ? "text-emerald-600 dark:text-emerald-400" :
-                          dept.sentimentScore <= -0.05 ? "text-red-600 dark:text-red-400" :
-                          "text-amber-600 dark:text-amber-400"
-                        }`}>
-                          {dept.sentimentScore.toFixed(4)}
-                        </span>
-                      ) : (
-                        <span className="text-[11px] text-tertiary">&mdash;</span>
                       )
                     )}
                   </td>

@@ -239,12 +239,6 @@ export default function DeanDepartmentDetailPage() {
                   </p>
                 ))}
               </div>
-              <div>
-                <p className="text-[10px] text-tertiary">Overall Sentiment</p>
-                <p className="text-sm font-semibold">
-                  {departmentAggregate.sentimentScore !== null ? departmentAggregate.sentimentScore.toFixed(4) : "\u2014"}
-                </p>
-              </div>
             </div>
           </div>
 

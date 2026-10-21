@@ -6,7 +6,6 @@ import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import { useApiGet } from "@/lib/api/client"
 import { getRemarkColor, CATEGORY_KEYS, CATEGORY_LABELS } from "@/lib/evaluation-utils"
-import { SentimentBadge } from "@/features/evaluations/components/evaluation/SentimentBadge"
 import { DownloadEvalPdfButton } from "@/features/evaluations/components/DownloadEvalPdfButton"
 
 interface EvaluationRow {
@@ -132,12 +131,6 @@ export default function FacultySubjectDetailPage() {
               </p>
             ))}
           </div>
-          <div>
-            <p className="text-[10px] text-tertiary">Sentiment Score</p>
-            <p className="text-sm font-semibold">
-              {data.summary.sentimentScore !== null ? data.summary.sentimentScore.toFixed(4) : "\u2014"}
-            </p>
-          </div>
         </div>
 
         <div className="border-t border-default pt-3">
@@ -168,7 +161,6 @@ export default function FacultySubjectDetailPage() {
                   <th key={key} className="pb-3 pr-3 text-right">{CATEGORY_LABELS[key]}</th>
                 ))}
                 <th className="pb-3 pr-3">Comment</th>
-                <th className="pb-3">Sentiment</th>
               </tr>
             </thead>
             <tbody>
@@ -184,13 +176,6 @@ export default function FacultySubjectDetailPage() {
                   ))}
                   <td className="py-2.5 pr-3 text-xs text-secondary max-w-[200px] truncate" title={ev.comment ?? ""}>
                     {ev.comment ?? "\u2014"}
-                  </td>
-                  <td className="py-2.5">
-                    {ev.sentimentLabel ? (
-                      <SentimentBadge label={ev.sentimentLabel} />
-                    ) : (
-                      <span className="text-[10px] text-tertiary">&mdash;</span>
-                    )}
                   </td>
                 </tr>
               ))}
