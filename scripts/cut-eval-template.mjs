@@ -5,20 +5,23 @@
 // template rather than generating a workbook, so the template has to be a REAL
 // workbook: the same merged cells, the same styles, the same print setup.
 //
-// This script cuts it ONCE, from the legacy workbook, with the four changes the
+// This script cuts it ONCE, from the legacy workbook, with the changes the
 // export's contract needs (specs/evaluation-results-export.md §3.2, §3.3):
 //
 //   1. A9 "Program" and A10 "Section"      - the fields the legacy lacks
 //   2. r4 the semester, r5 the evaluation period - one read, never typed
-//   3. the banner image is REPLACED by the repo's own public/logo-blk.png,
-//      centred and at its OWN aspect ratio (the legacy's slot is 6.14:1 and the
-//      logo is 2.18:1, so swapping the bytes into the old slot would stretch it)
+//   3. the letterhead is the repo's own public/logo-blk.png, centred and at its
+//      OWN aspect ratio (the legacy's slot is 6.14:1 and the logo is 2.18:1, so
+//      the bytes must not be dropped into the old slot - it would stretch)
 //   4. the "Interpretation of Data" legend's bands are corrected to the app's
 //      remark ladder (getRemark, lib/evaluation-utils.ts) - the legacy says
 //      "Fair" and "Needs improvement", the app says "Unsatisfactory" and "Poor"
 //
 // The script is idempotent: it always starts from the legacy workbook, so it can
 // be re-run whenever the legacy changes. It never edits docs/eval reports.xlsx.
+//
+// It also READS BACK what it wrote and checks it, so a cut that lands in the
+// wrong place fails the script instead of shipping a wrong template.
 //
 // Usage:  node scripts/cut-eval-template.mjs
 
@@ -38,7 +41,6 @@ const TARGET = join(root, "data", "templates", "eval-report.xlsx")
 
 function readZip(path) {
   const buf = readFileSync(path)
-  // the end-of-central-directory record
   let eocd = -1
   for (let i = buf.length - 22; i >= 0; i--) {
     if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break }
@@ -58,7 +60,6 @@ function readZip(path) {
     const localOffset = buf.readUInt32LE(p + 42)
     const name = buf.toString("utf-8", p + 46, p + 46 + nameLen)
 
-    // the local header holds the real name/extra lengths
     const lNameLen = buf.readUInt16LE(localOffset + 26)
     const lExtraLen = buf.readUInt16LE(localOffset + 28)
     const dataStart = localOffset + 30 + lNameLen + lExtraLen
@@ -72,10 +73,9 @@ function readZip(path) {
 
 // ── a minimal zip writer ───────────────────────────────────────────────────
 //
-// The TEMPLATE is compressed: it is a committed asset, and the legacy
-// workbook's 10,609 near-empty rows on the Overall sheet make it big without
-// it. (The app's OUTPUT is store-only - that is lib/zip.ts's writer, and the
-// export's reader handles both methods.)
+// The TEMPLATE is compressed: it is a committed asset. (The app's OUTPUT is
+// store-only - that is lib/zip.ts's writer, and the export's reader handles
+// both methods.)
 
 const CRC_TABLE = (() => {
   const t = new Int32Array(256)
@@ -101,14 +101,13 @@ function writeZip(parts, path) {
     const nameBuf = Buffer.from(name, "utf-8")
     const crc = crc32(data)
     const deflated = deflateRawSync(data, { level: 9 })
-    // store it uncompressed if compression made it bigger
     const useDeflate = deflated.length < data.length
     const payload = useDeflate ? deflated : data
     const method = useDeflate ? 8 : 0
 
     const local = Buffer.alloc(30 + nameBuf.length)
     local.writeUInt32LE(0x04034b50, 0)
-    local.writeUInt16LE(20, 4)          // version needed
+    local.writeUInt16LE(20, 4)
     local.writeUInt16LE(method, 6)
     local.writeUInt32LE(crc, 14)
     local.writeUInt32LE(payload.length, 18)
@@ -119,8 +118,8 @@ function writeZip(parts, path) {
 
     const cd = Buffer.alloc(46 + nameBuf.length)
     cd.writeUInt32LE(0x02014b50, 0)
-    cd.writeUInt16LE(20, 4)            // version made by
-    cd.writeUInt16LE(20, 6)            // version needed
+    cd.writeUInt16LE(20, 4)
+    cd.writeUInt16LE(20, 6)
     cd.writeUInt16LE(method, 10)
     cd.writeUInt32LE(crc, 16)
     cd.writeUInt32LE(payload.length, 20)
@@ -142,15 +141,14 @@ function writeZip(parts, path) {
   writeFileSync(path, Buffer.concat([...locals, centralBuf, eocd]))
 }
 
-// ── the workbook's geometry ────────────────────────────────────────────────
+// ── the sheet's geometry ───────────────────────────────────────────────────
 
-const EMU_PER_PX = 9525          // 96 dpi
+const EMU_PER_PX = 9525
 const EMU_PER_MM = 36000
 const EMU_PER_PT = 12700
 const MDW = 7                     // the max digit width of Calibri 11 - excel's unit
 const LOGO_WIDTH_MM = 50          // the same width the PDF's letterhead uses
 
-/** A column's width in excel units -> pixels. */
 const widthToPx = (w) => Math.round(w * MDW + 5)
 
 /**
@@ -173,7 +171,6 @@ function columnEdges(cols, lastColumn) {
   return edges
 }
 
-/** The EMU offset of a horizontal position -> the column it lands in. */
 function locateColumn(edges, emu) {
   for (let i = 0; i < edges.length - 1; i++) {
     if (emu < edges[i + 1]) return { col: i, colOff: emu - edges[i] }
@@ -182,43 +179,128 @@ function locateColumn(edges, emu) {
   return { col: last, colOff: edges[edges.length - 1] - edges[last] }
 }
 
+// ── the sheet's xml, in whatever dialect the legacy uses ───────────────────
+//
+// Two dialects are in play: the one Excel writes (`hidden="1"`) and the one
+// other spreadsheet apps write (`hidden="true"`, plus their own attributes).
+// Both are valid; the helpers below understand both.
+
+const rowRe = (n) => new RegExp(`<row r="${n}"[^>]*(?:\\/>|>[\\s\\S]*?<\\/row>)`)
+const cellRe = (ref) => new RegExp(`<c r="${ref}"([^>]*?)(?:\\/>|>([\\s\\S]*?)<\\/c>)`)
+
+/** A row's opening tag, its cells, and whether it is hidden. */
+function readRow(xml, n) {
+  const m = xml.match(rowRe(n))
+  if (!m) return null
+  const open = m[0].match(/^<row[^>]*>/)[0]
+  return {
+    open,
+    hidden: /\shidden="(?:1|true)"/.test(open),
+    style: (open.match(/\ss="(\d+)"/) || [])[1],
+  }
+}
+
+/** A cell's text, and its style id. */
+function readCell(xml, ref) {
+  const m = xml.match(cellRe(ref))
+  if (!m) return null
+  const v = (m[2] || "").match(/<v>([^<]*)<\/v>/)
+  return { style: (m[1].match(/\ss="(\d+)"/) || [])[1], value: v ? v[1] : null, isString: /\st="s"/.test(m[1]) }
+}
+
+/** Replace a cell's text with a shared string, keeping its style. */
+function setSharedString(xml, ref, text, index) {
+  const m = xml.match(cellRe(ref))
+  if (!m) throw new Error(`cell ${ref} not found`)
+  const attrs = m[1].replace(/\s+t="[^"]*"/, "")
+  return xml.replace(cellRe(ref), `<c r="${ref}"${attrs} t="s"><v>${index}</v></c>`)
+}
+
+/** Drop a cell's text, keeping its style. */
+function blankCell(xml, ref) {
+  const m = xml.match(cellRe(ref))
+  if (!m) throw new Error(`cell ${ref} not found`)
+  const style = (m[1].match(/\ss="(\d+)"/) || [])[1]
+  return xml.replace(cellRe(ref), `<c r="${ref}"${style ? ` s="${style}"` : ""}/>`)
+}
+
+/** Un-hide a row, in either dialect. */
+function unhideRow(xml, n) {
+  const row = readRow(xml, n)
+  if (!row) throw new Error(`row ${n} not found`)
+  if (!row.hidden) return xml
+  return xml.replace(rowRe(n), (m) => m.replace(/\shidden="(?:1|true)"/, ` hidden="false"`))
+}
+
+/** Replace a row wholesale, keeping its opening tag but making it visible. */
+function replaceRow(xml, n, cells) {
+  const row = readRow(xml, n)
+  if (!row) throw new Error(`row ${n} not found`)
+  const open = row.open.replace(/\shidden="(?:1|true)"/, ` hidden="false"`).replace(/\/>$/, ">")
+  return xml.replace(rowRe(n), `${open}${cells}</row>`)
+}
+
 // ── the cut ────────────────────────────────────────────────────────────────
 
 const parts = readZip(SOURCE)
 const sheetName = "xl/worksheets/sheet1.xml"
+const drawingName = "xl/drawings/drawing1.xml"
 let sheet = parts.get(sheetName).toString("utf-8")
-let drawing = parts.get("xl/drawings/drawing1.xml").toString("utf-8")
+let drawing = parts.get(drawingName).toString("utf-8")
 let strings = parts.get("xl/sharedStrings.xml").toString("utf-8")
+
+// the shared strings, and the text they hold
+const si = strings.match(/<si>[\s\S]*?<\/si>/g) || []
+const textOf = (x) => x.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+const stringTexts = si.map(textOf)
+
+/** The text a cell shows, read out of the sheet. */
+function cellText(xml, ref) {
+  const c = readCell(xml, ref)
+  if (!c || c.value === null) return null
+  return c.isString ? stringTexts[Number(c.value)] : c.value
+}
 
 // 0. the source's shape is asserted, not assumed ---------------------------
 //
-// The legacy workbook is hand-made, and a cut that silently lands in the wrong
-// place is worse than no cut: the export would write a number against the wrong
-// statement. So every cell this script touches is checked first, and the cut
-// REFUSES to run if the source has moved.
-const EXPECTED_CELLS = [
-  ["A1", 67], ["A3", 60], ["A4", 59],
-  ["A7", 4], ["G7", 7], ["A8", 4], ["G8", 7],
-  ["A9", 4], ["A10", 77],
+// The legacy workbook is hand-made and has been re-saved by more than one
+// application, so its style ids have already moved once. The guard therefore
+// asserts what the workbook SAYS - the cells, their text, the hidden rows, the
+// merges - and not the style ids, which are an implementation detail of
+// whichever app wrote it. A cut that silently lands in the wrong place is worse
+// than no cut: the export would write a number against the wrong statement.
+const EXPECTED = [
+  ["A1", (t) => t && t.includes("FACULTY PERFORMANCE EVALUATION")],
+  ["A3", (t) => t === "Faculty Performance Evaluation"],
+  ["A4", (t) => typeof t === "string" && t.length > 0],
+  ["A7", (t) => t === "Employee No"],
+  ["G7", (t) => t === "Rating"],
+  ["A8", (t) => t === "Employee Name"],
+  ["G8", (t) => t === "Remarks"],
+  ["A9", (t) => t === null || t === ""],
+  ["A10", (t) => t === null || t === ""],
+  ["A11", (t) => typeof t === "string" && t.includes("PROFESSIONAL MANNER")],
+  ["I11", (t) => t === "RATING"],
 ]
-for (const [ref, style] of EXPECTED_CELLS) {
-  const m = sheet.match(new RegExp(`<c r="${ref}"([^>]*?)(?:\\/>|>)`))
-  if (!m) throw new Error(`the source has no cell ${ref} - the legacy workbook moved`)
-  const actual = (m[1].match(/\ss="(\d+)"/) || [])[1]
-  if (actual !== String(style)) {
-    throw new Error(`cell ${ref} has style ${actual}, expected ${style} - the legacy workbook moved`)
+for (const [ref, ok] of EXPECTED) {
+  const t = cellText(sheet, ref)
+  if (!ok(t)) {
+    throw new Error(`cell ${ref} is ${JSON.stringify(t)} - the legacy workbook moved`)
   }
 }
-for (const row of [3, 4, 5]) {
-  if (!new RegExp(`<row r="${row}"[^>]*hidden="1"`).test(sheet)) {
-    throw new Error(`row ${row} is not hidden - the legacy workbook moved`)
+for (const n of [3, 4, 5, 10]) {
+  const row = readRow(sheet, n)
+  if (!row) throw new Error(`row ${n} is missing - the legacy workbook moved`)
+  if (n === 10) continue
+  if (!row.hidden) throw new Error(`row ${n} is not hidden - the legacy workbook moved`)
+}
+for (const merge of ["A10:H10", "B7:F7", "H7:I7", "B8:F8", "H8:I8", "A1:I1", "A3:I3", "A4:I4"]) {
+  if (!sheet.includes(`<mergeCell ref="${merge}"/>`)) {
+    throw new Error(`the merge ${merge} is missing - the legacy workbook moved`)
   }
 }
-if (!sheet.includes('<mergeCell ref="A10:H10"/>')) {
-  throw new Error("the source does not merge A10:H10 - the legacy workbook moved")
-}
-if (!drawing.includes("<a:srcRect")) {
-  throw new Error("the source's picture is not cropped - the legacy workbook moved")
+if (!/<xdr:pic>/.test(drawing)) {
+  throw new Error("the legacy workbook has no picture - the legacy workbook moved")
 }
 
 // 1. the shared strings we need ---------------------------------------------
@@ -233,13 +315,10 @@ const NEW_STRINGS = [
 
 // The workbook's own <si> list, taken ONCE. The new strings are appended after
 // it, and their indexes are the position they will actually occupy.
-const si = strings.match(/<si>[\s\S]*?<\/si>/g) || []
-const indexOfString = (text) => si.findIndex((x) => x.replace(/<[^>]+>/g, "") === text)
-
 const newIndexes = {}
 const newSi = []
 for (const text of NEW_STRINGS) {
-  const existing = indexOfString(text)
+  const existing = stringTexts.indexOf(text)
   if (existing >= 0) {
     newIndexes[text] = existing
     continue
@@ -248,46 +327,9 @@ for (const text of NEW_STRINGS) {
   newSi.push(`<si><t>${esc}</t></si>`)
   newIndexes[text] = si.length + newSi.length - 1
 }
-// replace the existing block (greedy: the first <si> to the last </si>)
 strings = strings.replace(/<si>[\s\S]*<\/si>/, si.join("") + newSi.join(""))
 
 // 2. the sheet's cells -------------------------------------------------------
-
-/** Replace a cell's text with a shared string, keeping its style. */
-function setSharedString(xml, ref, text) {
-  const re = new RegExp(`<c r="${ref}"([^>]*?)(?:\\/>|>([\\s\\S]*?)<\\/c>)`)
-  const m = xml.match(re)
-  if (!m) throw new Error(`cell ${ref} not found`)
-  const attrs = m[1].replace(/\s+t="[^"]*"/, "")
-  return xml.replace(re, `<c r="${ref}"${attrs} t="s"><v>${newIndexes[text]}</v></c>`)
-}
-
-/** Replace a cell's style. */
-function setStyle(xml, ref, style) {
-  const re = new RegExp(`<c r="${ref}"([^>]*?)(?:\\/>|>([\\s\\S]*?)<\\/c>)`)
-  const m = xml.match(re)
-  if (!m) throw new Error(`cell ${ref} not found`)
-  const attrs = m[1].replace(/\s+s="[^"]*"/, "").replace(/\s+t="[^"]*"/, "")
-  const inner = m[2] ? m[2] : ""
-  return xml.replace(re, `<c r="${ref}"${attrs} s="${style}">${inner}</c>`)
-}
-
-/** Drop a cell's text, keeping its style. */
-function blankCell(xml, ref) {
-  const re = new RegExp(`<c r="${ref}"([^>]*?)(?:\\/>|>([\\s\\S]*?)<\\/c>)`)
-  const m = xml.match(re)
-  if (!m) throw new Error(`cell ${ref} not found`)
-  const attrs = m[1].replace(/\s+t="[^"]*"/, "").replace(/\s+[^=]*="[^"]*"(?=[^>]*$)/g, (s) => s)
-  const style = (m[1].match(/\ss="(\d+)"/) || [])[1]
-  return xml.replace(re, `<c r="${ref}"${style ? ` s="${style}"` : ""}/>`)
-}
-
-/** Un-hide a row. A row that is already visible is left alone. */
-function unhideRow(xml, row) {
-  const exists = new RegExp(`<row r="${row}"[\\s/>]`).test(xml)
-  if (!exists) throw new Error(`row ${row} not found`)
-  return xml.replace(new RegExp(`(<row r="${row}"[^>]*?)\\s+hidden="1"`), "$1")
-}
 
 // the banner cell's text is the title AND a term the legacy typed by hand -
 // the title moves to r3 and the term to r4, so the cell keeps only its style.
@@ -297,29 +339,32 @@ sheet = blankCell(sheet, "A1")
 // all three were hidden (the banner image carried their text) and are now the
 // block the reader sees.
 sheet = unhideRow(sheet, 3)
-sheet = setSharedString(sheet, "A3", NEW_STRINGS[0])
+sheet = setSharedString(sheet, "A3", NEW_STRINGS[0], newIndexes[NEW_STRINGS[0]])
 sheet = unhideRow(sheet, 4)
-sheet = setSharedString(sheet, "A4", NEW_STRINGS[1])
-sheet = unhideRow(sheet, 5)
-sheet = sheet.replace(
-  /<row r="5"[^>]*\/>/,
-  '<row r="5" spans="1:9" x14ac:dyDescent="0.25">' +
-    `<c r="A5" s="59" t="s"><v>${newIndexes[NEW_STRINGS[2]]}</v></c>` +
-    '<c r="B5" s="59"/><c r="C5" s="59"/><c r="D5" s="59"/><c r="E5" s="59"/>' +
-    '<c r="F5" s="59"/><c r="G5" s="59"/><c r="H5" s="59"/><c r="I5" s="59"/>' +
-    "</row>",
-)
+sheet = setSharedString(sheet, "A4", NEW_STRINGS[1], newIndexes[NEW_STRINGS[1]])
+
+// r5 is a new row: it carries the evaluation period, styled like r4.
+const r4Style = readCell(sheet, "A4").style
+const r5Cells =
+  `<c r="A5" s="${r4Style}" t="s"><v>${newIndexes[NEW_STRINGS[2]]}</v></c>` +
+  ["B", "C", "D", "E", "F", "G", "H", "I"].map((c) => `<c r="${c}5" s="${r4Style}"/>`).join("")
+sheet = replaceRow(sheet, 5, r5Cells)
 
 // the identity block gains Program and Section. r9 and r10 are re-styled to
-// r7 and r8's shape exactly, so the four rows read as one table.
+// r7 and r8's shape - the styles are READ from those rows, not hard-coded,
+// because a spreadsheet app renumbers them whenever it re-saves.
+const labelStyle = readCell(sheet, "A7").style
+const valueStyle = readCell(sheet, "B7").style
+const rightLabelStyle = readCell(sheet, "G7").style
+const rightValueStyle = readCell(sheet, "H7").style
+
 for (const [row, label] of [[9, NEW_STRINGS[3]], [10, NEW_STRINGS[4]]]) {
-  sheet = unhideRow(sheet, row)
-  sheet = setStyle(sheet, `A${row}`, 4)
-  sheet = setSharedString(sheet, `A${row}`, label)
-  for (const col of ["B", "C", "D", "E", "F"]) sheet = setStyle(sheet, `${col}${row}`, 69)
-  sheet = setStyle(sheet, `G${row}`, 7)
-  sheet = setStyle(sheet, `H${row}`, 70)
-  sheet = setStyle(sheet, `I${row}`, 70)
+  const cells =
+    `<c r="A${row}" s="${labelStyle}" t="s"><v>${newIndexes[label]}</v></c>` +
+    ["B", "C", "D", "E", "F"].map((c) => `<c r="${c}${row}" s="${valueStyle}"/>`).join("") +
+    `<c r="G${row}" s="${rightLabelStyle}"/>` +
+    `<c r="H${row}" s="${rightValueStyle}"/><c r="I${row}" s="${rightValueStyle}"/>`
+  sheet = replaceRow(sheet, row, cells)
 }
 
 // 3. the merges -------------------------------------------------------------
@@ -381,18 +426,35 @@ const anchor =
   '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic>' +
   "<xdr:clientData/></xdr:oneCellAnchor>"
 
-// the picture is replaced wholesale; the legend's textbox is kept and corrected.
-const picture = drawing.match(/<xdr:twoCellAnchor[\s\S]*?<\/xdr:twoCellAnchor>/)[0]
-drawing = drawing.replace(picture, anchor)
+// the PICTURE's anchor is replaced - not the first anchor, which is the legend's
+// textbox. The anchors are matched ONE AT A TIME (a lazy match that has to
+// contain a <xdr:pic> would otherwise span from the textbox's anchor all the way
+// to the picture's, and replacing that would DELETE the legend), and the one
+// that carries the picture is the one that goes.
+const anchors = drawing.match(/<xdr:(?:twoCellAnchor|oneCellAnchor|absoluteAnchor)[\s\S]*?<\/xdr:(?:twoCellAnchor|oneCellAnchor|absoluteAnchor)>/g) || []
+const pictureIndex = anchors.findIndex((a) => a.includes("<xdr:pic>"))
+if (pictureIndex < 0) throw new Error("the legacy workbook's picture anchor is not found")
+const pictureAnchor = anchors[pictureIndex]
+if (anchors.length < 2) throw new Error("the legacy workbook's legend textbox is missing")
+drawing = drawing.replace(pictureAnchor, anchor)
 
 // 5. the legend's bands - the app's ladder (getRemark) is the truth
+//
+// The bands live in text runs, and a spreadsheet app may leave trailing spaces
+// in them, so the match allows for that.
 const LEGEND = [
   ["2.5 - 1.51 = Fair", "2.5 - 1.51 = Unsatisfactory"],
   ["1.5 - 1.00 = Needs improvement", "1.5 - 1.00 = Poor"],
 ]
 for (const [from, to] of LEGEND) {
-  if (!drawing.includes(`<a:t>${from}</a:t>`)) throw new Error(`legend text not found: ${from}`)
-  drawing = drawing.replace(`<a:t>${from}</a:t>`, `<a:t>${to}</a:t>`)
+  if (new RegExp(`<a:t>${to.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*</a:t>`).test(drawing)) {
+    continue // already corrected
+  }
+  const re = new RegExp(`<a:t>${from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*</a:t>`)
+  if (!re.test(drawing)) {
+    throw new Error(`the legend's band ${JSON.stringify(from)} is not found - the legacy moved`)
+  }
+  drawing = drawing.replace(re, `<a:t>${to}</a:t>`)
 }
 
 // 6. the string counts are advisory, but they are cheap to get right ---------
@@ -407,8 +469,9 @@ strings = strings.replace(/uniqueCount="\d+"/, `uniqueCount="${si.length + newSi
 // ── write it ───────────────────────────────────────────────────────────────
 
 parts.set(sheetName, Buffer.from(sheet, "utf-8"))
-parts.set("xl/drawings/drawing1.xml", Buffer.from(drawing, "utf-8"))
+parts.set(drawingName, Buffer.from(drawing, "utf-8"))
 parts.set("xl/sharedStrings.xml", Buffer.from(strings, "utf-8"))
+// the media slot the picture's relationship points at
 parts.set("xl/media/image1.png", logo)
 
 // [Content_Types].xml first - the OPC convention, and what the app's zip writer does.
@@ -420,7 +483,7 @@ writeZip(ordered, TARGET)
 console.log(`template written: ${TARGET}`)
 console.log(`  letterhead   ${logoW}x${logoH} px -> ${LOGO_WIDTH_MM}mm wide (${logoCx} x ${logoCy} EMU), centred at x=${left} in a ${blockWidth} EMU block`)
 console.log(`  title block  r3 title, r4 semester, r5 evaluation period (un-hidden)`)
-console.log(`  identity     r9 Program, r10 Section (both re-styled to r7/r8)`)
+console.log(`  identity     r9 Program, r10 Section (styled from r7/r8, not hard-coded)`)
 console.log(`  merges       ${allMerges.length} (A10:H10 removed, A5:I5 + B9:F9 + H9:I9 + B10:F10 + H10:I10 added)`)
 console.log(`  legend       the two bands that disagreed with getRemark() corrected`)
 console.log(`  strings      ${si.length + newSi.length} unique, ${stringCells} references`)
@@ -433,24 +496,18 @@ console.log(`  strings      ${si.length + newSi.length} unique, ${stringCells} r
 const written = readZip(TARGET)
 const writtenSheet = written.get(sheetName).toString("utf-8")
 const writtenStrings = written.get("xl/sharedStrings.xml").toString("utf-8")
-const writtenSi = writtenStrings.match(/<si>[\s\S]*?<\/si>/g) || []
+const writtenTexts = (writtenStrings.match(/<si>[\s\S]*?<\/si>/g) || []).map(textOf)
 
-/** The text a cell shows, read back out of the written file. */
-function readCell(ref) {
-  const m = writtenSheet.match(new RegExp(`<c r="${ref}"([^>]*?)(?:\\/>|>([\\s\\S]*?)<\\/c>)`))
+function readBack(ref) {
+  const m = writtenSheet.match(cellRe(ref))
   if (!m) return null
-  const t = (m[1].match(/\st="([^"]*)"/) || [])[1]
   const v = (m[2] || "").match(/<v>([^<]*)<\/v>/)
   if (!v) return null
-  if (t === "s") {
-    const siText = writtenSi[Number(v[1])].replace(/<[^>]+>/g, "")
-    return siText.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-  }
-  return v[1]
+  return /\st="s"/.test(m[1]) ? writtenTexts[Number(v[1])] : v[1]
 }
 
-const EXPECTED_CELLS_OUT = [
-  ["A1", null],                                   // the banner's text is gone
+const EXPECTED_OUT = [
+  ["A1", null],
   ["A3", NEW_STRINGS[0]],
   ["A4", NEW_STRINGS[1]],
   ["A5", NEW_STRINGS[2]],
@@ -461,12 +518,12 @@ const EXPECTED_CELLS_OUT = [
   ["A11", "I. PROFESSIONAL MANNER"], ["I11", "RATING"],
 ]
 const problems = []
-for (const [ref, expected] of EXPECTED_CELLS_OUT) {
-  const actual = readCell(ref)
+for (const [ref, expected] of EXPECTED_OUT) {
+  const actual = readBack(ref)
   if (actual !== expected) problems.push(`${ref} is ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`)
 }
 for (const row of [3, 4, 5, 10]) {
-  if (new RegExp(`<row r="${row}"[^>]*hidden="1"`).test(writtenSheet)) {
+  if (/\shidden="(?:1|true)"/.test((writtenSheet.match(rowRe(row)) || [""])[0])) {
     problems.push(`row ${row} is still hidden`)
   }
 }
@@ -474,20 +531,23 @@ for (const merge of ["A5:I5", "B9:F9", "H9:I9", "B10:F10", "H10:I10"]) {
   if (!writtenSheet.includes(`<mergeCell ref="${merge}"/>`)) problems.push(`the merge ${merge} is missing`)
 }
 if (writtenSheet.includes('<mergeCell ref="A10:H10"/>')) problems.push("A10:H10 is still merged")
-if (written.get("xl/media/image1.png").compare(readFileSync(LOGO)) !== 0) {
+if (!written.get("xl/media/image1.png").equals(readFileSync(LOGO))) {
   problems.push("the media is not public/logo-blk.png")
 }
-const writtenDrawing = written.get("xl/drawings/drawing1.xml").toString("utf-8")
+const writtenDrawing = written.get(drawingName).toString("utf-8")
 if (writtenDrawing.includes("<a:srcRect")) problems.push("the logo is still cropped")
 if (!writtenDrawing.includes("Unsatisfactory") || !writtenDrawing.includes("1.5 - 1.00 = Poor")) {
   problems.push("the legend was not corrected")
 }
-// the anchor must be a VALID one: a negative offset, or an offset wider than
-// its own column, is how a drawing silently lands in the wrong place.
-const writtenAnchor = writtenDrawing.match(/<xdr:from>[\s\S]*?<\/xdr:from>/)
-if (!writtenAnchor) {
+if (!writtenDrawing.includes("<xdr:txBody>")) problems.push("the legend's textbox was lost")
+// the anchor to check is the PICTURE's - the legend's textbox anchor comes
+// first in the file and has a <xdr:from> of its own.
+const writtenAnchors = writtenDrawing.match(/<xdr:(?:twoCellAnchor|oneCellAnchor|absoluteAnchor)[\s\S]*?<\/xdr:(?:twoCellAnchor|oneCellAnchor|absoluteAnchor)>/g) || []
+const writtenPicture = writtenAnchors.find((a) => a.includes("<xdr:pic>"))
+if (!writtenPicture) {
   problems.push("the letterhead has no anchor")
 } else {
+  const writtenAnchor = writtenPicture.match(/<xdr:from>[\s\S]*?<\/xdr:from>/)
   const col = Number(writtenAnchor[0].match(/<xdr:col>(\d+)<\/xdr:col>/)[1])
   const colOff = Number(writtenAnchor[0].match(/<xdr:colOff>(-?\d+)<\/xdr:colOff>/)[1])
   const rowOff = Number(writtenAnchor[0].match(/<xdr:rowOff>(-?\d+)<\/xdr:rowOff>/)[1])
