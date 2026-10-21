@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { UserData } from "@/lib/types"
+import { UNMAPPED_CATEGORY_NAME } from "@/lib/evaluation-utils"
 
 export interface QueryError {
   code?: string
@@ -141,8 +142,8 @@ export async function fetchRatingsWithCategories(
       evaluationId: r.evaluationId,
       rating: r.rating,
       rubric_items: {
-        categoryId: "",
-        rubric_categories: { name: "" },
+        categoryId: UNMAPPED_CATEGORY_NAME,
+        rubric_categories: { name: UNMAPPED_CATEGORY_NAME },
       },
     }))
   }
@@ -183,8 +184,8 @@ export async function fetchRatingsWithCategories(
     evaluationId: r.evaluationId,
     rating: r.rating,
     rubric_items: {
-      categoryId: itemMap.get(r.itemId) || "",
-      rubric_categories: { name: catMap.get(itemMap.get(r.itemId) || "") || "" },
+      categoryId: itemMap.get(r.itemId) || UNMAPPED_CATEGORY_NAME,
+      rubric_categories: { name: catMap.get(itemMap.get(r.itemId) || "") || UNMAPPED_CATEGORY_NAME },
     },
   }))
 }

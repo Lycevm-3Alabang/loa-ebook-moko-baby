@@ -43,13 +43,6 @@ const IN_CHUNK_SIZE = 100
 // past it.
 const PAGE_SIZE = 1000
 
-/**
- * The pseudo-department for an assignment whose department cannot be
- * resolved. Under the faculty-driven rule this is an integrity condition
- * (the assignment points outside the period), not a bucket of people.
- */
-const UNKNOWN_DEPARTMENT = "__unknown__"
-
 function chunkStrIds(ids: string[], size: number): string[][] {
   const chunks: string[][] = []
   for (let i = 0; i < ids.length; i += size) {
@@ -792,41 +785,83 @@ export async function getStudentBreakdownsForFaculty(
   return result.get(facultyId) || []
 }
 
+/** A comment row, as the student breakdown reads it. */
+interface CommentRow {
+  id: string
+  evaluationId: string
+  comment: string
+  sentimentLabel: string | null
+  sentimentScore: number | null
+}
+
+/**
+ * The comments of a set of evaluations, chunked.
+ *
+ * A chunk of 100 evaluation ids holds at most a few hundred comments, so the
+ * `.in()` stays within PostgREST's URL budget and the 1,000-row cap cannot
+ * bite either. One oversized `.in()` over every evaluation id overflows the
+ * URL, PostgREST answers 400, and the route turns it into a 500.
+ */
+async function fetchCommentsByEvaluationIds(evaluationIds: string[]): Promise<CommentRow[]> {
+  if (evaluationIds.length === 0) return []
+  const rows: CommentRow[] = []
+  for (const chunk of chunkStrIds([...new Set(evaluationIds)], IN_CHUNK_SIZE)) {
+    const { data, error } = await supabase
+      .from("evaluation_comments")
+      .select("id, evaluationId, comment, sentimentLabel, sentimentScore")
+      .in("evaluationId", chunk)
+    if (error) throw error
+    for (const c of (data || []) as CommentRow[]) rows.push(c)
+  }
+  return rows
+}
+
 async function getStudentBreakdownsForFaculties(
   evaluationPeriodId: string,
   facultyIds: string[],
 ): Promise<Map<string, StudentBreakdownItem[]>> {
   if (facultyIds.length === 0) return new Map()
 
-  const { data: evals, error: evErr } = await supabase
-    .from("evaluations")
-    .select(`
-      id,
-      evaluateeId
-    `)
-    .eq("evaluation_period_id", evaluationPeriodId)
-    .in("evaluateeId", facultyIds)
-    .eq("status", "SUBMITTED")
-    .eq("isDisabled", false)
-    .not("facultySubjectId", "is", null)
-  if (evErr) throw evErr
-  if (!evals || evals.length === 0) return new Map()
+  // The faculty's submitted and enabled evaluations in the period. Paged
+  // .range(): the 1,000-row cap — a faculty's responses (one per student per
+  // subject) pass 1,000, and PostgREST truncates the read with HTTP 200 and
+  // no error. Ordered by id (the primary key, so a total order).
+  const evals: { id: string; evaluateeId: string }[] = []
+  let offset = 0
+  for (;;) {
+    const { data, error } = await supabase
+      .from("evaluations")
+      .select(`id, evaluateeId`)
+      .eq("evaluation_period_id", evaluationPeriodId)
+      .in("evaluateeId", facultyIds)
+      .eq("status", "SUBMITTED")
+      .eq("isDisabled", false)
+      .not("facultySubjectId", "is", null)
+      .order("id", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1)
+    if (error) throw error
+    const page = (data || []) as { id: string; evaluateeId: string }[]
+    evals.push(...page)
+    if (page.length < PAGE_SIZE) break
+    offset += PAGE_SIZE
+  }
+  if (evals.length === 0) return new Map()
 
   const allEvalIds = evals.map((e) => e.id)
 
-  const [allRatings, commentsResult] = await Promise.all([
+  const [allRatings, commentRows] = await Promise.all([
     fetchRatingsWithCategories(supabase, allEvalIds),
-    supabase
-      .from("evaluation_comments")
-      .select("id, evaluationId, comment, sentimentLabel, sentimentScore")
-      .in("evaluationId", allEvalIds),
+    fetchCommentsByEvaluationIds(allEvalIds),
   ])
-  if (commentsResult.error) throw commentsResult.error
 
   const commentsByEval = new Map<string, Array<{ comment: string; sentimentLabel: string | null; sentimentScore: number | null }>>()
-  for (const c of commentsResult.data || []) {
+  for (const c of commentRows) {
     if (!commentsByEval.has(c.evaluationId)) commentsByEval.set(c.evaluationId, [])
-    commentsByEval.get(c.evaluationId)!.push(c)
+    commentsByEval.get(c.evaluationId)!.push({
+      comment: c.comment,
+      sentimentLabel: c.sentimentLabel,
+      sentimentScore: c.sentimentScore,
+    })
   }
 
   const ratingsByEval = new Map<string, typeof allRatings>()

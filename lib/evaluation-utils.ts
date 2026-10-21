@@ -44,6 +44,16 @@ export const CATEGORY_LABELS: Record<RubricKey, string> = {
   assessmentAndFeedback: "Assessment & Feedback",
 }
 
+/**
+ * The category name a rating gets when its rubric item does not resolve.
+ *
+ * The foreign keys cascade (a rubric item's ratings go with it), so this is a
+ * safety net rather than a state the schema allows. The general rating leaves
+ * it out: a rating that belongs to no criterion must not move the average of
+ * the criteria the report names.
+ */
+export const UNMAPPED_CATEGORY_NAME = ""
+
 export function getRemark(general: number | null): string | null {
   if (general === null) return null
   if (general >= 4.5) return "Outstanding"
@@ -136,7 +146,11 @@ export function poolCategoryTotals(parts: CategoryTotals[]): CategoryTotals {
 }
 
 export function computeGeneralRating(catAverages: CategoryAverages): number | null {
-  const keys = Object.keys(catAverages)
+  // The error bucket does not count: a rating whose rubric item no longer
+  // resolves has no criterion to belong to, so it must not move the average of
+  // the criteria the report names. A criterion the app has no column for IS a
+  // real criterion, so it still counts.
+  const keys = Object.keys(catAverages).filter((k) => k !== UNMAPPED_CATEGORY_NAME)
   if (keys.length === 0) return null
   return Math.round(keys.reduce((sum, k) => sum + catAverages[k], 0) / keys.length * 100) / 100
 }

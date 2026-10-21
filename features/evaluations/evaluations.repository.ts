@@ -21,6 +21,10 @@ function chunkStrIds(ids: string[], size: number): string[][] {
   return chunks
 }
 
+// A status row as the database returns it: `isDisabled` is a soft flag, and an
+// older row can carry it as null.
+type StatusRow = Omit<EvaluationStatusItem, "isDisabled"> & { isDisabled: boolean | null }
+
 // Semester titles for a set of mapping semesterIds, in one round trip.
 // Deliberately a separate query, NOT an embedded `semesters!inner(title)`
 // join on the faculty_subjects selects: !inner would silently drop
@@ -153,23 +157,30 @@ export const evaluationRepository: IEvaluationRepository = {
       if (fsErr) throw fsErr
 
       const staleIds: string[] = []
+      // The stale evaluation's OWN assignment. `staleIds` holds evaluation
+      // ids and the map above is keyed by the assignment, so the assignment
+      // has to travel with it.
+      const staleFsIds: string[] = []
 
       for (const fs of facultySubjects) {
         const ev = existingByFsId.get(fs.id)
         if (ev && ev.evaluateeId !== fs.faculty_id && !ev.isDisabled) {
           staleIds.push(ev.id)
+          staleFsIds.push(ev.facultySubjectId)
         }
       }
 
       if (staleIds.length > 0) {
-        await supabase.from("evaluations").update({ isDisabled: true }).in("id", staleIds)
-        for (const id of staleIds) activeExistingFsIds.delete(existingByFsId.get(id)!.facultySubjectId)
+        // The state goes with the flag, for the same reason as the bulk
+        // invalidate: the evaluation belongs to a teacher the subject no
+        // longer has, so it must not be counted in any figure.
+        await supabase.from("evaluations").update({ isDisabled: true, status: "INVALID" }).in("id", staleIds)
+        for (const fsId of staleFsIds) activeExistingFsIds.delete(fsId)
       }
 
       const skipFsIds = new Set([...Array.from(activeExistingFsIds), ...Array.from(disabledFsIds)])
-      for (const id of staleIds) {
-        const fsId = existingByFsId.get(id)?.facultySubjectId
-        if (fsId) skipFsIds.delete(fsId)
+      for (const fsId of staleFsIds) {
+        skipFsIds.delete(fsId)
       }
 
       const titleBySemesterId = await fetchSemesterTitleMap(facultySubjects.map((fs) => fs.semesterId))
@@ -191,23 +202,30 @@ export const evaluationRepository: IEvaluationRepository = {
     if (fsErr) throw fsErr
 
     const staleIds: string[] = []
+    // The stale evaluation's OWN assignment. `staleIds` holds evaluation ids
+    // and the map above is keyed by the assignment, so the assignment has to
+    // travel with it.
+    const staleFsIds: string[] = []
 
     for (const fs of facultySubjects) {
       const ev = existingByFsId.get(fs.id)
       if (ev && ev.evaluateeId !== fs.faculty_id && !ev.isDisabled) {
         staleIds.push(ev.id)
+        staleFsIds.push(ev.facultySubjectId)
       }
     }
 
     if (staleIds.length > 0) {
-      await supabase.from("evaluations").update({ isDisabled: true }).in("id", staleIds)
-      for (const id of staleIds) activeExistingFsIds.delete(existingByFsId.get(id)!.facultySubjectId)
+      // The state goes with the flag, for the same reason as the bulk
+      // invalidate: the evaluation belongs to a teacher the subject no longer
+      // has, so it must not be counted in any figure.
+      await supabase.from("evaluations").update({ isDisabled: true, status: "INVALID" }).in("id", staleIds)
+      for (const fsId of staleFsIds) activeExistingFsIds.delete(fsId)
     }
 
     const skipFsIds = new Set([...Array.from(activeExistingFsIds), ...Array.from(disabledFsIds)])
-    for (const id of staleIds) {
-      const fsId = existingByFsId.get(id)?.facultySubjectId
-      if (fsId) skipFsIds.delete(fsId)
+    for (const fsId of staleFsIds) {
+      skipFsIds.delete(fsId)
     }
 
     const titleBySemesterId = await fetchSemesterTitleMap(facultySubjects.map((fs) => fs.semesterId))
@@ -349,9 +367,11 @@ export const evaluationRepository: IEvaluationRepository = {
     return (data || []) as unknown as EvaluationCommentWithEvaluation[]
   },
   async bulkDisableByPeriod(evaluationPeriodId, filter) {
+    // The state goes with the flag: every figure reads status = 'SUBMITTED',
+    // so a disabled response that kept its state would still be averaged in.
     let q = supabase
       .from("evaluations")
-      .update({ isDisabled: true })
+      .update({ isDisabled: true, status: "INVALID" })
       .eq("evaluation_period_id", evaluationPeriodId)
       .eq("status", "SUBMITTED")
     if (filter?.facultySubjectId) {
@@ -363,11 +383,23 @@ export const evaluationRepository: IEvaluationRepository = {
     if (error) throw error
   },
   async restoreByIds(ids) {
+    if (ids.length === 0) return
+    // The state comes back with the flag: an invalidated row is
+    // status 'INVALID', and clearing only the flag would leave it out of every
+    // figure. A row that was never submitted (submittedAt is null) goes back
+    // to DRAFT — it was never a response.
     const { error } = await supabase
       .from("evaluations")
-      .update({ isDisabled: false })
+      .update({ isDisabled: false, status: "SUBMITTED" })
       .in("id", ids)
+      .not("submittedAt", "is", null)
     if (error) throw error
+    const { error: draftError } = await supabase
+      .from("evaluations")
+      .update({ isDisabled: false, status: "DRAFT" })
+      .in("id", ids)
+      .is("submittedAt", null)
+    if (draftError) throw draftError
   },
   async listDisabled() {
     const { data, error } = await supabase
@@ -505,41 +537,68 @@ export const evaluationRepository: IEvaluationRepository = {
   },
   async listSubmittedByPeriodAndFacultySubjectIds(evaluationPeriodId, facultySubjectIds) {
     if (facultySubjectIds.length === 0) return []
-    const { data, error } = await supabase
-      .from("evaluations")
-      .select("id, evaluatorId, submittedAt, createdAt, facultySubjectId")
-      .eq("evaluation_period_id", evaluationPeriodId)
-      .eq("status", "SUBMITTED")
-      .in("facultySubjectId", facultySubjectIds)
-      .order("submittedAt", { ascending: true })
-    if (error) throw error
-    return (data || []) as EvaluationDetailItem[]
+    // Chunked .in(): the URL cap.
+    // Paged .range(): the 1,000-row cap — a faculty's responses in a period
+    // (one per student per subject) pass 1,000, and PostgREST truncates the
+    // read with HTTP 200 and no error. Ordered by (submittedAt, id): `id` is
+    // the primary key, so the pair is a TOTAL order and the pages cannot skip
+    // or duplicate a row — and the visible order is the one the routes
+    // already render.
+    const results = await Promise.all(
+      chunkStrIds([...new Set(facultySubjectIds)], IN_CHUNK_SIZE).map(async (ids) => {
+        const rows: EvaluationDetailItem[] = []
+        let offset = 0
+        for (;;) {
+          const { data, error } = await supabase
+            .from("evaluations")
+            .select("id, evaluatorId, submittedAt, createdAt, facultySubjectId")
+            .eq("evaluation_period_id", evaluationPeriodId)
+            .eq("status", "SUBMITTED")
+            .in("facultySubjectId", ids)
+            .order("submittedAt", { ascending: true })
+            .order("id", { ascending: true })
+            .range(offset, offset + PAGE_SIZE - 1)
+          if (error) throw error
+          const page = (data || []) as EvaluationDetailItem[]
+          rows.push(...page)
+          if (page.length < PAGE_SIZE) break
+          offset += PAGE_SIZE
+        }
+        return rows
+      }),
+    )
+    return results.flat() as EvaluationDetailItem[]
   },
   async listStatusByPeriodAndFacultySubjectIds(evaluationPeriodId, facultySubjectIds) {
     if (facultySubjectIds.length === 0) return []
     // Chunked .in(): PostgREST caps URL length (~8KB). A semester's full
     // faculty-subject list in one .in() overflows the URL and PostgREST
     // answers 400, which surfaces as a 500 on the route.
+    // Paged .range(): the 1,000-row cap — the coverage page reads a whole
+    // term's responses, and PostgREST truncates them with HTTP 200 and no
+    // error. Ordered by id (the primary key, so a total order).
     const results = await Promise.all(
-      chunkStrIds([...new Set(facultySubjectIds)], IN_CHUNK_SIZE).map((ids) =>
-        supabase
-          .from("evaluations")
-          .select("id, evaluatorId, status, isDisabled, submittedAt, facultySubjectId")
-          .eq("evaluation_period_id", evaluationPeriodId)
-          .in("facultySubjectId", ids),
-      ),
+      chunkStrIds([...new Set(facultySubjectIds)], IN_CHUNK_SIZE).map(async (ids) => {
+        const rows: EvaluationStatusItem[] = []
+        let offset = 0
+        for (;;) {
+          const { data, error } = await supabase
+            .from("evaluations")
+            .select("id, evaluatorId, status, isDisabled, submittedAt, facultySubjectId")
+            .eq("evaluation_period_id", evaluationPeriodId)
+            .in("facultySubjectId", ids)
+            .order("id", { ascending: true })
+            .range(offset, offset + PAGE_SIZE - 1)
+          if (error) throw error
+          const page = (data || []) as StatusRow[]
+          rows.push(...page.map((r) => ({ ...r, isDisabled: r.isDisabled ?? false })))
+          if (page.length < PAGE_SIZE) break
+          offset += PAGE_SIZE
+        }
+        return rows
+      }),
     )
-    for (const res of results) {
-      if (res.error) throw res.error
-    }
-    return results.flatMap((res) => (res.data || [])).map((r) => ({
-      id: r.id,
-      evaluatorId: r.evaluatorId,
-      status: r.status as "DRAFT" | "SUBMITTED" | "INVALID",
-      isDisabled: r.isDisabled ?? false,
-      submittedAt: r.submittedAt,
-      facultySubjectId: r.facultySubjectId,
-    })) as EvaluationStatusItem[]
+    return results.flat() as EvaluationStatusItem[]
   },
   async countSubmittedByFacultySubjectIds(evaluationPeriodId, facultySubjectIds) {
     if (facultySubjectIds.length === 0) return {}

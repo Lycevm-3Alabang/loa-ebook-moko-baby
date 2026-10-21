@@ -364,55 +364,69 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   which shares its read — can differ from the results list in exactly those two cases (items 1 and
   2 below).
 
-- [ ] **Three reads are still on a cap.** Where: `listSubmittedByPeriodAndFacultySubjectIds`
-  (`features/evaluations/evaluations.repository.ts:506`) and `listStatusByPeriodAndFacultySubjectIds`
-  (`:518`) are chunked by facultySubjectIds (the **URL** budget) but their **row** count is
-  unbounded — the same 1,000-row truncation AGENTS.md **Lesson 7b** describes, unfixed. And
-  `getStudentBreakdownsForFaculties` reads the comments with one unchunked
-  `.in("evaluationId", allEvalIds)` (`features/evaluation-results/evaluation-results.repository.ts:836`)
-  where `allEvalIds` is every evaluation of the faculty — past ~200 ids that URL exceeds ~8KB and
-  PostgREST answers **400** (AGENTS.md **Lesson 7**), which the route turns into a 500.
-  What it is: the same class of defect as the one just fixed, on the paths that were left out of
-  scope. The student-breakdown read is a *different surface* (the per-student table), not the
-  Avg/Highest/Lowest figures.
-  Why it is open: nobody has hit them yet, because the volumes have not reached the caps.
-  Options: **(a)** page the two evaluation reads the way the ones just fixed are paged
-  (`.order("id")` + `.range()`), and chunk the comments read at 100 ids; **(b)** leave them and
-  record the caps. **(a) is three small edits and removes a latent 500.**
+- [x] **The reads that were still on a cap — done 2026-10-21.** There were **four**, not three:
+  the two the item named, plus the student-breakdown's **evaluations** read, which had the same
+  row-cap defect as its comments read, in the same function.
+  - `listSubmittedByPeriodAndFacultySubjectIds` (`features/evaluations/evaluations.repository.ts`)
+    was **unchunked and unpaged** → now chunked at 100 ids and paged at 1,000, ordered by
+    **`(submittedAt, id)`** — a total order (so a page boundary cannot skip or duplicate a row)
+    that keeps the visible order the routes already render.
+  - `listStatusByPeriodAndFacultySubjectIds` was chunked but **unpaged** — the coverage page reads
+    a whole term's responses → now paged at 1,000, ordered by `id`.
+  - The student-breakdown's **evaluations** read was **unpaged** → now paged at 1,000, ordered by
+    `id`; its **comments** read was one unchunked `.in("evaluationId", allEvalIds)` (past ~200 ids
+    the URL exceeds ~8KB → PostgREST **400** → the route's 500) → now chunked at 100 ids, the same
+    size `listCommentScores` uses, so the row cap cannot bite either.
+  - The **ratings** read was already safe (`fetchRatingsWithCategories` chunks at 37 evaluations =
+    999 rating rows = one page).
+  - Tests: `lib/__tests__/evaluations-repository-chunking.test.ts` gained the row-cap cases for
+    both evaluations reads (the paging model was already in that file), and
+    `lib/__tests__/evaluation-results-student-breakdown.test.ts` is new — the student-breakdown
+    reads had no test at all.
+  - Run file: `.opencode/skills/plan-fix/runs/20261021-1700-reads-on-a-cap.md`.
 
-- [ ] **The `""` fallback category dilutes Avg. Rating but can never be named.**
-  Where: `lib/db/common.ts:99-110` (the fallback) and `:144-151` (the mapping), with the arithmetic
-  in `lib/evaluation-utils.ts:65-83` (category averages → general) and `:85-101` (the fixed
-  columns).
-  What it is: a rating whose `itemId` cannot be resolved to a `rubric_items` row becomes the
-  category name `""`. `computeGeneralRating` averages over **all** category names present, so the
-  `""` bucket **counts toward Avg. Rating**; `mapCategoryAveragesToColumns` drops any name not in
-  `CATEGORY_NAMES`, so the `""` bucket **can never be** a Highest or Lowest Rubric. A rating whose
-  item was deleted therefore moves the average without being visible anywhere.
-  Why it is open: a real number is being diluted by a bucket with no label, and the UI cannot show
-  why. ⭐ **What runs now (2026-10-21):** the raw-row path — `computeGeneralRating` over every
-  category name present — so the bucket **counts** on the list, the drill-down and the export. The
-  aggregate dropped it, and that path is going away, so option **(a)** would *change* the number
-  back and **(b)** would surface it. Options: **(a)** exclude unmapped names from
-  `computeGeneralRating` as well (then Avg. Rating is over the 8 real criteria only — consistent
-  with the columns, and with what the user sees); **(b)** keep them and surface the count ("N
-  ratings could not be attributed to a criterion"); **(c)** treat an unresolvable `itemId` as a data
-  error and log it.
+- [x] **The `""` fallback category — narrowed 2026-10-21, and the state it targeted cannot occur.**
+  Where: `lib/db/common.ts` (the fallback, now named by `UNMAPPED_CATEGORY_NAME`) and
+  `lib/evaluation-utils.ts` (`computeGeneralRating`).
+  What it was: a rating whose `itemId` cannot be resolved to a `rubric_items` row becomes the
+  category name `""`. `computeGeneralRating` averaged over **all** category names present, so the
+  `""` bucket **counted toward Avg. Rating**; `mapCategoryAveragesToColumns` drops any name not in
+  `CATEGORY_NAMES`, so it could **never** be a Highest or Lowest Rubric.
+  ⭐ **The scan (2026-10-21) found the state is unreachable:** the foreign keys cascade all the way
+  down — `rubric_groups → rubric_categories ON DELETE CASCADE` (`supabase-schema.sql:673`) →
+  `rubric_items` (`:683`) → `evaluation_ratings` (`:758`) — so a rating cannot outlive its rubric
+  item. The fallback is a safety net, not a state the schema allows.
+  ⭐ **What landed:** the general rating now leaves the **error bucket** out (a rating that belongs
+  to no criterion must not move the average of the criteria the report names), and the fallback and
+  the rule name the same constant. **The reachable numbers do not change** — the bucket cannot
+  exist. It closes the door if the FKs ever change.
+  ⭐ **The reachable question the old item never asked:** a criterion the app has **no column for**
+  (a school adds a category like "Course Coverage" to the rubric) **is a real criterion** — it
+  counts toward the general rating today, and no column shows it. That behaviour is **kept**
+  deliberately: dropping it would change the published average for a rubric that has one. If the
+  owner wants the average to cover only the eight named criteria, that is a product decision, not a
+  defect fix.
 
-- [ ] **The `CATEGORY_NAMES` aliases overwrite a column instead of averaging.**
-  Where: `lib/evaluation-utils.ts:11-21` (the map) and `:96-99` (the assignment loop).
-  What it is: `"Experiential Learning"` and `"Experiential Learning Provided to Students"` both map
+- [x] **The `CATEGORY_NAMES` aliases overwrite a column instead of averaging — the state cannot occur
+  (2026-10-21), so the map stays.**
+  Where: `lib/evaluation-utils.ts:11-21` (the map) and the assignment loop in
+  `mapCategoryAveragesToColumns`.
+  What it was: `"Experiential Learning"` and `"Experiential Learning Provided to Students"` both map
   to the `experientialLearning` column, and so do `"Respect the Uniqueness of the Students"` and
-  `"Respect for Uniqueness"`. The loop assigns, so if a period holds **both** spellings, the second
-  one **overwrites** the first — the column is the last writer, not the average of the two. Which
-  one wins depends on the order the category names first appear in the rating rows, i.e. on the
-  database's row order — so the same subject can print different numbers on two screens.
-  The seed only uses the long spellings (`supabase-schema.sql:1613-1614`), so this is latent.
-  Why it is open: the aliases were written defensively, but the defensive path is the broken one.
-  Options: **(a)** average the aliased categories into one column (the fix that matches the
-  arithmetic); **(b)** drop the aliases and treat an unknown category name as unmapped (then the
-  `""`-bucket rule above applies); **(c)** normalise the category names in the **database** (one
-  spelling) and keep the map as the fallback.
+  `"Respect for Uniqueness"`. The loop assigns, so if a period held **both** spellings, the second
+  one **overwrote** the first — and which one won depended on the order the category names first
+  appear in the rating rows, i.e. the database's row order.
+  ⭐ **The scan found the state cannot occur:** a rating stores the rubric **item** id, and the
+  category **name** is resolved at read time from the live `rubric_categories`; a period has **one**
+  rubric group (`evaluation_periods.rubric_group_id`, `supabase-schema.sql:1814`). So a rename
+  changes every row of that period at once — the two spellings never coexist in one period's
+  figures, and the overwrite has nothing to choose between. (The only way to get both is a rubric
+  group with two categories whose names differ only by the alias — a misconfiguration, not a
+  rename.)
+  ⭐ **What landed:** nothing in the arithmetic. The alias map stays as the defensive lookup it was
+  written to be, and the finding is recorded here. Option **(a)** (average the aliases) would need
+  the per-category **counts** to pool them exactly, which the column mapping does not have — a
+  ripple through every caller to fix a state the schema forbids.
 
 - [ ] **The admin table renders only the first tie; the faculty page renders them all.**
   Where: `features/evaluations/components/DepartmentSubjectView.tsx:261` and `:268` (the subject

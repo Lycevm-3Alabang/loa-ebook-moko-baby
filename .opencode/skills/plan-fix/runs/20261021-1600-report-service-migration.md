@@ -5,8 +5,8 @@ repo: /home/nino-compyl/loa/loa-ebook-moko-baby
 calibration: {}
 workflow: "A — SCAN → VISUAL → APPROVE → BUILD"
 decision: "A — a per-faculty read (`listFacultyFigures`), cached per faculty for five minutes like the department figures; the department row is POOLED from the faculty rows, so the pooling weights travel with the read and no second walk over the ratings is needed. The results list's per-department cache stays as it is. B — the three functions with no live caller (`getAdminEvalReportData`, `getDeanDashboardData`, `getAdminDashboardData`) are deleted, not migrated; their pages keep their hardcoded preview data and lose the stale commented-out live hooks. Approved 2026-10-21 (\"Is this plan done?\" → Done)."
-status: ready-for-implement-fix
-pending: "the five slices are applied; the owner's gate run is the last step"
+status: done
+pending: "none — the five slices are applied and committed (9f2259b); the owner's gate run is the last step"
 ---
 
 # Plan
@@ -21,6 +21,8 @@ pending: "the five slices are applied; the owner's gate run is the last step"
 | plan-done | Is this plan done? | **Done** — approved 2026-10-21; the plan below is the deliverable |
 | who-implements | Who implements the slices? | **B (Code it)** — the agent writes each slice after "Apply this slice" |
 | correction | `pg` / `DATABASE_URL` in S4? | **`scripts/apply-schema.mjs` imports `pg` and reads `DATABASE_URL`** — so `pg` and `DATABASE_URL=` **stay in the repo**; only `@types/pg` goes. Recorded as D3b. |
+| build-failure | The `next/font/google` build error | **not this work** — upstream vercel/next.js#99114 (Google's extensionless `/l/font?kit=…` URLs, ~1.7 % of responses). The owner chose to retry it and to defer the durable `next/font/local` fix. |
+| close-out | The five slices | **applied and committed** — `9f2259b` "The report dashboard off the direct connection — the last surface reading the aggregate" (26 files, +1229 / −1450). The owner's gate run is the last step; the vitest run they pasted predates the S4/S5 deletions, so the suite needs a re-run. |
 
 ## Pending
 

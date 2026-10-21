@@ -51,6 +51,16 @@ describe("computeGeneralRating", () => {
   it("rounds 4.333... to 4.33 (two-stage contract)", () => {
     expect(computeGeneralRating({ a: 4, b: 4, c: 5 })).toBe(4.33)
   })
+  it("leaves the error bucket out — a rating with no criterion is not a criterion", () => {
+    // The unresolvable bucket has no name to show, so it must not move the
+    // average of the criteria the report names.
+    expect(computeGeneralRating({ "Professional Manner": 4, "": 1 })).toBe(4)
+    // And a rating that belongs to no criterion at all gives no average.
+    expect(computeGeneralRating({ "": 1 })).toBeNull()
+  })
+  it("still counts a criterion the app has no column for — it is a real criterion", () => {
+    expect(computeGeneralRating({ "Professional Manner": 4, "Course Coverage": 2 })).toBe(3)
+  })
 })
 
 describe("mapCategoryAveragesToColumns", () => {
