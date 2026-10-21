@@ -130,12 +130,17 @@ export interface CellInfo {
 export function readCell(xml: string, ref: string): CellInfo | null {
   const m = xml.match(cellRe(ref))
   if (!m) return null
-  const v = (m[2] || "").match(/<v>([^<]*)<\/v>/)
-  const f = (m[2] || "").match(/<f[^>]*>([^<]*)<\/f>/)
+  const inner = m[2] || ""
+  const v = inner.match(/<v>([^<]*)<\/v>/)
+  const f = inner.match(/<f[^>]*>([^<]*)<\/f>/)
+  // an INLINE string carries its text in <is><t>, not in <v> - and the export
+  // writes the names and the statements as inline strings
+  const inline = inner.match(/<is>[\s\S]*?<t[^>]*>([\s\S]*?)<\/t>[\s\S]*?<\/is>/)
+  const shared = /\st="s"/.test(m[1])
   return {
     style: (m[1].match(/\ss="(\d+)"/) || [])[1] ?? null,
-    value: v ? v[1] : null,
-    isString: /\st="s"/.test(m[1]),
+    value: inline ? inline[1] : v ? v[1] : null,
+    isString: shared || !!inline,
     formula: f ? f[1] : null,
   }
 }
@@ -144,7 +149,10 @@ export function readCell(xml: string, ref: string): CellInfo | null {
 export function readCellText(xml: string, ref: string, strings: string[]): string | null {
   const cell = readCell(xml, ref)
   if (!cell || cell.value === null) return null
-  return cell.isString ? strings[Number(cell.value)] ?? null : cell.value
+  if (!cell.isString) return cell.value
+  // a shared string is an INDEX into the table; an inline string is the text
+  const index = Number(cell.value)
+  return Number.isNaN(index) || strings[index] === undefined ? cell.value : strings[index]
 }
 
 export interface RowInfo {

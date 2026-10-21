@@ -445,10 +445,10 @@ for (const [from, to] of LEGEND) {
 
 // 6. the string counts are advisory, but they are cheap to get right ---------
 let stringCells = 0
-for (const [name, text] of [
-  [sheetName, sheet],
-  [commentsName, comments],
-  ["xl/worksheets/sheet3.xml", parts.get("xl/worksheets/sheet3.xml").toString("utf-8")],
+for (const text of [
+  sheet,
+  comments,
+  parts.get("xl/worksheets/sheet3.xml").toString("utf-8"),
 ]) {
   stringCells += (text.match(/t="s"/g) || []).length
 }

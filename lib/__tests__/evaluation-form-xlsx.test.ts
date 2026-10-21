@@ -13,6 +13,7 @@ import {
   readSharedStrings,
   readCellText,
   deriveFormPositions,
+  loadEvalTemplate,
   SHEET_COMMENTS,
   SHEET_INDIVIDUAL,
   SHEET_OVERALL,
@@ -114,6 +115,17 @@ function readWorkbook() {
   }
 }
 
+/**
+ * The position map, read from the TEMPLATE.
+ *
+ * The output has no formulas - the export replaces them with their values (the
+ * legacy's own rule: the workbook is a report, not a worksheet) - so the map
+ * can only be read out of the template, which is where it comes from.
+ */
+function templatePositions() {
+  return deriveFormPositions(partText(loadEvalTemplate(), SHEET_INDIVIDUAL))
+}
+
 describe("buildEvaluationWorkbook", () => {
   it("writes the identity block", () => {
     const wb = readWorkbook()
@@ -130,7 +142,7 @@ describe("buildEvaluationWorkbook", () => {
 
   it("writes the statement ratings, in the template's own positions", () => {
     const wb = readWorkbook()
-    const positions = deriveFormPositions(wb.sheet)
+    const positions = templatePositions()
     // the first criterion's three statements are I12, I13, I14
     expect(positions.statementCells[0]).toEqual(["I12", "I13", "I14"])
     expect(positions.statementCells[1].slice(0, 2)).toEqual(["I18", "I19"])
@@ -199,16 +211,14 @@ describe("buildEvaluationWorkbook", () => {
 
 describe("the guard", () => {
   it("refuses a rubric with a different number of criteria", () => {
-    const wb = readWorkbook()
-    const positions = deriveFormPositions(wb.sheet)
+    const positions = templatePositions()
     expect(() => assertRubricFitsTemplate(CRITERIA.slice(0, 7), positions)).toThrow(
       FormRubricMismatchError,
     )
   })
 
   it("refuses a criterion with a different number of statements", () => {
-    const wb = readWorkbook()
-    const positions = deriveFormPositions(wb.sheet)
+    const positions = templatePositions()
     const changed = CRITERIA.map((c, i) =>
       i === 0 ? { ...c, statements: c.statements.slice(0, 2) } : c,
     )
@@ -222,15 +232,13 @@ describe("the guard", () => {
     // STUDENT", singular) and the app's rubric says "Communication with
     // Students", so a name comparison would reject the app's own rubric. The
     // export writes the rubric's wording into the heading instead.
-    const wb = readWorkbook()
-    const positions = deriveFormPositions(wb.sheet)
+    const positions = templatePositions()
     const renamed = CRITERIA.map((c, i) => (i === 0 ? { ...c, name: "Manners" } : c))
     expect(() => assertRubricFitsTemplate(renamed, positions)).not.toThrow()
   })
 
   it("accepts the rubric the app carries", () => {
-    const wb = readWorkbook()
-    const positions = deriveFormPositions(wb.sheet)
+    const positions = templatePositions()
     expect(() => assertRubricFitsTemplate(CRITERIA, positions)).not.toThrow()
   })
 
