@@ -8,6 +8,11 @@ const DUMMY_FACULTY_EMAIL_EVAL = "placeholder@lyceumalabang.edu.ph"
 // Bad Request. Chunk large .in() lists to stay under it.
 const IN_CHUNK_SIZE = 100
 
+// PostgREST's db-max-rows (1,000) truncates an unbounded read with HTTP 200
+// and no error. Reads that ask for "every evaluation of these people" must
+// page past it.
+const PAGE_SIZE = 1000
+
 function chunkStrIds(ids: string[], size: number): string[][] {
   const chunks: string[][] = []
   for (let i = 0; i < ids.length; i += size) {
@@ -506,20 +511,33 @@ export const evaluationRepository: IEvaluationRepository = {
     if (evaluateeIds.length === 0) return []
     // Chunked .in(): evaluateeIds is every faculty in a department, which
     // overflows PostgREST's ~8KB URL cap and answers 400.
+    // Paged .range(): one chunk still asks for every evaluation of up to 100
+    // faculty, and PostgREST's db-max-rows (1,000) truncates that with HTTP
+    // 200 and no error — so the rows have to be paged out. Ordered by id (the
+    // primary key, so a total order) to keep the pages from overlapping.
     const results = await Promise.all(
-      chunkStrIds([...new Set(evaluateeIds)], IN_CHUNK_SIZE).map((ids) =>
-        supabase
-          .from("evaluations")
-          .select("id, evaluateeId, facultySubjectId, submittedAt")
-          .eq("evaluation_period_id", evaluationPeriodId)
-          .eq("status", "SUBMITTED")
-          .in("evaluateeId", ids),
-      ),
+      chunkStrIds([...new Set(evaluateeIds)], IN_CHUNK_SIZE).map(async (ids) => {
+        const rows: EvaluationListItem[] = []
+        let offset = 0
+        for (;;) {
+          const { data, error } = await supabase
+            .from("evaluations")
+            .select("id, evaluateeId, facultySubjectId, submittedAt")
+            .eq("evaluation_period_id", evaluationPeriodId)
+            .eq("status", "SUBMITTED")
+            .in("evaluateeId", ids)
+            .order("id", { ascending: true })
+            .range(offset, offset + PAGE_SIZE - 1)
+          if (error) throw error
+          const page = (data || []) as EvaluationListItem[]
+          rows.push(...page)
+          if (page.length < PAGE_SIZE) break
+          offset += PAGE_SIZE
+        }
+        return rows
+      }),
     )
-    for (const res of results) {
-      if (res.error) throw res.error
-    }
-    return results.flatMap((res) => res.data || []) as EvaluationListItem[]
+    return results.flat() as EvaluationListItem[]
   },
   async listSubmittedByPeriodAndEvaluateeAndFS(evaluationPeriodId, evaluateeId, facultySubjectId) {
     const { data, error } = await supabase

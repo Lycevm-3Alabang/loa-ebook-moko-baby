@@ -168,23 +168,29 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
   trimming now would silently kill mismatch detection. Unblocks only via explicit
   product call (drop MISMATCH) or server-side ownership resolution.
 
-## Open — coverage page: the "Unresolved" pseudo-row's count (to revisit)
+## Open — three items to revisit (2026-10-20)
 
 Tracked 2026-10-20 after the faculty-count unification
 (`.opencode/skills/plan-fix/runs/20261020-2230-faculty-count-one-number.md`;
 the rule is `specs/evaluation-results-attribution.md` contract §3.14 — a
 department's faculty count is the number of faculty accounts homed in it,
-counted once, read by every surface from one helper). **One** item is still
-open; it is a **decision, not a defect**, and **no decision is taken yet**.
+counted once, read by every surface from one helper) and the attribution
+change (contract §3.1 — a subject counts under the **teacher's home**
+department; the section's department is no longer a fallback). All three are
+**decisions or checks, not defects**, and no decision is taken yet.
 
 - [ ] **The "Unresolved" pseudo-row's "Faculties" cell.**
   Where: `features/evaluations/components/CoveragePage.tsx:154-172` — the row is
   built client-side, and the cell is line 165
   (`facultyCount: new Set(unassigned.map((x) => x.facultyName)).size`).
-  What it is: the subjects whose department resolves to **nothing** (neither a
-  teacher home that owns a course, nor the section's department) are collected
-  into a synthetic row named "Unresolved" (`__unknown__`) and shown next to the
-  real departments, so that coverage is not silently dropped.
+  What it is: the subjects whose department resolves to **nothing** are
+  collected into a synthetic row named "Unresolved" (`__unknown__`) and shown
+  next to the real departments, so that coverage is not silently dropped.
+  **What it means now (2026-10-20):** the home is the only rule, so this group
+  is exactly the **home-less teachers' subjects** — the people with no
+  `users.departmentId` (the CSV-unmatched population). Their coverage is
+  reported here and in the results list's integrity warning, and in no
+  department's row.
   Why it is open: the column now means "the faculty homed in this department"
   everywhere else (contract §3.14). A pseudo-department has nobody homed in it,
   so its headcount is **0** by definition — but the cell prints a
@@ -197,7 +203,167 @@ open; it is a **decision, not a defect**, and **no decision is taken yet**.
   label is free (a real "Unassigned" department is a normal department) — the
   results list dropped its `__unknown__` row on 2026-10-20. The row's
   **drill-down** keeps every teacher of its subjects (it is not a department,
-  so it has no membership question) — see the rule below.
+  so it has no membership question).
+
+- [ ] **VERIFY (no code) — the home-less teachers on our data.** The one
+  number the attribution change moved: a faculty with **no** `users.departmentId`
+  is now unattributed (the coverage page's "Unresolved" group + the results
+  list's integrity warning) instead of sitting in the section's department. If
+  every one of our faculty carries a home department, **nothing moved** and the
+  change was a no-op on our data. The SQL is in
+  `docs/evaluation-surfaces-verification.md` §7 ("The home-less teachers") —
+  run it once per period we care about, and read the "(no home dept)" row. The
+  same check covers the placeholder buckets: a bucket now holds the teaching of
+  the faculty homed in it, and nobody else's.
+
+- [ ] **CLEANUP (decide) — `evaluationResultRepository.listDepartmentAssignments`
+  has no app caller left.** It returned a department's **evaluated** assignments
+  (the attribution set). The results service now uses
+  `listDepartmentTeachingAssignments` (the term's assignments), and the dean's
+  three guards read `getDepartmentMemberTeaching` — so nothing calls it. It
+  still has its own five test cases in
+  `lib/__tests__/evaluation-results-department-faculty.test.ts`. Either delete
+  it (method + the `IEvaluationResultRepository` entry + those cases) or keep it
+  as a public capability for a future surface.
+
+## Open — evaluation results gaps (2026-10-21)
+
+Tracked 2026-10-21 after the row-cap fix
+(`.opencode/skills/plan-fix/runs/20261021-0820-eval-ratings-row-cap.md`;
+the rule is `specs/evaluation-results-attribution.md` contract §3.18 — a result figure is computed
+over the **complete** rating set of its evaluation set, and the department drill-down's Avg Rating /
+Highest Rubric / Lowest Rubric for a subject must equal the faculty page's for the same subject).
+
+The cap was the **first** reason the two pages disagreed. These are the rest. All seven are
+**decisions or fixes, not blockers** — none of them is on fire, and the suite is green.
+
+- [ ] **The `isDisabled` filter is missing on the results drill-down and on the faculty page.**
+  Where: the results **list** filters it (`features/evaluation-results/evaluation-results.repository.ts:142`,
+  `.eq("isDisabled", false)`), but the drill-down
+  (`features/evaluation-results/evaluation-results.service.ts:128` →
+  `features/evaluations/evaluations.repository.ts:510` `listSubmittedByPeriodAndEvaluatees`) and the
+  faculty page (`app/api/faculty/evaluation-results/subjects/[facultySubjectId]/route.ts:63` →
+  `evaluations.repository.ts:542` `listSubmittedByPeriodAndEvaluateeAndFS`) do **not**.
+  What it is: `isDisabled` is the soft-invalidation flag on an evaluation — "this response does not
+  count". Four paths set it. **Two of them also set `status = 'INVALID'`**
+  (`invalidateById` `:407`, `invalidateByEvaluatorAndPeriod` `:414`, `invalidateByFacultySubject`
+  `:471`, `invalidateByFacultySubjectAndEvaluator` `:399`) — those are excluded everywhere, because
+  every surface filters `status = 'SUBMITTED'`. **Two set only the flag and leave
+  `status = 'SUBMITTED'`**: `bulkDisableByPeriod` (`:351`, the admin's "Invalidate Result" button)
+  and the stale-mapping path in `findPending` (`:165`, `:203` — a subject reassigned to another
+  teacher, detected when a student opens their evaluation list; no admin action needed). Those two
+  are still averaged into the drill-down's and the faculty page's figures while the list's card for
+  the same department says something else.
+  Why it is open: it needs a decision on **which is the truth** — a disabled evaluation excluded
+  from every figure (the list's rule) or counted everywhere (the drill-down's rule). The list is
+  right on intent: "Invalidate Result" is an admin saying *this must not count*.
+  Options: **(a)** add `.eq("isDisabled", false)` to every result read (one filter per method;
+  the faculty page and the drill-down follow the list); **(b)** make the two flag-only paths also
+  set `status = 'INVALID'` — one write each, and the flag then means "was invalidated" rather than
+  "does not count"; **(c)** leave it and document the difference. **(b) is one line per path and
+  fixes every surface at once — but it changes what the *Invalidated* page lists** (it currently
+  lists the flag-only rows, and `listDisabled` reads `isDisabled = true`, so they stay listed either
+  way). Note: the coverage page already treats a disabled submission as **Disputed**
+  (`features/evaluations/evaluation-status.service.ts:115-116`), so today a response can be
+  *disputed* on one page and *counted* on another.
+
+- [ ] **The admin drill-down's membership gate is stricter than the faculty page's.**
+  Where: the admin keeps an evaluation only if its `facultySubjectId` is in the department's **term
+  roster** (`features/evaluation-results/evaluation-results.service.ts:121,131,141-145`) — and that
+  roster is **semester-scoped** (`features/evaluation-results/evaluation-results.repository.ts:66`,
+  `.eq("semesterId", period.semesterId)`) and **home-department-scoped**
+  (`evaluation-results.service.ts:109-111`). The faculty page filters only
+  `evaluateeId + facultySubjectId + status` (`route.ts:63`).
+  What it is: the two pages answer "which evaluations count?" differently. The home-department half
+  is **intentional** (pinned as `specs/evaluation-results-attribution.md` contract §3.15/§3.16, and
+  asserted by `lib/__tests__/evaluation-results-service.test.ts:149-167`). The **semester** half is
+  not: `faculty_subjects.semesterId` is nullable (`supabase-schema.sql:1020-1023`) and legacy
+  NULL-semester rows exist (`features/admin-data/faculty-subject.repository.ts:171-175`), so an
+  evaluation against such an assignment is **counted by the faculty page and dropped by the admin
+  page**.
+  Why it is open: the two must agree, or the contract §3.18 parity check stays red. The
+  spec already models the condition — `evaluation-results.repository.ts:454-492` classifies
+  off-semester assignments as an **integrity warning** on the results list.
+  Options: **(a)** the faculty page also scopes to the period's semester; **(b)** the admin page
+  stops semester-scoping and relies on the integrity warning; **(c)** the admin page surfaces
+  "N evaluations outside this term's roster" on the drill-down instead of dropping them silently.
+  **(c) is the honest one** — the evaluations are real, they belong to a teacher, and the number is
+  knowable.
+
+- [ ] **Three reads are still on a cap.** Where: `listSubmittedByPeriodAndFacultySubjectIds`
+  (`features/evaluations/evaluations.repository.ts:554`) and `listStatusByPeriodAndFacultySubjectIds`
+  (`:566`) are chunked by facultySubjectIds (the **URL** budget) but their **row** count is
+  unbounded — the same 1,000-row truncation AGENTS.md **Lesson 7b** describes, unfixed. And
+  `getStudentBreakdownsForFaculties` reads the comments with one unchunked
+  `.in("evaluationId", allEvalIds)` (`features/evaluation-results/evaluation-results.repository.ts:651-653`)
+  where `allEvalIds` is every evaluation of the faculty — past ~200 ids that URL exceeds ~8KB and
+  PostgREST answers **400** (AGENTS.md **Lesson 7**), which the route turns into a 500.
+  What it is: the same class of defect as the one just fixed, on the paths that were left out of
+  scope. The student-breakdown read is a *different surface* (the per-student table), not the
+  Avg/Highest/Lowest figures.
+  Why it is open: nobody has hit them yet, because the volumes have not reached the caps.
+  Options: **(a)** page the two evaluation reads the way the ones just fixed are paged
+  (`.order("id")` + `.range()`), and chunk the comments read at 100 ids; **(b)** leave them and
+  record the caps. **(a) is three small edits and removes a latent 500.**
+
+- [ ] **The `""` fallback category dilutes Avg. Rating but can never be named.**
+  Where: `lib/db/common.ts:99-110` (the fallback) and `:144-151` (the mapping), with the arithmetic
+  in `lib/evaluation-utils.ts:65-83` (category averages → general) and `:85-101` (the fixed
+  columns).
+  What it is: a rating whose `itemId` cannot be resolved to a `rubric_items` row becomes the
+  category name `""`. `computeGeneralRating` averages over **all** category names present, so the
+  `""` bucket **counts toward Avg. Rating**; `mapCategoryAveragesToColumns` drops any name not in
+  `CATEGORY_NAMES`, so the `""` bucket **can never be** a Highest or Lowest Rubric. A rating whose
+  item was deleted therefore moves the average without being visible anywhere.
+  Why it is open: a real number is being diluted by a bucket with no label, and the UI cannot show
+  why. Options: **(a)** exclude unmapped names from `computeGeneralRating` as well (then Avg.
+  Rating is over the 8 real criteria only — consistent with the columns, and with what the user
+  sees); **(b)** keep them and surface the count ("N ratings could not be attributed to a
+  criterion"); **(c)** treat an unresolvable `itemId` as a data error and log it.
+
+- [ ] **The `CATEGORY_NAMES` aliases overwrite a column instead of averaging.**
+  Where: `lib/evaluation-utils.ts:11-21` (the map) and `:96-99` (the assignment loop).
+  What it is: `"Experiential Learning"` and `"Experiential Learning Provided to Students"` both map
+  to the `experientialLearning` column, and so do `"Respect the Uniqueness of the Students"` and
+  `"Respect for Uniqueness"`. The loop assigns, so if a period holds **both** spellings, the second
+  one **overwrites** the first — the column is the last writer, not the average of the two. Which
+  one wins depends on the order the category names first appear in the rating rows, i.e. on the
+  database's row order — so the same subject can print different numbers on two screens.
+  The seed only uses the long spellings (`supabase-schema.sql:1613-1614`), so this is latent.
+  Why it is open: the aliases were written defensively, but the defensive path is the broken one.
+  Options: **(a)** average the aliased categories into one column (the fix that matches the
+  arithmetic); **(b)** drop the aliases and treat an unknown category name as unmapped (then the
+  `""`-bucket rule above applies); **(c)** normalise the category names in the **database** (one
+  spelling) and keep the map as the fallback.
+
+- [ ] **The admin table renders only the first tie; the faculty page renders them all.**
+  Where: `features/evaluations/components/DepartmentSubjectView.tsx:261` and `:268` (the subject
+  table) and `:426`/`:429` (the per-faculty table) print `highestRubrics[0]` / `lowestRubrics[0]`;
+  the faculty page (`app/faculty/evaluations/results/[facultySubjectId]/page.tsx:121-133`) and the
+  admin department widget (`app/admin/evaluations/results/[departmentId]/page.tsx:239-251`) `.map()`
+  over the whole array. `findHighestLowestRubrics` (`lib/evaluation-utils.ts:103-117`) returns
+  **every** category tied at the max/min.
+  What it is: a tie is **shown** on the faculty page and **hidden** on the admin table. With eight
+  criteria on a 1–5 scale, ties are common at the rounded values.
+  Why it is open: the contract §3.18 parity check compares the two pages, and they can print
+  different things for the same subject.
+  Options: **(a)** the admin table renders every tie, like the other two surfaces (one component
+  change, 4 call sites); **(b)** the other two surfaces render only the first, like the table;
+  **(c)** leave it and make the parity check compare the *first* tie only.
+
+- [ ] **The bulk-invalidate's reason is not stored on the row.**
+  Where: `app/api/admin/evaluation-results/invalidate/route.ts:24-26` — the `reason` goes to the
+  audit log only; `bulkDisableByPeriod` (`evaluations.repository.ts:351-364`) writes
+  `isDisabled: true` and nothing else. The stale-mapping path (`:165`, `:203`) writes no remarks
+  either. The `invalidate*` paths **do** write a `remarks` string (`:399-422`, `:471-477`).
+  What it is: the *why* is missing on the row for exactly the two paths that leak into the
+  averages (the item above). On the **Invalidated** page
+  (`features/evaluations/components/InvalidatedEvaluationsPage.tsx`) those rows show a blank reason.
+  Why it is open: an admin reading "why is this response not counted?" (or why it *is* counted, per
+  the first item) has no answer on the row itself.
+  Options: **(a)** write `remarks` on both paths (one field each; the bulk path already receives a
+  `reason` from the modal, the stale path can write a fixed string); **(b)** leave the remarks to
+  the audit log and read them from there.
 
 ## Done this session (do not redo)
 
@@ -207,9 +373,7 @@ open; it is a **decision, not a defect**, and **no decision is taken yet**.
   faculty — the accounts homed in it (`users.departmentId`). The section's
   department is irrelevant to membership: a teacher homed in A who teaches a
   section owned by B is a member of **A**, and B's drill-down gives them **no
-  card**. Their subject, its students and its responses stay in the
-  department's "By Subject & Section" tab, and the department's pooled rating
-  is computed over the subjects, not over the faculty list.
+  card**.
   Shipped on both drill-downs — the coverage one
   (`features/evaluations/evaluation-status.service.ts` +
   `features/evaluations/components/CoveragePage.tsx`) and the results one
@@ -219,13 +383,43 @@ open; it is a **decision, not a defect**, and **no decision is taken yet**.
   aggregates are the member list, and the cards come from that map.
   The rule is now pinned as `specs/evaluation-results-attribution.md` contract
   §3.15 and `specs/coverage-faculty-grouping.md` contract 14, and checked in
-  `docs/evaluation-surfaces-verification.md` §3.9 and §4.4 (the latter was
-  stale: it said the cards and the rows list the same people).
-  Unchanged on purpose: the subject rows, the department's pooled rating, the
-  per-subject and per-card visibility toggles, the export CSVs, and the two
-  deans' **"Teaching" / "Faculty Teaching"** cards — those are the teaching
-  roster by name and by label, and the dean's "Evaluated" figure is computed
-  over it.
+  `docs/evaluation-surfaces-verification.md` §3.9 and §4.4.
+  **Superseded the same day by the resolver change below**: a non-member's
+  subject is no longer in any department's subject tab either (the home is the
+  only rule), and the coverage page's "Unresolved" group is now the home-less
+  teachers' subjects.
+
+- [x] **One headcount, one membership, one attribution rule — implemented
+  2026-10-20** (`.opencode/skills/plan-fix/runs/20261020-2230-faculty-count-one-number.md`).
+  The problem: four surfaces counted "the faculty of a department" from four
+  different populations, so a school with 9 faculty showed 22. The fix, in
+  three places:
+  - **the headcount** — `features/users/users.service.ts` →
+    `getFacultyCountsByDepartment()`: the faculty accounts homed in a
+    department, counted once. Read by the results list, the coverage page
+    (column + KPI), both export `summary.csv`s, the report page and the
+    Department Health report. The coverage KPI went **22 → 9**.
+  - **the membership** — `features/evaluation-results/evaluation-results.service.ts`
+    → `getDepartmentMemberTeaching()`: a department's teaching is the
+    assignments of the faculty homed in it. The drill-downs' faculty lists and
+    the dean's three guards read it.
+  - **the attribution** — `lib/evaluation-utils.ts` → `resolveSubjectDepartment`:
+    a subject counts under the **teacher's home** department, or is
+    unattributed. The "the home must own a course" gate and the section
+    fallback are gone: a bucket holds its own members' teaching, and a
+    home-less teacher has no department (the coverage page's "Unresolved"
+    group, the results list's integrity warning).
+  Also: the results list lost its **"No responses"** and **"Responses"**
+  columns (the coverage page owns those numbers), the no-response roster is
+  gone from the results API and the repository, the results drill-down's
+  "By Subject & Section" tab is now the members' subjects **evaluated or
+  not**, and the export CSVs stay the results (rows with responses only).
+  Pinned as contracts §3.14–§3.17 and §3.1 in
+  `specs/evaluation-results-attribution.md`, `specs/coverage-faculty-grouping.md`
+  contract 9 + 14, `specs/coverage-parity.md`, and
+  `docs/evaluation-surfaces-verification.md` (§7 is now "the home-less
+  teachers" — the old home→section matrix measured a movement that no longer
+  exists).
 
 
 C1, C2, D4 (legend + summary relabel), D9 (section preview), D11 (23505 dedupe,

@@ -7,7 +7,7 @@ vi.mock("@/lib/db/common", () => ({ fetchRatingsWithCategories: vi.fn() }))
 
 import { evaluationRepository } from "@/features/evaluations/evaluations.repository"
 
-interface Captured { inCalls: string[][]; fromCalls: number }
+interface Captured { inCalls: string[][]; fromCalls: number; ranges: number[][] }
 
 function makeChain(resolveValue: unknown, captured: Captured) {
   const chain = {
@@ -17,7 +17,40 @@ function makeChain(resolveValue: unknown, captured: Captured) {
       captured.inCalls.push(ids)
       return chain
     }),
+    order: vi.fn(() => chain),
+    range: vi.fn((from: number, to: number) => {
+      captured.ranges.push([from, to])
+      return chain
+    }),
     then: (onFulfilled: (v: unknown) => unknown) => Promise.resolve(resolveValue).then(onFulfilled),
+  }
+  return chain
+}
+
+/**
+ * A chain that answers one page at a time. The page cursor lives on the
+ * CLIENT, not on the chain: the repository calls `from()` inside its page
+ * loop, so a per-chain cursor would restart at page 1 on every request — a
+ * real client advances the offset in the `Range` header instead, and that is
+ * what this models.
+ */
+function makePagedChain(nextPage: () => { data: unknown[] | null; error: unknown }, captured: Captured) {
+  let pending = { data: [] as unknown[] | null, error: null as unknown }
+  const chain = {
+    select: vi.fn(() => chain),
+    eq: vi.fn(() => chain),
+    in: vi.fn((_column: string, ids: string[]) => {
+      captured.inCalls.push(ids)
+      return chain
+    }),
+    order: vi.fn(() => chain),
+    range: vi.fn((from: number, to: number) => {
+      captured.ranges.push([from, to])
+      // The request is issued here, so the page is chosen here.
+      pending = nextPage()
+      return chain
+    }),
+    then: (onFulfilled: (v: unknown) => unknown) => Promise.resolve(pending).then(onFulfilled),
   }
   return chain
 }
@@ -48,7 +81,7 @@ describe("listStatusByPeriodAndFacultySubjectIds — PostgREST URL budget", () =
   })
 
   it("sends a single query when the list fits in one chunk", async () => {
-    const captured: Captured = { inCalls: [], fromCalls: 0 }
+    const captured: Captured = { inCalls: [], fromCalls: 0, ranges: [] }
     mockSupabase.from.mockImplementation(() => {
       captured.fromCalls++
       return makeChain({ data: [row("fs-1", "stu-1")], error: null }, captured)
@@ -62,7 +95,7 @@ describe("listStatusByPeriodAndFacultySubjectIds — PostgREST URL budget", () =
   })
 
   it("splits a 250-id list into 3 chunked queries, each within the URL budget", async () => {
-    const captured: Captured = { inCalls: [], fromCalls: 0 }
+    const captured: Captured = { inCalls: [], fromCalls: 0, ranges: [] }
     mockSupabase.from.mockImplementation(() => {
       captured.fromCalls++
       const n = captured.inCalls.length
@@ -80,7 +113,7 @@ describe("listStatusByPeriodAndFacultySubjectIds — PostgREST URL budget", () =
   })
 
   it("dedupes repeated ids before chunking", async () => {
-    const captured: Captured = { inCalls: [], fromCalls: 0 }
+    const captured: Captured = { inCalls: [], fromCalls: 0, ranges: [] }
     mockSupabase.from.mockImplementation(() => {
       captured.fromCalls++
       return makeChain({ data: [], error: null }, captured)
@@ -95,7 +128,7 @@ describe("listStatusByPeriodAndFacultySubjectIds — PostgREST URL budget", () =
   })
 
   it("merges rows returned from every chunk", async () => {
-    const captured: Captured = { inCalls: [], fromCalls: 0 }
+    const captured: Captured = { inCalls: [], fromCalls: 0, ranges: [] }
     mockSupabase.from.mockImplementation(() => {
       captured.fromCalls++
       const n = captured.inCalls.length
@@ -109,7 +142,7 @@ describe("listStatusByPeriodAndFacultySubjectIds — PostgREST URL budget", () =
   })
 
   it("throws when any chunk returns an error", async () => {
-    const captured: Captured = { inCalls: [], fromCalls: 0 }
+    const captured: Captured = { inCalls: [], fromCalls: 0, ranges: [] }
     mockSupabase.from.mockImplementation(() => {
       captured.fromCalls++
       const n = captured.inCalls.length
@@ -120,7 +153,7 @@ describe("listStatusByPeriodAndFacultySubjectIds — PostgREST URL budget", () =
   })
 
   it("normalises missing isDisabled to false and casts status", async () => {
-    const captured: Captured = { inCalls: [], fromCalls: 0 }
+    const captured: Captured = { inCalls: [], fromCalls: 0, ranges: [] }
     mockSupabase.from.mockImplementation(() => {
       captured.fromCalls++
       return makeChain(
@@ -152,7 +185,7 @@ describe("listSubmittedByPeriodAndEvaluatees — PostgREST URL budget", () => {
   })
 
   it("chunks a whole department of faculty instead of one oversized .in()", async () => {
-    const captured: Captured = { inCalls: [], fromCalls: 0 }
+    const captured: Captured = { inCalls: [], fromCalls: 0, ranges: [] }
     mockSupabase.from.mockImplementation(() => {
       captured.fromCalls++
       return makeChain({ data: [], error: null }, captured)
@@ -169,7 +202,7 @@ describe("listSubmittedByPeriodAndEvaluatees — PostgREST URL budget", () => {
   })
 
   it("merges rows across chunks", async () => {
-    const captured: Captured = { inCalls: [], fromCalls: 0 }
+    const captured: Captured = { inCalls: [], fromCalls: 0, ranges: [] }
     mockSupabase.from.mockImplementation(() => {
       captured.fromCalls++
       const n = captured.inCalls.length
@@ -183,7 +216,7 @@ describe("listSubmittedByPeriodAndEvaluatees — PostgREST URL budget", () => {
   })
 
   it("throws when any chunk errors", async () => {
-    const captured: Captured = { inCalls: [], fromCalls: 0 }
+    const captured: Captured = { inCalls: [], fromCalls: 0, ranges: [] }
     mockSupabase.from.mockImplementation(() => {
       captured.fromCalls++
       const n = captured.inCalls.length
@@ -191,5 +224,88 @@ describe("listSubmittedByPeriodAndEvaluatees — PostgREST URL budget", () => {
     })
 
     await expect(evaluationRepository.listSubmittedByPeriodAndEvaluatees("p1", ids(250))).rejects.toEqual({ message: "url too long" })
+  })
+})
+
+describe("listSubmittedByPeriodAndEvaluatees — PostgREST row cap", () => {
+  function evalRows(n: number, offset = 0) {
+    return Array.from({ length: n }, (_, i) => ({
+      id: `e-${String(offset + i).padStart(4, "0")}`,
+      evaluateeId: "f1",
+      facultySubjectId: "fs1",
+      submittedAt: null,
+    }))
+  }
+
+  /** The client-level page cursor: page 1, page 2, … then empty. */
+  function pageSource(pages: { data: unknown[] | null; error: unknown }[]) {
+    let cursor = 0
+    return () => pages[cursor++] ?? { data: [], error: null }
+  }
+
+  it("asks for another page when a page comes back full", async () => {
+    const captured: Captured = { inCalls: [], fromCalls: 0, ranges: [] }
+    const nextPage = pageSource([
+      { data: evalRows(1000), error: null },
+      { data: evalRows(3, 1000), error: null },
+    ])
+    mockSupabase.from.mockImplementation(() => {
+      captured.fromCalls++
+      return makePagedChain(nextPage, captured)
+    })
+
+    const result = await evaluationRepository.listSubmittedByPeriodAndEvaluatees("p1", ids(1))
+
+    // 1,000 rows came back full, so the loop must have asked for the next page.
+    expect(captured.ranges).toEqual([[0, 999], [1000, 1999]])
+    expect(result).toHaveLength(1003)
+  })
+
+  it("merges the pages in order, losing nothing", async () => {
+    const captured: Captured = { inCalls: [], fromCalls: 0, ranges: [] }
+    // The first page must be FULL — a short page is the end of the set, so a
+    // short first page would correctly stop the loop after one page.
+    const nextPage = pageSource([
+      { data: evalRows(1000), error: null },
+      { data: evalRows(400, 1000), error: null },
+    ])
+    mockSupabase.from.mockImplementation(() => {
+      captured.fromCalls++
+      return makePagedChain(nextPage, captured)
+    })
+
+    const result = await evaluationRepository.listSubmittedByPeriodAndEvaluatees("p1", ids(1))
+
+    expect(result).toHaveLength(1400)
+    expect(result[0].id).toBe("e-0000")
+    expect(result[999].id).toBe("e-0999")
+    // The seam: no gap and no overlap between the two pages.
+    expect(result[1000].id).toBe("e-1000")
+    expect(result[1399].id).toBe("e-1399")
+  })
+
+  it("stops on a short page instead of asking again", async () => {
+    const captured: Captured = { inCalls: [], fromCalls: 0, ranges: [] }
+    const nextPage = pageSource([{ data: evalRows(5), error: null }])
+    mockSupabase.from.mockImplementation(() => {
+      captured.fromCalls++
+      return makePagedChain(nextPage, captured)
+    })
+
+    const result = await evaluationRepository.listSubmittedByPeriodAndEvaluatees("p1", ids(1))
+
+    expect(captured.ranges).toEqual([[0, 999]])
+    expect(result).toHaveLength(5)
+  })
+
+  it("throws when a page errors", async () => {
+    const captured: Captured = { inCalls: [], fromCalls: 0, ranges: [] }
+    const nextPage = pageSource([{ data: null, error: { message: "boom" } }])
+    mockSupabase.from.mockImplementation(() => {
+      captured.fromCalls++
+      return makePagedChain(nextPage, captured)
+    })
+
+    await expect(evaluationRepository.listSubmittedByPeriodAndEvaluatees("p1", ids(1))).rejects.toEqual({ message: "boom" })
   })
 })

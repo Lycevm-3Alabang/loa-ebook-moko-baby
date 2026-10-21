@@ -33,6 +33,11 @@ export class EvaluationPeriodInactiveError extends Error {
 // PostgREST caps URL length (~8KB). Chunk large .in() lists to stay under it.
 const IN_CHUNK_SIZE = 100
 
+// PostgREST's db-max-rows (1,000) truncates an unbounded read with HTTP 200
+// and no error. Reads that ask for "every evaluation of the period" must page
+// past it.
+const PAGE_SIZE = 1000
+
 /**
  * The pseudo-department for an assignment whose department cannot be
  * resolved. Under the faculty-driven rule this is an integrity condition
@@ -121,15 +126,30 @@ async function buildSubjectContext(
 
 /** The period's submitted, enabled evaluations — the candidate faculty set. */
 async function listSubmittedEvaluates(evaluationPeriodId: string): Promise<{ id: string; evaluateeId: string; facultySubjectId: string | null }[]> {
-  const { data, error } = await supabase
-    .from("evaluations")
-    .select("id, evaluateeId, facultySubjectId")
-    .eq("evaluation_period_id", evaluationPeriodId)
-    .eq("status", "SUBMITTED")
-    .eq("isDisabled", false)
-    .not("facultySubjectId", "is", null)
-  if (error) throw error
-  return data || []
+  // Paged .range(): this asks for the period's submitted evaluations across
+  // EVERY department, so the row count is unbounded and PostgREST's
+  // db-max-rows (1,000) would truncate it with HTTP 200 and no error.
+  // Ordered by id (the primary key, so a total order) to keep the pages from
+  // overlapping.
+  const rows: { id: string; evaluateeId: string; facultySubjectId: string | null }[] = []
+  let offset = 0
+  for (;;) {
+    const { data, error } = await supabase
+      .from("evaluations")
+      .select("id, evaluateeId, facultySubjectId")
+      .eq("evaluation_period_id", evaluationPeriodId)
+      .eq("status", "SUBMITTED")
+      .eq("isDisabled", false)
+      .not("facultySubjectId", "is", null)
+      .order("id", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1)
+    if (error) throw error
+    const page = (data || []) as { id: string; evaluateeId: string; facultySubjectId: string | null }[]
+    rows.push(...page)
+    if (page.length < PAGE_SIZE) break
+    offset += PAGE_SIZE
+  }
+  return rows
 }
 
 interface FacultySubjectRow {

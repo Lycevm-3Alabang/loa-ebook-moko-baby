@@ -181,6 +181,17 @@ Renaming DB columns cascade through the full TypeScript stack:
 - **Corollary — chunking is per-method, never per-line-range.** `eval-results-400-fix-checklist.md` Slice 4 ticked `evaluations.repository.ts:382-520` as done. That range *contains* `listSubmittedByPeriodAndEvaluatees`, but the method itself stayed unchunked and 500'd the export months later. **Enumerate every `.in(` call site explicitly** and grep for unchunked ones — never certify a slice by line span.
 - **Corollary — empty guard:** return early on an empty id list; `.in.()` with zero values is itself a 400.
 
+### 7b. PostgREST Row Cap — `db-max-rows` (1,000) Truncates Silently
+
+- **Symptom:** a figure is wrong but **no request ever fails**. An average, a count or a "Total Responses" disagrees with the number of rows behind it, and a subject's Avg. Rating sometimes shows "—".
+- **Why:** PostgREST applies `db-max-rows` (Supabase's default **1,000**) by adding `LIMIT 1000` to the SQL it generates. The request answers **HTTP 200** with the first 1,000 rows — **no error, no warning**. The client cannot tell "there are 1,000 rows" from "there are 2,700 and you kept the first 1,000". Without an `ORDER BY` the surviving subset is arbitrary, so two pages reading the same table with different id lists get **different** subsets.
+- **Fix:** **page** the read — `.order(<total order>).range(offset, offset + 999)` in a loop until a page comes back short. The order **must be total**, or a page boundary can duplicate or skip a row: order by the table's `UNIQUE` columns (`evaluation_ratings` → `("evaluationId","itemId")`; `evaluations` → `id`).
+- **The loop's contract:** a page is either **full** (1,000 rows — keep going) or **short** (the end of the set — stop). That works because the page size **equals** the cap, so a full page is never a truncated one. If `db-max-rows` were ever **below** the page size, a "full" page would be truncated and the loop would stop early — silently, again. The repo's page size is 1,000 throughout (`PAGE_SIZE` / `BATCH` / `RANGE`); keep it at the cap, and if the cap ever moves, move the page size with it.
+- **Corollary — the two caps need opposite fixes.** The **URL** cap (Lesson 7) is **chunking**; the **row** cap is **paging**. Shrinking the chunk does **not** fix the row cap — it only makes more requests that each still truncate.
+- **Corollary — the multiplier.** `evaluation_ratings` holds **27 rows per evaluation** (the rubric group's items), so a chunk of 100 evaluations is 2,700 rows against a 1,000-row cap. A chunk sized for the URL budget is **not** sized for the row budget.
+- **Where the repo pages:** `features/evaluations/evaluations.repository.ts` (`countSubmittedByFacultySubjectIdsPaged`, `listSubmittedByPeriodAndEvaluatees`), `features/admin-data/student-enrollment.repository.ts` (`countByFacultySubjectIdsPaged`), `features/users/users.repository.ts` (`listAll`), `features/admin-data/admin-data.service.ts`, `lib/db/common.ts` (`fetchRatingsWithCategories`).
+- **Corollary — a silently truncated read is a *wrong* figure, not a *missing* one.** It never surfaces as a 500, so it survives review: check the row count, not the status code.
+
 ### 8. Diagnosing a 500: Vercel Logs Do Not Show the Response Body
 
 - **Symptom:** Vercel log shows `Status: 500`, `Execution Duration`, and a GET count, but no cause. Easy to burn several deploy cycles guessing.

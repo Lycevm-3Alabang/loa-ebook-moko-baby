@@ -1,8 +1,8 @@
 # Evaluation Results — Department Attribution & Missing Faculty — Spec
 
-**Version:** 1.2
-**Status:** Final (approved 2026-10-20; D1–D6 resolved) — v1.1 recorded the coverage page's exception; **v1.2 closes it**: the results surfaces now resolve through the same faculty-driven resolver, so one rule governs every surface
-**Last Updated:** 2026-10-20
+**Version:** 1.3
+**Status:** Final (approved 2026-10-20; D1–D6 resolved) — v1.1 recorded the coverage page's exception; **v1.2 closes it**: the results surfaces now resolve through the same faculty-driven resolver, so one rule governs every surface; **v1.3 adds §3.18**: a result figure is computed over the **complete** rating set — every read behind a figure pages past PostgREST's 1,000-row cap
+**Last Updated:** 2026-10-21
 **Scope:** `app/admin/evaluations/results` (+ its `[departmentId]` detail),
 `app/dean/evaluations/results/[departmentId]`, the coverage surface, and the
 shared attribution helpers in `lib/evaluation-utils.ts`.
@@ -306,12 +306,20 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4.
     CSVs stay the results** (the rows with responses): a row with no
     responses has no rating, no rubric and no sentiment to report.
 17. **The dean's guards read the same set.** The release gate, the visibility
-    scope and the student-breakdown scope all read the department's **own
-    faculty** (`getDepartmentMemberTeaching`), so the dean can never be
+    scope and the student-breakdown scope all read the department's **own**
+    faculty (`getDepartmentMemberTeaching`), so the dean can never be
     refused a teacher their own page lists — nor allowed one that is not
     theirs. The release gate additionally requires `totalRespondents > 0`: a
     row with no responses is a subject, not a result, and cannot release the
     page.
+18. **A result figure is computed over the complete rating set of its
+    evaluation set.** PostgREST's `db-max-rows` (1,000) truncates an
+    unbounded read with **HTTP 200** and no error, so a truncated read
+    produces a **wrong** figure, not a missing one. Every read behind a
+    result figure must page past that cap (AGENTS.md **Lesson 7b**). The
+    department drill-down's Avg Rating, Highest Rubric and Lowest Rubric for
+    a subject must **equal** the faculty page's for the same subject — they
+    are the same number computed over the same responses.
 
 ---
 
@@ -337,6 +345,7 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4.
 | S4.5 | The dean's guards read the same membership set (contract §3.17) | `features/evaluation-results/evaluation-results.service.ts` (`getDepartmentMemberTeaching`) + `app/api/dean/evaluation-results/departments/[departmentId]/route.ts` (the release gate) + `app/api/dean/evaluation-results/visibility/route.ts` + `app/api/dean/evaluation-results/details/route.ts` — **done 2026-10-20** |
 | S4.6 | The export CSVs stay the results | `app/api/admin/evaluation-results/export/route.ts` + `app/api/dean/evaluation-results/export/route.ts` — **done 2026-10-20**: the per-department CSVs carry the rows with responses only |
 | S4.7 | The attribution rule is the home, always (contract §3.1) | `lib/evaluation-utils.ts` (`resolveSubjectDepartment`) — **done 2026-10-20**: the section's department is no longer a fallback, and the "the home must own a course" gate is gone. The buckets hold their own members' teaching; a teacher with no home is unattributed |
+| S5.1 | Every read behind a result figure pages past PostgREST's 1,000-row cap (contract §3.18) | `lib/db/common.ts` (`fetchRatingsWithCategories` — the shared ratings read), `features/evaluations/evaluations.repository.ts` (`listSubmittedByPeriodAndEvaluatees`), `features/evaluation-results/evaluation-results.repository.ts` (`listSubmittedEvaluates`) — **done 2026-10-21**: each gains a `.order(<total order>).range(offset, offset+999)` page loop; the shared ratings read is ordered by `("evaluationId","itemId")` and the evaluation reads by `id`. The rating and evaluation sets are now complete, so the department drill-down's Avg Rating / Highest / Lowest agree with the faculty page's for the same subject. Tests: `lib/__tests__/db-common-ratings-paging.test.ts` (new), `lib/__tests__/evaluations-repository-chunking.test.ts` |
 | S2 | **Done 2026-10-20** — the "Unresolved" row is gone from the results list and the dead-end link with it; the integrity condition is now a warning row naming the faculty. The write path (both visibility routes) now **requires** `evaluationPeriodId`: a `semesterId` body would have written a row keyed by a semester id, and made the dean's membership check resolve an empty set. |
 | S3 | **Done 2026-10-20** — the dean's dashboard (`app/dean/page.tsx`) and the dean's evaluation landing page (`app/dean/evaluations/page.tsx`) now count the **teaching roster** (the faculty with an assignment whose section the department owns) instead of the people merely homed there, through the shared `getDepartmentTeachingFaculty`. The card is labelled "Teaching" and the roster "Teaching Roster — Faculty with a section in {dept} this term". The term is the active evaluation period's semester, falling back to the active semester. The consultation workload cards on the same dashboard are a different population and are unchanged. |
 | S4 | **Done 2026-10-20** — the `semesterId` fallback is gone from both visibility routes; a body without `evaluationPeriodId` is a 400. The write path was already corrupting the `evaluation_results` row when given a semester id. |

@@ -21,6 +21,11 @@ function makeChain(resolveValue: unknown) {
     not: vi.fn(() => chain),
     single: vi.fn(() => chain),
     is: vi.fn(() => chain),
+    // The paged reads order by a unique column and ask for a window. The
+    // fixed response below is a SHORT page, so the loop asks once and stops —
+    // the same single read this suite always asserted.
+    order: vi.fn(() => chain),
+    range: vi.fn(() => chain),
     then: (onFulfilled: (v: unknown) => unknown) => Promise.resolve(resolveValue).then(onFulfilled),
   }
   return chain

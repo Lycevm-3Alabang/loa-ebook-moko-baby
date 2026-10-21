@@ -68,6 +68,7 @@ departments, no "back" link).
 | 4.5 | A teacher homed elsewhere who teaches a section here appears **in their own department** on every surface — the coverage page and the results pages agree | a subject filed under the section's department on either page |
 | 4.6 | The list has **no** "No responses" or "Responses" column — those numbers live on the coverage page | a column that is back on the results list |
 | 4.7 | The **"Export"** button (download glyph) produces a ZIP whose per-department CSVs hold the **results** (a member's subject with no responses is not a row in the CSV), and whose `summary.csv` "Faculty Count" is the same headcount | an empty folder, a 500 toast, a summary count that differs from the page, or an empty row in a CSV |
+| 4.8 | The department page's **Avg Rating**, **Highest Rubric** and **Lowest Rubric** for a subject are **the same numbers** the faculty sees on their own page for that subject (`/faculty/evaluations/results/<facultySubjectId>`) | a different average, a different winning rubric, or a "—" for a subject that has responses — a truncated read is a *wrong* figure, not a missing one |
 
 ---
 
