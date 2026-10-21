@@ -179,73 +179,30 @@ function locateColumn(edges, emu) {
   return { col: last, colOff: edges[edges.length - 1] - edges[last] }
 }
 
-// ── the sheet's xml, in whatever dialect the legacy uses ───────────────────
+// ── the sheet's xml ────────────────────────────────────────────────────────
 //
-// Two dialects are in play: the one Excel writes (`hidden="1"`) and the one
-// other spreadsheet apps write (`hidden="true"`, plus their own attributes).
-// Both are valid; the helpers below understand both.
+// The cell and row rules live in lib/xlsx-template.ts, which the EXPORT also
+// uses - so the cut and the fill cannot disagree about how a cell is edited.
+// (Node 24 imports a .ts from a .mjs directly, so the script and the app share
+// one implementation.)
 
-const rowRe = (n) => new RegExp(`<row r="${n}"[^>]*(?:\\/>|>[\\s\\S]*?<\\/row>)`)
-const cellRe = (ref) => new RegExp(`<c r="${ref}"([^>]*?)(?:\\/>|>([\\s\\S]*?)<\\/c>)`)
-
-/** A row's opening tag, its cells, and whether it is hidden. */
-function readRow(xml, n) {
-  const m = xml.match(rowRe(n))
-  if (!m) return null
-  const open = m[0].match(/^<row[^>]*>/)[0]
-  return {
-    open,
-    hidden: /\shidden="(?:1|true)"/.test(open),
-    style: (open.match(/\ss="(\d+)"/) || [])[1],
-  }
-}
-
-/** A cell's text, and its style id. */
-function readCell(xml, ref) {
-  const m = xml.match(cellRe(ref))
-  if (!m) return null
-  const v = (m[2] || "").match(/<v>([^<]*)<\/v>/)
-  return { style: (m[1].match(/\ss="(\d+)"/) || [])[1], value: v ? v[1] : null, isString: /\st="s"/.test(m[1]) }
-}
-
-/** Replace a cell's text with a shared string, keeping its style. */
-function setSharedString(xml, ref, text, index) {
-  const m = xml.match(cellRe(ref))
-  if (!m) throw new Error(`cell ${ref} not found`)
-  const attrs = m[1].replace(/\s+t="[^"]*"/, "")
-  return xml.replace(cellRe(ref), `<c r="${ref}"${attrs} t="s"><v>${index}</v></c>`)
-}
-
-/** Drop a cell's text, keeping its style. */
-function blankCell(xml, ref) {
-  const m = xml.match(cellRe(ref))
-  if (!m) throw new Error(`cell ${ref} not found`)
-  const style = (m[1].match(/\ss="(\d+)"/) || [])[1]
-  return xml.replace(cellRe(ref), `<c r="${ref}"${style ? ` s="${style}"` : ""}/>`)
-}
-
-/** Un-hide a row, in either dialect. */
-function unhideRow(xml, n) {
-  const row = readRow(xml, n)
-  if (!row) throw new Error(`row ${n} not found`)
-  if (!row.hidden) return xml
-  return xml.replace(rowRe(n), (m) => m.replace(/\shidden="(?:1|true)"/, ` hidden="false"`))
-}
-
-/** Replace a row wholesale, keeping its opening tag but making it visible. */
-function replaceRow(xml, n, cells) {
-  const row = readRow(xml, n)
-  if (!row) throw new Error(`row ${n} not found`)
-  const open = row.open.replace(/\shidden="(?:1|true)"/, ` hidden="false"`).replace(/\/>$/, ">")
-  return xml.replace(rowRe(n), `${open}${cells}</row>`)
-}
+import {
+  readRow,
+  readCell,
+  setCellSharedString as setSharedString,
+  blankCell,
+  unhideRow,
+  replaceRow,
+} from "../lib/xlsx-template.ts"
 
 // ── the cut ────────────────────────────────────────────────────────────────
 
 const parts = readZip(SOURCE)
 const sheetName = "xl/worksheets/sheet1.xml"
+const commentsName = "xl/worksheets/sheet2.xml"
 const drawingName = "xl/drawings/drawing1.xml"
 let sheet = parts.get(sheetName).toString("utf-8")
+let comments = parts.get(commentsName).toString("utf-8")
 let drawing = parts.get(drawingName).toString("utf-8")
 let strings = parts.get("xl/sharedStrings.xml").toString("utf-8")
 
@@ -277,15 +234,30 @@ const EXPECTED = [
   ["G7", (t) => t === "Rating"],
   ["A8", (t) => t === "Employee Name"],
   ["G8", (t) => t === "Remarks"],
+]
+// the two sheets differ: the Individual sheet has the criteria (r11 onwards)
+// and the identity rows (r9/r10), while the Comments sheet has its own
+// banner at r10 and no criteria
+const EXPECTED_INDIVIDUAL = [
+  ...EXPECTED,
   ["A9", (t) => t === null || t === ""],
   ["A10", (t) => t === null || t === ""],
   ["A11", (t) => typeof t === "string" && t.includes("PROFESSIONAL MANNER")],
   ["I11", (t) => t === "RATING"],
 ]
-for (const [ref, ok] of EXPECTED) {
+const EXPECTED_COMMENTS = [...EXPECTED, ["A10", (t) => t === "COMMENTS AND SUGGESTIONS"]]
+
+for (const [ref, ok] of EXPECTED_INDIVIDUAL) {
   const t = cellText(sheet, ref)
   if (!ok(t)) {
     throw new Error(`cell ${ref} is ${JSON.stringify(t)} - the legacy workbook moved`)
+  }
+}
+// the Comments sheet carries the same header block, so it is guarded the same way
+for (const [ref, ok] of EXPECTED_COMMENTS) {
+  const t = cellText(comments, ref)
+  if (!ok(t)) {
+    throw new Error(`the Comments sheet's cell ${ref} is ${JSON.stringify(t)} - the legacy workbook moved`)
   }
 }
 for (const n of [3, 4, 5, 10]) {
@@ -331,41 +303,55 @@ strings = strings.replace(/<si>[\s\S]*<\/si>/, si.join("") + newSi.join(""))
 
 // 2. the sheet's cells -------------------------------------------------------
 
-// the banner cell's text is the title AND a term the legacy typed by hand -
-// the title moves to r3 and the term to r4, so the cell keeps only its style.
-sheet = blankCell(sheet, "A1")
+/**
+ * The header block, cut into a sheet.
+ *
+ * The title block (r3 the title, r4 the semester, r5 the evaluation period)
+ * goes on BOTH sheets - the Individual form and the Comments sheet are the same
+ * document, and they should read the same. The identity rows (Program and
+ * Section) go on the Individual sheet only: the Comments sheet keeps the
+ * legacy's own layout, with its COMMENTS AND SUGGESTIONS banner at r10.
+ */
+function cutHeader(xml, { identity }) {
+  // the banner cell's text is the title AND a term the legacy typed by hand -
+  // the title moves to r3 and the term to r4, so the cell keeps only its style.
+  xml = blankCell(xml, "A1")
 
-// the title block: r3 the title, r4 the semester, r5 the evaluation period.
-// all three were hidden (the banner image carried their text) and are now the
-// block the reader sees.
-sheet = unhideRow(sheet, 3)
-sheet = setSharedString(sheet, "A3", NEW_STRINGS[0], newIndexes[NEW_STRINGS[0]])
-sheet = unhideRow(sheet, 4)
-sheet = setSharedString(sheet, "A4", NEW_STRINGS[1], newIndexes[NEW_STRINGS[1]])
+  xml = unhideRow(xml, 3)
+  xml = setSharedString(xml, "A3", newIndexes[NEW_STRINGS[0]])
+  xml = unhideRow(xml, 4)
+  xml = setSharedString(xml, "A4", newIndexes[NEW_STRINGS[1]])
 
-// r5 is a new row: it carries the evaluation period, styled like r4.
-const r4Style = readCell(sheet, "A4").style
-const r5Cells =
-  `<c r="A5" s="${r4Style}" t="s"><v>${newIndexes[NEW_STRINGS[2]]}</v></c>` +
-  ["B", "C", "D", "E", "F", "G", "H", "I"].map((c) => `<c r="${c}5" s="${r4Style}"/>`).join("")
-sheet = replaceRow(sheet, 5, r5Cells)
+  // r5 is a new row: it carries the evaluation period, styled like r4.
+  const r4Style = readCell(xml, "A4").style
+  const r5Cells =
+    `<c r="A5" s="${r4Style}" t="s"><v>${newIndexes[NEW_STRINGS[2]]}</v></c>` +
+    ["B", "C", "D", "E", "F", "G", "H", "I"].map((c) => `<c r="${c}5" s="${r4Style}"/>`).join("")
+  xml = replaceRow(xml, 5, r5Cells)
 
-// the identity block gains Program and Section. r9 and r10 are re-styled to
-// r7 and r8's shape - the styles are READ from those rows, not hard-coded,
-// because a spreadsheet app renumbers them whenever it re-saves.
-const labelStyle = readCell(sheet, "A7").style
-const valueStyle = readCell(sheet, "B7").style
-const rightLabelStyle = readCell(sheet, "G7").style
-const rightValueStyle = readCell(sheet, "H7").style
+  if (!identity) return xml
 
-for (const [row, label] of [[9, NEW_STRINGS[3]], [10, NEW_STRINGS[4]]]) {
-  const cells =
-    `<c r="A${row}" s="${labelStyle}" t="s"><v>${newIndexes[label]}</v></c>` +
-    ["B", "C", "D", "E", "F"].map((c) => `<c r="${c}${row}" s="${valueStyle}"/>`).join("") +
-    `<c r="G${row}" s="${rightLabelStyle}"/>` +
-    `<c r="H${row}" s="${rightValueStyle}"/><c r="I${row}" s="${rightValueStyle}"/>`
-  sheet = replaceRow(sheet, row, cells)
+  // the identity block gains Program and Section. r9 and r10 are re-styled to
+  // r7 and r8's shape - the styles are READ from those rows, not hard-coded,
+  // because a spreadsheet app renumbers them whenever it re-saves.
+  const labelStyle = readCell(xml, "A7").style
+  const valueStyle = readCell(xml, "B7").style
+  const rightLabelStyle = readCell(xml, "G7").style
+  const rightValueStyle = readCell(xml, "H7").style
+
+  for (const [row, label] of [[9, NEW_STRINGS[3]], [10, NEW_STRINGS[4]]]) {
+    const cells =
+      `<c r="A${row}" s="${labelStyle}" t="s"><v>${newIndexes[label]}</v></c>` +
+      ["B", "C", "D", "E", "F"].map((c) => `<c r="${c}${row}" s="${valueStyle}"/>`).join("") +
+      `<c r="G${row}" s="${rightLabelStyle}"/>` +
+      `<c r="H${row}" s="${rightValueStyle}"/><c r="I${row}" s="${rightValueStyle}"/>`
+    xml = replaceRow(xml, row, cells)
+  }
+  return xml
 }
+
+sheet = cutHeader(sheet, { identity: true })
+comments = cutHeader(comments, { identity: false })
 
 // 3. the merges -------------------------------------------------------------
 
@@ -459,8 +445,11 @@ for (const [from, to] of LEGEND) {
 
 // 6. the string counts are advisory, but they are cheap to get right ---------
 let stringCells = 0
-for (const name of ["xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml", "xl/worksheets/sheet3.xml"]) {
-  const text = name === sheetName ? sheet : parts.get(name).toString("utf-8")
+for (const [name, text] of [
+  [sheetName, sheet],
+  [commentsName, comments],
+  ["xl/worksheets/sheet3.xml", parts.get("xl/worksheets/sheet3.xml").toString("utf-8")],
+]) {
   stringCells += (text.match(/t="s"/g) || []).length
 }
 strings = strings.replace(/count="\d+"/, `count="${stringCells}"`)
@@ -469,6 +458,7 @@ strings = strings.replace(/uniqueCount="\d+"/, `uniqueCount="${si.length + newSi
 // ── write it ───────────────────────────────────────────────────────────────
 
 parts.set(sheetName, Buffer.from(sheet, "utf-8"))
+parts.set(commentsName, Buffer.from(comments, "utf-8"))
 parts.set(drawingName, Buffer.from(drawing, "utf-8"))
 parts.set("xl/sharedStrings.xml", Buffer.from(strings, "utf-8"))
 // the media slot the picture's relationship points at
@@ -495,11 +485,12 @@ console.log(`  strings      ${si.length + newSi.length} unique, ${stringCells} r
 
 const written = readZip(TARGET)
 const writtenSheet = written.get(sheetName).toString("utf-8")
+const writtenComments = written.get(commentsName).toString("utf-8")
 const writtenStrings = written.get("xl/sharedStrings.xml").toString("utf-8")
 const writtenTexts = (writtenStrings.match(/<si>[\s\S]*?<\/si>/g) || []).map(textOf)
 
-function readBack(ref) {
-  const m = writtenSheet.match(cellRe(ref))
+function readBack(ref, source = writtenSheet) {
+  const m = source.match(new RegExp(`<c r="${ref}"([^>]*?)(?:\\/>|>([\\s\\S]*?)<\\/c>)`))
   if (!m) return null
   const v = (m[2] || "").match(/<v>([^<]*)<\/v>/)
   if (!v) return null
@@ -522,9 +513,16 @@ for (const [ref, expected] of EXPECTED_OUT) {
   const actual = readBack(ref)
   if (actual !== expected) problems.push(`${ref} is ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`)
 }
+// the Comments sheet carries the same title block, and keeps its own banner
+for (const [ref, expected] of [["A3", NEW_STRINGS[0]], ["A4", NEW_STRINGS[1]], ["A5", NEW_STRINGS[2]], ["A10", "COMMENTS AND SUGGESTIONS"]]) {
+  const actual = readBack(ref, writtenComments)
+  if (actual !== expected) problems.push(`the Comments sheet's ${ref} is ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`)
+}
 for (const row of [3, 4, 5, 10]) {
-  if (/\shidden="(?:1|true)"/.test((writtenSheet.match(rowRe(row)) || [""])[0])) {
-    problems.push(`row ${row} is still hidden`)
+  for (const [label, source] of [["Individual", writtenSheet], ["Comments", writtenComments]]) {
+    if (/\shidden="(?:1|true)"/.test((source.match(new RegExp(`<row r="${row}"[^>]*>`)) || [""])[0])) {
+      problems.push(`the ${label} sheet's row ${row} is still hidden`)
+    }
   }
 }
 for (const merge of ["A5:I5", "B9:F9", "H9:I9", "B10:F10", "H10:I10"]) {
