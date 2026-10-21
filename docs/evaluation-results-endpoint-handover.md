@@ -1,7 +1,17 @@
 # Evaluation Results — Endpoint Performance Handover
 
+> 🟡 **SUPERSEDED (2026-10-21) by `docs/evaluation-results-cache-handover.md`.**
+> The approach in this file — a group-by in Postgres over a **direct** connection — cannot be used
+> in this environment: the connection string comes from the Supabase dashboard's Connection panel,
+> which is not reachable here, so the route answered **500**. The figures are now read per
+> department through the app's own repositories and cached for five minutes. **This file is kept as
+> the record of the measurement** (26,012 ms, ~263 reads, ~220,000 rows) and of the rules that
+> still hold — the live-eval rule, the home-department attribution, the live-eval/§3.18 parity
+> contract. The "Still to do" section below is **done in the other direction**: the environment
+> blockers were never resolved, because the environment is not the answer any more.
+
 **Date:** 2026-10-21
-**Status:** 🟡 **the code is applied; the endpoint does not run yet** — two things are missing on the
+**Status:** 🟡 **the code is applied; the environment is not.** — two things are missing on the
 environment (below). Nothing is left to design.
 **Owner:** the next session picks this up and finishes the verification.
 

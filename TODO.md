@@ -1,36 +1,50 @@
 # TODO — open follow-ups
 
 Two threads: the **student CSV importer** (tracked 2026-10-09 — all production incidents are closed:
-504 timeout, 23505 duplicate key, silent cross-term loss; 329 tests / 26 files green) and the
-**evaluation results surfaces** (the results endpoint's performance, the attribution gaps). What
-remains is reporting polish, containment and the evaluation gaps — nothing is on fire.
+504 timeout, 23505 duplicate key, silent cross-term loss) and the **evaluation results surfaces**
+(the results endpoint's performance, the attribution gaps). What remains is reporting polish,
+containment and the evaluation gaps — nothing is on fire.
 
 Gate for every item: `npx tsc --noEmit` → `npm run lint` → `npx vitest run`
-(baseline 280/20) → `npm run build`.
+(baseline 60 files / 656 tests, 2026-10-21 — 14 cases removed by the dead-code cleanup; the owner's
+run is the proof) → `npm run build`.
 
 Context: `specs/README.md` ("Next Session — Start Here" + status table),
 `.opencode/skills/plan-fix/runs/20261009-1743-student-import-c1.md` (defect ledger),
-`docs/evaluation-results-endpoint-handover.md` (the results endpoint's handover).
+`docs/evaluation-results-cache-handover.md` (the results surfaces' handover — **current**),
+`specs/evaluation-results-cache.md` (the cache contract),
+`docs/evaluation-results-endpoint-handover.md` (the superseded endpoint story).
 
 ## NEXT (do first)
 
-- [ ] **The evaluation results endpoint — the code is applied, the environment is not.**
-  **Read `docs/evaluation-results-endpoint-handover.md` first** — it has the measurement, the
-  approach, what was changed, and what is still outstanding. 🟡 **The endpoint answers 500 until
-  two things are done on the environment, and both are missing right now:**
-  1. **`DATABASE_URL` is not set** — the aggregate connects to Postgres directly, so without it the
-     query throws `DATABASE_URL is required for the evaluation aggregates` and the route 500s.
-     The Supabase dashboard's **Connection** panel — the transaction pooler (6543) or the session
-     pooler (5432, then set `max: 1` in `lib/db/postgres.ts`). A placeholder is already in `.env`.
-  2. **`npm install`** — `@types/pg` is not in the lock, so `import { Pool } from "pg"` does not
-     typecheck until it is installed.
-  Then `npm test` → `npm run lint` → `npm run build`, and the measurement: the same request,
-  **26,012 ms before**, three queries after. ⭐ **The suite was still red at the last run** — 5
-  failures in `lib/__tests__/evaluation-results-department-faculty.test.ts` and 1 lint warning in
-  `lib/__tests__/evaluation-results-live-faculty.test.ts`, both from the same cause (the mock of
-  the aggregates module was missing `fetchAttributionWarnings`). **Both are fixed and have not been
-  re-run.** ⭐ The two flagged behaviour changes (the `""` bucket leaves Avg. Rating; the sentiment
-  number moves off its 1,000-row truncation) will move two numbers — that is expected.
+- [x] **The evaluation results endpoint — the direct connection is gone; the figures are read per
+  department and cached. Done 2026-10-21.**
+  **Read `docs/evaluation-results-cache-handover.md` first** — it has the shape, the rules, the
+  cache and what is still open. **The endpoint no longer needs `DATABASE_URL`:** the aggregate
+  (a group-by in Postgres over a direct connection) could never run here — the connection string
+  comes from the Supabase dashboard, which this environment cannot reach, so the route answered
+  **500**. The figures are now read **per department** through the app's own repositories
+  (`listDepartmentFigures`), **cached for five minutes** (`figure-cache.ts`), and the page fills a
+  row as its numbers arrive (skeletons per cell) instead of waiting for one big answer.
+  ⭐ The export is a **download**: it carries `maxDuration = 60` and the button shows a loader; the
+  drill-down stays **live, on demand** (rule 3 of `specs/evaluation-results-cache.md`).
+  ⭐ **What is left on the direct connection: the report dashboard only** — see the open item
+  below. Everything else (the list, both exports, the dean view, the coverage warnings) runs on
+  `SUPABASE_URL` + the service-role key.
+
+- [ ] **The report dashboard is the last surface on the direct connection.**
+  Where: `features/evaluations/evaluation-report.service.ts` — 8 call sites read the aggregate
+  (`listLiveFacultyResults`, `listLiveDeptAverages`), so the report page still answers **500**
+  without a direct connection. The per-department figures already exist
+  (`listDepartmentFigures`, cached), but the **per-faculty** ones cannot be re-derived from them
+  (the pooling weights are lost), so the migration needs its own read.
+  Options: **(a)** a period-wide read, pooled per faculty in Node (the report is a page, so it can
+  afford the rows); **(b)** a per-faculty read like the per-department one, cached the same way.
+  When it lands, these become deletable: `lib/db/postgres.ts`,
+  `features/evaluation-results/evaluation-aggregates.ts`,
+  `lib/__tests__/evaluation-aggregates.test.ts`, `listLiveDeptAverages`,
+  `listLiveFacultyResults`, the totals-only helpers in `lib/evaluation-utils.ts`, `pg` /
+  `@types/pg` from `package.json`, and `DATABASE_URL=` from `.env`.
 
 - [x] **C3 S4 — `userMap` merge done 2026-10-10** (`specs/student-import-stepper.md` §8, first row).
   Last C3 item. Option A as planned: merge on the already-returned `created[]`, zero
@@ -270,14 +284,25 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
 > side and **item 5**'s rating side are settled by the aggregate, and the **drill-down** is
 > untouched — it still reads its ratings (2-4s). The list's figures now come from the database's
 > aggregate, so the `isDisabled` gap below still stands for the drill-down and the faculty page.
+>
+> ⭐ **2026-10-21, later still — the aggregate path is GONE from the list.** The environment has no
+> Supabase dashboard access, so the direct connection could never be opened and the list answered
+> **500**. The list's figures are now read **per department** through the app's own repositories
+> and **cached for five minutes** (`features/evaluation-results/figure-cache.ts`); the page fills a
+> row as its numbers arrive. Handover: `docs/evaluation-results-cache-handover.md`; contract:
+> `specs/evaluation-results-cache.md`. **The aggregate survives only in the report dashboard** (the
+> open item in "NEXT"). ⭐ What that does to the items below: the list and the drill-down now use
+> the **raw-row** path, so the `""` bucket **counts** toward Avg. Rating (the aggregate dropped it)
+> — item 6 — and the list's `isDisabled` filter now lives in
+> `listPeriodFigures` / `listDepartmentFigures` (item 1).
 
 - [ ] **The `isDisabled` filter is missing on the results drill-down and on the faculty page.**
-  Where: the results **list** filters it (`features/evaluation-results/evaluation-results.repository.ts:142`,
-  `.eq("isDisabled", false)`), but the drill-down
-  (`features/evaluation-results/evaluation-results.service.ts:128` →
-  `features/evaluations/evaluations.repository.ts:510` `listSubmittedByPeriodAndEvaluatees`) and the
+  Where: the results **list** filters it — `features/evaluation-results/evaluation-results.repository.ts:154`
+  (the period's spine) and `:417` (a department's figures), both `.eq("isDisabled", false)` — but the
+  drill-down (`features/evaluation-results/evaluation-results.service.ts` →
+  `features/evaluations/evaluations.repository.ts:462` `listSubmittedByPeriodAndEvaluatees`) and the
   faculty page (`app/api/faculty/evaluation-results/subjects/[facultySubjectId]/route.ts:63` →
-  `evaluations.repository.ts:542` `listSubmittedByPeriodAndEvaluateeAndFS`) do **not**.
+  `evaluations.repository.ts` `listSubmittedByPeriodAndEvaluateeAndFS`) do **not**.
   What it is: `isDisabled` is the soft-invalidation flag on an evaluation — "this response does not
   count". Four paths set it. **Two of them also set `status = 'INVALID'`**
   (`invalidateById` `:407`, `invalidateByEvaluatorAndPeriod` `:414`, `invalidateByFacultySubject`
@@ -324,12 +349,25 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   **(c) is the honest one** — the evaluations are real, they belong to a teacher, and the number is
   knowable.
 
+- [x] **The drill-down's rating read — decided 2026-10-21: it stays LIVE, on demand.**
+  `getDepartmentSubjectResults` (`features/evaluation-results/evaluation-results.service.ts`) reads
+  the department's evaluations, their ratings and their comments and pools them in Node; a
+  department with 2,184 responses (GENED) ships 58,968 rating rows across ~60 reads, so a
+  drill-down takes 2-4 s. The aggregate that could have replaced that read **is going away** (no
+  dashboard access), so the choice is between a live read and a cached one. **Decided: live** — a
+  detail page is opened for a reason and its numbers are read on demand, every time. Rule 3 of
+  `specs/evaluation-results-cache.md`; the handover
+  (`docs/evaluation-results-cache-handover.md` §6) records the consequence: the drill-down does not
+  filter `isDisabled` and is scoped to the term's roster, so it — and the export's `summary.csv`,
+  which shares its read — can differ from the results list in exactly those two cases (items 1 and
+  2 below).
+
 - [ ] **Three reads are still on a cap.** Where: `listSubmittedByPeriodAndFacultySubjectIds`
-  (`features/evaluations/evaluations.repository.ts:554`) and `listStatusByPeriodAndFacultySubjectIds`
-  (`:566`) are chunked by facultySubjectIds (the **URL** budget) but their **row** count is
+  (`features/evaluations/evaluations.repository.ts:506`) and `listStatusByPeriodAndFacultySubjectIds`
+  (`:518`) are chunked by facultySubjectIds (the **URL** budget) but their **row** count is
   unbounded — the same 1,000-row truncation AGENTS.md **Lesson 7b** describes, unfixed. And
   `getStudentBreakdownsForFaculties` reads the comments with one unchunked
-  `.in("evaluationId", allEvalIds)` (`features/evaluation-results/evaluation-results.repository.ts:651-653`)
+  `.in("evaluationId", allEvalIds)` (`features/evaluation-results/evaluation-results.repository.ts:836`)
   where `allEvalIds` is every evaluation of the faculty — past ~200 ids that URL exceeds ~8KB and
   PostgREST answers **400** (AGENTS.md **Lesson 7**), which the route turns into a 500.
   What it is: the same class of defect as the one just fixed, on the paths that were left out of
@@ -339,21 +377,6 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   Options: **(a)** page the two evaluation reads the way the ones just fixed are paged
   (`.order("id")` + `.range()`), and chunk the comments read at 100 ids; **(b)** leave them and
   record the caps. **(a) is three small edits and removes a latent 500.**
-
-- [ ] **The drill-down reads the department's rating rows into the app to average them.**
-  Where: `features/evaluation-results/evaluation-results.service.ts` — `getDepartmentSubjectResults`
-  reads the department's evaluations, their ratings and their comments, and pools them in Node. A
-  department with 2,184 responses (GENED) ships 58,968 rating rows across ~60 reads.
-  What it is: the same defect the **list** just had, on the page one click away. The aggregate
-  (`features/evaluation-results/evaluation-aggregates.ts`) already returns one row per assignment
-  with its respondent count and its rating totals — the drill-down's per-subject rows are exactly
-  that grain.
-  Why it is open: it was **out of scope** for the list story and was reverted when that was pointed
-  out — it deserves its own decision, not a fold-in. It also needs the per-assignment **comment
-  sentiment** (the aggregate's sentiment is per teacher, the drill-down's is per subject), so the
-  function would gain a per-assignment sentiment total.
-  Options: **(a)** read the drill-down's rating rows from the aggregate and keep the comments read
-  (~2 reads instead of ~60); **(b)** leave it (2-4s per drill-down).
 
 - [ ] **The `""` fallback category dilutes Avg. Rating but can never be named.**
   Where: `lib/db/common.ts:99-110` (the fallback) and `:144-151` (the mapping), with the arithmetic
@@ -365,10 +388,14 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   `CATEGORY_NAMES`, so the `""` bucket **can never be** a Highest or Lowest Rubric. A rating whose
   item was deleted therefore moves the average without being visible anywhere.
   Why it is open: a real number is being diluted by a bucket with no label, and the UI cannot show
-  why. Options: **(a)** exclude unmapped names from `computeGeneralRating` as well (then Avg.
-  Rating is over the 8 real criteria only — consistent with the columns, and with what the user
-  sees); **(b)** keep them and surface the count ("N ratings could not be attributed to a
-  criterion"); **(c)** treat an unresolvable `itemId` as a data error and log it.
+  why. ⭐ **What runs now (2026-10-21):** the raw-row path — `computeGeneralRating` over every
+  category name present — so the bucket **counts** on the list, the drill-down and the export. The
+  aggregate dropped it, and that path is going away, so option **(a)** would *change* the number
+  back and **(b)** would surface it. Options: **(a)** exclude unmapped names from
+  `computeGeneralRating` as well (then Avg. Rating is over the 8 real criteria only — consistent
+  with the columns, and with what the user sees); **(b)** keep them and surface the count ("N
+  ratings could not be attributed to a criterion"); **(c)** treat an unresolvable `itemId` as a data
+  error and log it.
 
 - [ ] **The `CATEGORY_NAMES` aliases overwrite a column instead of averaging.**
   Where: `lib/evaluation-utils.ts:11-21` (the map) and `:96-99` (the assignment loop).
@@ -419,21 +446,40 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   `exec_sql` is **not** `SECURITY DEFINER` (`supabase-schema.sql:2074`), so it runs as the
   invoking role — `service_role`, which has no `CREATE` on `public`. The first `CREATE TABLE`
   answers **"permission denied for schema public"**. ⭐ The same wall is why the evaluation
-  aggregates are plain queries over a direct connection instead of a function the app installs
-  (AGENTS.md **Lesson 7c**). Options: **(a)** make `exec_sql` `SECURITY DEFINER` **and revoke
+  aggregates could not be a function the app installs (AGENTS.md **Lesson 7c**). Options: **(a)** make
+  `exec_sql` `SECURITY DEFINER` **and revoke
   EXECUTE from `anon` and `authenticated`** — it then runs as its owner (`postgres`) and the
   feature works; ⚠️ that is a privilege escalation on a SQL-execution primitive, so the grants
   have to be exactly right; **(b)** drop the feature; **(c)** leave it broken and documented.
 
-- [ ] **CLEANUP (decide) — three methods now have no app caller.**
-  `listSubmittedWithSentiment` (`features/evaluations/evaluations.repository.ts:423`) and
-  `listSubmittedEvaluateeIds` (`:460`) in the evaluations repository, and `buildLiveDeptAverages`
-  (`lib/evaluation-utils.ts`) — the raw-row pooling helper the totals path replaced. The list reads
-  its sentiment from the aggregate now, so the comment read it used is unused. `listSubmittedWithSentiment`
-  is also the read with the **unpaged** evaluations query (truncated at 1,000), so deleting it also
-  deletes that truncation. Either delete them (method + the `IEvaluationRepository` entries + their
-  test fixtures) or keep them as public capabilities for a future surface. Same shape as the
-  existing "CLEANUP (decide) — `listDepartmentAssignments`" item above.
+- [x] **CLEANUP — three methods with no app caller. Done 2026-10-21.**
+  `listSubmittedWithSentiment` and `listSubmittedEvaluateeIds` (the evaluations repository) and
+  `buildLiveDeptAverages` (`lib/evaluation-utils.ts` — the raw-row pooling helper the totals path
+  replaced) were deleted with their interface entries and their 14 test cases; `listSubmittedWithSentiment`
+  was the read with the **unpaged** evaluations query (truncated at 1,000), so deleting it deleted
+  that truncation with it. `buildFacultySummary` and `FacultyDeptInput` went with them (the first was
+  the second's only caller). Run file:
+  `.opencode/skills/plan-fix/runs/20261021-1300-session.md`.
+
+- [ ] **CLEANUP (decide) — two helpers with no app caller.**
+  `resolveFacultyDepartment` (`lib/evaluation-utils.ts`) and `resolveDepartmentFaculties` (the same
+  file) are only called by their own tests — the results surfaces use `resolveSubjectDepartment`
+  (the home-department rule). Either delete them (functions + `DeptResolutionContext` + ~11 test
+  cases) or keep them as public capabilities. The adjacent sweep found them; the cleanup of
+  2026-10-21 deliberately left them.
+
+- [ ] **CLEANUP (decide) — the docs still describe the pattern the app no longer uses.**
+  Four places, all written for the direct-connection story. **Three are done (2026-10-21):**
+  1. ~~`AGENTS.md` **Lesson 7c**~~ — **done**: it now presents the direct connection as the *option*
+     that needs dashboard access, and the pattern as (c) per-department reads + a five-minute cache.
+     Lesson 7b gained the chunk-sizing corollary (37 evaluations = 999 rows = one page).
+  2. ~~`docs/evaluation-results-endpoint-handover.md`~~ — **done**: marked superseded, with a
+     pointer to the current handover; the file stays as the record of the measurement.
+  4. ~~`TODO.md`~~ — **done**: this file's own state (the "NEXT" item, the 2026-10-21 note).
+  **Still open:** 3. `specs/evaluation-results-attribution.md` §3.18–§3.20 — the contract rows
+  still say the figures are "computed in Postgres over the direct connection"; they should point at
+  the raw-row path and the cache. The current contract is `specs/evaluation-results-cache.md`; the
+  current handover is `docs/evaluation-results-cache-handover.md`.
 
 ## Done this session (do not redo)
 

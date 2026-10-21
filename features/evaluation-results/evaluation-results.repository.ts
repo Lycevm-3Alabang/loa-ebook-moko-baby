@@ -31,7 +31,6 @@ import type {
 } from "@/lib/types"
 import { semesterRepository, userRepository } from "@/lib/repositories/factory"
 import {
-  fetchDepartmentSentiment,
   fetchDepartmentTotals,
 } from "@/features/evaluation-results/evaluation-aggregates"
 
@@ -617,29 +616,6 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
         respectUniqueness: catColumns.respectUniqueness ?? null,
         assessmentAndFeedback: catColumns.assessmentAndFeedback ?? null,
       })
-    }
-    return out
-  },
-
-  /**
-   * The departments' sentiment: the mean of the comment sentiment scores of
-   * the responses that count under the department. The pool is the teacher's
-   * responses across the period, the same population the results list reads.
-   */
-  async listDepartmentSentiment(evaluationPeriodId: string): Promise<Record<string, number | null>> {
-    const rows = await fetchDepartmentSentiment(evaluationPeriodId)
-    const byDept = new Map<string, { sum: number; count: number }>()
-    for (const row of rows) {
-      const deptId = row.department_id ?? UNKNOWN_DEPARTMENT
-      const current = byDept.get(deptId) ?? { sum: 0, count: 0 }
-      byDept.set(deptId, {
-        sum: current.sum + row.sentiment_sum,
-        count: current.count + row.sentiment_count,
-      })
-    }
-    const out: Record<string, number | null> = {}
-    for (const [deptId, total] of byDept) {
-      out[deptId] = total.count > 0 ? Math.round((total.sum / total.count) * 100) / 100 : null
     }
     return out
   },

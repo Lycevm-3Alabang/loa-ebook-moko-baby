@@ -103,7 +103,7 @@ lib/                    # Global utilities & infrastructure
 ## Testing
 
 - Vitest with jsdom environment (config: `vitest.config.ts`)
-- All tests in `lib/__tests__/` (45 test files / 511 tests, 2026-10-17)
+- All tests in `lib/__tests__/` (60 test files / 656 tests, 2026-10-21)
 - Repositories mocked via `lib/repositories/factory.ts` module mock
 - CI runs `npx vitest run` on push/PR to `main`
 
@@ -189,19 +189,21 @@ Renaming DB columns cascade through the full TypeScript stack:
 - **The loop's contract:** a page is either **full** (1,000 rows — keep going) or **short** (the end of the set — stop). That works because the page size **equals** the cap, so a full page is never a truncated one. If `db-max-rows` were ever **below** the page size, a "full" page would be truncated and the loop would stop early — silently, again. The repo's page size is 1,000 throughout (`PAGE_SIZE` / `BATCH` / `RANGE`); keep it at the cap, and if the cap ever moves, move the page size with it.
 - **Corollary — the two caps need opposite fixes.** The **URL** cap (Lesson 7) is **chunking**; the **row** cap is **paging**. Shrinking the chunk does **not** fix the row cap — it only makes more requests that each still truncate.
 - **Corollary — the multiplier.** `evaluation_ratings` holds **27 rows per evaluation** (the rubric group's items), so a chunk of 100 evaluations is 2,700 rows against a 1,000-row cap. A chunk sized for the URL budget is **not** sized for the row budget.
-- **Corollary — a paging fix multiplies the requests.** It multiplies the request count by `rows ÷ page size`. Measure the **rows**, not the requests: 201,717 rows was the defect, and 225 requests was just how they were being carried. **The cure is to move the group-by into Postgres, not to page harder.**
+- **Corollary — size the chunk so a chunk's rows fit under the row cap.** `OFFSET` paging **re-scans** the chunk's rows on every page, so a chunk that spills into three pages is read three times over. `lib/db/common.ts` reads the ratings in chunks of **37** evaluations: 37 × 27 = **999** rows, one page under the 1,000-row cap, so a chunk comes back in a **single** request and each rating is read **once**. Size the chunk for the **row** budget and the URL budget at the same time (37 ids ≈ 1.4KB, well under the ~8KB URL cap).
+- **Corollary — a paging fix multiplies the requests.** It multiplies the request count by `rows ÷ page size`. Measure the **rows**, not the requests: 201,717 rows was the defect, and 225 requests was just how they were being carried. **The cure is to move the group-by into Postgres (Lesson 7c) — and where that is not available, to read the rows once, per department, and cache them.**
 - **Where the repo pages:** `features/evaluations/evaluations.repository.ts` (`countSubmittedByFacultySubjectIdsPaged`, `listSubmittedByPeriodAndEvaluatees`), `features/admin-data/student-enrollment.repository.ts` (`countByFacultySubjectIdsPaged`), `features/users/users.repository.ts` (`listAll`), `features/admin-data/admin-data.service.ts`, `lib/db/common.ts` (`fetchRatingsWithCategories`).
 - **Corollary — a silently truncated read is a *wrong* figure, not a *missing* one.** It never surfaces as a 500, so it survives review: check the row count, not the status code.
 
-### 7c. A Group-By That Spans a To-Many Needs a Direct Connection
+### 7c. A Group-By That Spans a To-Many Cannot Be Expressed Through REST
 
 - **The rule:** PostgREST can aggregate — `?select=amount.sum(),order_date` returns the sum **grouped by** `order_date` — but the group can only be the **top-level table's** columns (or a spread *to-one* embed). A group that spans a to-many — e.g. **ratings → items → categories** — cannot be expressed through the REST API at all, and the aggregate feature is **disabled by default** on Supabase (`db-aggregates-enabled`).
-- **The repo's pattern (`features/evaluation-results/evaluation-aggregates.ts`):** the app opens a **direct Postgres connection** (`lib/db/postgres.ts`, `pg` + `DATABASE_URL`) and sends the GROUP BY as a **plain parameterised query** — `$1` is the period id. **Nothing is created in the database**: no function to install, no schema cache to refresh, no migration to run, no `exec_sql`.
-- **Why not a stored function?** The app's `exec_sql` runs as the **invoking** role (`service_role`), which has no `CREATE` on `public` — so the app cannot create a function ("permission denied for schema public"). A direct connection can. ⭐ The same wall is why the admin **Reset Database** feature cannot create tables.
-- **The direct connection has no row cap and no URL cap.** `db-max-rows` (1,000) and the ~8KB URL limit are **PostgREST's**, not Postgres's — so a direct read is not truncated and not chunked.
-- **The serverless pool:** a warm instance holds a few connections (`max: 5`) and the **pooler** multiplexes them. With the **session pooler** (port 5432) keep `max: 1`.
-- **Teach — where the rules go.** The query carries the app's **scope** rules (the period, the submitted and enabled evaluations, the live-eval rule, the teacher's home department) and **no display rule**: the labels, the remark ladder and the highest/lowest selection stay in TypeScript (`CATEGORY_LABELS`, `getRemark`, `findHighestLowestRubrics`), so there is one home for each.
-- **Corollary — rules that move into SQL lose their behavioural tests.** Vitest cannot execute SQL, so those rules are guarded by asserting the query body as text (`expect(DEPARTMENT_TOTALS_SQL).toContain(...)`) — a weaker guard, and worth saying so.
+- **The options when the group-by is needed:**
+  - **(a) A direct Postgres connection** — `pg` + `DATABASE_URL`, a plain parameterised query, **nothing created in the database** (no function, no view, no migration, no `exec_sql`). It has no row cap and no URL cap: `db-max-rows` (1,000) and the ~8KB limit are **PostgREST's**, not Postgres's. ⭐ **It needs a connection string from the Supabase dashboard's Connection panel**, so it is only available where that dashboard is reachable. The repo carried this path in `lib/db/postgres.ts` + `features/evaluation-results/evaluation-aggregates.ts`; the **report dashboard** is the last surface that still reads it.
+  - **(b) The app's own `exec_sql`** — it runs as the **invoking** role (`service_role`), which has no `CREATE` on `public`, so the app cannot create a function ("permission denied for schema public"). ⭐ The same wall is why the admin **Reset Database** feature cannot create tables.
+  - **(c) Read the rows and pool them in the app** — the rows cross the wire, so the cost is the **rows**, not the requests.
+- **The repo's pattern (2026-10-21):** **(c), per department, cached.** The results figures are read one department at a time (`listDepartmentFigures`), so a row can be filled as soon as its numbers arrive, and the figures are kept for **five minutes** (`features/evaluation-results/figure-cache.ts`), so the list, the exports and the dean's view share one read. The contract is `specs/evaluation-results-cache.md`; the handover is `docs/evaluation-results-cache-handover.md`.
+- **Teach — where the rules go.** The **scope** rules (the period, the submitted and enabled evaluations, the live-eval rule, the teacher's home department) live in the **repository**; the **display** rules (the labels, the remark ladder, the highest/lowest selection) stay in TypeScript (`CATEGORY_LABELS`, `getRemark`, `findHighestLowestRubrics`), so there is one home for each.
+- **Corollary — a detail page stays live.** The drill-down's per-subject rows are read on demand, every time, and are **not** cached — a detail page is opened for a reason (rule 3 of the cache contract).
 
 ### 8. Diagnosing a 500: Vercel Logs Do Not Show the Response Body
 

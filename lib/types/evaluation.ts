@@ -479,8 +479,6 @@ export interface IEvaluationRepository {
   invalidateByFacultySubjectAndEvaluator(facultySubjectId: string, evaluatorId: string, remarks: string): Promise<void>
   invalidateById(id: string, remarks: string): Promise<void>
   invalidateByEvaluatorAndPeriod(evaluatorId: string, facultySubjectId: string, evaluationPeriodId: string, remarks: string): Promise<void>
-  listSubmittedWithSentiment(evaluationPeriodId: string): Promise<{ evaluateeId: string; sentimentScore: number | null }[]>
-  listSubmittedEvaluateeIds(evaluationPeriodId: string): Promise<string[]>
   invalidateByFacultySubject(facultySubjectId: string, remarks: string): Promise<void>
   countSubmittedByFacultyIds(facultyIds: string[]): Promise<number>
   countSubmittedByFacultySubjectIds(evaluationPeriodId: string, facultySubjectIds: string[]): Promise<Record<string, number>>
@@ -692,11 +690,6 @@ export interface IEvaluationResultRepository {
   listDepartmentFigures(departmentId: string, evaluationPeriodId: string): Promise<DepartmentFigures>
   listLiveDeptAverages(evaluationPeriodId: string): Promise<LiveDeptAverage[]>
   listLiveFacultyResults(evaluationPeriodId: string): Promise<LiveFacultyResult[]>
-  /**
-   * The departments' sentiment: the mean of the comment sentiment scores of
-   * the responses that count under the department, keyed by department id.
-   */
-  listDepartmentSentiment(evaluationPeriodId: string): Promise<Record<string, number | null>>
   /**
    * The evaluated assignments of one department — the department's own
    * subjects, by the teacher's own department.

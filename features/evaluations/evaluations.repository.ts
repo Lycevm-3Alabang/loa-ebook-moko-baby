@@ -420,54 +420,6 @@ export const evaluationRepository: IEvaluationRepository = {
       .eq("evaluation_period_id", evaluationPeriodId)
     if (error) throw error
   },
-  async listSubmittedWithSentiment(evaluationPeriodId) {
-    const { data, error } = await supabase
-      .from("evaluations")
-      .select("id, evaluateeId")
-      .eq("evaluation_period_id", evaluationPeriodId)
-      .eq("status", "SUBMITTED")
-      .eq("isDisabled", false)
-      .not("facultySubjectId", "is", null)
-    if (error) throw error
-    if (!data || data.length === 0) return []
-
-    const evalIds = [...new Set(data.map((e) => e.id))]
-    const commentResults = await Promise.all(
-      chunkStrIds(evalIds, IN_CHUNK_SIZE).map((ids) =>
-        supabase
-          .from("evaluation_comments")
-          .select("evaluationId, sentimentScore")
-          .in("evaluationId", ids),
-      ),
-    )
-    const commentRows = commentResults.flatMap((res) => res.data || [])
-
-    const sentByEval = new Map<string, { sentimentScore: number | null }[]>()
-    for (const c of commentRows || []) {
-      if (!sentByEval.has(c.evaluationId)) sentByEval.set(c.evaluationId, [])
-      sentByEval.get(c.evaluationId)!.push(c)
-    }
-
-    const result: { evaluateeId: string; sentimentScore: number | null }[] = []
-    for (const row of data) {
-      const comments = sentByEval.get(row.id) ?? []
-      for (const c of comments) {
-        result.push({ evaluateeId: row.evaluateeId, sentimentScore: c.sentimentScore })
-      }
-    }
-    return result
-  },
-  async listSubmittedEvaluateeIds(evaluationPeriodId) {
-    const { data, error } = await supabase
-      .from("evaluations")
-      .select("evaluateeId")
-      .eq("evaluation_period_id", evaluationPeriodId)
-      .eq("status", "SUBMITTED")
-      .eq("isDisabled", false)
-      .not("facultySubjectId", "is", null)
-    if (error) throw error
-    return [...new Set((data || []).map((e) => e.evaluateeId))]
-  },
   async invalidateByFacultySubject(facultySubjectId, remarks) {
     const { error } = await supabase
       .from("evaluations")

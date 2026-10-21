@@ -238,26 +238,6 @@ export function groupSnapshotRows(rows: FlatSnapshotRow[]): NestedRubricCategory
 
 // --- Aggregation helpers (extracted for testability) -----------------------
 
-export interface FacultySummary {
-  catAverages: Record<string, number>
-  general: number | null
-  catColumns: Record<string, number | null>
-  rubrics: { highest: { key: string; label: string; score: number }[]; lowest: { key: string; label: string; score: number }[] }
-  sentiment: number | null
-}
-
-export function buildFacultySummary(
-  ratings: RatingRow[],
-  comments: { sentimentScore: number | null }[] = [],
-): FacultySummary {
-  const catAverages = computeCategoryAverages(ratings)
-  const general = computeGeneralRating(catAverages)
-  const catColumns = mapCategoryAveragesToColumns(catAverages)
-  const rubrics = findHighestLowestRubrics(catColumns)
-  const sentiment = computeSentimentScore(comments)
-  return { catAverages, general, catColumns, rubrics, sentiment }
-}
-
 export interface PooledAggregate {
   avgRating: number | null
   remarks: string | null
@@ -381,7 +361,7 @@ export interface FacultyAggregate {
 /**
  * Pool a faculty's evaluation set into one aggregate, keyed by facultyId.
  * Uses the same chain as the per-facultySubject detail page
- * (buildFacultySummary), so a faculty headline equals the detail page's
+ * (aggregatePooledResults), so a faculty headline equals the detail page's
  * pooled figure instead of a mean of per-subject means.
  */
 export function aggregateFacultyResults(
@@ -422,13 +402,6 @@ export function aggregateFacultyResults(
     }
   }
   return out
-}
-
-export interface FacultyDeptInput {
-  facultyId: string
-  deptId: string
-  evalCount: number
-  ratings: RatingRow[]
 }
 
 export interface DeptResolutionContext extends SubjectResolutionContext {
@@ -544,39 +517,6 @@ export function resolveDepartmentFaculties(
   ctx: DeptResolutionContext,
 ): string[] {
   return candidateFacultyIds.filter((id) => resolveFacultyDepartment(id, ctx) === departmentId)
-}
-
-export function buildLiveDeptAverages(inputs: FacultyDeptInput[]): LiveDeptAverage[] {
-  const groups = new Map<string, {
-    facultyIds: Set<string>
-    respondents: number
-    ratings: RatingRow[]
-  }>()
-  for (const inp of inputs) {
-    const { general } = buildFacultySummary(inp.ratings)
-    if (general === null) continue
-    let g = groups.get(inp.deptId)
-    if (!g) {
-      g = { facultyIds: new Set(), respondents: 0, ratings: [] }
-      groups.set(inp.deptId, g)
-    }
-    g.facultyIds.add(inp.facultyId)
-    g.respondents += inp.evalCount
-    g.ratings.push(...inp.ratings)
-  }
-  return [...groups.entries()].map(([departmentId, g]) => {
-    const pooled = aggregatePooledResults(g.ratings)
-    return {
-      departmentId,
-      facultyIds: [...g.facultyIds],
-      totalRespondents: g.respondents,
-      avgRating: pooled.avgRating,
-      remarks: pooled.remarks,
-      catAverages: pooled.catColumns,
-      highestRubrics: pooled.highestRubrics,
-      lowestRubrics: pooled.lowestRubrics,
-    }
-  })
 }
 
 /** One assignment's contribution to a department's pool. */

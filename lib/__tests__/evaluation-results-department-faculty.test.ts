@@ -241,29 +241,6 @@ describe("evaluationResultRepository.listDepartmentAssignments", () => {
   })
 })
 
-describe("evaluationResultRepository.listDepartmentSentiment", () => {
-  it("pools the teachers' scores instead of averaging their averages", async () => {
-    mockAggregates.fetchDepartmentSentiment.mockResolvedValue([
-      { department_id: "d1", faculty_id: "f1", sentiment_sum: 0.3, sentiment_count: 3 },
-      { department_id: "d1", faculty_id: "f2", sentiment_sum: 0.9, sentiment_count: 1 },
-    ])
-
-    const out = await evaluationResultRepository.listDepartmentSentiment("p1")
-
-    // The mean of the two faculty averages would be 0.50; pooled over the
-    // comments it is 1.2/4 = 0.30.
-    expect(out["d1"]).toBe(0.3)
-  })
-
-  it("has no sentiment for a department with no scored comments", async () => {
-    mockAggregates.fetchDepartmentSentiment.mockResolvedValue([])
-
-    const out = await evaluationResultRepository.listDepartmentSentiment("p1")
-
-    expect(out).toEqual({})
-  })
-})
-
 describe("evaluationResultRepository.listSemesterRoster", () => {
   it("lists the people who teach in a department, by the teacher's own department", async () => {
     respondWith({
