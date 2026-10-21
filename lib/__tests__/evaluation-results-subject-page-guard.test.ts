@@ -13,6 +13,7 @@ const mockEvalRepo = vi.hoisted(() => ({
   listFullCommentsByEvaluationIds: vi.fn(),
 }))
 const mockEvalResultRepo = vi.hoisted(() => ({ assertPeriodIsActive: vi.fn() }))
+const mockEvalPeriodRepo = vi.hoisted(() => ({ findById: vi.fn() }))
 const mockSectionRepo = vi.hoisted(() => ({ list: vi.fn() }))
 const mockLogServerError = vi.hoisted(() => vi.fn())
 
@@ -26,6 +27,7 @@ vi.mock("@/lib/repositories/factory", () => ({
   subjectRepository: mockSubjectRepo,
   evaluationRepository: mockEvalRepo,
   evaluationResultRepository: mockEvalResultRepo,
+  evaluationPeriodRepository: mockEvalPeriodRepo,
   sectionRepository: mockSectionRepo,
 }))
 vi.mock("@/features/evaluation-results/evaluation-results.repository", () => ({
@@ -56,12 +58,17 @@ beforeEach(() => {
   mockDeptRepo.findByDeanId.mockResolvedValue(DEPT)
   mockDeptRepo.findById.mockResolvedValue(DEPT)
   mockFsRepo.findById.mockResolvedValue({ id: "fs1", faculty_id: "f1", subject_id: "s1", section_id: null })
-  mockUserRepo.findById.mockResolvedValue({ id: "f1", name: "Ana Reyes", email: "ana@x", departmentId: "d1" })
+  mockUserRepo.findById.mockResolvedValue({ id: "f1", name: "Ana Reyes", email: "ana@x", departmentId: "d1", employeeNo: "2024-0017" })
   mockSubjectRepo.findById.mockResolvedValue({ id: "s1", code: "IT101", name: "Intro" })
   mockEvalRepo.listSubmittedByPeriodAndEvaluateeAndFS.mockResolvedValue([{ id: "e1", submittedAt: null, createdAt: null }])
   mockEvalRepo.listRatingsByEvaluationIds.mockResolvedValue([])
   mockEvalRepo.listFullCommentsByEvaluationIds.mockResolvedValue([])
   mockEvalResultRepo.assertPeriodIsActive.mockResolvedValue(undefined)
+  mockEvalPeriodRepo.findById.mockResolvedValue({
+    id: "p1",
+    name: "SY 2026-2027 First Semester - Evaluation",
+    semesterTitle: "SY 2026-2027 First Semester",
+  })
   mockSectionRepo.list.mockResolvedValue([])
 })
 
@@ -131,5 +138,68 @@ describe("the subject page's department guard (D9)", () => {
 
     expect(res.status).toBe(403)
     expect(mockEvalRepo.listSubmittedByPeriodAndEvaluateeAndFS).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The export's identity block.
+ *
+ * The legacy workbook's header carries the employee number, the program, the
+ * section, the semester and the evaluation period. The app has every one of
+ * them; these cases pin that the subject page's route DELIVERS them, so the
+ * export never has to type a value it could have read.
+ */
+describe("the subject page carries the export's identity block", () => {
+  it("carries the employee number, the semester and the evaluation period", async () => {
+    const res = await adminGET(
+      req("/api/admin/evaluation-results/departments/d1/groups/fs1", "?evaluationPeriodId=p1"),
+      params("d1", "fs1"),
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.faculty.employeeNo).toBe("2024-0017")
+    expect(body.evaluationPeriodName).toBe("SY 2026-2027 First Semester - Evaluation")
+    expect(body.semesterTitle).toBe("SY 2026-2027 First Semester")
+  })
+
+  it("reads the period once, for the period AND its semester", async () => {
+    await adminGET(
+      req("/api/admin/evaluation-results/departments/d1/groups/fs1", "?evaluationPeriodId=p1"),
+      params("d1", "fs1"),
+    )
+
+    expect(mockEvalPeriodRepo.findById).toHaveBeenCalledWith("p1")
+    expect(mockEvalPeriodRepo.findById).toHaveBeenCalledTimes(1)
+  })
+
+  it("carries the dean's twin the same way", async () => {
+    const res = await deanGET(
+      req("/api/dean/evaluation-results/departments/d1/groups/fs1", "?evaluationPeriodId=p1"),
+      params("d1", "fs1"),
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.faculty.employeeNo).toBe("2024-0017")
+    expect(body.evaluationPeriodName).toBe("SY 2026-2027 First Semester - Evaluation")
+    expect(body.semesterTitle).toBe("SY 2026-2027 First Semester")
+  })
+
+  it("still answers when the period cannot be read", async () => {
+    // A missing period must not take the whole page down - the figures are
+    // the point, and the period's labels are the header.
+    mockEvalPeriodRepo.findById.mockResolvedValue(null)
+
+    const res = await adminGET(
+      req("/api/admin/evaluation-results/departments/d1/groups/fs1", "?evaluationPeriodId=p1"),
+      params("d1", "fs1"),
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.evaluationPeriodName).toBeNull()
+    expect(body.semesterTitle).toBeNull()
+    expect(body.summary.totalRespondents).toBe(1)
   })
 })

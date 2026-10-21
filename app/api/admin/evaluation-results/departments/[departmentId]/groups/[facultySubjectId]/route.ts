@@ -7,6 +7,7 @@ import {
   subjectRepository,
   departmentRepository,
   evaluationRepository,
+  evaluationPeriodRepository,
   sectionRepository,
 } from "@/lib/repositories/factory"
 import {
@@ -36,11 +37,14 @@ export async function GET(
     const fsData = await facultySubjectRepository.findById(facultySubjectId)
     if (!fsData) return NextResponse.json({ error: "Faculty-subject not found" }, { status: 404 })
 
-    const [faculty, subject, dept, allSections] = await Promise.all([
+    const [faculty, subject, dept, allSections, period] = await Promise.all([
       userRepository.findById(fsData.faculty_id),
       subjectRepository.findById(fsData.subject_id),
       departmentRepository.findById(departmentId),
       sectionRepository.list(),
+      // The period AND its semester, in one read — the repository joins
+      // semesters!inner(title), so the export's header never has to guess.
+      evaluationPeriodRepository.findById(evaluationPeriodId),
     ])
 
     // The subject belongs to the teacher's HOME department (contract §3.1).
@@ -96,10 +100,14 @@ export async function GET(
 
     return NextResponse.json({
       department: dept ? { id: dept.id, name: dept.name, code: dept.code } : null,
-      faculty: faculty ? { id: faculty.id, name: faculty.name, email: faculty.email } : null,
+      faculty: faculty
+        ? { id: faculty.id, name: faculty.name, email: faculty.email, employeeNo: faculty.employeeNo }
+        : null,
       subject: subject ? { id: subject.id, code: subject.code, name: subject.name } : null,
       sectionProgram: section?.program ?? null,
       sectionName: section?.name ?? null,
+      evaluationPeriodName: period?.name ?? null,
+      semesterTitle: period?.semesterTitle ?? null,
       summary: {
         totalRespondents: evaluationRows.length,
         avgRating: general,

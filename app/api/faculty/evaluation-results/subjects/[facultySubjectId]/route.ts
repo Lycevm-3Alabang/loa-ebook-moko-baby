@@ -3,10 +3,12 @@ import { auth } from "@/lib/auth"
 import {
   evaluationRepository,
   evaluationResultRepository,
+  evaluationPeriodRepository,
   userRepository,
   facultySubjectRepository,
   subjectRepository,
   departmentRepository,
+  sectionRepository,
 } from "@/lib/repositories/factory"
 import { EvaluationPeriodInactiveError } from "@/features/evaluation-results/evaluation-results.repository"
 import { logServerError } from "@/lib/services/audit"
@@ -52,7 +54,14 @@ export async function GET(
       return NextResponse.json({ error: "This subject belongs to another faculty member" }, { status: 403 })
     }
 
-    const subject = await subjectRepository.findById(fsMatch.subject_id)
+    const [subject, period, section] = await Promise.all([
+      subjectRepository.findById(fsMatch.subject_id),
+      // The period AND its semester, in one read — the repository joins
+      // semesters!inner(title), so the export's header never has to guess.
+      evaluationPeriodRepository.findById(evaluationPeriodId),
+      // The row's OWN section, for the program and the section name.
+      fsMatch.section_id ? sectionRepository.findById(fsMatch.section_id) : Promise.resolve(null),
+    ])
 
     let deptInfo = { id: "", name: "", code: "" }
     if (facultyUser.departmentId) {
@@ -102,9 +111,18 @@ export async function GET(
     })
 
     return NextResponse.json({
-      faculty: { id: facultyUser.id, name: facultyUser.name, email: facultyUser.email },
+      faculty: {
+        id: facultyUser.id,
+        name: facultyUser.name,
+        email: facultyUser.email,
+        employeeNo: facultyUser.employeeNo,
+      },
       subject: subject ? { id: subject.id, code: subject.code, name: subject.name } : null,
       department: deptInfo,
+      sectionProgram: section?.program ?? null,
+      sectionName: section?.name ?? null,
+      evaluationPeriodName: period?.name ?? null,
+      semesterTitle: period?.semesterTitle ?? null,
       summary: {
         totalRespondents: evaluationRows.length,
         avgRating: general,
