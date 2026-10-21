@@ -4,6 +4,12 @@ const nextConfig: NextConfig = {
   experimental: {
     proxyClientMaxBodySize: '50mb',
   },
+  // The export's Excel template is read from the filesystem by the export
+  // route, so it has to be traced into the serverless bundle. Without this it
+  // is absent in production and the export 500s there while working locally.
+  outputFileTracingIncludes: {
+    "/api/**/*": ["./data/templates/**/*"],
+  },
   async redirects() {
     return [
       {
