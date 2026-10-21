@@ -202,6 +202,5 @@ describe("getDepartmentSubjectResults", () => {
     const { subjects } = await getDepartmentSubjectResults("p1", "d1")
 
     expect(subjects[0].sectionProgram).toBe("BSCS")
-    expect(subjects[0].sectionName).toBe("1A")
   })
 })

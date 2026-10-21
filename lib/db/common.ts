@@ -56,7 +56,12 @@ export interface RatingWithCategory {
   rubric_items: { categoryId: string; rubric_categories: { name: string } }
 }
 
-const RATINGS_IN_CHUNK_SIZE = 100
+// A chunk of 37 evaluations holds 37 x 27 = 999 rating rows — one page under
+// PostgREST's 1,000-row cap. The chunk is sized so the ratings come back in a
+// SINGLE request: with a bigger chunk the rows spill into a second and third
+// page, and every OFFSET page re-scans the chunk's rows, so the database read
+// the same ratings three times over.
+const RATINGS_IN_CHUNK_SIZE = 37
 // PostgREST's db-max-rows (1,000) truncates an unbounded read with HTTP 200
 // and no error, so the ratings of a chunk of evaluations must be paged out.
 const RATINGS_PAGE_SIZE = 1000

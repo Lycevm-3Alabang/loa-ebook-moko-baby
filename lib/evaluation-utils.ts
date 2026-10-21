@@ -62,6 +62,15 @@ export interface CategoryAverages {
   [categoryName: string]: number
 }
 
+/** A category's rating total: the sum, and how many ratings are behind it. */
+export interface CategoryTotal {
+  sum: number
+  count: number
+}
+
+/** The category totals of one group, keyed by the raw category name. */
+export type CategoryTotals = Record<string, CategoryTotal>
+
 export function computeCategoryAverages(ratings: RatingRow[]): CategoryAverages {
   const catRatings: Record<string, number[]> = {}
   for (const r of ratings) {
@@ -74,6 +83,37 @@ export function computeCategoryAverages(ratings: RatingRow[]): CategoryAverages 
     catAverages[cat] = vals.reduce((a, b) => a + b, 0) / vals.length
   }
   return catAverages
+}
+
+/**
+ * The category averages from their totals — the same numbers the raw rows
+ * give, without carrying the rows. The database did the grouping, so the
+ * pooling rule is unchanged: a category's mean is its sum over its count, and
+ * a group with no ratings has no category at all.
+ */
+export function computeCategoryAveragesFromTotals(totals: CategoryTotals): CategoryAverages {
+  const catAverages: CategoryAverages = {}
+  for (const [cat, total] of Object.entries(totals)) {
+    if (!total || !total.count) continue
+    catAverages[cat] = total.sum / total.count
+  }
+  return catAverages
+}
+
+/**
+ * Two sets of category totals added together — the pool of a set of groups.
+ * The pooled mean is the same weighted mean the pooled rows would give.
+ */
+export function poolCategoryTotals(parts: CategoryTotals[]): CategoryTotals {
+  const pooled: CategoryTotals = {}
+  for (const part of parts) {
+    for (const [cat, total] of Object.entries(part)) {
+      if (!total) continue
+      const current = pooled[cat] ?? { sum: 0, count: 0 }
+      pooled[cat] = { sum: current.sum + total.sum, count: current.count + total.count }
+    }
+  }
+  return pooled
 }
 
 export function computeGeneralRating(catAverages: CategoryAverages): number | null {
@@ -236,14 +276,28 @@ export function aggregatePooledResults(
   ratings: RatingRow[],
   comments: { sentimentScore: number | null }[] = [],
 ): PooledAggregate {
-  const { general, catColumns, rubrics, sentiment } = buildFacultySummary(ratings, comments)
+  return aggregatePooledAverages(computeCategoryAverages(ratings), computeSentimentScore(comments))
+}
+
+/** The pooled figures from the category averages — the same chain the raw rows
+ * take, for a pool the database already grouped. Every rule (the general
+ * rating, the remarks, the columns, the highest and lowest rubrics) is the
+ * one it always was; only the input is a set of averages now.
+ */
+export function aggregatePooledAverages(
+  catAverages: CategoryAverages,
+  sentimentScore: number | null,
+): PooledAggregate {
+  const general = computeGeneralRating(catAverages)
+  const catColumns = mapCategoryAveragesToColumns(catAverages)
+  const rubrics = findHighestLowestRubrics(catColumns)
   return {
     avgRating: general,
     remarks: getRemark(general),
     catColumns,
     highestRubrics: rubrics.highest,
     lowestRubrics: rubrics.lowest,
-    sentimentScore: sentiment,
+    sentimentScore,
   }
 }
 
@@ -512,6 +566,51 @@ export function buildLiveDeptAverages(inputs: FacultyDeptInput[]): LiveDeptAvera
   }
   return [...groups.entries()].map(([departmentId, g]) => {
     const pooled = aggregatePooledResults(g.ratings)
+    return {
+      departmentId,
+      facultyIds: [...g.facultyIds],
+      totalRespondents: g.respondents,
+      avgRating: pooled.avgRating,
+      remarks: pooled.remarks,
+      catAverages: pooled.catColumns,
+      highestRubrics: pooled.highestRubrics,
+      lowestRubrics: pooled.lowestRubrics,
+    }
+  })
+}
+
+/** One assignment's contribution to a department's pool. */
+export interface FacultyDeptTotals {
+  facultyId: string
+  deptId: string
+  respondentCount: number
+  totals: CategoryTotals
+}
+
+/**
+ * The departments' live figures from the database's aggregate: the same
+ * pooling as the raw rows take, over the totals instead of the rows. An
+ * assignment with no ratings still counts — it has respondents — and the
+ * department's figures come from the assignments that have ratings.
+ */
+export function buildLiveDeptAveragesFromTotals(inputs: FacultyDeptTotals[]): LiveDeptAverage[] {
+  const groups = new Map<string, {
+    facultyIds: Set<string>
+    respondents: number
+    totals: CategoryTotals
+  }>()
+  for (const inp of inputs) {
+    let g = groups.get(inp.deptId)
+    if (!g) {
+      g = { facultyIds: new Set(), respondents: 0, totals: {} }
+      groups.set(inp.deptId, g)
+    }
+    g.facultyIds.add(inp.facultyId)
+    g.respondents += inp.respondentCount
+    if (inp.totals) g.totals = poolCategoryTotals([g.totals, inp.totals])
+  }
+  return [...groups.entries()].map(([departmentId, g]) => {
+    const pooled = aggregatePooledAverages(computeCategoryAveragesFromTotals(g.totals), null)
     return {
       departmentId,
       facultyIds: [...g.facultyIds],

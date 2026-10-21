@@ -181,11 +181,14 @@ describe("fetchRatingsWithCategories — PostgREST row cap", () => {
       Array.from({ length: 250 }, (_, i) => `e-${String(i).padStart(4, "0")}`),
     )
 
-    // 250 ids / 100 per chunk = 3 requests — the ~8KB URL cap still holds.
-    // Each chunk pages from its own offset 0.
-    expect(captured.ranges).toEqual([[0, 999], [0, 999], [0, 999]])
-    for (const chunk of captured.inCalls.slice(0, 3)) {
-      expect(chunk.length).toBeLessThanOrEqual(100)
+    // A chunk holds 37 evaluations, so a chunk's ratings (37 x 27 = 999) fit
+    // under PostgREST's 1,000-row cap in ONE request: 250 ids = 7 requests,
+    // and the ~8KB URL cap still holds. Each chunk pages from its own offset 0.
+    expect(captured.ranges).toEqual([
+      [0, 999], [0, 999], [0, 999], [0, 999], [0, 999], [0, 999], [0, 999],
+    ])
+    for (const chunk of captured.inCalls.slice(0, 7)) {
+      expect(chunk.length).toBeLessThanOrEqual(37)
     }
   })
 })

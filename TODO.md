@@ -1,16 +1,36 @@
-# TODO — student CSV importer follow-ups
+# TODO — open follow-ups
 
-Tracked 2026-10-09 for the next session. All production incidents are closed
-(504 timeout, 23505 duplicate key, silent cross-term loss); 329 tests / 26 files
-green (echo + meta + enriched tests done 2026-10-10, +3). What remains is reporting polish and containment — nothing is on fire.
+Two threads: the **student CSV importer** (tracked 2026-10-09 — all production incidents are closed:
+504 timeout, 23505 duplicate key, silent cross-term loss; 329 tests / 26 files green) and the
+**evaluation results surfaces** (the results endpoint's performance, the attribution gaps). What
+remains is reporting polish, containment and the evaluation gaps — nothing is on fire.
 
 Gate for every item: `npx tsc --noEmit` → `npm run lint` → `npx vitest run`
 (baseline 280/20) → `npm run build`.
 
 Context: `specs/README.md` ("Next Session — Start Here" + status table),
-`.opencode/skills/plan-fix/runs/20261009-1743-student-import-c1.md` (defect ledger).
+`.opencode/skills/plan-fix/runs/20261009-1743-student-import-c1.md` (defect ledger),
+`docs/evaluation-results-endpoint-handover.md` (the results endpoint's handover).
 
 ## NEXT (do first)
+
+- [ ] **The evaluation results endpoint — the code is applied, the environment is not.**
+  **Read `docs/evaluation-results-endpoint-handover.md` first** — it has the measurement, the
+  approach, what was changed, and what is still outstanding. 🟡 **The endpoint answers 500 until
+  two things are done on the environment, and both are missing right now:**
+  1. **`DATABASE_URL` is not set** — the aggregate connects to Postgres directly, so without it the
+     query throws `DATABASE_URL is required for the evaluation aggregates` and the route 500s.
+     The Supabase dashboard's **Connection** panel — the transaction pooler (6543) or the session
+     pooler (5432, then set `max: 1` in `lib/db/postgres.ts`). A placeholder is already in `.env`.
+  2. **`npm install`** — `@types/pg` is not in the lock, so `import { Pool } from "pg"` does not
+     typecheck until it is installed.
+  Then `npm test` → `npm run lint` → `npm run build`, and the measurement: the same request,
+  **26,012 ms before**, three queries after. ⭐ **The suite was still red at the last run** — 5
+  failures in `lib/__tests__/evaluation-results-department-faculty.test.ts` and 1 lint warning in
+  `lib/__tests__/evaluation-results-live-faculty.test.ts`, both from the same cause (the mock of
+  the aggregates module was missing `fetchAttributionWarnings`). **Both are fixed and have not been
+  re-run.** ⭐ The two flagged behaviour changes (the `""` bucket leaves Avg. Rating; the sentiment
+  number moves off its 1,000-row truncation) will move two numbers — that is expected.
 
 - [x] **C3 S4 — `userMap` merge done 2026-10-10** (`specs/student-import-stepper.md` §8, first row).
   Last C3 item. Option A as planned: merge on the already-returned `created[]`, zero
@@ -237,6 +257,20 @@ Highest Rubric / Lowest Rubric for a subject must equal the faculty page's for t
 The cap was the **first** reason the two pages disagreed. These are the rest. All seven are
 **decisions or fixes, not blockers** — none of them is on fire, and the suite is green.
 
+> ⭐ **2026-10-21, later the same day — the results LIST is fixed.** The list's rating and
+> sentiment aggregates are computed **in Postgres** by three plain parameterised queries
+> (`features/evaluation-results/evaluation-aggregates.ts`, over the direct connection
+> `lib/db/postgres.ts`), so the list route went from **~263 reads / ~220,000 rows** to
+> **~7 reads / ~500 rows** (26,012 ms → three queries).
+> Run file: `.opencode/skills/plan-fix/runs/20261021-0928-admin-results-endpoint-slow.md`.
+> **Nothing is created in the database** — the group-by spans a to-many, which the REST API
+> cannot express, so the app asks Postgres directly (AGENTS.md **Lesson 7c**). It needs
+> `DATABASE_URL` (the dashboard's connection string) and the `pg` dependency.
+> What that changes below: **item 3** is half-closed (the list path only), **item 4**'s rating
+> side and **item 5**'s rating side are settled by the aggregate, and the **drill-down** is
+> untouched — it still reads its ratings (2-4s). The list's figures now come from the database's
+> aggregate, so the `isDisabled` gap below still stands for the drill-down and the faculty page.
+
 - [ ] **The `isDisabled` filter is missing on the results drill-down and on the faculty page.**
   Where: the results **list** filters it (`features/evaluation-results/evaluation-results.repository.ts:142`,
   `.eq("isDisabled", false)`), but the drill-down
@@ -306,6 +340,21 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   (`.order("id")` + `.range()`), and chunk the comments read at 100 ids; **(b)** leave them and
   record the caps. **(a) is three small edits and removes a latent 500.**
 
+- [ ] **The drill-down reads the department's rating rows into the app to average them.**
+  Where: `features/evaluation-results/evaluation-results.service.ts` — `getDepartmentSubjectResults`
+  reads the department's evaluations, their ratings and their comments, and pools them in Node. A
+  department with 2,184 responses (GENED) ships 58,968 rating rows across ~60 reads.
+  What it is: the same defect the **list** just had, on the page one click away. The aggregate
+  (`features/evaluation-results/evaluation-aggregates.ts`) already returns one row per assignment
+  with its respondent count and its rating totals — the drill-down's per-subject rows are exactly
+  that grain.
+  Why it is open: it was **out of scope** for the list story and was reverted when that was pointed
+  out — it deserves its own decision, not a fold-in. It also needs the per-assignment **comment
+  sentiment** (the aggregate's sentiment is per teacher, the drill-down's is per subject), so the
+  function would gain a per-assignment sentiment total.
+  Options: **(a)** read the drill-down's rating rows from the aggregate and keep the comments read
+  (~2 reads instead of ~60); **(b)** leave it (2-4s per drill-down).
+
 - [ ] **The `""` fallback category dilutes Avg. Rating but can never be named.**
   Where: `lib/db/common.ts:99-110` (the fallback) and `:144-151` (the mapping), with the arithmetic
   in `lib/evaluation-utils.ts:65-83` (category averages → general) and `:85-101` (the fixed
@@ -364,6 +413,27 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   Options: **(a)** write `remarks` on both paths (one field each; the bulk path already receives a
   `reason` from the modal, the stale path can write a fixed string); **(b)** leave the remarks to
   the audit log and read them from there.
+
+- [ ] **CLEANUP (decide) — the admin Reset Database feature cannot create tables.**
+  `features/admin-data/reset-db.service.ts` runs the whole schema through `exec_sql`, but
+  `exec_sql` is **not** `SECURITY DEFINER` (`supabase-schema.sql:2074`), so it runs as the
+  invoking role — `service_role`, which has no `CREATE` on `public`. The first `CREATE TABLE`
+  answers **"permission denied for schema public"**. ⭐ The same wall is why the evaluation
+  aggregates are plain queries over a direct connection instead of a function the app installs
+  (AGENTS.md **Lesson 7c**). Options: **(a)** make `exec_sql` `SECURITY DEFINER` **and revoke
+  EXECUTE from `anon` and `authenticated`** — it then runs as its owner (`postgres`) and the
+  feature works; ⚠️ that is a privilege escalation on a SQL-execution primitive, so the grants
+  have to be exactly right; **(b)** drop the feature; **(c)** leave it broken and documented.
+
+- [ ] **CLEANUP (decide) — three methods now have no app caller.**
+  `listSubmittedWithSentiment` (`features/evaluations/evaluations.repository.ts:423`) and
+  `listSubmittedEvaluateeIds` (`:460`) in the evaluations repository, and `buildLiveDeptAverages`
+  (`lib/evaluation-utils.ts`) — the raw-row pooling helper the totals path replaced. The list reads
+  its sentiment from the aggregate now, so the comment read it used is unused. `listSubmittedWithSentiment`
+  is also the read with the **unpaged** evaluations query (truncated at 1,000), so deleting it also
+  deletes that truncation. Either delete them (method + the `IEvaluationRepository` entries + their
+  test fixtures) or keep them as public capabilities for a future surface. Same shape as the
+  existing "CLEANUP (decide) — `listDepartmentAssignments`" item above.
 
 ## Done this session (do not redo)
 

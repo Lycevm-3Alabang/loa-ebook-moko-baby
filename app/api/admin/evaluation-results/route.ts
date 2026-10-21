@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/route-guard"
 import { logServerError } from "@/lib/services/audit"
-import { evaluationResultRepository, evaluationRepository, departmentRepository } from "@/lib/repositories/factory"
-import { getFacultyCountsByDepartment } from "@/features/users/users.service"
-import { computeSentimentScore } from "@/lib/evaluation-utils"
-
-/** The pseudo-department for evaluations that could not be attributed. */
-const UNKNOWN_DEPARTMENT = "__unknown__"
+import { getDepartmentResults } from "@/features/evaluation-results/evaluation-results.service"
 
 export async function GET(request: NextRequest) {
   const authErr = await requireAdmin(request)
@@ -17,45 +12,11 @@ export async function GET(request: NextRequest) {
     const evaluationPeriodId = searchParams.get("evaluationPeriodId") || searchParams.get("semesterId")
     if (!evaluationPeriodId) return NextResponse.json({ error: "evaluationPeriodId is required" }, { status: 400 })
 
-    const sentimentRows = await evaluationRepository.listSubmittedWithSentiment(evaluationPeriodId)
-
-    // Live department averages — never read cached generalRating (stale/placeholder nulls).
-    const liveAvgs = await evaluationResultRepository.listLiveDeptAverages(evaluationPeriodId)
-
-    // The pseudo-department is not a department: it carries evaluations that
-    // could not be attributed, and it is reported as a warning instead of a
-    // row (a row would link to a page that can only say "no data").
-    const attributed = liveAvgs.filter((a) => a.departmentId !== UNKNOWN_DEPARTMENT)
-    const [warnings, facultyCounts] = await Promise.all([
-      evaluationResultRepository.listAttributionWarnings(evaluationPeriodId),
-      getFacultyCountsByDepartment(),
-    ])
-
-    const deptIds = [...new Set(attributed.map((a) => a.departmentId))]
-    const allDepts = await departmentRepository.listAll()
-    const deptMap = new Map(allDepts.filter((d) => deptIds.includes(d.id)).map((d) => [d.id, d]))
-
-    const departments = attributed.map((a) => {
-      const dept = deptMap.get(a.departmentId)
-      const facIds = new Set(a.facultyIds)
-      const scores = sentimentRows.filter((row) => facIds.has(row.evaluateeId))
-      return {
-        departmentId: a.departmentId,
-        departmentName: dept?.name ?? "Unknown",
-        departmentCode: dept?.code ?? "",
-        // The department's own faculty — the same people the admin dashboard
-        // and the Department Health report count. The teaching roster below is
-        // a different fact (assigned to teach, got nothing) and is not added
-        // to it: a teacher homed elsewhere counts in their own department.
-        facultyCount: facultyCounts[a.departmentId] ?? 0,
-        totalRespondents: a.totalRespondents,
-        avgRating: a.avgRating,
-        remarks: a.remarks,
-        highestRubrics: a.highestRubrics,
-        lowestRubrics: a.lowestRubrics,
-        sentimentScore: computeSentimentScore(scores),
-      }
-    })
+    // The departments, their own faculty and their response counts — read
+    // through the app's own repositories. The pseudo-department for the
+    // evaluations that could not be attributed is reported as a warning, not
+    // as a row (a row would link to a page that can only say "no data").
+    const { departments, warnings } = await getDepartmentResults(evaluationPeriodId)
 
     return NextResponse.json({ departments, warnings })
   } catch (e) {

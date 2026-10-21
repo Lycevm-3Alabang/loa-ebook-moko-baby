@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/route-guard"
 import { logServerError } from "@/lib/services/audit"
-import { departmentRepository, evaluationResultRepository } from "@/lib/repositories/factory"
+import { departmentRepository } from "@/lib/repositories/factory"
 import { getDepartmentSubjectResults, type DepartmentSubjectResult } from "@/features/evaluation-results/evaluation-results.service"
 import { getFacultyCountsByDepartment } from "@/features/users/users.service"
 import { createZip } from "@/lib/zip"
+import type { DepartmentAggregate } from "@/lib/evaluation-utils"
+
+// The export walks every department's ratings: it is a download, and the
+// budget is the same one the import routes use.
+export const maxDuration = 60
 
 function csvEscape(v: unknown): string {
   const s = v === null || v === undefined ? "" : String(v)
@@ -33,8 +38,6 @@ export async function GET(request: NextRequest) {
     if (!evaluationPeriodId) return NextResponse.json({ error: "evaluationPeriodId is required" }, { status: 400 })
 
     const departments = await departmentRepository.listAll()
-    const liveAvgs = await evaluationResultRepository.listLiveDeptAverages(evaluationPeriodId)
-    const avgByDept = new Map(liveAvgs.map((a) => [a.departmentId, a]))
     // The same headcount the results page shows, so the CSV and the page
     // cannot disagree about a department.
     const facultyCounts = await getFacultyCountsByDepartment()
@@ -45,12 +48,19 @@ export async function GET(request: NextRequest) {
     // Per-department CSVs. Parallelised: each department costs ~6 sequential
     // repository round trips, so awaiting them one-by-one over every department
     // blew past the serverless budget. One failure must not lose the rest.
+    //
+    // The department's pooled figures come from the same read as its CSV, so
+    // the summary does not walk the ratings a second time.
     const perDept = await Promise.allSettled(
       departments.map(async (dept) => {
-        const { subjects } = await getDepartmentSubjectResults(evaluationPeriodId, dept.id)
-        if (subjects.length === 0) return null
+        const { subjects, departmentAggregate } = await getDepartmentSubjectResults(evaluationPeriodId, dept.id)
         const code = (dept.code || dept.id).replace(/[^a-zA-Z0-9_-]/g, "_")
-        return { name: `${code}_results.csv`, data: encoder.encode(subjectCsv(subjects)) }
+        return {
+          departmentId: dept.id,
+          name: subjects.length > 0 ? `${code}_results.csv` : null,
+          data: subjects.length > 0 ? encoder.encode(subjectCsv(subjects)) : null,
+          aggregate: departmentAggregate,
+        }
       }),
     )
 
@@ -67,8 +77,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: `Failed to export: ${msg}` }, { status: 500 })
     }
 
+    const settled: {
+      departmentId: string
+      name: string | null
+      data: Uint8Array | null
+      aggregate: DepartmentAggregate | null
+    }[] = []
     for (const r of perDept) {
-      if (r.status === "fulfilled" && r.value) entries.push(r.value)
+      if (r.status === "fulfilled") settled.push(r.value)
+    }
+    for (const r of settled) {
+      if (r.name && r.data) entries.push({ name: r.name, data: r.data })
     }
 
     if (entries.length === 0) {
@@ -76,12 +95,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Summary CSV
+    const aggregateByDept = new Map(settled.map((r) => [r.departmentId, r.aggregate]))
     const summaryHeaders = ["Department", "Code", "Faculty Count", "Respondents", "Avg Rating", "Remark"]
     const summaryRows = departments.map((dept) => {
-      const avg = avgByDept.get(dept.id)
+      const aggregate = aggregateByDept.get(dept.id)
       return [
-        dept.name, dept.code ?? "", facultyCounts[dept.id] ?? 0, avg?.totalRespondents ?? 0,
-        avg?.avgRating ?? "", avg?.remarks ?? "",
+        dept.name, dept.code ?? "", facultyCounts[dept.id] ?? 0, aggregate?.totalResponses ?? 0,
+        aggregate?.avgRating ?? "", aggregate?.remarks ?? "",
       ]
     })
     const summaryCsv = [summaryHeaders.join(","), ...summaryRows.map((r) => r.map(csvEscape).join(","))].join("\n")

@@ -6,6 +6,7 @@ import {
   subjectRepository,
   sectionRepository,
   semesterRepository,
+  departmentRepository,
 } from "@/lib/repositories/factory"
 import {
   computeCategoryAverages,
@@ -19,7 +20,65 @@ import {
   type FacultyAggregate,
   type DepartmentAggregate,
 } from "@/lib/evaluation-utils"
-import type { EvaluationAssignment, UserData } from "@/lib/types"
+import type { AttributionWarnings, EvaluationAssignment, UserData } from "@/lib/types"
+import { getFacultyCountsByDepartment } from "@/features/users/users.service"
+
+/** One row of the results list: a department and its figures for a period. */
+export interface DepartmentResultsRow {
+  departmentId: string
+  departmentName: string
+  departmentCode: string
+  /** The department's own faculty — the accounts homed in it. */
+  facultyCount: number
+  totalRespondents: number
+  avgRating: number | null
+  remarks: string | null
+  highestRubrics: { key: string; label: string; score: number }[]
+  lowestRubrics: { key: string; label: string; score: number }[]
+  sentimentScore: number | null
+}
+
+/**
+ * The results list's rows: one per department that has responses in the
+ * period, with the department's own faculty count and its response count.
+ *
+ * The list is assembled from the app's own reads — the departments, the
+ * faculty homed in each one, and the period's evaluations — so no direct
+ * database connection is needed. With a department id, only that department's
+ * row comes back (the dean's scope).
+ */
+export async function getDepartmentResults(
+  evaluationPeriodId: string,
+  departmentId?: string,
+): Promise<{ departments: DepartmentResultsRow[]; warnings: AttributionWarnings }> {
+  const [figures, allDepts, facultyCounts] = await Promise.all([
+    evaluationResultRepository.listPeriodFigures(evaluationPeriodId, departmentId),
+    departmentRepository.listAll(),
+    getFacultyCountsByDepartment(),
+  ])
+
+  const deptMap = new Map(allDepts.map((d) => [d.id, d]))
+  const departments: DepartmentResultsRow[] = []
+  for (const figure of figures.departments) {
+    if (departmentId && figure.departmentId !== departmentId) continue
+    const dept = deptMap.get(figure.departmentId)
+    if (!dept) continue
+    departments.push({
+      departmentId: figure.departmentId,
+      departmentName: dept.name ?? "Unknown",
+      departmentCode: dept.code ?? "",
+      facultyCount: facultyCounts[figure.departmentId] ?? 0,
+      totalRespondents: figure.totalRespondents,
+      avgRating: null,
+      remarks: null,
+      highestRubrics: [],
+      lowestRubrics: [],
+      sentimentScore: null,
+    })
+  }
+
+  return { departments, warnings: figures.warnings }
+}
 
 export interface DepartmentSubjectResult {
   facultySubjectId: string

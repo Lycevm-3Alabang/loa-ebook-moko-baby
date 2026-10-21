@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
-import { departmentRepository, evaluationResultRepository, evaluationRepository } from "@/lib/repositories/factory"
-import { getFacultyCountsByDepartment } from "@/features/users/users.service"
-import { computeSentimentScore } from "@/lib/evaluation-utils"
+import { departmentRepository } from "@/lib/repositories/factory"
+import { getDepartmentResults } from "@/features/evaluation-results/evaluation-results.service"
+import { getCachedDepartmentFigures } from "@/features/evaluation-results/figure-cache"
 import { logServerError } from "@/lib/services/audit"
 
 export async function GET(request: NextRequest) {
@@ -23,33 +23,23 @@ export async function GET(request: NextRequest) {
 
     // The same live, POOLED department figures the admin route renders - the
     // dean's page and the admin's page must not disagree about a department.
-    const [liveAvgs, facultyCounts] = await Promise.all([
-      evaluationResultRepository.listLiveDeptAverages(evaluationPeriodId),
-      getFacultyCountsByDepartment(),
-    ])
-    const live = liveAvgs.find((a) => a.departmentId === dept.id)
-    if (!live) return NextResponse.json({ departments: [] })
+    const { departments } = await getDepartmentResults(evaluationPeriodId, dept.id)
+    if (departments.length === 0) return NextResponse.json({ departments: [] })
 
-    const sentimentRows = await evaluationRepository.listSubmittedWithSentiment(evaluationPeriodId)
-    const facIds = new Set(live.facultyIds)
-    const scores = sentimentRows.filter((row) => facIds.has(row.evaluateeId))
+    // The dean's own department has one set of figures, so they are read with
+    // the row instead of in a second call.
+    const { figures } = await getCachedDepartmentFigures(dept.id, evaluationPeriodId)
 
     return NextResponse.json({
       departments: [{
-        departmentId: dept.id,
-        departmentName: dept.name,
-        departmentCode: dept.code ?? "",
-        // Same rule as the admin route: the department's own faculty.
-        facultyCount: facultyCounts[dept.id] ?? 0,
-        totalRespondents: live.totalRespondents,
-        avgRating: live.avgRating,
-        remarks: live.remarks,
-        highestRubrics: live.highestRubrics,
-        lowestRubrics: live.lowestRubrics,
-        sentimentScore: computeSentimentScore(scores),
+        ...departments[0],
+        avgRating: figures.avgRating,
+        remarks: figures.remarks,
+        highestRubrics: figures.highestRubrics,
+        lowestRubrics: figures.lowestRubrics,
+        sentimentScore: figures.sentimentScore,
       }],
-    })
-  } catch (e) {
+    })  } catch (e) {
     console.error("Dean evaluation results error:", e)
     await logServerError({
       route: "/api/dean/evaluation-results",

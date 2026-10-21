@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
-import { departmentRepository, evaluationResultRepository } from "@/lib/repositories/factory"
+import { departmentRepository } from "@/lib/repositories/factory"
 import { logServerError } from "@/lib/services/audit"
 import { getDepartmentSubjectResults, type DepartmentSubjectResult } from "@/features/evaluation-results/evaluation-results.service"
 import { getFacultyCountsByDepartment } from "@/features/users/users.service"
 import { createZip } from "@/lib/zip"
+
+// The export walks the department's ratings: it is a download, and the budget
+// is the same one the import routes use.
+export const maxDuration = 60
 
 function csvEscape(v: unknown): string {
   const s = v === null || v === undefined ? "" : String(v)
@@ -39,9 +43,7 @@ export async function GET(request: NextRequest) {
     const dept = await departmentRepository.findByDeanId(userId)
     if (!dept) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
-    const { subjects } = await getDepartmentSubjectResults(evaluationPeriodId, dept.id)
-    const liveAvgs = await evaluationResultRepository.listLiveDeptAverages(evaluationPeriodId)
-    const avg = liveAvgs.find((a) => a.departmentId === dept.id)
+    const { subjects, departmentAggregate } = await getDepartmentSubjectResults(evaluationPeriodId, dept.id)
     // The same headcount the dean's results page shows.
     const facultyCounts = await getFacultyCountsByDepartment()
 
@@ -58,7 +60,7 @@ export async function GET(request: NextRequest) {
     }
 
     const summaryHeaders = ["Department", "Code", "Faculty Count", "Respondents", "Avg Rating", "Remark"]
-    const summaryRows = [[dept.name, dept.code ?? "", facultyCounts[dept.id] ?? 0, avg?.totalRespondents ?? 0, avg?.avgRating ?? "", avg?.remarks ?? ""]]
+    const summaryRows = [[dept.name, dept.code ?? "", facultyCounts[dept.id] ?? 0, departmentAggregate?.totalResponses ?? 0, departmentAggregate?.avgRating ?? "", departmentAggregate?.remarks ?? ""]]
     const summaryCsv = [summaryHeaders.join(","), ...summaryRows.map((r) => r.map(csvEscape).join(","))].join("\n")
     entries.push({ name: "summary.csv", data: encoder.encode(summaryCsv) })
 

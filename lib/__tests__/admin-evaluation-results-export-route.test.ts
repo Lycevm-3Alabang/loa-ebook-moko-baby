@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 
 const mockRequireAdmin = vi.hoisted(() => vi.fn())
 const mockDeptRepo = vi.hoisted(() => ({ listAll: vi.fn() }))
-const mockEvalResultRepo = vi.hoisted(() => ({ listLiveDeptAverages: vi.fn() }))
 const mockUserRepo = vi.hoisted(() => ({ listByRole: vi.fn() }))
 const mockGetDeptResults = vi.hoisted(() => vi.fn())
 const mockLogServerError = vi.hoisted(() => vi.fn())
@@ -10,7 +9,6 @@ const mockLogServerError = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/route-guard", () => ({ requireAdmin: mockRequireAdmin }))
 vi.mock("@/lib/repositories/factory", () => ({
   departmentRepository: mockDeptRepo,
-  evaluationResultRepository: mockEvalResultRepo,
   userRepository: mockUserRepo,
 }))
 vi.mock("@/features/evaluation-results/evaluation-results.service", () => ({
@@ -43,9 +41,6 @@ describe("GET /api/admin/evaluation-results/export", () => {
 
   it("returns zip with correct content-type and disposition", async () => {
     mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "CCS", code: "CCS" }])
-    mockEvalResultRepo.listLiveDeptAverages.mockResolvedValue([
-      { departmentId: "d1", facultyIds: ["f1"], totalRespondents: 5, avgRating: 4, remarks: "Very Satisfactory", catAverages: {}, highestRubrics: [], lowestRubrics: [] },
-    ])
     mockGetDeptResults.mockResolvedValue({
       subjects: [
         { facultyName: "Ana", facultyEmail: "a@x.com", subjectCode: "IT101", subjectName: "Intro", totalRespondents: 5, avgRating: 4, remarks: "Very Satisfactory", professionalManner: 4, communicationWithStudent: 4, studentEngagement: 4, learningMaterials: 4, timeManagement: 4, experientialLearning: 4, respectUniqueness: 4, assessmentAndFeedback: 4, sentimentScore: 0.5, facultySubjectId: "fs1", facultyId: "f1", subjectId: "s1", highestRubrics: [], lowestRubrics: [] },
@@ -66,7 +61,6 @@ describe("GET /api/admin/evaluation-results/export", () => {
 
   it("returns 404 when no data", async () => {
     mockDeptRepo.listAll.mockResolvedValue([])
-    mockEvalResultRepo.listLiveDeptAverages.mockResolvedValue([])
     mockGetDeptResults.mockResolvedValue({ subjects: [], facultyAggregates: {} })
     const res = await GET(req("?evaluationPeriodId=p1"))
     expect(res.status).toBe(404)

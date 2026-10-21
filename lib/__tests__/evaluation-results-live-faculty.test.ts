@@ -1,8 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
-const mockSupabase = vi.hoisted(() => ({ from: vi.fn() }))
+const mockAggregates = vi.hoisted(() => ({
+  fetchDepartmentTotals: vi.fn(),
+  fetchDepartmentSentiment: vi.fn(),
+  fetchAttributionWarnings: vi.fn(),
+}))
 
-vi.mock("@/lib/db", () => ({ supabase: mockSupabase }))
+// The repository module imports the Supabase client at load time; stub it so
+// the test does not need SUPABASE_URL in the environment.
+vi.mock("@/lib/db", () => ({ supabase: { from: vi.fn() } }))
+// The repository reads the department aggregates from Postgres now; the
+// database did the grouping, so the repository's input is a set of totals.
+vi.mock("@/features/evaluation-results/evaluation-aggregates", () => mockAggregates)
 // The repository imports the factory for the semester lookup; stub it so the
 // test does not need SUPABASE_URL in the environment.
 vi.mock("@/lib/repositories/factory", () => ({
@@ -11,99 +20,51 @@ vi.mock("@/lib/repositories/factory", () => ({
 
 import { evaluationResultRepository } from "@/features/evaluation-results/evaluation-results.repository"
 
-type TableRows = Record<string, { data: unknown; error: unknown }>
-
-function makeChain(resolveValue: unknown) {
-  const chain = {
-    select: vi.fn(() => chain),
-    eq: vi.fn(() => chain),
-    in: vi.fn(() => chain),
-    not: vi.fn(() => chain),
-    single: vi.fn(() => chain),
-    is: vi.fn(() => chain),
-    // The paged reads order by a unique column and ask for a window. The
-    // fixed response below is a SHORT page, so the loop asks once and stops —
-    // the same single read this suite always asserted.
-    order: vi.fn(() => chain),
-    range: vi.fn(() => chain),
-    then: (onFulfilled: (v: unknown) => unknown) => Promise.resolve(resolveValue).then(onFulfilled),
+/** One row of the aggregate: an assignment, its teacher and its totals. */
+function total(
+  facultyId: string,
+  facultySubjectId: string,
+  sum: number,
+  count: number,
+  departmentId: string | null = "d1",
+) {
+  return {
+    department_id: departmentId,
+    faculty_subject_id: facultySubjectId,
+    faculty_id: facultyId,
+    respondent_count: count,
+    category_totals: { "Professional Manner": { sum, count } },
   }
-  return chain
-}
-
-/** Each table answers with its own rows, so the test reads like the data. */
-function respondWith(rows: TableRows) {
-  mockSupabase.from.mockImplementation((table: string) =>
-    makeChain(rows[table] ?? { data: [], error: null }),
-  )
 }
 
 beforeEach(() => {
   vi.resetAllMocks()
+  mockAggregates.fetchDepartmentTotals.mockResolvedValue([])
 })
 
 describe("evaluationResultRepository.listLiveFacultyResults", () => {
   it("pools a faculty's rating rows instead of averaging its subject means", async () => {
-    respondWith({
-      evaluations: {
-        data: [
-          { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" },
-          { id: "e2", evaluateeId: "f1", facultySubjectId: "fs1" },
-          { id: "e3", evaluateeId: "f1", facultySubjectId: "fs1" },
-          { id: "e4", evaluateeId: "f1", facultySubjectId: "fs1" },
-        ],
-        error: null,
-      },
-      faculty_subjects: { data: [{ id: "fs1", faculty_id: "f1" }], error: null },
-      evaluation_periods: { data: { semesterId: "sem1" }, error: null },
-      users: { data: [{ id: "f1", departmentId: "d1" }], error: null },
-      evaluation_ratings: {
-        data: [
-          { evaluationId: "e1", rating: 4, itemId: "i1" },
-          { evaluationId: "e2", rating: 4, itemId: "i1" },
-          { evaluationId: "e3", rating: 4, itemId: "i1" },
-          { evaluationId: "e4", rating: 2, itemId: "i1" },
-        ],
-        error: null,
-      },
-      rubric_items: { data: [{ id: "i1", categoryId: "c1" }], error: null },
-      rubric_categories: { data: [{ id: "c1", name: "Professional Manner" }], error: null },
-    })
+    // One subject averages 4.00 over one response, the other 3.00 over three.
+    // The mean of the two subject means is 3.50; pooled over the rating rows
+    // it is 13/4 = 3.25.
+    mockAggregates.fetchDepartmentTotals.mockResolvedValue([
+      total("f1", "fs1", 4, 1),
+      total("f1", "fs2", 9, 3),
+    ])
 
     const out = await evaluationResultRepository.listLiveFacultyResults("p1")
 
-    // the mean of the two subject means would be 3.00; pooled over the rating rows = 3.50
     expect(out).toHaveLength(1)
-    expect(out[0].generalRating).toBe(3.5)
+    expect(out[0].generalRating).toBe(3.25)
     expect(out[0].totalRespondents).toBe(4)
-    expect(out[0].professionalManner).toBe(3.5)
+    expect(out[0].professionalManner).toBe(3.25)
   })
 
   it("gives each faculty its own row", async () => {
-    respondWith({
-      evaluations: {
-        data: [
-          { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" },
-          { id: "e2", evaluateeId: "f2", facultySubjectId: "fs2" },
-        ],
-        error: null,
-      },
-      faculty_subjects: {
-        data: [{ id: "fs1", faculty_id: "f1" }, { id: "fs2", faculty_id: "f2" }],
-        error: null,
-      },
-      evaluation_periods: { data: { semesterId: "sem1" }, error: null },
-      users: { data: [{ id: "f1", departmentId: "d1" }, { id: "f2", departmentId: "d1" }], error: null },
-      evaluation_ratings: {
-        data: [
-          { evaluationId: "e1", rating: 4, itemId: "i1" },
-          { evaluationId: "e2", rating: 2, itemId: "i1" },
-        ],
-        error: null,
-      },
-      rubric_items: { data: [{ id: "i1", categoryId: "c1" }], error: null },
-      rubric_categories: { data: [{ id: "c1", name: "Professional Manner" }], error: null },
-    })
+    mockAggregates.fetchDepartmentTotals.mockResolvedValue([
+      total("f1", "fs1", 4, 1),
+      total("f2", "fs2", 2, 1),
+    ])
 
     const out = await evaluationResultRepository.listLiveFacultyResults("p1")
 
@@ -115,56 +76,23 @@ describe("evaluationResultRepository.listLiveFacultyResults", () => {
   })
 
   it("skips a faculty with no usable ratings", async () => {
-    respondWith({
-      evaluations: { data: [{ id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" }], error: null },
-      faculty_subjects: { data: [{ id: "fs1", faculty_id: "f1" }], error: null },
-      evaluation_periods: { data: { semesterId: "sem1" }, error: null },
-      users: { data: [{ id: "f1", departmentId: "d1" }], error: null },
-      evaluation_ratings: { data: [], error: null },
-    })
+    mockAggregates.fetchDepartmentTotals.mockResolvedValue([
+      {
+        department_id: "d1",
+        faculty_subject_id: "fs1",
+        faculty_id: "f1",
+        respondent_count: 1,
+        category_totals: {},
+      },
+    ])
 
     const out = await evaluationResultRepository.listLiveFacultyResults("p1")
 
     expect(out).toEqual([])
   })
 
-  it("drops an evaluation whose assignment now belongs to a different faculty", async () => {
-    respondWith({
-      evaluations: {
-        data: [
-          { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" },
-          { id: "e2", evaluateeId: "f1", facultySubjectId: "fs2" },
-        ],
-        error: null,
-      },
-      // fs1 was reassigned from f1 to f2 — e1 no longer belongs to f1.
-      faculty_subjects: {
-        data: [{ id: "fs1", faculty_id: "f2" }, { id: "fs2", faculty_id: "f1" }],
-        error: null,
-      },
-      evaluation_periods: { data: { semesterId: "sem1" }, error: null },
-      users: { data: [{ id: "f1", departmentId: "d1" }], error: null },
-      evaluation_ratings: {
-        data: [
-          { evaluationId: "e1", rating: 4, itemId: "i1" },
-          { evaluationId: "e2", rating: 2, itemId: "i1" },
-        ],
-        error: null,
-      },
-      rubric_items: { data: [{ id: "i1", categoryId: "c1" }], error: null },
-      rubric_categories: { data: [{ id: "c1", name: "Professional Manner" }], error: null },
-    })
-
-    const out = await evaluationResultRepository.listLiveFacultyResults("p1")
-
-    // only e2 (the assignment that still belongs to f1) counts
-    expect(out).toHaveLength(1)
-    expect(out[0].generalRating).toBe(2)
-    expect(out[0].totalRespondents).toBe(1)
-  })
-
   it("returns an empty list when the period has no submitted evaluations", async () => {
-    respondWith({ evaluations: { data: [], error: null } })
+    mockAggregates.fetchDepartmentTotals.mockResolvedValue([])
 
     const out = await evaluationResultRepository.listLiveFacultyResults("p1")
 

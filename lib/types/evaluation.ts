@@ -613,6 +613,39 @@ export interface EvaluationAssignment {
 }
 
 /**
+ * One department's figures for a period: how many responses count under it,
+ * and the faculty whose teaching they are.
+ */
+export interface PeriodDepartmentFigure {
+  departmentId: string
+  totalRespondents: number
+  facultyIds: string[]
+}
+
+/**
+ * One department's figures for a period: the pooled rating and its remark,
+ * the highest and lowest rubrics, and the comment sentiment.
+ */
+export interface DepartmentFigures {
+  departmentId: string
+  totalRespondents: number
+  avgRating: number | null
+  remarks: string | null
+  highestRubrics: { key: string; label: string; score: number }[]
+  lowestRubrics: { key: string; label: string; score: number }[]
+  sentimentScore: number | null
+}
+
+/**
+ * A period's departments, with the integrity warnings read from the same
+ * facts — so the results list and the coverage page cannot disagree.
+ */
+export interface PeriodFigures {
+  departments: PeriodDepartmentFigure[]
+  warnings: AttributionWarnings
+}
+
+/**
  * The evaluations that could not be attributed cleanly. Both are integrity
  * conditions in the data, not buckets of people.
  */
@@ -647,8 +680,23 @@ export interface LiveFacultyResult {
 }
 
 export interface IEvaluationResultRepository {
+  /**
+   * The period's departments and their response counts, with the attribution
+   * warnings read from the same facts.
+   */
+  listPeriodFigures(evaluationPeriodId: string, departmentId?: string): Promise<PeriodFigures>
+  /**
+   * One department's figures for a period: the pooled rating, its remark, the
+   * highest and lowest rubrics and the comment sentiment.
+   */
+  listDepartmentFigures(departmentId: string, evaluationPeriodId: string): Promise<DepartmentFigures>
   listLiveDeptAverages(evaluationPeriodId: string): Promise<LiveDeptAverage[]>
   listLiveFacultyResults(evaluationPeriodId: string): Promise<LiveFacultyResult[]>
+  /**
+   * The departments' sentiment: the mean of the comment sentiment scores of
+   * the responses that count under the department, keyed by department id.
+   */
+  listDepartmentSentiment(evaluationPeriodId: string): Promise<Record<string, number | null>>
   /**
    * The evaluated assignments of one department — the department's own
    * subjects, by the teacher's own department.

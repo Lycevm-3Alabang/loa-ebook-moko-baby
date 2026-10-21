@@ -316,10 +316,31 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4.
     evaluation set.** PostgREST's `db-max-rows` (1,000) truncates an
     unbounded read with **HTTP 200** and no error, so a truncated read
     produces a **wrong** figure, not a missing one. Every read behind a
-    result figure must page past that cap (AGENTS.md **Lesson 7b**). The
+    result figure must page past that cap (AGENTS.md **Lesson 7b**) or be
+    replaced by a **database-side aggregate** (AGENTS.md **Lesson 7c**). The
     department drill-down's Avg Rating, Highest Rubric and Lowest Rubric for
     a subject must **equal** the faculty page's for the same subject — they
     are the same number computed over the same responses.
+19. **The scope rules live in the aggregate; the display rules live in
+    TypeScript.** The query in `features/evaluation-results/evaluation-aggregates.ts`
+    carries the period, the submitted and enabled evaluations, the
+    **live-eval rule** (an evaluation whose assignment no longer belongs to
+    its evaluatee does not count) and the **teacher's home department**. It
+    applies **no display rule** — the category names come back raw and
+    TypeScript maps them to their columns (`CATEGORY_NAMES`), and the
+    remark, the labels and the highest/lowest selection stay in
+    `lib/evaluation-utils.ts`. A rule that moves into SQL cannot be tested
+    behaviourally by Vitest, so those rules are guarded by asserting the
+    query body as text.
+20. **The aggregate is a plain parameterised query, and nothing is created
+    in the database.** The group-by spans a to-many, which the REST API
+    cannot express (AGENTS.md **Lesson 7c**), so the app asks Postgres
+    directly (`lib/db/postgres.ts`, `pg` + `DATABASE_URL`) and sends
+    `WHERE evaluation_period_id = $1`. No function, no view, no migration,
+    no `exec_sql`. ⭐ The app's `exec_sql` runs as the **invoking** role
+    (`service_role`), which has no `CREATE` on `public` — so the app cannot
+    create a function in the database, and neither can the admin **Reset
+    Database** feature.
 
 ---
 
@@ -345,7 +366,7 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4.
 | S4.5 | The dean's guards read the same membership set (contract §3.17) | `features/evaluation-results/evaluation-results.service.ts` (`getDepartmentMemberTeaching`) + `app/api/dean/evaluation-results/departments/[departmentId]/route.ts` (the release gate) + `app/api/dean/evaluation-results/visibility/route.ts` + `app/api/dean/evaluation-results/details/route.ts` — **done 2026-10-20** |
 | S4.6 | The export CSVs stay the results | `app/api/admin/evaluation-results/export/route.ts` + `app/api/dean/evaluation-results/export/route.ts` — **done 2026-10-20**: the per-department CSVs carry the rows with responses only |
 | S4.7 | The attribution rule is the home, always (contract §3.1) | `lib/evaluation-utils.ts` (`resolveSubjectDepartment`) — **done 2026-10-20**: the section's department is no longer a fallback, and the "the home must own a course" gate is gone. The buckets hold their own members' teaching; a teacher with no home is unattributed |
-| S5.1 | Every read behind a result figure pages past PostgREST's 1,000-row cap (contract §3.18) | `lib/db/common.ts` (`fetchRatingsWithCategories` — the shared ratings read), `features/evaluations/evaluations.repository.ts` (`listSubmittedByPeriodAndEvaluatees`), `features/evaluation-results/evaluation-results.repository.ts` (`listSubmittedEvaluates`) — **done 2026-10-21**: each gains a `.order(<total order>).range(offset, offset+999)` page loop; the shared ratings read is ordered by `("evaluationId","itemId")` and the evaluation reads by `id`. The rating and evaluation sets are now complete, so the department drill-down's Avg Rating / Highest / Lowest agree with the faculty page's for the same subject. Tests: `lib/__tests__/db-common-ratings-paging.test.ts` (new), `lib/__tests__/evaluations-repository-chunking.test.ts` |
+| S5.1 | Every read behind a result figure pages past PostgREST's 1,000-row cap, or is replaced by a database-side aggregate (contracts §3.18–§3.20) | `lib/db/common.ts` (`fetchRatingsWithCategories` — the shared ratings read), `features/evaluations/evaluations.repository.ts` (`listSubmittedByPeriodAndEvaluatees`), `features/evaluation-results/evaluation-results.repository.ts` (`listSubmittedEvaluates`) — **done 2026-10-21**: each gains a `.order(<total order>).range(offset, offset+999)` page loop; the shared ratings read is ordered by `("evaluationId","itemId")` and the evaluation reads by `id`. **S5.2 (2026-10-21): the department list's rating and sentiment aggregates are computed in Postgres** — `features/evaluation-results/evaluation-aggregates.ts` (new) holds three **plain parameterised queries** (the rating totals per assignment, the sentiment totals per department and teacher, and the assignments with an evaluation for the warnings) over the direct connection `lib/db/postgres.ts` (`pg` + `DATABASE_URL`). The results list reads them instead of the period's rating rows: **~263 reads / ~220,000 rows → ~7 reads / ~500 rows** (the measured 26,012 ms → three queries). **Nothing is created in the database** — the app's `exec_sql` runs as the invoking role, which has no `CREATE` on `public`. The payload and the page are unchanged. Tests: `lib/__tests__/evaluation-aggregates.test.ts` (new), `lib/__tests__/evaluation-results-live-faculty.test.ts`, `lib/__tests__/evaluation-results-department-faculty.test.ts`, `lib/__tests__/admin-evaluation-results-route.test.ts`, `lib/__tests__/dean-evaluation-results-route.test.ts` |
 | S2 | **Done 2026-10-20** — the "Unresolved" row is gone from the results list and the dead-end link with it; the integrity condition is now a warning row naming the faculty. The write path (both visibility routes) now **requires** `evaluationPeriodId`: a `semesterId` body would have written a row keyed by a semester id, and made the dean's membership check resolve an empty set. |
 | S3 | **Done 2026-10-20** — the dean's dashboard (`app/dean/page.tsx`) and the dean's evaluation landing page (`app/dean/evaluations/page.tsx`) now count the **teaching roster** (the faculty with an assignment whose section the department owns) instead of the people merely homed there, through the shared `getDepartmentTeachingFaculty`. The card is labelled "Teaching" and the roster "Teaching Roster — Faculty with a section in {dept} this term". The term is the active evaluation period's semester, falling back to the active semester. The consultation workload cards on the same dashboard are a different population and are unchanged. |
 | S4 | **Done 2026-10-20** — the `semesterId` fallback is gone from both visibility routes; a body without `evaluationPeriodId` is a 400. The write path was already corrupting the `evaluation_results` row when given a semester id. |

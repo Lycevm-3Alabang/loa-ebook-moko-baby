@@ -1,26 +1,39 @@
 import { supabase } from "@/lib/db"
 import { fetchRatingsWithCategories } from "@/lib/db/common"
 import {
-  buildLiveDeptAverages,
-  buildFacultySummary,
-  classifyWarningAssignments,
+  buildLiveDeptAveragesFromTotals,
+  computeCategoryAverages,
+  computeCategoryAveragesFromTotals,
+  computeGeneralRating,
+  computeSentimentScore,
+  findHighestLowestRubrics,
   getRemark,
+  mapCategoryAveragesToColumns,
+  poolCategoryTotals,
+  classifyWarningAssignments,
   resolveSubjectDepartment,
   UNASSIGNED_FACULTY_EMAIL,
-  type FacultyDeptInput,
-  type RatingRow,
+  type CategoryTotals,
+  type WarningAssignment,
 } from "@/lib/evaluation-utils"
 import type {
   IEvaluationResultRepository,
   LiveDeptAverage,
   LiveFacultyResult,
+  DepartmentFigures,
+  PeriodDepartmentFigure,
+  PeriodFigures,
   StudentBreakdownItem,
   EvaluationVisibilityRow,
   EvaluationAssignment,
   AttributionWarnings,
   SubjectResolutionContext,
 } from "@/lib/types"
-import { semesterRepository } from "@/lib/repositories/factory"
+import { semesterRepository, userRepository } from "@/lib/repositories/factory"
+import {
+  fetchDepartmentSentiment,
+  fetchDepartmentTotals,
+} from "@/features/evaluation-results/evaluation-aggregates"
 
 export class EvaluationPeriodInactiveError extends Error {
   status: number
@@ -284,115 +297,315 @@ async function loadPeriodAssignments(evaluationPeriodId: string): Promise<Period
   return { assignments, liveEvals }
 }
 
-/** The ratings of the given evaluations, indexed by evaluation. */
-async function loadRatingsByEval(evalIds: string[]): Promise<Map<string, RatingRow[]>> {
-  const ratingsByEval = new Map<string, RatingRow[]>()
-  if (evalIds.length === 0) return ratingsByEval
-  const ratings = await fetchRatingsWithCategories(supabase, evalIds)
-  for (const r of ratings) {
-    const list = ratingsByEval.get(r.evaluationId)
-    if (list) list.push(r)
-    else ratingsByEval.set(r.evaluationId, [r])
-  }
-  return ratingsByEval
+/**
+ * The facts a period's figures and warnings are read from: the period's
+ * submitted and enabled evaluations, the assignments they point at, the
+ * teachers' home departments, and the period's own semester.
+ *
+ * One read of each, shared by the figures and the warnings — so the two
+ * surfaces cannot disagree, and the list pays for the reads once.
+ */
+interface PeriodFacts {
+  evaluations: { id: string; evaluateeId: string; facultySubjectId: string | null }[]
+  /** The assignments the period's evaluations point at, by id. */
+  assignments: Map<string, FacultySubjectRow>
+  /**
+   * faculty id -> the department they are homed in. The id is absent when the
+   * account is missing; the value is null when the account has no home.
+   */
+  departmentOfFaculty: Map<string, string | null>
+  periodSemesterId: string | null
 }
 
-/** The evaluations of a period, grouped by the assignment they belong to. */
-function groupEvalsByAssignment(
-  evals: { id: string; facultySubjectId: string | null }[],
-): Map<string, string[]> {
-  const byAssignment = new Map<string, string[]>()
-  for (const ev of evals) {
-    if (!ev.facultySubjectId) continue
-    const list = byAssignment.get(ev.facultySubjectId)
-    if (list) list.push(ev.id)
-    else byAssignment.set(ev.facultySubjectId, [ev.id])
+async function loadPeriodFacts(evaluationPeriodId: string): Promise<PeriodFacts> {
+  const [evaluations, period] = await Promise.all([
+    listSubmittedEvaluates(evaluationPeriodId),
+    supabase
+      .from("evaluation_periods")
+      .select("semesterId")
+      .eq("id", evaluationPeriodId)
+      .single(),
+  ])
+  if (period.error && period.error.code !== "PGRST116") throw period.error
+
+  const fsIds = [...new Set(evaluations.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
+  const rows = await loadAssignmentRows(fsIds)
+  const assignments = new Map(rows.map((r) => [r.id, r]))
+  const departmentOfFaculty = await loadUserDepartments(rows.map((r) => r.faculty_id))
+
+  return {
+    evaluations,
+    assignments,
+    departmentOfFaculty,
+    periodSemesterId: (period.data?.semesterId as string | null) ?? null,
   }
-  return byAssignment
+}
+
+/**
+ * The integrity conditions in a period's facts: the assignments whose teacher
+ * has no home department, and the ones that belong to another semester than
+ * the period. The classification is the existing pure rule; the facts are the
+ * app's own reads.
+ */
+async function buildAttributionWarnings(
+  facts: PeriodFacts,
+  scopeDepartmentId?: string,
+): Promise<AttributionWarnings> {
+  const empty: AttributionWarnings = {
+    unattributed: { count: 0, faculty: [] },
+    offSemester: { count: 0, faculty: [] },
+  }
+
+  // The assignments with an evaluation in the period — one row per assignment.
+  const byId = new Map<string, WarningAssignment>()
+  for (const e of facts.evaluations) {
+    const fsId = e.facultySubjectId
+    if (!fsId) continue
+    const assignment = facts.assignments.get(fsId)
+    if (!assignment) continue
+    // An assignment whose teacher has no account is not a department
+    // condition — there is nobody to report.
+    if (!facts.departmentOfFaculty.has(assignment.faculty_id)) continue
+    byId.set(fsId, {
+      faculty_id: assignment.faculty_id,
+      section_id: null,
+      semesterId: assignment.semesterId,
+    })
+  }
+  if (byId.size === 0) return empty
+
+  const assignments = [...byId.values()]
+  const departmentOf = (a: WarningAssignment) => facts.departmentOfFaculty.get(a.faculty_id) ?? null
+
+  const { unattributed, offSemester } = classifyWarningAssignments(
+    assignments,
+    departmentOf,
+    facts.periodSemesterId,
+    scopeDepartmentId,
+  )
+
+  const facultyIds = [...new Set([...unattributed, ...offSemester].map((r) => r.faculty_id))]
+  const users = await loadUserNames(facultyIds)
+  const named = (list: WarningAssignment[]) =>
+    [...new Set(list.map((r) => r.faculty_id))].map((id) => ({ id, name: users.get(id)?.name ?? "Unknown" }))
+
+  return {
+    unattributed: { count: unattributed.length, faculty: named(unattributed) },
+    offSemester: { count: offSemester.length, faculty: named(offSemester) },
+  }
+}
+
+/**
+ * The period's submitted and enabled evaluations for a set of faculty.
+ * Chunked (the URL cap) and paged (the row cap), ordered by id — the primary
+ * key, so a total order.
+ */
+async function listSubmittedEvaluatesForFaculty(
+  evaluationPeriodId: string,
+  facultyIds: string[],
+): Promise<{ id: string; evaluateeId: string; facultySubjectId: string | null }[]> {
+  if (facultyIds.length === 0) return []
+  const results = await Promise.all(
+    chunkStrIds([...new Set(facultyIds)], IN_CHUNK_SIZE).map(async (ids) => {
+      const rows: { id: string; evaluateeId: string; facultySubjectId: string | null }[] = []
+      let offset = 0
+      for (;;) {
+        const { data, error } = await supabase
+          .from("evaluations")
+          .select("id, evaluateeId, facultySubjectId")
+          .eq("evaluation_period_id", evaluationPeriodId)
+          .eq("status", "SUBMITTED")
+          .eq("isDisabled", false)
+          .in("evaluateeId", ids)
+          .order("id", { ascending: true })
+          .range(offset, offset + PAGE_SIZE - 1)
+        if (error) throw error
+        const page = (data || []) as { id: string; evaluateeId: string; facultySubjectId: string | null }[]
+        rows.push(...page)
+        if (page.length < PAGE_SIZE) break
+        offset += PAGE_SIZE
+      }
+      return rows
+    }),
+  )
+  return results.flat()
+}
+
+/**
+ * The comment sentiment scores of a set of evaluations. Chunked: the URL cap.
+ * A chunk of 100 evaluation ids holds at most a few hundred comments, so the
+ * 1,000-row cap cannot bite here.
+ */
+async function listCommentScores(evaluationIds: string[]): Promise<{ sentimentScore: number | null }[]> {
+  if (evaluationIds.length === 0) return []
+  const results = await Promise.all(
+    chunkStrIds([...new Set(evaluationIds)], IN_CHUNK_SIZE).map((ids) =>
+      supabase.from("evaluation_comments").select("sentimentScore").in("evaluationId", ids),
+    ),
+  )
+  for (const res of results) {
+    if (res.error) throw res.error
+  }
+  return results.flatMap((res) => (res.data || []) as { sentimentScore: number | null }[])
 }
 
 export const evaluationResultRepository: IEvaluationResultRepository = {
-  async listLiveDeptAverages(evaluationPeriodId): Promise<LiveDeptAverage[]> {
-    const live = await loadPeriodAssignments(evaluationPeriodId)
-    if (!live) return []
-    const ratingsByEval = await loadRatingsByEval(live.liveEvals.map((e) => e.id))
-    const byAssignment = groupEvalsByAssignment(live.liveEvals)
-
-    // Pooled per assignment, then grouped by the department the assignment
-    // counts under — the teacher's own department. A faculty teaching in two
-    // departments contributes every subject to their own department.
-    const inputs: FacultyDeptInput[] = []
-    for (const [fsId, evalIds] of byAssignment) {
-      const assignment = live.assignments.get(fsId)
-      if (!assignment) continue
-      const groupRatings = evalIds.flatMap((eid) => ratingsByEval.get(eid) ?? [])
-      inputs.push({
-        facultyId: assignment.faculty_id,
-        deptId: assignment.departmentId ?? UNKNOWN_DEPARTMENT,
-        evalCount: evalIds.length,
-        ratings: groupRatings,
-      })
+  /**
+   * One department's figures for a period: the response count, the pooled
+   * rating and its remark, the highest and lowest rubrics, and the comment
+   * sentiment — read from the app's own reads, with no direct database
+   * connection.
+   *
+   * The rules are the app's own: the period's submitted and enabled
+   * evaluations, the live-eval rule (an evaluation whose assignment no longer
+   * belongs to its evaluatee does not count) and the teacher's home
+   * department. A teacher homed elsewhere is not this department's.
+   */
+  async listDepartmentFigures(departmentId: string, evaluationPeriodId: string): Promise<DepartmentFigures> {
+    const empty: DepartmentFigures = {
+      departmentId,
+      totalRespondents: 0,
+      avgRating: null,
+      remarks: null,
+      highestRubrics: [],
+      lowestRubrics: [],
+      sentimentScore: null,
     }
 
-    const groups = new Map<string, LiveDeptAverage>(
-      buildLiveDeptAverages(inputs).map((d) => [d.departmentId, { ...d }]),
-    )
+    // The department's own faculty — the accounts homed in it.
+    const faculty = await userRepository.listByRole("FACULTY")
+    const facultyIds = faculty.filter((u) => u.departmentId === departmentId).map((u) => u.id)
+    if (facultyIds.length === 0) return empty
 
-    // The department page shows a row for every faculty with an evaluation —
-    // including one whose evaluation carries no rating rows, which the
-    // pooling above skips. Count those here, so the list's faculty count and
-    // the department's table agree.
-    for (const [fsId, evalIds] of byAssignment) {
-      const assignment = live.assignments.get(fsId)
-      if (!assignment) continue
-      const groupRatings = evalIds.flatMap((eid) => ratingsByEval.get(eid) ?? [])
-      const deptId = assignment.departmentId ?? UNKNOWN_DEPARTMENT
-      let group = groups.get(deptId)
-      if (!group) {
-        group = {
-          departmentId: deptId,
-          facultyIds: [],
-          totalRespondents: 0,
-          avgRating: null,
-          remarks: null,
-          catAverages: {},
-          highestRubrics: [],
-          lowestRubrics: [],
-        }
-        groups.set(deptId, group)
-      }
-      if (!group.facultyIds.includes(assignment.faculty_id)) group.facultyIds.push(assignment.faculty_id)
-      if (groupRatings.length === 0) group.totalRespondents += evalIds.length
+    // The department's submitted and enabled evaluations in the period.
+    const evaluations = await listSubmittedEvaluatesForFaculty(evaluationPeriodId, facultyIds)
+    if (evaluations.length === 0) return empty
+
+    // The assignments they point at, and the live-eval rule: an evaluation
+    // counts for the faculty the assignment actually has.
+    const fsIds = [...new Set(evaluations.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
+    const assignments = new Map((await loadAssignmentRows(fsIds)).map((r) => [r.id, r]))
+    const liveEvalIds = evaluations
+      .filter((e) => !!e.facultySubjectId && assignments.get(e.facultySubjectId)?.faculty_id === e.evaluateeId)
+      .map((e) => e.id)
+    if (liveEvalIds.length === 0) return empty
+
+    const [ratings, comments] = await Promise.all([
+      fetchRatingsWithCategories(supabase, liveEvalIds),
+      listCommentScores(liveEvalIds),
+    ])
+
+    const catAverages = computeCategoryAverages(ratings)
+    const general = computeGeneralRating(catAverages)
+    const catColumns = mapCategoryAveragesToColumns(catAverages)
+    const { highest, lowest } = findHighestLowestRubrics(catColumns)
+
+    return {
+      departmentId,
+      totalRespondents: liveEvalIds.length,
+      avgRating: general,
+      remarks: getRemark(general),
+      highestRubrics: highest,
+      lowestRubrics: lowest,
+      sentimentScore: computeSentimentScore(comments),
     }
-
-    return [...groups.values()]
   },
 
   /**
-   * Per-faculty live results, pooled over that faculty's rating rows with the
-   * same chain the detail page uses. The row shape matches the cached rows the
-   * report service used to read, so it is a source swap, not a rewrite.
+   * The period's departments and their response counts, with the attribution
+   * warnings read from the same facts.
+   *
+   * The rules are the app's own: the period's submitted and enabled
+   * evaluations, the live-eval rule (an evaluation whose assignment no longer
+   * belongs to its evaluatee does not count) and the teacher's home
+   * department. A teacher with no home department is an integrity warning, not
+   * a row.
+   */
+  async listPeriodFigures(evaluationPeriodId: string, departmentId?: string): Promise<PeriodFigures> {
+    const facts = await loadPeriodFacts(evaluationPeriodId)
+
+    const groups = new Map<string, { totalRespondents: number; facultyIds: Set<string> }>()
+    for (const e of facts.evaluations) {
+      const fsId = e.facultySubjectId
+      if (!fsId) continue
+      const assignment = facts.assignments.get(fsId)
+      if (!assignment) continue
+      // The live-eval rule: the evaluation counts for the faculty the
+      // assignment actually has. A reassigned assignment leaves the old
+      // evaluation behind — drop it here too, so every surface agrees.
+      if (assignment.faculty_id !== e.evaluateeId) continue
+      const deptId = facts.departmentOfFaculty.get(assignment.faculty_id) ?? null
+      if (!deptId) continue
+      const group = groups.get(deptId) ?? { totalRespondents: 0, facultyIds: new Set<string>() }
+      group.totalRespondents += 1
+      group.facultyIds.add(assignment.faculty_id)
+      groups.set(deptId, group)
+    }
+
+    const departments: PeriodDepartmentFigure[] = [...groups.entries()]
+      .map(([deptId, group]) => ({
+        departmentId: deptId,
+        totalRespondents: group.totalRespondents,
+        facultyIds: [...group.facultyIds],
+      }))
+      .sort((a, b) => a.departmentId.localeCompare(b.departmentId))
+
+    return { departments, warnings: await buildAttributionWarnings(facts, departmentId) }
+  },
+
+  /**
+   * The departments' live figures, pooled from the database's aggregate: one
+   * row per assignment, with the assignment's respondent count and its rating
+   * totals per category. The rules the aggregate carries are the app's own —
+   * the period, the submitted and enabled evaluations, the live-eval rule
+   * (an evaluation whose assignment no longer belongs to its evaluatee does
+   * not count) and the teacher's home department.
+   */
+  async listLiveDeptAverages(evaluationPeriodId): Promise<LiveDeptAverage[]> {
+    const rows = await fetchDepartmentTotals(evaluationPeriodId)
+
+    // Pooled per department — the teacher's own department. A faculty teaching
+    // in two departments contributes every subject to their own department.
+    return buildLiveDeptAveragesFromTotals(
+      rows.map((row) => ({
+        facultyId: row.faculty_id,
+        deptId: row.department_id ?? UNKNOWN_DEPARTMENT,
+        respondentCount: row.respondent_count,
+        totals: row.category_totals ?? {},
+      })),
+    )
+  },
+
+  /**
+   * Per-faculty live results, pooled over that faculty's rating totals with
+   * the same chain the detail page uses. The row shape matches the cached rows
+   * the report service used to read, so it is a source swap, not a rewrite.
    */
   async listLiveFacultyResults(evaluationPeriodId: string): Promise<LiveFacultyResult[]> {
-    const live = await loadPeriodAssignments(evaluationPeriodId)
-    if (!live) return []
-    const ratingsByEval = await loadRatingsByEval(live.liveEvals.map((e) => e.id))
+    const rows = await fetchDepartmentTotals(evaluationPeriodId)
 
-    const evalIdsByFaculty = new Map<string, string[]>()
-    for (const ev of live.liveEvals) {
-      const list = evalIdsByFaculty.get(ev.evaluateeId)
-      if (list) list.push(ev.id)
-      else evalIdsByFaculty.set(ev.evaluateeId, [ev.id])
+    const byFaculty = new Map<string, { respondents: number; totals: CategoryTotals }>()
+    for (const row of rows) {
+      let group = byFaculty.get(row.faculty_id)
+      if (!group) {
+        group = { respondents: 0, totals: {} }
+        byFaculty.set(row.faculty_id, group)
+      }
+      group.respondents += row.respondent_count
+      if (row.category_totals) {
+        group.totals = poolCategoryTotals([group.totals, row.category_totals])
+      }
     }
 
     const out: LiveFacultyResult[] = []
-    for (const [facultyId, eids] of evalIdsByFaculty) {
-      const facRatings = eids.flatMap((eid) => ratingsByEval.get(eid) ?? [])
-      if (facRatings.length === 0) continue
-      const { general, catColumns } = buildFacultySummary(facRatings)
+    for (const [facultyId, group] of byFaculty) {
+      const catAverages = computeCategoryAveragesFromTotals(group.totals)
+      const general = computeGeneralRating(catAverages)
+      if (general === null) continue
+      const catColumns = mapCategoryAveragesToColumns(catAverages)
       out.push({
         facultyId,
-        totalRespondents: eids.length,
+        totalRespondents: group.respondents,
         generalRating: general,
         remarks: getRemark(general),
         professionalManner: catColumns.professionalManner ?? null,
@@ -404,6 +617,29 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
         respectUniqueness: catColumns.respectUniqueness ?? null,
         assessmentAndFeedback: catColumns.assessmentAndFeedback ?? null,
       })
+    }
+    return out
+  },
+
+  /**
+   * The departments' sentiment: the mean of the comment sentiment scores of
+   * the responses that count under the department. The pool is the teacher's
+   * responses across the period, the same population the results list reads.
+   */
+  async listDepartmentSentiment(evaluationPeriodId: string): Promise<Record<string, number | null>> {
+    const rows = await fetchDepartmentSentiment(evaluationPeriodId)
+    const byDept = new Map<string, { sum: number; count: number }>()
+    for (const row of rows) {
+      const deptId = row.department_id ?? UNKNOWN_DEPARTMENT
+      const current = byDept.get(deptId) ?? { sum: 0, count: 0 }
+      byDept.set(deptId, {
+        sum: current.sum + row.sentiment_sum,
+        count: current.count + row.sentiment_count,
+      })
+    }
+    const out: Record<string, number | null> = {}
+    for (const [deptId, total] of byDept) {
+      out[deptId] = total.count > 0 ? Math.round((total.sum / total.count) * 100) / 100 : null
     }
     return out
   },
@@ -475,40 +711,11 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
     evaluationPeriodId: string,
     departmentId?: string,
   ): Promise<AttributionWarnings> {
-    const empty: AttributionWarnings = {
-      unattributed: { count: 0, faculty: [] },
-      offSemester: { count: 0, faculty: [] },
-    }
-    const evals = await listSubmittedEvaluates(evaluationPeriodId)
-    if (evals.length === 0) return empty
-
-    const { data: period } = await supabase
-      .from("evaluation_periods")
-      .select("semesterId")
-      .eq("id", evaluationPeriodId)
-      .single()
-    const periodSemesterId = (period?.semesterId as string | null) ?? null
-
-    const fsIds = [...new Set(evals.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
-    const rows = await loadAssignmentRows(fsIds)
-    const ctx = await buildSubjectContext(rows)
-
-    const { unattributed, offSemester } = classifyWarningAssignments(
-      rows,
-      (a) => resolveSubjectDepartment(a, ctx),
-      periodSemesterId,
-      departmentId,
-    )
-
-    const facultyIds = [...new Set([...unattributed, ...offSemester].map((r) => r.faculty_id))]
-    const users = await loadUserNames(facultyIds)
-    const named = (list: { faculty_id: string }[]) =>
-      [...new Set(list.map((r) => r.faculty_id))].map((id) => ({ id, name: users.get(id)?.name ?? "Unknown" }))
-
-    return {
-      unattributed: { count: unattributed.length, faculty: named(unattributed) },
-      offSemester: { count: offSemester.length, faculty: named(offSemester) },
-    }
+    // The assignments with an evaluation in the period, and where they count —
+    // read from the app's own reads. The classification below is the same
+    // rule it always was.
+    const facts = await loadPeriodFacts(evaluationPeriodId)
+    return buildAttributionWarnings(facts, departmentId)
   },
 
   async setVisibility(evaluationPeriodId, facultyIds, visible) {

@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 const mockAuth = vi.hoisted(() => vi.fn())
 const mockHasRole = vi.hoisted(() => vi.fn())
 const mockDeptRepo = vi.hoisted(() => ({ findByDeanId: vi.fn() }))
-const mockEvalResultRepo = vi.hoisted(() => ({ listLiveDeptAverages: vi.fn() }))
 const mockUserRepo = vi.hoisted(() => ({ listByRole: vi.fn() }))
 const mockGetDeptResults = vi.hoisted(() => vi.fn())
 const mockLogServerError = vi.hoisted(() => vi.fn())
@@ -12,7 +11,6 @@ vi.mock("@/lib/auth", () => ({ auth: mockAuth }))
 vi.mock("@/lib/utils/roles", () => ({ hasRole: mockHasRole }))
 vi.mock("@/lib/repositories/factory", () => ({
   departmentRepository: mockDeptRepo,
-  evaluationResultRepository: mockEvalResultRepo,
   userRepository: mockUserRepo,
 }))
 vi.mock("@/features/evaluation-results/evaluation-results.service", () => ({
@@ -56,9 +54,6 @@ describe("GET /api/dean/evaluation-results/export", () => {
     mockAuth.mockResolvedValue({ user: { id: "u1", role: "DEAN" } })
     mockHasRole.mockReturnValue(true)
     mockDeptRepo.findByDeanId.mockResolvedValue({ id: "dept-1", name: "CCS", code: "CCS" })
-    mockEvalResultRepo.listLiveDeptAverages.mockResolvedValue([
-      { departmentId: "dept-1", facultyIds: ["f1"], totalRespondents: 3, avgRating: 4, remarks: "Very Satisfactory", catAverages: {}, highestRubrics: [], lowestRubrics: [] },
-    ])
     mockGetDeptResults.mockResolvedValue({
       subjects: [
         { facultyName: "Ana", facultyEmail: "a@x.com", subjectCode: "IT101", subjectName: "Intro", totalRespondents: 3, avgRating: 4, remarks: "Very Satisfactory", professionalManner: 4, communicationWithStudent: 4, studentEngagement: 4, learningMaterials: 4, timeManagement: 4, experientialLearning: 4, respectUniqueness: 4, assessmentAndFeedback: 4, sentimentScore: 0.5, facultySubjectId: "fs1", facultyId: "f1", subjectId: "s1", highestRubrics: [], lowestRubrics: [] },
