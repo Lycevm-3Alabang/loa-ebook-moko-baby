@@ -490,7 +490,7 @@ Slices are independent and shippable in order S1 → S2 → S3 → S4 (→ S6, o
   responses. The `/admin/evaluations/coverage` page still **does** scope its list to the term
   (`evaluation-status.service.ts:151`), so "outside the term" is still a real condition there, and
   it keeps its own warning. The two surfaces end with **different warnings because they have
-  different scopes** — that is the house pattern (§4 of the handover), not a break from it.
+  different scopes** — that is the house pattern (§4 of the results handover), not a break from it.
 - **The subject page's route does not scope the subject to the department (2026-10-21).** The
   listing is the only thing that scopes it — the URL is a way around it (**D9**, now in **S6.1**).
   D′ widens the membership set, and the subject page is the surface whose numbers must equal the

@@ -11,15 +11,16 @@ run is the proof) → `npm run build`.
 
 Context: `specs/README.md` ("Next Session — Start Here" + status table),
 `.opencode/skills/plan-fix/runs/20261009-1743-student-import-c1.md` (defect ledger),
-`docs/evaluation-results-cache-handover.md` (the results surfaces' handover — **current**),
+`docs/evaluation-results-handover.md` (the results surfaces' handover — **current**; one per
+session, or none),
 `specs/evaluation-results-cache.md` (the cache contract),
-`docs/evaluation-results-endpoint-handover.md` (the superseded endpoint story).
+`specs/evaluation-results-attribution.md` (the attribution contract — §1.10, §3.21, S6.1, D7–D9).
 
 ## NEXT (do first)
 
 - [x] **The evaluation results endpoint — the direct connection is gone; the figures are read per
   department and per faculty, and cached. Done 2026-10-21.**
-  **Read `docs/evaluation-results-cache-handover.md` first** — it has the shape, the rules, the
+  **Read `docs/evaluation-results-handover.md` first** — it has the shape, the rules, the
   cache and what is still open. **The endpoint no longer needs `DATABASE_URL`:** the aggregate
   (a group-by in Postgres over a direct connection) could never run here — the connection string
   comes from the Supabase dashboard, which this environment cannot reach, so the route answered
@@ -291,7 +292,7 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
 > Supabase dashboard access, so the direct connection could never be opened and the list answered
 > **500**. The list's figures are now read **per department** through the app's own repositories
 > and **cached for five minutes** (`features/evaluation-results/figure-cache.ts`); the page fills a
-> row as its numbers arrive. Handover: `docs/evaluation-results-cache-handover.md`; contract:
+> row as its numbers arrive. Handover: `docs/evaluation-results-handover.md`; contract:
 > `specs/evaluation-results-cache.md`. ⭐ **The aggregate is gone from the app entirely** (the
 > report was its last consumer) — see "NEXT" above. What that does to the items below: the list and the drill-down now use
 > the **raw-row** path, so the `""` bucket **counts** toward Avg. Rating (the aggregate dropped it)
@@ -328,28 +329,34 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   (`features/evaluations/evaluation-status.service.ts:115-116`), so today a response can be
   *disputed* on one page and *counted* on another.
 
-- [ ] **The admin drill-down's membership gate is stricter than the faculty page's.**
-  Where: the admin keeps an evaluation only if its `facultySubjectId` is in the department's **term
-  roster** (`features/evaluation-results/evaluation-results.service.ts:121,131,141-145`) — and that
-  roster is **semester-scoped** (`features/evaluation-results/evaluation-results.repository.ts:66`,
-  `.eq("semesterId", period.semesterId)`) and **home-department-scoped**
-  (`evaluation-results.service.ts:109-111`). The faculty page filters only
+- [ ] **The admin drill-down's membership gate is stricter than the faculty page's — DECIDED
+  2026-10-21 (D′), not built.**
+  Where: the department page keeps an evaluation only if its `facultySubjectId` is in the
+  department's **term assignments** (`features/evaluation-results/evaluation-results.service.ts:190`
+  — `memberIds.has(e.facultySubjectId)`) — and that list is **semester-scoped**
+  (`features/evaluation-results/evaluation-results.repository.ts:625` →
+  `loadSemesterAssignments` → `.eq("semesterId", period.semesterId)`) and **home-department-scoped**
+  (`evaluation-results.service.ts:168-170`). The faculty page filters only
   `evaluateeId + facultySubjectId + status` (`route.ts:63`).
-  What it is: the two pages answer "which evaluations count?" differently. The home-department half
-  is **intentional** (pinned as `specs/evaluation-results-attribution.md` contract §3.15/§3.16, and
-  asserted by `lib/__tests__/evaluation-results-service.test.ts:149-167`). The **semester** half is
-  not: `faculty_subjects.semesterId` is nullable (`supabase-schema.sql:1020-1023`) and legacy
-  NULL-semester rows exist (`features/admin-data/faculty-subject.repository.ts:171-175`), so an
-  evaluation against such an assignment is **counted by the faculty page and dropped by the admin
-  page**.
-  Why it is open: the two must agree, or the contract §3.18 parity check stays red. The
-  spec already models the condition — `evaluation-results.repository.ts:454-492` classifies
-  off-semester assignments as an **integrity warning** on the results list.
-  Options: **(a)** the faculty page also scopes to the period's semester; **(b)** the admin page
-  stops semester-scoping and relies on the integrity warning; **(c)** the admin page surfaces
-  "N evaluations outside this term's roster" on the drill-down instead of dropping them silently.
-  **(c) is the honest one** — the evaluations are real, they belong to a teacher, and the number is
-  knowable.
+  ⭐ **The decision (owner, 2026-10-21):** *given a department is selected · when all faculties
+  belonging to it are fetched · then it should only take into account evaluations that are accounted
+  for the current evaluation period only.* So **the period scopes the responses** — and the rule is
+  **not** a second scope: `evaluations.evaluation_period_id` is the strict gate, the period's **parent
+  semester** (`evaluation_periods.semesterId`, free — `service.ts:151` loads it in the same call)
+  scopes the **subject list** only, and the assignment's `faculty_subjects.semesterId` is the
+  **teaching's** stamp and is **not** a response filter. The defect is that the department page used
+  the **subject list's** scope as a **response** filter — so it, and **both export CSVs** (they share
+  its read), under-report against the results list, one click apart and in the file you send.
+  The **contract** is `specs/evaluation-results-attribution.md` §3.21 (**D7 RESOLVED**), the slice is
+  §4 **S6.1**, and the open items are §7 **D8** (the legacy NULL `evaluation_period_id` rows) and
+  **D9** (the subject page's missing department guard).
+  ⭐ **Capture before the slice** — the department page's figure is *computed*, so the "before" is
+  gone once it changes: department `b0000000-…0001` / period `5a01886e-…bb59`, the department
+  route's `departmentAggregate.avgRating` + `totalResponses` (**before**) against the figures
+  route's `avgRating` + `totalRespondents` (**after**, already on screen). If the two averages are
+  equal, the gap is zero there and the slice is insurance rather than a fix.
+  The working note is `docs/evaluation-results-handover.md` §2; the run file is
+  `.opencode/skills/plan-fix/runs/20261021-1800-open-gaps.md`.
 
 - [x] **The drill-down's rating read — decided 2026-10-21: it stays LIVE, on demand.**
   `getDepartmentSubjectResults` (`features/evaluation-results/evaluation-results.service.ts`) reads
@@ -359,8 +366,8 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   dashboard access), so the choice is between a live read and a cached one. **Decided: live** — a
   detail page is opened for a reason and its numbers are read on demand, every time. Rule 3 of
   `specs/evaluation-results-cache.md`; the handover
-  (`docs/evaluation-results-cache-handover.md` §6) records the consequence: the drill-down does not
-  filter `isDisabled` and is scoped to the term's roster, so it — and the export's `summary.csv`,
+  (`docs/evaluation-results-handover.md` §2) records the consequence: the drill-down does not
+  filter `isDisabled` and is scoped to the term's assignments, so it — and the export's `summary.csv`,
   which shares its read — can differ from the results list in exactly those two cases (items 1 and
   2 below).
 
@@ -492,6 +499,12 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
      = one page).
   2. ~~`docs/evaluation-results-endpoint-handover.md`~~ — **done**: marked superseded, with a
      pointer to the current handover; the file stays as the record of the measurement.
+     ⭐ **2026-10-21 — the three handovers are folded into one** and the files are **gone**:
+     `docs/evaluation-results-cache-handover.md`,
+     `docs/evaluation-results-endpoint-handover.md` and
+     `docs/evaluation-results-membership-gate-handover.md` → **`docs/evaluation-results-handover.md`**
+     (one per session, or none). The durable content they carried lives in
+     `specs/evaluation-results-cache.md` and `specs/evaluation-results-attribution.md`.
   3. ~~`specs/evaluation-results-attribution.md` §3.18–§3.20~~ — **done**: the contract rows now
      point at the raw-row path and the cache; §3.19's scope rules live in the **repository** and
      §3.20 says no surface opens a direct connection.
@@ -499,6 +512,47 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   ⚠️ One correction the migration forced: "**`DATABASE_URL` leaves `.env` for good**" was wrong —
   `scripts/apply-schema.mjs` (the manual schema runner) needs both `pg` and `DATABASE_URL`. The
   **app** no longer needs them; the repo still does.
+
+- [x] **The calculated sentiment figure is no longer displayed — done 2026-10-21.**
+  Where: the results list's "Sentiment" column and its sort key
+  (`app/admin/evaluations/results/page.tsx`), the department card's "Overall Sentiment"
+  (admin + dean), the subject pages' "Sentiment Score" card (admin + dean + faculty), the faculty
+  list's row sentiment, `DepartmentSubjectView`'s column + sort key + the per-faculty card, and the
+  **per-response badges/chips** on the subject pages. The test that guarded the removed card became
+  its inverse (`lib/__tests__/department-summary-widget.test.tsx`).
+  ⚠️ **Two kinds of sentiment** — the **comment's** is **stored**
+  (`evaluation_comments.sentimentLabel` / `sentimentScore`, written when the comment was analysed);
+  the **figure** is **calculated** — `computeSentimentScore(comments)` pools the stored scores into
+  one number per figure. Only the figure stopped being displayed.
+  **Still there, on purpose:** the export CSVs · the PDF (`lib/evaluation-pdf.ts`,
+  `DownloadEvalPdfButton`, `ReportModal`'s PDF block) · the payload fields · the calculation and the
+  comments read · the comment text · `SentimentAnalysisPage` · `EvaluationDashboard`.
+
+- [ ] **The sentiment calculation and the payload's sentiment fields — deferred 2026-10-21.**
+  The figure is no longer displayed, but it is still **computed** and the comments are still read
+  for it. The comments are read **only** for the sentiment
+  (`aggregatePooledResults` → `computeSentimentScore` — `lib/evaluation-utils.ts:288-293`), so
+  removing it means the drill-down **stops reading the comments**: one read fewer per page load.
+  Scope, when it is taken: the `sentimentScore` on every aggregate and per-row payload
+  (`lib/types/evaluation.ts`), the service and the repository that carry it, the export CSVs' column,
+  the PDF's sentiment score and its "Sentiment Analysis" block, and the calculation itself.
+  ⚠️ It touches **the same files** the membership gate does, so it should be its own slice **after**
+  that one, not folded into it. What **stays**: the comment text, the per-comment stored label and
+  its badge, the sentiment engine (`lib/services/sentiment*.ts`), `SentimentAnalysisPage`, and
+  `SentimentBadge` on the student's own comment.
+
+- [ ] **The legacy `evaluation_period_id` NULL rows — a data condition, not a rule (2026-10-21).**
+  `evaluations.evaluation_period_id` is **nullable** (`supabase-schema.sql:1846`, never set
+  `NOT NULL`), and migration 30c's backfill skipped the semesters with no eval dates and not
+  `isActive` (`:1883`) and pointed every row of a **multi-period** semester at one period
+  (`:1884-1889`). Those rows are dropped by **every** period-scoped read — the list, the department
+  page and the faculty page alike — so the loss is **symmetric** and no parity check (§3.18) can
+  see it. Recovering the **NULL** half needs a semester floor plus an `IS NULL` arm
+  (`evaluations.semesterId = period.semesterId AND (evaluation_period_id = periodId OR
+  evaluation_period_id IS NULL)`), with a double-count caveat when a semester has several periods;
+  the **misattributed** half is unreachable by any filter and needs the owner's read-only audit.
+  ⭐ It **adds** responses to **every** period's published figures — a bigger semantic change than
+  the membership gate — so it is not that slice's job. No DDL either way.
 
 ## Done this session (do not redo)
 
