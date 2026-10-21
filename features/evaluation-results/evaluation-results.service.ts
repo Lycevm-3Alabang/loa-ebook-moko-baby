@@ -175,35 +175,51 @@ export async function getDepartmentSubjectResults(
   evaluationPeriodId: string,
   departmentId: string,
 ): Promise<DepartmentResults> {
-  // The department's own teaching this term: every subject its members
-  // teach, evaluated or not - flat, one row each.
-  const { assignments: members, users: facNameMap } = await getDepartmentMemberTeaching(departmentId, evaluationPeriodId)
-  if (members.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
+  // The department's live response set — ONE set, read by the results list's
+  // figure too (contract §3.21): the period's submitted and enabled
+  // evaluations by the faculty homed in it, minus the ones whose assignment
+  // no longer belongs to their evaluatee.
+  const set = await evaluationResultRepository.listDepartmentResponseSet(departmentId, evaluationPeriodId)
+  if (set.members.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
 
-  const memberIds = new Set(members.map((a) => a.id))
-  const memberById = new Map(members.map((a) => [a.id, a]))
-  const facIds = [...new Set(members.map((a) => a.faculty_id))]
+  const memberIds = new Set(set.members.map((m) => m.id))
+  const memberById = new Map(set.members.map((m) => [m.id, m]))
 
-  const evals = await evaluationRepository.listSubmittedByPeriodAndEvaluatees(evaluationPeriodId, facIds)
-  // Keep only the evaluations of THIS department's assignments: a faculty may
-  // teach in more than one department.
-  const deptEvals = evals.filter((e) => !!e.facultySubjectId && memberIds.has(e.facultySubjectId))
+  // The subject list: the members' teaching this term, plus the assignments
+  // the counted responses point at — so a counted response always has a row
+  // (§3.16). The term's half is the teaching (evaluated or not); the other
+  // half is the responses the term no longer covers.
+  const period = await evaluationPeriodRepository.findById(evaluationPeriodId)
+  const assignments = new Map<string, EvaluationAssignment>()
+  if (period) {
+    const teaching = await evaluationResultRepository.listDepartmentTeachingAssignments(departmentId, period.semesterId)
+    for (const a of teaching) {
+      // The members are the accounts homed in the department — the filter
+      // makes the rows' population explicit here, where the rows are built.
+      if (memberIds.has(a.faculty_id)) assignments.set(a.id, a)
+    }
+  }
+  for (const [id, a] of set.assignments) assignments.set(id, a)
+  if (assignments.size === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
 
-  const subjects = await subjectRepository.findByIds([...new Set(members.map((a) => a.subject_id))])
+  const subjects = await subjectRepository.findByIds([...new Set([...assignments.values()].map((a) => a.subject_id))])
   const subjMap = new Map(subjects.map((s) => [s.id, s]))
 
   // Sections are few, so resolve them in memory from the row's OWN section.
   const allSections = await sectionRepository.list()
   const sectionById = new Map(allSections.map((s) => [s.id, s]))
 
-  // Match the detail page's eval set: evaluatee must equal the subject's faculty.
-  const validEvals = deptEvals.filter((ev) => {
-    if (!ev.facultySubjectId) return false
-    const a = memberById.get(ev.facultySubjectId)
-    return !!a && a.faculty_id === ev.evaluateeId
-  })
+  // The counted responses, grouped by the assignment they point at.
+  const groupEvalMap = new Map<string, string[]>()
+  for (const ev of set.evaluations) {
+    const key = ev.facultySubjectId
+    if (!key) continue
+    const list = groupEvalMap.get(key)
+    if (list) list.push(ev.id)
+    else groupEvalMap.set(key, [ev.id])
+  }
 
-  const evaluationIds = validEvals.map((e) => e.id)
+  const evaluationIds = set.evaluations.map((e) => e.id)
 
   const [ratings, commentsRaw] = await Promise.all([
     evaluationRepository.listRatingsByEvaluationIds(evaluationIds),
@@ -216,19 +232,12 @@ export async function getDepartmentSubjectResults(
     commentsByEval.get(c.evaluationId)!.push(c)
   }
 
-  const groupEvalMap = new Map<string, string[]>()
-  for (const ev of validEvals) {
-    const key = ev.facultySubjectId as string
-    if (!groupEvalMap.has(key)) groupEvalMap.set(key, [])
-    groupEvalMap.get(key)!.push(ev.id)
-  }
-
   const out: DepartmentSubjectResult[] = []
-  // One row per member's subject: the evaluated ones carry their results, the
-  // others show no rating.
-  for (const a of members) {
+  // One row per subject of the department's teaching: the evaluated ones
+  // carry their results, the others show no rating.
+  for (const a of assignments.values()) {
     const evalIds = groupEvalMap.get(a.id) ?? []
-    const user = facNameMap.get(a.faculty_id)
+    const user = memberById.get(a.faculty_id)
     const subj = subjMap.get(a.subject_id)
     const section = a.section_id ? sectionById.get(a.section_id) : undefined
 
@@ -272,7 +281,7 @@ export async function getDepartmentSubjectResults(
     subjects: out,
     // The members' pooled figures. A member with no evaluation has none yet:
     // they are in the subject rows, not on a card.
-    facultyAggregates: aggregateFacultyResults(validEvals, ratings, commentsRaw),
+    facultyAggregates: aggregateFacultyResults(set.evaluations, ratings, commentsRaw),
     departmentAggregate: aggregateDepartmentResults(out, ratings, commentsRaw),
   }
 }
