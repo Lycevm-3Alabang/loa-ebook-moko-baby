@@ -189,6 +189,22 @@ export function findHighestLowestRubrics(catAverages: Record<string, number | nu
   }
 }
 
+/**
+ * The rubrics worth flagging: the lowest ones, and only when they are
+ * critically low — "Unsatisfactory" or worse on the app's own ladder. A
+ * department whose weakest criterion is still "Satisfactory" has nothing to
+ * flag; a "needs attention" badge on a satisfactory criterion is noise.
+ *
+ * Ties come back together — every criterion at the lowest score.
+ */
+export function findAttentionRubrics(
+  lowest: { key: string; label: string; score: number }[],
+): { key: string; label: string; score: number }[] {
+  if (lowest.length === 0) return []
+  const remark = getRemark(lowest[0].score)
+  return remark === "Unsatisfactory" || remark === "Poor" ? lowest : []
+}
+
 export function computeSentimentScore(comments: { sentimentScore: number | null }[]): number | null {
   const scored = comments.filter((c) => c.sentimentScore !== null).map((c) => c.sentimentScore as number)
   if (scored.length === 0) return null

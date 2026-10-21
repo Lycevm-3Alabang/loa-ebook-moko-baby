@@ -70,6 +70,7 @@ beforeEach(() => {
     data: {
       department: { id: "d1", name: "CCS", code: "CCS" },
       subjects: SUBJECTS,
+      members: [{ id: "f1", name: "Ana Reyes", email: "ana@x.com" }],
       visibilityMap: { f1: true },
       facultyAggregates: { f1: { ...DEPARTMENT_AGGREGATE, facultyId: "f1" } },
       departmentAggregate: DEPARTMENT_AGGREGATE,
@@ -88,6 +89,60 @@ describe("Department results page - Department Summary widget", () => {
     await waitFor(() => expect(screen.getAllByText("3.50").length).toBeGreaterThan(0))
     expect(screen.queryByText("3.00")).toBeNull()
     expect(screen.getAllByText("Very Satisfactory").length).toBeGreaterThan(0)
+  })
+
+  it("counts the department's faculty - the members, with or without results", async () => {
+    mockUseApiGet.mockReturnValue({
+      data: {
+        department: { id: "d1", name: "CCS", code: "CCS" },
+        subjects: SUBJECTS,
+        members: [
+          { id: "f1", name: "Ana Reyes", email: "ana@x.com" },
+          { id: "f2", name: "Ben Cruz", email: "ben@x.com" },
+        ],
+        visibilityMap: { f1: true },
+        facultyAggregates: { f1: { ...DEPARTMENT_AGGREGATE, facultyId: "f1" } },
+        departmentAggregate: DEPARTMENT_AGGREGATE,
+      },
+      error: undefined,
+    })
+
+    render(<DepartmentDetailPage />)
+
+    await waitFor(() => expect(screen.getByText("Faculty")).toBeTruthy())
+    // Two members - one of them has no results, and the card counts him.
+    const label = screen.getByText("Faculty")
+    expect(label.parentElement?.textContent).toContain("2")
+  })
+
+  it("shows no subject count and no response count - the coverage page owns them", async () => {
+    render(<DepartmentDetailPage />)
+
+    await waitFor(() => expect(screen.getByText("Faculty")).toBeTruthy())
+    expect(screen.queryByText("Subjects")).toBeNull()
+    expect(screen.queryByText("Total Responses")).toBeNull()
+  })
+
+  it("shows a Needs Attention Rubric only when the weakest is critically low", async () => {
+    mockUseApiGet.mockReturnValue({
+      data: {
+        department: { id: "d1", name: "CCS", code: "CCS" },
+        subjects: SUBJECTS,
+        members: [{ id: "f1", name: "Ana Reyes", email: "ana@x.com" }],
+        visibilityMap: { f1: true },
+        facultyAggregates: { f1: { ...DEPARTMENT_AGGREGATE, facultyId: "f1" } },
+        departmentAggregate: {
+          ...DEPARTMENT_AGGREGATE,
+          lowestRubrics: [{ key: "timeManagement", label: "Time Management", score: 2.1 }],
+        },
+      },
+      error: undefined,
+    })
+
+    render(<DepartmentDetailPage />)
+
+    await waitFor(() => expect(screen.getByText("Needs Attention Rubric")).toBeTruthy())
+    expect(screen.getByText("Time Management: 2.10")).toBeTruthy()
   })
 
   it("no longer shows a sentiment figure", async () => {

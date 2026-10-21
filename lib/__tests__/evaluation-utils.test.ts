@@ -14,6 +14,7 @@ import {
   resolveDepartmentFaculties,
   sectionLabel,
   formatFacultyName,
+  findAttentionRubrics,
 } from "@/lib/evaluation-utils"
 import type { RatingRow, FacultyRatingRow, DeptResolutionContext } from "@/lib/evaluation-utils"
 
@@ -214,6 +215,32 @@ describe("formatFacultyName", () => {
   it("returns nothing for nothing", () => {
     expect(formatFacultyName(null)).toBe("")
     expect(formatFacultyName("   ")).toBe("")
+  })
+})
+
+describe("findAttentionRubrics", () => {
+  const rubric = (score: number) => ({ key: "timeManagement", label: "Time Management", score })
+
+  it("flags the lowest rubric when it is Unsatisfactory", () => {
+    expect(findAttentionRubrics([rubric(2.4)])).toHaveLength(1)
+  })
+
+  it("flags the lowest rubric when it is Poor", () => {
+    expect(findAttentionRubrics([rubric(1.2)])).toHaveLength(1)
+  })
+
+  it("leaves a lowest rubric that is still Satisfactory alone", () => {
+    expect(findAttentionRubrics([rubric(2.9)])).toEqual([])
+    expect(findAttentionRubrics([rubric(3.5)])).toEqual([])
+  })
+
+  it("has nothing to flag when there is no rubric at all", () => {
+    expect(findAttentionRubrics([])).toEqual([])
+  })
+
+  it("keeps the ties together", () => {
+    const out = findAttentionRubrics([rubric(2.0), { key: "a", label: "A", score: 2.0 }])
+    expect(out).toHaveLength(2)
   })
 })
 

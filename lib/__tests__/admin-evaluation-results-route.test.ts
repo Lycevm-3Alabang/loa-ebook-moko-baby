@@ -126,6 +126,29 @@ describe("GET /api/admin/evaluation-results", () => {
     expect(body.warnings.unattributed.count).toBe(0)
   })
 
+  it("returns a department with no responses as a row with no rating", async () => {
+    mockEvalResultRepo.listPeriodFigures.mockResolvedValue(
+      figures([{ departmentId: "d1", totalRespondents: 2, facultyIds: ["f1"] }]),
+    )
+    // Two departments: one has responses, the other has none this period.
+    mockDeptRepo.listAll.mockResolvedValue([
+      { id: "d1", name: "CCS", code: "CCS" },
+      { id: "d2", name: "Mathematics", code: "MATH" },
+    ])
+    mockFacultyCounts.mockResolvedValue({ d1: 3, d2: 5 })
+
+    const res = await GET(req("?evaluationPeriodId=p1"))
+    const body = await res.json()
+
+    // The empty department is a row - it is not missing.
+    expect(body.departments.map((d: { departmentId: string }) => d.departmentId)).toEqual(["d1", "d2"])
+    const empty = body.departments.find((d: { departmentId: string }) => d.departmentId === "d2")
+    expect(empty.totalRespondents).toBe(0)
+    expect(empty.avgRating).toBeNull()
+    // Its headcount is still its own - the same number everywhere else.
+    expect(empty.facultyCount).toBe(5)
+  })
+
   it("does not serve a no-response roster - the coverage page owns that number", async () => {
     mockEvalResultRepo.listPeriodFigures.mockResolvedValue(
       figures([{ departmentId: "d1", totalRespondents: 2, facultyIds: ["f1"] }]),

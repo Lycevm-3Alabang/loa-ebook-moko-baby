@@ -34,6 +34,12 @@ interface SubjectRow {
 
 interface Props {
   subjects: SubjectRow[]
+  /**
+   * The department's own faculty — the accounts homed in it. The cards are
+   * them, with or without results: a member with nothing to show is still a
+   * member (contract §3.15).
+   */
+  members?: { id: string; name: string; email: string }[]
   departmentId: string
   evaluationPeriodId: string
   search: string
@@ -47,7 +53,7 @@ interface Props {
 
 type SortDir = "asc" | "desc"
 
-export default function DepartmentSubjectView({ subjects, departmentId, evaluationPeriodId, search, onSearchChange, basePath = "/admin/evaluations/results", visibilityMap = {}, onVisibilityChange, onBulkVisibilityChange, facultyAggregates = {} }: Props) {
+export default function DepartmentSubjectView({ subjects, members = [], departmentId, evaluationPeriodId, search, onSearchChange, basePath = "/admin/evaluations/results", visibilityMap = {}, onVisibilityChange, onBulkVisibilityChange, facultyAggregates = {} }: Props) {
   const router = useRouter()
   const [sortDir, setSortDir] = useState<SortDir>("asc")
   const [expandedFaculty, setExpandedFaculty] = useState<Set<string>>(new Set())
@@ -71,17 +77,33 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
   }, [subjects, search])
 
   const facultyGroups = useMemo(() => {
-    const map = new Map<string, { facultyId: string; facultyName: string; facultyEmail: string; subjects: SubjectRow[] }>()
+    // The rows, grouped by their teacher.
+    const rowsByFaculty = new Map<string, SubjectRow[]>()
     for (const s of filteredSubjects) {
-      if (!map.has(s.facultyId)) {
-        map.set(s.facultyId, { facultyId: s.facultyId, facultyName: s.facultyName, facultyEmail: s.facultyEmail, subjects: [] })
-      }
-      map.get(s.facultyId)!.subjects.push(s)
+      const list = rowsByFaculty.get(s.facultyId)
+      if (list) list.push(s)
+      else rowsByFaculty.set(s.facultyId, [s])
     }
-    // The department's OWN faculty: the server's aggregate map is the member
-    // list, so a teacher homed elsewhere who has a subject here has no card.
-    return Array.from(map.values()).filter((g) => facultyAggregates[g.facultyId] !== undefined)
-  }, [filteredSubjects, facultyAggregates])
+    // The department's OWN faculty: the members, with or without results. A
+    // member who taught nothing this term and has no responses is still a
+    // member - the card says so, with nothing on it. Without the members (an
+    // older payload), the rows' teachers are the fallback.
+    const people = members.length > 0
+      ? members.map((m) => ({
+          facultyId: m.id,
+          facultyName: m.name,
+          facultyEmail: m.email,
+          subjects: rowsByFaculty.get(m.id) ?? [],
+        }))
+      : [...rowsByFaculty.entries()].map(([facultyId, rows]) => ({
+          facultyId,
+          facultyName: rows[0].facultyName,
+          facultyEmail: rows[0].facultyEmail,
+          subjects: rows,
+        }))
+    // A search hides a member with nothing of theirs matching.
+    return search.trim() ? people.filter((p) => p.subjects.length > 0) : people
+  }, [filteredSubjects, members, search])
 
   // The cards are read by surname — the order the name is displayed in.
   const sortedGroups = useMemo(() => {
@@ -142,7 +164,10 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
     }
   }, [apiPrefix, departmentId, evaluationPeriodId])
 
-  const uniqueFacultyIds = useMemo(() => [...new Set(subjects.map((s) => s.facultyId))], [subjects])
+  const uniqueFacultyIds = useMemo(
+    () => (members.length > 0 ? members.map((m) => m.id) : [...new Set(subjects.map((s) => s.facultyId))]),
+    [members, subjects],
+  )
   const allVisible = uniqueFacultyIds.length > 0 && uniqueFacultyIds.every((id) => visibilityMap[id])
 
   return (
@@ -202,7 +227,6 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
           const agg = facultyAggregates[group.facultyId]
           const facultyAvg = agg?.avgRating ?? null
           const facultyRemark = agg?.remarks ?? null
-          const totalResp = agg?.totalRespondents ?? 0
           const isExpanded = expandedFaculty.has(group.facultyId)
 
           return (
@@ -227,23 +251,21 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
                       </span>
                     )}
                   </div>
-                  <div className="text-right text-xs text-tertiary">
-                    <div>{group.subjects.length} subject{group.subjects.length !== 1 ? "s" : ""}</div>
-                    <div>{totalResp} response{totalResp !== 1 ? "s" : ""}</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleConsolidatedPdf(group.facultyId, group.facultyName, group.facultyEmail)
-                    }}
-                    className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm"
-                    title="Download consolidated PDF"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </button>
+                  {agg && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleConsolidatedPdf(group.facultyId, group.facultyName, group.facultyEmail)
+                      }}
+                      className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm"
+                      title="Download consolidated PDF"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </button>
+                  )}
                   {onVisibilityChange && (
                     <button
                       type="button"
@@ -284,7 +306,6 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
                         <th className="pb-2 pr-3 text-right">Avg Rating</th>
                         <th className="pb-2 pr-3 text-right">Highest</th>
                         <th className="pb-2 pr-3 text-right">Lowest</th>
-                        <th className="pb-2 text-right">Resp.</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -307,7 +328,6 @@ export default function DepartmentSubjectView({ subjects, departmentId, evaluati
                           <td className="py-2 pr-3 text-right text-[10px] text-red-600 dark:text-red-400">
                             {s.lowestRubrics.length > 0 ? `${s.lowestRubrics[0].label} (${formatScore(s.lowestRubrics[0].score)})` : "—"}
                           </td>
-                          <td className="py-2 text-right text-xs text-secondary">{s.totalRespondents}</td>
                         </tr>
                       ))}
                     </tbody>

@@ -57,18 +57,20 @@ export async function getDepartmentResults(
     getFacultyCountsByDepartment(),
   ])
 
-  const deptMap = new Map(allDepts.map((d) => [d.id, d]))
+  const figureByDept = new Map(figures.departments.map((f) => [f.departmentId, f]))
+  // EVERY department, not only the ones with responses: a department with no
+  // results in this period is a row with no rating, not a missing row. The
+  // headcount and the export's summary both carry it, so the list did not.
   const departments: DepartmentResultsRow[] = []
-  for (const figure of figures.departments) {
-    if (departmentId && figure.departmentId !== departmentId) continue
-    const dept = deptMap.get(figure.departmentId)
-    if (!dept) continue
+  for (const dept of allDepts) {
+    if (departmentId && dept.id !== departmentId) continue
+    const figure = figureByDept.get(dept.id)
     departments.push({
-      departmentId: figure.departmentId,
+      departmentId: dept.id,
       departmentName: dept.name ?? "Unknown",
       departmentCode: dept.code ?? "",
-      facultyCount: facultyCounts[figure.departmentId] ?? 0,
-      totalRespondents: figure.totalRespondents,
+      facultyCount: facultyCounts[dept.id] ?? 0,
+      totalRespondents: figure?.totalRespondents ?? 0,
       avgRating: null,
       remarks: null,
       highestRubrics: [],
@@ -76,6 +78,10 @@ export async function getDepartmentResults(
       sentimentScore: null,
     })
   }
+  // A stable order while the figures land: the page sorts once they are all
+  // in, and a table that re-sorts under the reader is worse than one that
+  // sorts a moment later.
+  departments.sort((a, b) => a.departmentName.localeCompare(b.departmentName))
 
   return { departments, warnings: figures.warnings }
 }
@@ -110,6 +116,19 @@ export interface DepartmentResults {
   subjects: DepartmentSubjectResult[]
   facultyAggregates: Record<string, FacultyAggregate>
   departmentAggregate: DepartmentAggregate | null
+  /**
+   * The department's own faculty — the accounts homed in it. The cards are
+   * them, with or without results (contract §3.15): a member with nothing to
+   * show is still a member.
+   */
+  members: DepartmentMember[]
+}
+
+/** One member of the department: the account, and how to reach them. */
+export interface DepartmentMember {
+  id: string
+  name: string
+  email: string
 }
 
 export interface DepartmentTeachingFaculty {
@@ -160,7 +179,8 @@ export async function getDepartmentSubjectResults(
   // evaluations by the faculty homed in it, minus the ones whose assignment
   // no longer belongs to their evaluatee.
   const set = await evaluationResultRepository.listDepartmentResponseSet(departmentId, evaluationPeriodId)
-  if (set.members.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
+  const members: DepartmentMember[] = set.members.map((m) => ({ id: m.id, name: m.name, email: m.email }))
+  if (members.length === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null, members: [] }
 
   const memberIds = new Set(set.members.map((m) => m.id))
   const memberById = new Map(set.members.map((m) => [m.id, m]))
@@ -180,7 +200,7 @@ export async function getDepartmentSubjectResults(
     }
   }
   for (const [id, a] of set.assignments) assignments.set(id, a)
-  if (assignments.size === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null }
+  if (assignments.size === 0) return { subjects: [], facultyAggregates: {}, departmentAggregate: null, members }
 
   const subjects = await subjectRepository.findByIds([...new Set([...assignments.values()].map((a) => a.subject_id))])
   const subjMap = new Map(subjects.map((s) => [s.id, s]))
@@ -263,5 +283,6 @@ export async function getDepartmentSubjectResults(
     // they are in the subject rows, not on a card.
     facultyAggregates: aggregateFacultyResults(set.evaluations, ratings, commentsRaw),
     departmentAggregate: aggregateDepartmentResults(out, ratings, commentsRaw),
+    members,
   }
 }

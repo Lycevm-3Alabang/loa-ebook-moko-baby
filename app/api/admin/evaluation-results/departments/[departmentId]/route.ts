@@ -18,12 +18,12 @@ export async function GET(
     const evaluationPeriodId = searchParams.get("evaluationPeriodId") || searchParams.get("semesterId")
     if (!evaluationPeriodId) return NextResponse.json({ error: "periodId is required" }, { status: 400 })
 
-    const { subjects: subjectsList, facultyAggregates, departmentAggregate } = await getDepartmentSubjectResults(evaluationPeriodId, departmentId)
+    const { subjects: subjectsList, facultyAggregates, departmentAggregate, members } = await getDepartmentSubjectResults(evaluationPeriodId, departmentId)
     if (subjectsList.length === 0) {
       const dept = await departmentRepository.findById(departmentId)
       // still return department info even with no subjects
       const visMap = await evaluationResultRepository.getVisibilityMap(evaluationPeriodId)
-      return NextResponse.json({ department: dept ?? null, subjects: [], facultyAggregates, departmentAggregate, visibilityMap: Object.fromEntries(visMap) })
+      return NextResponse.json({ department: dept ?? null, subjects: [], facultyAggregates, departmentAggregate, members, visibilityMap: Object.fromEntries(visMap) })
     }
 
     const dept = await departmentRepository.findById(departmentId)
@@ -39,6 +39,7 @@ export async function GET(
       subjects: subjectsList,
       facultyAggregates,
       departmentAggregate,
+      members,
       visibilityMap,
     })
   } catch (e) {

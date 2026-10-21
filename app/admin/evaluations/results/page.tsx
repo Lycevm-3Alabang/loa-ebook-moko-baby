@@ -6,7 +6,7 @@ import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import { useApiGet, dispatchToast, downloadFromApi, fetcher } from "@/lib/api/client"
 import IosButton from "@/components/ui/IosButton"
-import { getRemarkColor, formatPeriodLabel, departmentLabel } from "@/lib/evaluation-utils"
+import { getRemarkColor, formatPeriodLabel, departmentLabel, findAttentionRubrics } from "@/lib/evaluation-utils"
 
 interface DepartmentRow {
   departmentId: string
@@ -146,6 +146,17 @@ export default function AdminEvaluationResultsPage() {
     () => departments.map((d) => ({ ...d, ...(figures[d.departmentId] ?? {}) })),
     [departments, figures],
   )
+  // The weakest rubric per department - and only where it is critically low.
+  // The column disappears when no department needs attention.
+  const attentionByDept = useMemo(() => {
+    const map: Record<string, { key: string; label: string; score: number }[]> = {}
+    for (const r of rows) {
+      const attention = findAttentionRubrics(r.lowestRubrics ?? [])
+      if (attention.length > 0) map[r.departmentId] = attention
+    }
+    return map
+  }, [rows])
+  const anyAttention = Object.keys(attentionByDept).length > 0
   const allLoaded = rows.length > 0 && rows.every((r) => !!figures[r.departmentId])
 
   // The least fresh of the figures on screen — what the banner says.
@@ -302,7 +313,7 @@ export default function AdminEvaluationResultsPage() {
       )}
 
       {!loading && !error && departments.length === 0 && selectedPeriod && (
-        <p className="text-sm text-tertiary text-center py-8">No evaluation data found for this period.</p>
+        <p className="text-sm text-tertiary text-center py-8">No departments found.</p>
       )}
 
       {!loading && departments.length > 0 && (
@@ -316,8 +327,8 @@ export default function AdminEvaluationResultsPage() {
                 <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("avgRating")}>
                   Avg Rating{sortArrow("avgRating")}
                 </th>
-                <th className="pb-3 pr-4 text-right">Highest Rubric</th>
-                <th className="pb-3 pr-4 text-right">Lowest Rubric</th>
+                <th className="pb-3 pr-4 text-right">Top Rubric</th>
+                {anyAttention && <th className="pb-3 pr-4 text-right">Needs Attention</th>}
                 <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("facultyCount")}>
                   Faculty{sortArrow("facultyCount")}
                 </th>
@@ -362,17 +373,19 @@ export default function AdminEvaluationResultsPage() {
                       )
                     )}
                   </td>
-                  <td className="py-3 pr-4 text-right">
-                    {pending ? (
-                      <div className="ml-auto w-28"><Skeleton variant="text" /></div>
-                    ) : (
-                      dept.lowestRubrics.length > 0 && (
-                        <span className="text-[11px] text-red-600 dark:text-red-400">
-                          {dept.lowestRubrics[0].label} ({formatScore(dept.lowestRubrics[0].score)})
-                        </span>
-                      )
-                    )}
-                  </td>
+                  {anyAttention && (
+                    <td className="py-3 pr-4 text-right">
+                      {pending ? (
+                        <div className="ml-auto w-28"><Skeleton variant="text" /></div>
+                      ) : (
+                        attentionByDept[dept.departmentId]?.[0] && (
+                          <span className="text-[11px] text-red-600 dark:text-red-400">
+                            {attentionByDept[dept.departmentId][0].label} ({formatScore(attentionByDept[dept.departmentId][0].score)})
+                          </span>
+                        )
+                      )}
+                    </td>
+                  )}
                   <td className="py-3 pr-4 text-right text-sm text-secondary">{dept.facultyCount}</td>
                 </tr>
                 )

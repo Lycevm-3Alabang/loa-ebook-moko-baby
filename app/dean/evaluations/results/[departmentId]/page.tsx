@@ -7,7 +7,7 @@ import LockedTab from "@/components/ui/LockedTab"
 import IosButton from "@/components/ui/IosButton"
 import { useApiGet } from "@/lib/api/client"
 import { useCrumb } from "@/lib/contexts/breadcrumb"
-import { getRemarkColor, departmentLabel, type FacultyAggregate, type DepartmentAggregate } from "@/lib/evaluation-utils"
+import { getRemarkColor, departmentLabel, findAttentionRubrics, type FacultyAggregate, type DepartmentAggregate } from "@/lib/evaluation-utils"
 import { downloadDeptPdf } from "@/lib/evaluation-pdf"
 import DepartmentSubjectView from "@/features/evaluations/components/DepartmentSubjectView"
 
@@ -54,12 +54,19 @@ export default function DeanDepartmentDetailPage() {
   const [visibilityMap, setVisibilityMap] = useState<Record<string, boolean>>({})
   const [toggling, setToggling] = useState(false)
 
-  const { data: resultsData, error: resultsError } = useApiGet<{ department: DepartmentInfo; subjects: SubjectRow[]; visibilityMap: Record<string, boolean>; facultyAggregates: Record<string, FacultyAggregate>; departmentAggregate: DepartmentAggregate | null }>(
+  const { data: resultsData, error: resultsError } = useApiGet<{ department: DepartmentInfo; subjects: SubjectRow[]; members: { id: string; name: string; email: string }[]; visibilityMap: Record<string, boolean>; facultyAggregates: Record<string, FacultyAggregate>; departmentAggregate: DepartmentAggregate | null }>(
     evaluationPeriodId ? `/api/dean/evaluation-results/departments/${encodeURIComponent(departmentId)}?evaluationPeriodId=${encodeURIComponent(evaluationPeriodId)}` : null,
   )
   const department = resultsData?.department ?? null
   const subjects = useMemo(() => resultsData?.subjects ?? [], [resultsData])
   const departmentAggregate = resultsData?.departmentAggregate ?? null
+  // The department's own faculty - the members, with or without results.
+  const members = useMemo(() => resultsData?.members ?? [], [resultsData])
+  // The weakest rubric, and only when it is critically low.
+  const attentionRubrics = useMemo(
+    () => findAttentionRubrics(departmentAggregate?.lowestRubrics ?? []),
+    [departmentAggregate],
+  )
   const isLocked = !!resultsError && !!evaluationPeriodId
   const loading = !resultsData && !resultsError && !!evaluationPeriodId
 
@@ -203,16 +210,8 @@ export default function DeanDepartmentDetailPage() {
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div>
-                <p className="text-[10px] text-tertiary">Subjects</p>
-                <p className="text-lg font-bold">{departmentAggregate.totalSubjects}</p>
-              </div>
-              <div>
                 <p className="text-[10px] text-tertiary">Faculty</p>
-                <p className="text-lg font-bold">{departmentAggregate.uniqueFaculty}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-tertiary">Total Responses</p>
-                <p className="text-lg font-bold">{departmentAggregate.totalResponses}</p>
+                <p className="text-lg font-bold">{members.length}</p>
               </div>
               <div>
                 <p className="text-[10px] text-tertiary">Department Average</p>
@@ -224,26 +223,29 @@ export default function DeanDepartmentDetailPage() {
                 )}
               </div>
               <div>
-                <p className="text-[10px] text-tertiary">Highest Rubric</p>
+                <p className="text-[10px] text-tertiary">Top Rubric</p>
                 {departmentAggregate.highestRubrics.map((r) => (
                   <p key={r.key} className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                     {r.label}: {r.score.toFixed(2)}
                   </p>
                 ))}
               </div>
-              <div>
-                <p className="text-[10px] text-tertiary">Lowest Rubric</p>
-                {departmentAggregate.lowestRubrics.map((r) => (
-                  <p key={r.key} className="text-xs font-semibold text-red-600 dark:text-red-400">
-                    {r.label}: {r.score.toFixed(2)}
-                  </p>
-                ))}
-              </div>
+              {attentionRubrics.length > 0 && (
+                <div>
+                  <p className="text-[10px] text-tertiary">Needs Attention Rubric</p>
+                  {attentionRubrics.map((r) => (
+                    <p key={r.key} className="text-xs font-semibold text-red-600 dark:text-red-400">
+                      {r.label}: {r.score.toFixed(2)}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
           <DepartmentSubjectView
             subjects={subjects}
+            members={members}
             departmentId={departmentId}
             evaluationPeriodId={evaluationPeriodId}
             search={search}

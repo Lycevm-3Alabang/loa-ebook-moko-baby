@@ -97,11 +97,13 @@ const SECTIONED_SUBJECTS = [
 function renderView(opts: {
   facultyAggregates?: Record<string, FacultyAggregate>
   subjects?: Row[]
+  members?: { id: string; name: string; email: string }[]
   search?: string
 } = {}) {
   return render(
     <DepartmentSubjectView
       subjects={opts.subjects ?? TWO_SUBJECTS}
+      members={opts.members}
       departmentId="d1"
       evaluationPeriodId="p1"
       search={opts.search ?? ""}
@@ -118,7 +120,31 @@ describe("DepartmentSubjectView - the faculty card", () => {
     expect(screen.getByText("3.50")).toBeTruthy()
     expect(screen.queryByText("3.00")).toBeNull()
     expect(screen.getByText("Very Satisfactory")).toBeTruthy()
-    expect(screen.getByText("4 responses")).toBeTruthy()
+  })
+
+  it("shows no response counts - the coverage page owns them", () => {
+    renderView({ facultyAggregates: { f1: aggregate() } })
+
+    expect(screen.queryByText("4 responses")).toBeNull()
+    expect(screen.queryByText("2 subjects")).toBeNull()
+
+    // The expanded table has no response column either.
+    fireEvent.click(screen.getByText("Reyes, Ana"))
+    expect(screen.queryByText("Resp.")).toBeNull()
+  })
+
+  it("gives a card to a member with no results, and to nobody else", () => {
+    renderView({
+      members: [
+        { id: "f1", name: "Ana Reyes", email: "ana@x.com" },
+        { id: "f2", name: "Ben Cruz", email: "ben@x.com" },
+      ],
+      facultyAggregates: { f1: aggregate() },
+    })
+
+    // Both members are cards - a teacher homed elsewhere is not.
+    expect(screen.getByText("Reyes, Ana")).toBeTruthy()
+    expect(screen.getByText("Cruz, Ben")).toBeTruthy()
   })
 
   it("does not derive a faculty average when the server sends none", () => {
@@ -242,13 +268,18 @@ describe("DepartmentSubjectView - Section column", () => {
     expect(screen.getByText("BSCS-2A")).toBeTruthy()
   })
 
-  it("gives a card only to a faculty the server counts as one of the department's", () => {
-    // f1 teaches a subject here but the server does not count them as this
-    // department's faculty: no card, and the subject stays in the rows.
-    renderView({ subjects: SECTIONED_SUBJECTS, facultyAggregates: { f2: aggregate({ facultyId: "f2" }) } })
+  it("gives a card only to a member of the department", () => {
+    // f1 teaches a subject here but the server does not count them as one of
+    // this department's members: no card, and the subject stays in the rows.
+    renderView({
+      subjects: SECTIONED_SUBJECTS,
+      members: [{ id: "f2", name: "Ben Cruz", email: "ben@x.com" }],
+      facultyAggregates: { f2: aggregate({ facultyId: "f2" }) },
+    })
 
     expect(screen.queryByText("Reyes, Ana")).toBeNull()
-    expect(screen.getByText("0 faculties")).toBeTruthy()
+    expect(screen.getByText("Cruz, Ben")).toBeTruthy()
+    expect(screen.getByText("1 faculty")).toBeTruthy()
   })
 
   it("finds a row by its section label", () => {

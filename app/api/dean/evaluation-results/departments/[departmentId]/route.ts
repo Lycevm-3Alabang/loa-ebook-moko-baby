@@ -32,7 +32,7 @@ export async function GET(
 
     // One implementation for admin and dean: the department's own subjects,
     // by the teacher's own department.
-    const { subjects, facultyAggregates, departmentAggregate } =
+    const { subjects, facultyAggregates, departmentAggregate, members } =
       await getDepartmentSubjectResults(evaluationPeriodId, departmentId)
 
     // The release gate reads the RESULTS, not the roster: a roster change
@@ -54,6 +54,7 @@ export async function GET(
       subjects,
       facultyAggregates,
       departmentAggregate,
+      members,
       visibilityMap,
     })
   } catch (e) {

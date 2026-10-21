@@ -113,7 +113,7 @@ describe("GET /api/dean/evaluation-results", () => {
     expect(deanBody.departments[0].totalRespondents).toBe(adminDept.totalRespondents)
   })
 
-  it("returns no department when the period has no responses for it", async () => {
+  it("returns the department with no rating when the period has no responses for it", async () => {
     mockEvalResultRepo.listPeriodFigures.mockResolvedValue({
       departments: [],
       warnings: {
@@ -122,6 +122,10 @@ describe("GET /api/dean/evaluation-results", () => {
     })
     const res = await DeanGET(req("?evaluationPeriodId=p1"))
     const body = await res.json()
-    expect(body.departments).toEqual([])
+    // The department is still a row - it just has no results in this period.
+    expect(body.departments).toHaveLength(1)
+    expect(body.departments[0].departmentId).toBe("dept-1")
+    expect(body.departments[0].totalRespondents).toBe(0)
+    expect(body.departments[0].avgRating).toBeNull()
   })
 })
