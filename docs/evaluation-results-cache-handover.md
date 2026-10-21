@@ -1,8 +1,8 @@
 # Evaluation results — the cache handover
 
 **Date:** 2026-10-21
-**Status:** 🟢 **the list, the exports, the dean view and the coverage warnings run without a direct
-database connection.** 🟡 **one surface still does:** the report dashboard (see §7).
+**Status:** 🟢 **every surface runs without a direct database connection** — the list, the exports,
+the dean view, the coverage warnings and the report dashboard.
 **Supersedes:** `docs/evaluation-results-endpoint-handover.md` — that story's approach (a group-by
 in Postgres over a direct connection) cannot be used in this environment, and the file is kept only
 as the record of the measurement.
@@ -34,8 +34,15 @@ what was built.
   └─ GET /api/admin/evaluation-results/figures?departmentId=…&evaluationPeriodId=…
         → getCachedDepartmentFigures()      → one department: avg rating, remark, highest/lowest, sentiment
         → listDepartmentFigures()           → that department's faculty → their evaluations →
-                                              their assignments → their ratings + comments
+                                               their assignments → their ratings + comments
         → cached 5 minutes (figure-cache.ts), `refresh=1` reads again
+
+/dean/evaluations/reports/detail  ·  /faculty/evaluations/reports  (the report pages)
+  └─ getDeanEvalReportData() / getFacultyEvalReportData()   → the service, not a route
+        → getCachedFacultyFigures()       → one faculty: their figures AND the per-category
+                                             (sum, count) the weights come from
+        → the department's row             → the POOL of its faculty's totals
+        → cached 5 minutes (figure-cache.ts)
 ```
 
 The page shows the table **immediately** (names, faculty counts, response counts) and each row's
@@ -47,9 +54,10 @@ The app's own rules, unchanged by the move:
 
 | Rule | Where it lives now |
 |---|---|
-| the period's submitted **and enabled** evaluations | `listPeriodFigures` / `listDepartmentFigures` |
-| the **live-eval rule** (an evaluation whose assignment no longer belongs to its evaluatee does not count) | the same two methods, in TypeScript |
-| the **teacher's home department** (contract §3.1) — a home-less teacher is a warning, not a row | the same two methods |
+| the period's submitted **and enabled** evaluations | `listPeriodFigures` / `listDepartmentFigures` / `listFacultyFigures` |
+| the **live-eval rule** (an evaluation whose assignment no longer belongs to its evaluatee does not count) | the same methods, in TypeScript |
+| the **teacher's home department** (contract §3.1) — a home-less teacher is a warning, not a row | the same methods |
+| the **weights** — a category's (sum, count), so a department's figure is the pool of its faculty's | `computeCategoryTotals` → `poolCategoryTotals` → `computeCategoryAveragesFromTotals` |
 | the category arithmetic, the remark ladder, the highest/lowest selection | `lib/evaluation-utils.ts` — unchanged, and still the only home for the display rules |
 
 ## 4. What made it faster, and what did not
@@ -61,7 +69,8 @@ The app's own rules, unchanged by the move:
   37 × 27 = **999** rows, one page under PostgREST's 1,000-row cap, so a chunk comes back in a
   **single** request. With 100 the rows spilled into three `OFFSET` pages and the database re-scanned
   the chunk three times over.
-- **The reads are per department**, so a row can be filled as soon as its numbers arrive.
+- **The reads are per department** (the list) and **per faculty** (the report), so a row can be
+  filled as soon as its numbers arrive.
 - **The old number:** the list route was measured at **26,012 ms** of server time, ~263 reads and
   ~220,000 rows. The new path's cost is the same rows, read once, spread over the departments and
   then cached. The measurement for the new path has **not been taken yet** — see §8.
@@ -104,23 +113,33 @@ is scoped to the term's roster. So the export can differ from the results list i
 | 3 | **the `""` bucket** — a rating whose rubric item no longer resolves counts toward Avg. Rating and can never be named | open; the raw-row path **counts** it (the aggregate dropped it) |
 | 4 | **the aliases** — two spellings of a category overwrite each other instead of averaging | open |
 | 5 | **the ties** — the admin table prints the first tie, the faculty page prints them all | open |
-| 6 | **the report dashboard** — still reads the aggregate | **the last consumer of the direct connection** |
+| 6 | **the report dashboard** — read the aggregate | **done 2026-10-21** — it reads per faculty now; the direct connection has no consumer left in the app |
 | 7 | **three reads still on a cap** — `listSubmittedByPeriodAndFacultySubjectIds`, `listStatusByPeriodAndFacultySubjectIds` (unpaged) and `getStudentBreakdownsForFaculties`'s unchunked comments read | open; nobody has hit them yet |
 
-### The last consumer (item 6)
+### What the migration deleted (item 6, 2026-10-21)
 
-`features/evaluations/evaluation-report.service.ts` reads the aggregate for its per-faculty and
-per-department rows (8 call sites). The report dashboard therefore still answers **500** without a
-direct connection. When it is migrated, these become deletable:
+The report's **per-faculty** figures could not be re-derived from the per-department ones — the
+pooling weights were lost. So the read that replaces it carries the weights itself: a faculty's
+figures come back with the per-category **(sum, count)**, and the department's figure is the pool
+of its faculty's totals.
+
+With that in place, these are gone:
 
 - `lib/db/postgres.ts`, `features/evaluation-results/evaluation-aggregates.ts`
-- `lib/__tests__/evaluation-aggregates.test.ts` (11 tests that assert the SQL as text)
+- `lib/__tests__/evaluation-aggregates.test.ts` (11 tests that asserted the SQL as text)
 - `listLiveDeptAverages`, `listLiveFacultyResults` (the repository, the interface, their tests)
-- `computeCategoryAveragesFromTotals`, `poolCategoryTotals`, `buildLiveDeptAveragesFromTotals`
-- `pg` / `@types/pg` from `package.json`, and `DATABASE_URL=` from `.env`
+  and `LiveDeptAverage` / `LiveFacultyResult`
+- `buildLiveDeptAveragesFromTotals` and `FacultyDeptTotals` (`lib/evaluation-utils.ts`)
+- `@types/pg` from `package.json`
 
-The report's **per-faculty** figures cannot be re-derived from the per-department ones (the pooling
-weights are lost), so the migration needs its own read.
+⚠️ **`pg` and `DATABASE_URL=` stay in the repo** — `scripts/apply-schema.mjs` (the owner's manual
+schema runner) needs both. The **app** no longer needs them; nothing in `app/`, `features/` or
+`lib/` opens a direct connection.
+
+Also deleted with them: `getAdminEvalReportData`, `getDeanDashboardData` and
+`getAdminDashboardData` — three functions with **no live caller** (the admin report page and the
+dean/admin dashboard blocks render hardcoded preview data). Their pages keep their preview; the
+live path is rebuilt when those dashboards go live.
 
 ## 8. How to verify
 
@@ -141,18 +160,23 @@ Then, in the browser:
    for the same subject.
 3. The **time**: the same request that took **26,012 ms** — read it in the Network tab. The first
    load of a department pays the read; the next five minutes are a cache hit.
+4. **The report (2026-10-21):** `/dean/evaluations/reports/detail` and `/faculty/evaluations/reports`
+   answer instead of 500. The dean's department row must equal the results list's row for the same
+   department, and it must be the **pool** of its faculty's figures — not a mean of their means.
 
 ## 9. The files
 
 | File | What it is |
 |---|---|
-| `features/evaluation-results/figure-cache.ts` | the five-minute cache, the in-flight dedupe, the read time |
-| `features/evaluation-results/evaluation-results.repository.ts` | `listPeriodFigures` (the departments, the warnings), `listDepartmentFigures` (one department's figures) |
+| `features/evaluation-results/figure-cache.ts` | the five-minute cache, the in-flight dedupe, the read time — one implementation, two caches (department, faculty) |
+| `features/evaluation-results/evaluation-results.repository.ts` | `listPeriodFigures` (the departments, the warnings), `listDepartmentFigures` (one department's figures), `listFacultyFigures` (one faculty's figures **and** the weights) |
 | `features/evaluation-results/evaluation-results.service.ts` | `getDepartmentResults` (the list rows), `getDepartmentSubjectResults` (the drill-down, live) |
+| `features/evaluations/evaluation-report.service.ts` | `getDeanEvalReportData`, `getFacultyEvalReportData` — the report's rows, pooled from the faculty figures |
 | `app/api/admin/evaluation-results/route.ts` | the list (the spine) |
 | `app/api/admin/evaluation-results/figures/route.ts` | one department's figures, with `cachedAt` |
 | `app/admin/evaluations/results/page.tsx` | the banner, the refresh, the per-cell skeletons |
 | `lib/db/common.ts` | `RATINGS_IN_CHUNK_SIZE = 37` — a chunk's ratings fit one page |
+| `lib/evaluation-utils.ts` | `computeCategoryTotals`, `poolCategoryTotals`, `computeCategoryAveragesFromTotals` — the weights and the pooling |
 | `specs/evaluation-results-cache.md` | the contract (what is cached, what stays live, the refresh) |
-| `.opencode/skills/plan-fix/runs/20261021-1300-session.md` | the dead-code cleanup (group A) |
+| `.opencode/skills/plan-fix/runs/20261021-1600-report-service-migration.md` | the report's migration (the per-faculty read and its cache) |
 | `docs/evaluation-results-endpoint-handover.md` | the superseded story (the measurement) |

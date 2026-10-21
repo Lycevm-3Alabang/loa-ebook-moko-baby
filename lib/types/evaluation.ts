@@ -577,17 +577,6 @@ export interface FacultyEvalDetail {
   students: StudentBreakdownItem[]
 }
 
-export interface LiveDeptAverage {
-  departmentId: string
-  facultyIds: string[]
-  totalRespondents: number
-  avgRating: number | null
-  remarks: string | null
-  catAverages: Record<string, number | null>
-  highestRubrics: { key: string; label: string; score: number }[]
-  lowestRubrics: { key: string; label: string; score: number }[]
-}
-
 /**
  * The lookups one department decision needs: the faculty's home department,
  * and the section -> department_course -> department chain an evaluated
@@ -635,6 +624,28 @@ export interface DepartmentFigures {
 }
 
 /**
+ * One faculty's figures for a period: the pooled rating and its remark, the
+ * eight criterion averages, the highest and lowest rubrics, and the comment
+ * sentiment — plus the per-category totals they came from.
+ *
+ * The totals are the weights: a department's figure is the pool of its
+ * faculty's totals, so the two grains come from one read.
+ */
+export interface FacultyFigures {
+  facultyId: string
+  totalRespondents: number
+  avgRating: number | null
+  remarks: string | null
+  /** The eight criterion averages, keyed by the column name. */
+  catColumns: Record<string, number | null>
+  /** The weights: the raw rubric category name -> its sum and its count. */
+  catTotals: Record<string, { sum: number; count: number }>
+  highestRubrics: { key: string; label: string; score: number }[]
+  lowestRubrics: { key: string; label: string; score: number }[]
+  sentimentScore: number | null
+}
+
+/**
  * A period's departments, with the integrity warnings read from the same
  * facts — so the results list and the coverage page cannot disagree.
  */
@@ -662,21 +673,6 @@ export interface EvaluationVisibilityRow {
   is_results_visible: boolean
 }
 
-export interface LiveFacultyResult {
-  facultyId: string
-  totalRespondents: number
-  generalRating: number | null
-  remarks: string | null
-  professionalManner: number | null
-  communicationWithStudent: number | null
-  studentEngagement: number | null
-  learningMaterials: number | null
-  timeManagement: number | null
-  experientialLearning: number | null
-  respectUniqueness: number | null
-  assessmentAndFeedback: number | null
-}
-
 export interface IEvaluationResultRepository {
   /**
    * The period's departments and their response counts, with the attribution
@@ -688,8 +684,12 @@ export interface IEvaluationResultRepository {
    * highest and lowest rubrics and the comment sentiment.
    */
   listDepartmentFigures(departmentId: string, evaluationPeriodId: string): Promise<DepartmentFigures>
-  listLiveDeptAverages(evaluationPeriodId: string): Promise<LiveDeptAverage[]>
-  listLiveFacultyResults(evaluationPeriodId: string): Promise<LiveFacultyResult[]>
+  /**
+   * One faculty's figures for a period: the pooled rating, its remark, the
+   * eight criterion averages, the highest and lowest rubrics, the comment
+   * sentiment, and the per-category totals they pool from.
+   */
+  listFacultyFigures(facultyId: string, evaluationPeriodId: string): Promise<FacultyFigures>
   /**
    * The evaluated assignments of one department — the department's own
    * subjects, by the teacher's own department.

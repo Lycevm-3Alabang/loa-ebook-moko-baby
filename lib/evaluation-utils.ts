@@ -1,4 +1,4 @@
-import type { LiveDeptAverage, SubjectResolutionContext } from "@/lib/types"
+import type { SubjectResolutionContext } from "@/lib/types"
 
 /**
  * The shared dummy account the CSV import parks a faculty row on when the
@@ -83,6 +83,25 @@ export function computeCategoryAverages(ratings: RatingRow[]): CategoryAverages 
     catAverages[cat] = vals.reduce((a, b) => a + b, 0) / vals.length
   }
   return catAverages
+}
+
+/**
+ * The category totals of a set of rating rows: the sum and the count of each
+ * rubric category.
+ *
+ * The averages are the totals divided — but the totals are the *weights*, so
+ * two groups of rows can be pooled into one number without walking the rows
+ * again. That is what lets a department's figure be the pool of its faculty's
+ * figures.
+ */
+export function computeCategoryTotals(ratings: RatingRow[]): CategoryTotals {
+  const totals: CategoryTotals = {}
+  for (const r of ratings) {
+    const catName = r.rubric_items.rubric_categories.name
+    const current = totals[catName] ?? { sum: 0, count: 0 }
+    totals[catName] = { sum: current.sum + r.rating, count: current.count + 1 }
+  }
+  return totals
 }
 
 /**
@@ -517,49 +536,4 @@ export function resolveDepartmentFaculties(
   ctx: DeptResolutionContext,
 ): string[] {
   return candidateFacultyIds.filter((id) => resolveFacultyDepartment(id, ctx) === departmentId)
-}
-
-/** One assignment's contribution to a department's pool. */
-export interface FacultyDeptTotals {
-  facultyId: string
-  deptId: string
-  respondentCount: number
-  totals: CategoryTotals
-}
-
-/**
- * The departments' live figures from the database's aggregate: the same
- * pooling as the raw rows take, over the totals instead of the rows. An
- * assignment with no ratings still counts — it has respondents — and the
- * department's figures come from the assignments that have ratings.
- */
-export function buildLiveDeptAveragesFromTotals(inputs: FacultyDeptTotals[]): LiveDeptAverage[] {
-  const groups = new Map<string, {
-    facultyIds: Set<string>
-    respondents: number
-    totals: CategoryTotals
-  }>()
-  for (const inp of inputs) {
-    let g = groups.get(inp.deptId)
-    if (!g) {
-      g = { facultyIds: new Set(), respondents: 0, totals: {} }
-      groups.set(inp.deptId, g)
-    }
-    g.facultyIds.add(inp.facultyId)
-    g.respondents += inp.respondentCount
-    if (inp.totals) g.totals = poolCategoryTotals([g.totals, inp.totals])
-  }
-  return [...groups.entries()].map(([departmentId, g]) => {
-    const pooled = aggregatePooledAverages(computeCategoryAveragesFromTotals(g.totals), null)
-    return {
-      departmentId,
-      facultyIds: [...g.facultyIds],
-      totalRespondents: g.respondents,
-      avgRating: pooled.avgRating,
-      remarks: pooled.remarks,
-      catAverages: pooled.catColumns,
-      highestRubrics: pooled.highestRubrics,
-      lowestRubrics: pooled.lowestRubrics,
-    }
-  })
 }

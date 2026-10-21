@@ -18,7 +18,7 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
 ## NEXT (do first)
 
 - [x] **The evaluation results endpoint — the direct connection is gone; the figures are read per
-  department and cached. Done 2026-10-21.**
+  department and per faculty, and cached. Done 2026-10-21.**
   **Read `docs/evaluation-results-cache-handover.md` first** — it has the shape, the rules, the
   cache and what is still open. **The endpoint no longer needs `DATABASE_URL`:** the aggregate
   (a group-by in Postgres over a direct connection) could never run here — the connection string
@@ -28,23 +28,27 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
   row as its numbers arrive (skeletons per cell) instead of waiting for one big answer.
   ⭐ The export is a **download**: it carries `maxDuration = 60` and the button shows a loader; the
   drill-down stays **live, on demand** (rule 3 of `specs/evaluation-results-cache.md`).
-  ⭐ **What is left on the direct connection: the report dashboard only** — see the open item
-  below. Everything else (the list, both exports, the dean view, the coverage warnings) runs on
-  `SUPABASE_URL` + the service-role key.
+  ⭐ **The report dashboard migrated the same day (2026-10-21)** — it reads **per faculty**
+  (`listFacultyFigures`, cached five minutes), and the department's row is the **pool** of its
+  faculty's figures, so the two grains come from one read over the rows. **No surface in the app
+  opens a direct connection any more**: `lib/db/postgres.ts`, the aggregate module and their tests
+  are deleted. `pg` and `DATABASE_URL=` stay in the repo for `scripts/apply-schema.mjs` only.
 
-- [ ] **The report dashboard is the last surface on the direct connection.**
-  Where: `features/evaluations/evaluation-report.service.ts` — 8 call sites read the aggregate
-  (`listLiveFacultyResults`, `listLiveDeptAverages`), so the report page still answers **500**
-  without a direct connection. The per-department figures already exist
-  (`listDepartmentFigures`, cached), but the **per-faculty** ones cannot be re-derived from them
-  (the pooling weights are lost), so the migration needs its own read.
-  Options: **(a)** a period-wide read, pooled per faculty in Node (the report is a page, so it can
-  afford the rows); **(b)** a per-faculty read like the per-department one, cached the same way.
-  When it lands, these become deletable: `lib/db/postgres.ts`,
-  `features/evaluation-results/evaluation-aggregates.ts`,
-  `lib/__tests__/evaluation-aggregates.test.ts`, `listLiveDeptAverages`,
-  `listLiveFacultyResults`, the totals-only helpers in `lib/evaluation-utils.ts`, `pg` /
-  `@types/pg` from `package.json`, and `DATABASE_URL=` from `.env`.
+- [x] **The report dashboard is no longer on the direct connection. Done 2026-10-21.**
+  Where: `features/evaluations/evaluation-report.service.ts` — the 8 call sites to
+  `listLiveFacultyResults` / `listLiveDeptAverages` are gone. The service now reads the faculty's
+  figures from the cache and pools the department's row from their totals
+  (`poolCategoryTotals` → `computeCategoryAveragesFromTotals`), which is why the read carries the
+  per-category **(sum, count)**: a mean cannot be un-meaned.
+  ⭐ The three functions with **no live caller** (`getAdminEvalReportData`, `getDeanDashboardData`,
+  `getAdminDashboardData` — the admin report page and the dean/admin dashboard blocks render
+  hardcoded preview data) were **deleted**, not migrated; their pages keep their preview and lose
+  the stale "LIVE-DATA (swap back)" hooks.
+  Deleted with them: `lib/db/postgres.ts`, `features/evaluation-results/evaluation-aggregates.ts`,
+  `lib/__tests__/evaluation-aggregates.test.ts` (11 cases), `lib/__tests__/evaluation-results-live-faculty.test.ts`
+  (4 cases), `listLiveDeptAverages`, `listLiveFacultyResults` (+ `LiveDeptAverage` / `LiveFacultyResult`),
+  `buildLiveDeptAveragesFromTotals` (+ `FacultyDeptTotals`), `@types/pg` from `package.json`.
+  ⚠️ `pg` and `DATABASE_URL=` **stay**: `scripts/apply-schema.mjs` (the manual schema runner) needs both.
 
 - [x] **C3 S4 — `userMap` merge done 2026-10-10** (`specs/student-import-stepper.md` §8, first row).
   Last C3 item. Option A as planned: merge on the already-returned `created[]`, zero
@@ -280,18 +284,16 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
 > **Nothing is created in the database** — the group-by spans a to-many, which the REST API
 > cannot express, so the app asks Postgres directly (AGENTS.md **Lesson 7c**). It needs
 > `DATABASE_URL` (the dashboard's connection string) and the `pg` dependency.
-> What that changes below: **item 3** is half-closed (the list path only), **item 4**'s rating
-> side and **item 5**'s rating side are settled by the aggregate, and the **drill-down** is
-> untouched — it still reads its ratings (2-4s). The list's figures now come from the database's
-> aggregate, so the `isDisabled` gap below still stands for the drill-down and the faculty page.
+> ⚠️ **This approach was abandoned the same day** — the connection could never be opened here, and
+> the aggregate module and `lib/db/postgres.ts` are now **deleted** (see the note below).
 >
 > ⭐ **2026-10-21, later still — the aggregate path is GONE from the list.** The environment has no
 > Supabase dashboard access, so the direct connection could never be opened and the list answered
 > **500**. The list's figures are now read **per department** through the app's own repositories
 > and **cached for five minutes** (`features/evaluation-results/figure-cache.ts`); the page fills a
 > row as its numbers arrive. Handover: `docs/evaluation-results-cache-handover.md`; contract:
-> `specs/evaluation-results-cache.md`. **The aggregate survives only in the report dashboard** (the
-> open item in "NEXT"). ⭐ What that does to the items below: the list and the drill-down now use
+> `specs/evaluation-results-cache.md`. ⭐ **The aggregate is gone from the app entirely** (the
+> report was its last consumer) — see "NEXT" above. What that does to the items below: the list and the drill-down now use
 > the **raw-row** path, so the `""` bucket **counts** toward Avg. Rating (the aggregate dropped it)
 > — item 6 — and the list's `isDisabled` filter now lives in
 > `listPeriodFigures` / `listDepartmentFigures` (item 1).
@@ -468,18 +470,21 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   cases) or keep them as public capabilities. The adjacent sweep found them; the cleanup of
   2026-10-21 deliberately left them.
 
-- [ ] **CLEANUP (decide) — the docs still describe the pattern the app no longer uses.**
-  Four places, all written for the direct-connection story. **Three are done (2026-10-21):**
+- [x] **CLEANUP (decide) — the docs still describe the pattern the app no longer uses.**
+  Four places, all written for the direct-connection story. **All four are done (2026-10-21):**
   1. ~~`AGENTS.md` **Lesson 7c**~~ — **done**: it now presents the direct connection as the *option*
-     that needs dashboard access, and the pattern as (c) per-department reads + a five-minute cache.
-     Lesson 7b gained the chunk-sizing corollary (37 evaluations = 999 rows = one page).
+     that needs dashboard access, and the pattern as per-department **and** per-faculty reads, each
+     cached for five minutes. Lesson 7b gained the chunk-sizing corollary (37 evaluations = 999 rows
+     = one page).
   2. ~~`docs/evaluation-results-endpoint-handover.md`~~ — **done**: marked superseded, with a
      pointer to the current handover; the file stays as the record of the measurement.
+  3. ~~`specs/evaluation-results-attribution.md` §3.18–§3.20~~ — **done**: the contract rows now
+     point at the raw-row path and the cache; §3.19's scope rules live in the **repository** and
+     §3.20 says no surface opens a direct connection.
   4. ~~`TODO.md`~~ — **done**: this file's own state (the "NEXT" item, the 2026-10-21 note).
-  **Still open:** 3. `specs/evaluation-results-attribution.md` §3.18–§3.20 — the contract rows
-  still say the figures are "computed in Postgres over the direct connection"; they should point at
-  the raw-row path and the cache. The current contract is `specs/evaluation-results-cache.md`; the
-  current handover is `docs/evaluation-results-cache-handover.md`.
+  ⚠️ One correction the migration forced: "**`DATABASE_URL` leaves `.env` for good**" was wrong —
+  `scripts/apply-schema.mjs` (the manual schema runner) needs both `pg` and `DATABASE_URL`. The
+  **app** no longer needs them; the repo still does.
 
 ## Done this session (do not redo)
 

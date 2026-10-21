@@ -1,19 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
 const mockSupabase = vi.hoisted(() => ({ from: vi.fn() }))
-const mockAggregates = vi.hoisted(() => ({
-  fetchDepartmentTotals: vi.fn(),
-  fetchDepartmentSentiment: vi.fn(),
-  fetchAttributionWarnings: vi.fn(),
-}))
 const mockUserRepo = vi.hoisted(() => ({
   listByRole: vi.fn(),
 }))
 
 vi.mock("@/lib/db", () => ({ supabase: mockSupabase }))
-// The repository reads the department aggregates from Postgres now; the
-// database did the grouping, so the repository's input is a set of totals.
-vi.mock("@/features/evaluation-results/evaluation-aggregates", () => mockAggregates)
 // The repository imports the factory for the semester lookup; stub it so the
 // test does not need SUPABASE_URL in the environment.
 vi.mock("@/lib/repositories/factory", () => ({
@@ -56,9 +48,6 @@ function respondWith(rows: TableRows) {
 
 beforeEach(() => {
   vi.resetAllMocks()
-  mockAggregates.fetchDepartmentTotals.mockResolvedValue([])
-  mockAggregates.fetchDepartmentSentiment.mockResolvedValue({})
-  mockAggregates.fetchAttributionWarnings.mockResolvedValue([])
   mockUserRepo.listByRole.mockResolvedValue([])
 })
 
@@ -142,102 +131,6 @@ describe("evaluationResultRepository.listDepartmentAssignments", () => {
     // f1 is homed in d1, so their subject counts here; f2's does not resolve.
     expect(assignments.map((a) => a.id)).toEqual(["fs1"])
     expect(assignments[0].departmentId).toBe("d1")
-  })
-
-  it("groups the live averages by the teacher's own department", async () => {
-    // The database attributes an assignment to the teacher's home department
-    // (and to no department when they have none) — the rule the aggregate
-    // carries. The repository reads the department off the row.
-    mockAggregates.fetchDepartmentTotals.mockResolvedValue([
-      {
-        department_id: "d-math",
-        faculty_subject_id: "fs1",
-        faculty_id: "f1",
-        respondent_count: 1,
-        category_totals: { "Professional Manner": { sum: 4, count: 1 } },
-      },
-      {
-        department_id: null,
-        faculty_subject_id: "fs2",
-        faculty_id: "f2",
-        respondent_count: 1,
-        category_totals: { "Professional Manner": { sum: 5, count: 1 } },
-      },
-    ])
-
-    const live = await evaluationResultRepository.listLiveDeptAverages("p1")
-
-    // f1 is homed in d-math, so their subject belongs to d-math even though
-    // the section is a d-cs one. f2 has no home department: their subject is
-    // unattributed, not the section's.
-    expect(live.find((d) => d.departmentId === "d-math")?.facultyIds).toEqual(["f1"])
-    expect(live.find((d) => d.departmentId === "d-cs")).toBeUndefined()
-    expect(live.find((d) => d.departmentId === "__unknown__")?.facultyIds).toEqual(["f2"])
-  })
-
-  it("counts a faculty whose evaluation carries no rating rows", async () => {
-    mockAggregates.fetchDepartmentTotals.mockResolvedValue([
-      {
-        department_id: "d1",
-        faculty_subject_id: "fs1",
-        faculty_id: "f1",
-        respondent_count: 1,
-        category_totals: {},
-      },
-    ])
-
-    const live = await evaluationResultRepository.listLiveDeptAverages("p1")
-    const d1 = live.find((d) => d.departmentId === "d1")
-    // The department page shows a row for this faculty, so the list must
-    // count them too — even with no rating rows to pool.
-    expect(d1?.facultyIds).toEqual(["f1"])
-    expect(d1?.totalRespondents).toBe(1)
-    expect(d1?.avgRating).toBeNull()
-  })
-
-  it("covers the same faculty as the department's assignments", async () => {
-    mockAggregates.fetchDepartmentTotals.mockResolvedValue([
-      {
-        department_id: "d1",
-        faculty_subject_id: "fs1",
-        faculty_id: "f1",
-        respondent_count: 1,
-        category_totals: { "Professional Manner": { sum: 4, count: 1 } },
-      },
-      {
-        department_id: "d1",
-        faculty_subject_id: "fs2",
-        faculty_id: "f2",
-        respondent_count: 1,
-        category_totals: { "Professional Manner": { sum: 5, count: 1 } },
-      },
-    ])
-    respondWith({
-      evaluations: {
-        data: [
-          { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" },
-          { id: "e2", evaluateeId: "f2", facultySubjectId: "fs2" },
-        ],
-        error: null,
-      },
-      faculty_subjects: {
-        data: [
-          { id: "fs1", faculty_id: "f1", subject_id: "s1", section_id: "sec1" },
-          { id: "fs2", faculty_id: "f2", subject_id: "s2", section_id: "sec1" },
-        ],
-        error: null,
-      },
-      users: { data: [{ id: "f1", departmentId: "d1" }, { id: "f2", departmentId: "d1" }], error: null },
-      sections: { data: [{ id: "sec1", departmentCourseId: "dc1" }], error: null },
-      department_courses: { data: [{ id: "dc1", departmentId: "d1" }], error: null },
-    })
-
-    const live = await evaluationResultRepository.listLiveDeptAverages("p1")
-    const assignments = await evaluationResultRepository.listDepartmentAssignments("d1", "p1")
-
-    const d1 = live.find((d) => d.departmentId === "d1")
-    expect(d1?.facultyIds).toEqual(["f1", "f2"])
-    expect([...new Set(assignments.map((a) => a.faculty_id))]).toEqual(d1?.facultyIds)
   })
 })
 

@@ -1,26 +1,22 @@
 import { supabase } from "@/lib/db"
 import { fetchRatingsWithCategories } from "@/lib/db/common"
 import {
-  buildLiveDeptAveragesFromTotals,
   computeCategoryAverages,
-  computeCategoryAveragesFromTotals,
+  computeCategoryTotals,
   computeGeneralRating,
   computeSentimentScore,
   findHighestLowestRubrics,
   getRemark,
   mapCategoryAveragesToColumns,
-  poolCategoryTotals,
   classifyWarningAssignments,
   resolveSubjectDepartment,
   UNASSIGNED_FACULTY_EMAIL,
-  type CategoryTotals,
   type WarningAssignment,
 } from "@/lib/evaluation-utils"
 import type {
   IEvaluationResultRepository,
-  LiveDeptAverage,
-  LiveFacultyResult,
   DepartmentFigures,
+  FacultyFigures,
   PeriodDepartmentFigure,
   PeriodFigures,
   StudentBreakdownItem,
@@ -30,9 +26,6 @@ import type {
   SubjectResolutionContext,
 } from "@/lib/types"
 import { semesterRepository, userRepository } from "@/lib/repositories/factory"
-import {
-  fetchDepartmentTotals,
-} from "@/features/evaluation-results/evaluation-aggregates"
 
 export class EvaluationPeriodInactiveError extends Error {
   status: number
@@ -511,6 +504,67 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
   },
 
   /**
+   * One faculty's figures for a period: the pooled rating, its remark, the
+   * eight criterion averages, the highest and lowest rubrics, the comment
+   * sentiment — and the per-category totals they pool from.
+   *
+   * The rules are the app's own: the period's submitted and enabled
+   * evaluations, and the live-eval rule (an evaluation whose assignment no
+   * longer belongs to its evaluatee does not count).
+   *
+   * The totals are the weights — a department's figure is the pool of its
+   * faculty's totals, so the two grains come from one read over the rows.
+   */
+  async listFacultyFigures(facultyId: string, evaluationPeriodId: string): Promise<FacultyFigures> {
+    const empty: FacultyFigures = {
+      facultyId,
+      totalRespondents: 0,
+      avgRating: null,
+      remarks: null,
+      catColumns: mapCategoryAveragesToColumns({}),
+      catTotals: {},
+      highestRubrics: [],
+      lowestRubrics: [],
+      sentimentScore: null,
+    }
+
+    // The faculty's submitted and enabled evaluations in the period.
+    const evaluations = await listSubmittedEvaluatesForFaculty(evaluationPeriodId, [facultyId])
+    if (evaluations.length === 0) return empty
+
+    // The assignments they point at, and the live-eval rule: an evaluation
+    // counts for the faculty the assignment actually has.
+    const fsIds = [...new Set(evaluations.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
+    const assignments = new Map((await loadAssignmentRows(fsIds)).map((r) => [r.id, r]))
+    const liveEvalIds = evaluations
+      .filter((e) => !!e.facultySubjectId && assignments.get(e.facultySubjectId)?.faculty_id === e.evaluateeId)
+      .map((e) => e.id)
+    if (liveEvalIds.length === 0) return empty
+
+    const [ratings, comments] = await Promise.all([
+      fetchRatingsWithCategories(supabase, liveEvalIds),
+      listCommentScores(liveEvalIds),
+    ])
+
+    const catAverages = computeCategoryAverages(ratings)
+    const general = computeGeneralRating(catAverages)
+    const catColumns = mapCategoryAveragesToColumns(catAverages)
+    const { highest, lowest } = findHighestLowestRubrics(catColumns)
+
+    return {
+      facultyId,
+      totalRespondents: liveEvalIds.length,
+      avgRating: general,
+      remarks: getRemark(general),
+      catColumns,
+      catTotals: computeCategoryTotals(ratings),
+      highestRubrics: highest,
+      lowestRubrics: lowest,
+      sentimentScore: computeSentimentScore(comments),
+    }
+  },
+
+  /**
    * The period's departments and their response counts, with the attribution
    * warnings read from the same facts.
    *
@@ -550,74 +604,6 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
       .sort((a, b) => a.departmentId.localeCompare(b.departmentId))
 
     return { departments, warnings: await buildAttributionWarnings(facts, departmentId) }
-  },
-
-  /**
-   * The departments' live figures, pooled from the database's aggregate: one
-   * row per assignment, with the assignment's respondent count and its rating
-   * totals per category. The rules the aggregate carries are the app's own —
-   * the period, the submitted and enabled evaluations, the live-eval rule
-   * (an evaluation whose assignment no longer belongs to its evaluatee does
-   * not count) and the teacher's home department.
-   */
-  async listLiveDeptAverages(evaluationPeriodId): Promise<LiveDeptAverage[]> {
-    const rows = await fetchDepartmentTotals(evaluationPeriodId)
-
-    // Pooled per department — the teacher's own department. A faculty teaching
-    // in two departments contributes every subject to their own department.
-    return buildLiveDeptAveragesFromTotals(
-      rows.map((row) => ({
-        facultyId: row.faculty_id,
-        deptId: row.department_id ?? UNKNOWN_DEPARTMENT,
-        respondentCount: row.respondent_count,
-        totals: row.category_totals ?? {},
-      })),
-    )
-  },
-
-  /**
-   * Per-faculty live results, pooled over that faculty's rating totals with
-   * the same chain the detail page uses. The row shape matches the cached rows
-   * the report service used to read, so it is a source swap, not a rewrite.
-   */
-  async listLiveFacultyResults(evaluationPeriodId: string): Promise<LiveFacultyResult[]> {
-    const rows = await fetchDepartmentTotals(evaluationPeriodId)
-
-    const byFaculty = new Map<string, { respondents: number; totals: CategoryTotals }>()
-    for (const row of rows) {
-      let group = byFaculty.get(row.faculty_id)
-      if (!group) {
-        group = { respondents: 0, totals: {} }
-        byFaculty.set(row.faculty_id, group)
-      }
-      group.respondents += row.respondent_count
-      if (row.category_totals) {
-        group.totals = poolCategoryTotals([group.totals, row.category_totals])
-      }
-    }
-
-    const out: LiveFacultyResult[] = []
-    for (const [facultyId, group] of byFaculty) {
-      const catAverages = computeCategoryAveragesFromTotals(group.totals)
-      const general = computeGeneralRating(catAverages)
-      if (general === null) continue
-      const catColumns = mapCategoryAveragesToColumns(catAverages)
-      out.push({
-        facultyId,
-        totalRespondents: group.respondents,
-        generalRating: general,
-        remarks: getRemark(general),
-        professionalManner: catColumns.professionalManner ?? null,
-        communicationWithStudent: catColumns.communicationWithStudent ?? null,
-        studentEngagement: catColumns.studentEngagement ?? null,
-        learningMaterials: catColumns.learningMaterials ?? null,
-        timeManagement: catColumns.timeManagement ?? null,
-        experientialLearning: catColumns.experientialLearning ?? null,
-        respectUniqueness: catColumns.respectUniqueness ?? null,
-        assessmentAndFeedback: catColumns.assessmentAndFeedback ?? null,
-      })
-    }
-    return out
   },
 
   /**

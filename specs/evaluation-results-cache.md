@@ -1,11 +1,11 @@
 # Evaluation results — the figures cache
 
-**Status:** in progress (2026-10-21)
+**Status:** complete (2026-10-21)
 **Why it exists:** the results list used to be answered by a group-by in Postgres over a
 direct connection (`DATABASE_URL`). The environment has no Supabase dashboard access, so that
 connection cannot be opened and the endpoint answered **500**. The figures are now read through
-the app's own repositories — one department at a time — and the read is expensive enough to be
-worth keeping.
+the app's own repositories — one department at a time, and one faculty at a time for the report —
+and the read is expensive enough to be worth keeping.
 
 ## The contract
 
@@ -63,6 +63,27 @@ worth keeping.
    It is slow by nature, so the button shows a loader while it runs, and the route carries
    `maxDuration = 60` — the same budget the import routes use.
 
+## The report's figures — the faculty read
+
+The report (`/dean/evaluations/reports/detail`, `/faculty/evaluations/reports`) needs a
+department's figures **and** its faculty's figures, and the two must agree.
+
+F1. **The faculty's figures are read per faculty.**
+    `listFacultyFigures(facultyId, evaluationPeriodId)` reads one faculty's submitted and enabled
+    evaluations in the period, the assignments those evaluations point at, their ratings and their
+    comments — the same rules as the department read (the period, `status = 'SUBMITTED'`,
+    `isDisabled = false`, the **live-eval rule**).
+
+F2. **The read carries the weights.**
+    A faculty's figures come back with the per-category **(sum, count)** as well as the averages,
+    because a mean cannot be un-meaned: a department's figure is the **pool** of its faculty's
+    totals (`poolCategoryTotals` → `computeCategoryAveragesFromTotals` →
+    `aggregatePooledAverages`) — the mean over the rating rows, not a mean of the faculty's means.
+
+F3. **The faculty's figures are cached for five minutes**, keyed by period + faculty, in the same
+    cache as the department's. The two kinds of figures have separate keys, so a department's entry
+    and a faculty's entry can never answer for each other.
+
 ## What is NOT cached
 
 | Surface | Why |
@@ -70,6 +91,7 @@ worth keeping.
 | the drill-down's subject rows | live, on demand (rule 3) |
 | the attribution warnings | cheap to read (the period's evaluations) and part of the integrity signal |
 | the department list (names, headcount, response counts) | cheap |
+| the report's department row | derived from the cached faculty figures (F2) — it is not a read of its own |
 
 ## The reads that are still on the ground
 
@@ -79,15 +101,17 @@ without a database-side group-by there is no way around reading them. What chang
 - the ratings of a chunk of evaluations come back in **one** request (`RATINGS_IN_CHUNK_SIZE = 37`
   → 37 × 27 = 999 rows, under PostgREST's 1,000-row cap), so the database reads each rating
   **once** instead of three times over (`OFFSET` paging re-scans the chunk).
-- the reads are **per department**, so a row can be filled as soon as its numbers arrive.
+- the reads are **per department** (the list, the exports, the dean view) and **per faculty** (the
+  report), so a row can be filled as soon as its numbers arrive.
 
-## Still to do
+## Done
 
-- The **report service** (`features/evaluations/evaluation-report.service.ts`) reads the
-  aggregate for its per-faculty and per-department rows. It is the last consumer.
-- When it is migrated, `lib/db/postgres.ts` and
-  `features/evaluation-results/evaluation-aggregates.ts` are dead code, and `pg` / `@types/pg`
-  come out of `package.json`. `DATABASE_URL` then leaves `.env` for good.
+- The **list**, the **exports**, the **dean view** and the **coverage warnings** read per
+  department (rules 1–2).
+- The **report** reads per faculty (F1–F3). It was the last consumer of the direct connection.
+- The direct connection is **gone from the app**: `lib/db/postgres.ts`, the aggregate module and
+  their tests are deleted. `pg` and `DATABASE_URL` remain in the repo for
+  `scripts/apply-schema.mjs` — the owner's manual schema runner — and nothing else uses them.
 
 ## The open decisions this does NOT settle
 

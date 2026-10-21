@@ -9,6 +9,12 @@
 > still hold — the live-eval rule, the home-department attribution, the live-eval/§3.18 parity
 > contract. The "Still to do" section below is **done in the other direction**: the environment
 > blockers were never resolved, because the environment is not the answer any more.
+>
+> ⭐ **2026-10-21, later — the direct connection is gone from the app entirely.** The report
+> dashboard was the last consumer; it now reads per faculty, and the department's figure is the
+> pool of its faculty's figures. `lib/db/postgres.ts`, `features/evaluation-results/evaluation-aggregates.ts`
+> and their tests are **deleted**. `pg` and `DATABASE_URL=` remain in the repo for
+> `scripts/apply-schema.mjs` only. The files this handover lists as "new" no longer exist.
 
 **Date:** 2026-10-21
 **Status:** 🟡 **the code is applied; the environment is not.** — two things are missing on the

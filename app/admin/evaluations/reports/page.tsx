@@ -21,9 +21,6 @@ export default async function AdminEvalReportsPage({
   const periods = semesterId ? await evaluationPeriodRepository.findBySemester(semesterId) : []
   const evaluationPeriodId = sp.evaluationPeriodId ?? periods.find((p) => p.isActive)?.id ?? periods[0]?.id ?? ""
   const deptId = sp.departmentId ?? allDepts[0]?.id ?? ""
-  // LIVE-DATA (swap back): delete previewAdmin below and restore:
-  //   const data = await getAdminDashboardData(evaluationPeriodId || undefined, deptId || undefined)
-  // Service + tests stay untouched; this page is visuals-only until numbers are verified.
   const previewSelected: DeanDashboardData = {
     semesterId,
     evaluationPeriodId,

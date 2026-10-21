@@ -35,7 +35,7 @@ function remarkPill(remark: string | null): string {
 
 const card = "bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-4"
 
-/** Live source: DeanDashboardData.kpis ← buildDeptDashboard ← deptPeriodAverages + deptExpectedCounts + facultyGrainForDept. */
+/** The dashboard's numbers: DeanDashboardData — the report pages' preview data for now. */
 export function KpiCards({ dashboard, placeholder = false }: { dashboard: DeanDashboardData; placeholder?: boolean }) {
   const k = dashboard.kpis
   const items = [

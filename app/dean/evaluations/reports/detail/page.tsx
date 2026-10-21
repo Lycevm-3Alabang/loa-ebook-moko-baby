@@ -28,12 +28,6 @@ export default async function DeanEvalReportDetailPage({
   const base = evaluationPeriodId
     ? await getDeanEvalReportData(userId, evaluationPeriodId)
     : await getDeanEvalReportData(userId)
-  // LIVE-DATA (swap back): delete previewDashboard below and restore:
-  //   const [base, dashboard] = await Promise.all([
-  //     evaluationPeriodId ? getDeanEvalReportData(userId, evaluationPeriodId) : getDeanEvalReportData(userId),
-  //     getDeanDashboardData(userId, semesterId || undefined, evaluationPeriodId || undefined),
-  //   ])
-  // Service + tests stay untouched; this page is visuals-only until numbers are verified.
   const previewDashboard: DeanDashboardData = {
     semesterId,
     evaluationPeriodId,
