@@ -155,7 +155,7 @@ export default function DepartmentDetailPage() {
           )}
         </h1>
         <p className="text-xs text-tertiary mt-1">
-          Per-subject evaluation results. Click a row to view individual evaluation details.
+          Per-faculty evaluation results. Expand a teacher to see their subjects.
         </p>
       </div>
 

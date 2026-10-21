@@ -111,11 +111,9 @@ function renderView(opts: {
   )
 }
 
-describe("DepartmentSubjectView - By Faculty card", () => {
+describe("DepartmentSubjectView - the faculty card", () => {
   it("shows the server faculty aggregate instead of the mean of the subject averages", () => {
     renderView({ facultyAggregates: { f1: aggregate() } })
-
-    fireEvent.click(screen.getByText("By Faculty"))
 
     expect(screen.getByText("3.50")).toBeTruthy()
     expect(screen.queryByText("3.00")).toBeNull()
@@ -126,8 +124,6 @@ describe("DepartmentSubjectView - By Faculty card", () => {
   it("does not derive a faculty average when the server sends none", () => {
     renderView()
 
-    fireEvent.click(screen.getByText("By Faculty"))
-
     expect(screen.queryByText("3.50")).toBeNull()
     expect(screen.queryByText("3.00")).toBeNull()
   })
@@ -135,8 +131,7 @@ describe("DepartmentSubjectView - By Faculty card", () => {
   it("keeps the per-subject rows on the subject values when the card is expanded", () => {
     renderView({ facultyAggregates: { f1: aggregate() } })
 
-    fireEvent.click(screen.getByText("By Faculty"))
-    fireEvent.click(screen.getByText("Ana Reyes"))
+    fireEvent.click(screen.getByText("Reyes, Ana"))
 
     expect(screen.getByText("4.00")).toBeTruthy()
     expect(screen.getByText("2.00")).toBeTruthy()
@@ -144,21 +139,104 @@ describe("DepartmentSubjectView - By Faculty card", () => {
   })
 })
 
-describe("DepartmentSubjectView - Section column", () => {
-  it("shows the section label in the By Subject & Section table", () => {
-    renderView({ subjects: SECTIONED_SUBJECTS })
+describe("DepartmentSubjectView - the name", () => {
+  it("shows the name as Surname, FirstName", () => {
+    renderView({
+      subjects: [row({ facultyName: "Juan B. Dela Cruz" })],
+      facultyAggregates: { f1: aggregate() },
+    })
 
-    expect(screen.getByText("BSCS-1A")).toBeTruthy()
-    expect(screen.getByText("BSCS-2A")).toBeTruthy()
+    expect(screen.getByText("Dela Cruz, Juan B.")).toBeTruthy()
   })
 
-  it("shows the same section label in the By Faculty card's expanded rows", () => {
+  it("sorts the cards by the surname, ascending and descending", () => {
+    const { container } = renderView({
+      subjects: [
+        row({ facultySubjectId: "fs1", facultyId: "f1", facultyName: "Zeta Santos" }),
+        row({ facultySubjectId: "fs2", facultyId: "f2", facultyName: "Ana Reyes" }),
+      ],
+      facultyAggregates: { f1: aggregate(), f2: aggregate({ facultyId: "f2" }) },
+    })
+
+    const order = () => {
+      const text = container.textContent ?? ""
+      return text.indexOf("Reyes, Ana") < text.indexOf("Santos, Zeta") ? "ana-first" : "zeta-first"
+    }
+    expect(order()).toBe("ana-first")
+
+    fireEvent.click(screen.getByTitle("Sorted by surname A–Z — click for Z–A"))
+    expect(order()).toBe("zeta-first")
+  })
+
+  it("finds a teacher by the name as it is displayed", () => {
+    renderView({
+      subjects: [row({ facultyName: "Juan B. Dela Cruz" })],
+      facultyAggregates: { f1: aggregate() },
+      search: "dela cruz, juan",
+    })
+
+    expect(screen.getByText("Dela Cruz, Juan B.")).toBeTruthy()
+  })
+})
+
+describe("DepartmentSubjectView - expanding", () => {
+  it("keeps several cards open at once", () => {
+    renderView({
+      subjects: [
+        row({ facultySubjectId: "fs1", facultyId: "f1", facultyName: "Ana Reyes" }),
+        row({ facultySubjectId: "fs2", facultyId: "f2", facultyName: "Ben Cruz" }),
+      ],
+      facultyAggregates: { f1: aggregate(), f2: aggregate({ facultyId: "f2" }) },
+    })
+
+    fireEvent.click(screen.getByText("Reyes, Ana"))
+    fireEvent.click(screen.getByText("Cruz, Ben"))
+
+    // Both cards' subject rows are on screen at the same time.
+    expect(screen.getAllByText("IT101 Intro")).toHaveLength(2)
+  })
+
+  it("expands every card at once", () => {
+    renderView({
+      subjects: [
+        row({ facultySubjectId: "fs1", facultyId: "f1", facultyName: "Ana Reyes" }),
+        row({ facultySubjectId: "fs2", facultyId: "f2", facultyName: "Ben Cruz" }),
+      ],
+      facultyAggregates: { f1: aggregate(), f2: aggregate({ facultyId: "f2" }) },
+    })
+
+    expect(screen.queryAllByText("IT101 Intro")).toHaveLength(0)
+
+    fireEvent.click(screen.getByText("Expand all"))
+    expect(screen.getAllByText("IT101 Intro")).toHaveLength(2)
+  })
+
+  it("collapses every card at once", () => {
+    renderView({
+      subjects: [
+        row({ facultySubjectId: "fs1", facultyId: "f1", facultyName: "Ana Reyes" }),
+        row({ facultySubjectId: "fs2", facultyId: "f2", facultyName: "Ben Cruz" }),
+      ],
+      facultyAggregates: { f1: aggregate(), f2: aggregate({ facultyId: "f2" }) },
+    })
+
+    fireEvent.click(screen.getByText("Reyes, Ana"))
+    fireEvent.click(screen.getByText("Cruz, Ben"))
+    expect(screen.getAllByText("IT101 Intro")).toHaveLength(2)
+
+    // Every card is open, so the button offers to close them.
+    fireEvent.click(screen.getByText("Collapse all"))
+    expect(screen.queryAllByText("IT101 Intro")).toHaveLength(0)
+  })
+})
+
+describe("DepartmentSubjectView - Section column", () => {
+  it("shows the section label in the card's expanded rows", () => {
     // The server's faculty list is the department's own faculty - the card
     // exists because f1 is one of them.
     renderView({ subjects: SECTIONED_SUBJECTS, facultyAggregates: { f1: aggregate() } })
 
-    fireEvent.click(screen.getByText("By Faculty"))
-    fireEvent.click(screen.getByText("Ana Reyes"))
+    fireEvent.click(screen.getByText("Reyes, Ana"))
 
     expect(screen.getByText("BSCS-1A")).toBeTruthy()
     expect(screen.getByText("BSCS-2A")).toBeTruthy()
@@ -169,14 +247,14 @@ describe("DepartmentSubjectView - Section column", () => {
     // department's faculty: no card, and the subject stays in the rows.
     renderView({ subjects: SECTIONED_SUBJECTS, facultyAggregates: { f2: aggregate({ facultyId: "f2" }) } })
 
-    fireEvent.click(screen.getByText("By Faculty"))
-
-    expect(screen.queryByText("Ana Reyes")).toBeNull()
+    expect(screen.queryByText("Reyes, Ana")).toBeNull()
     expect(screen.getByText("0 faculties")).toBeTruthy()
   })
 
   it("finds a row by its section label", () => {
-    renderView({ subjects: SECTIONED_SUBJECTS, search: "bscs-1a" })
+    renderView({ subjects: SECTIONED_SUBJECTS, search: "bscs-1a", facultyAggregates: { f1: aggregate() } })
+
+    fireEvent.click(screen.getByText("Reyes, Ana"))
 
     expect(screen.getByText("IT101 Intro")).toBeTruthy()
     expect(screen.queryByText("IT102 Advanced")).toBeNull()

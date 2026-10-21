@@ -13,6 +13,7 @@ import {
   resolveFacultyDepartment,
   resolveDepartmentFaculties,
   sectionLabel,
+  formatFacultyName,
 } from "@/lib/evaluation-utils"
 import type { RatingRow, FacultyRatingRow, DeptResolutionContext } from "@/lib/evaluation-utils"
 
@@ -185,6 +186,34 @@ describe("resolveDepartmentFaculties", () => {
 
   it("returns an empty list for no candidates", () => {
     expect(resolveDepartmentFaculties("d1", [], ctx())).toEqual([])
+  })
+})
+
+describe("formatFacultyName", () => {
+  it("puts the surname first and the given name after it", () => {
+    expect(formatFacultyName("Ana Reyes")).toBe("Reyes, Ana")
+  })
+
+  it("keeps a particle in front of the surname with it", () => {
+    expect(formatFacultyName("Juan Dela Cruz")).toBe("Dela Cruz, Juan")
+    expect(formatFacultyName("Maria De La Cruz")).toBe("De La Cruz, Maria")
+  })
+
+  it("keeps a middle name as it is written", () => {
+    expect(formatFacultyName("Maria Lourdes Santos")).toBe("Santos, Maria Lourdes")
+  })
+
+  it("keeps an initial that is already written as one", () => {
+    expect(formatFacultyName("Juan B. Dela Cruz")).toBe("Dela Cruz, Juan B.")
+  })
+
+  it("leaves a single name alone", () => {
+    expect(formatFacultyName("Ana")).toBe("Ana")
+  })
+
+  it("returns nothing for nothing", () => {
+    expect(formatFacultyName(null)).toBe("")
+    expect(formatFacultyName("   ")).toBe("")
   })
 })
 

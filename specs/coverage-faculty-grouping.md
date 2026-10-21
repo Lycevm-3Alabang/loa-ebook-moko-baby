@@ -106,7 +106,9 @@ groupings, as a switch above the table:
    stays a per-department table. For a dean — who lands straight on their
    department — the switch is the first thing they see.
 2. **The tab labels are the results page's** — "By Subject & Section" and
-   "By Faculty" (`DepartmentSubjectView.tsx:147-148`), so the two pages use
+   "By Faculty" (`CoveragePage.tsx:93-96` — the labels moved here when the
+   **results** page dropped its flat table and its tab strip on 2026-10-21;
+   its drill-down is now the faculty cards alone), so the two pages use
    the same words for the same groupings.
 3. **The faculty card carries coverage only.** No consolidated-PDF button
    and no show/hide-results toggle: neither is a coverage concept, and the

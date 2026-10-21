@@ -210,6 +210,45 @@ export function departmentLabel(name: string | null | undefined, code?: string |
   return code ? `${n} (${code})` : n
 }
 
+/**
+ * Name particles that belong to the surname in front of it: "de", "dela",
+ * "van", "bin" … The surname is the last name, extended left over one.
+ */
+const NAME_PARTICLES = new Set([
+  "al", "bin", "binti", "da", "de", "del", "dela", "den", "der", "di", "la",
+  "le", "los", "san", "sana", "santa", "van", "von",
+])
+
+/**
+ * A person's name as "Surname, FirstName" — the order a list is read in and
+ * the order a directory is sorted by. A middle name or initial stays between
+ * them, as it is written.
+ *
+ * The surname is the last name, extended left over a particle ("de", "dela",
+ * "van", …); the given name is the first; what is between them is kept **as
+ * it is written** — a middle name is not shortened to an initial
+ * ("Maria Lourdes Santos" → "Santos, Maria Lourdes"), and an initial that is
+ * already one stays one ("Juan B. Dela Cruz" → "Dela Cruz, Juan B.").
+ */
+export function formatFacultyName(name: string | null | undefined): string {
+  const trimmed = (name ?? "").trim()
+  if (!trimmed) return ""
+  const tokens = trimmed.split(/\s+/)
+  if (tokens.length === 1) return tokens[0]
+
+  // The surname: the last token, plus the particles in front of it.
+  let surnameStart = tokens.length - 1
+  while (surnameStart > 1 && NAME_PARTICLES.has(tokens[surnameStart - 1].toLowerCase().replace(/\.$/, ""))) {
+    surnameStart -= 1
+  }
+  const surname = tokens.slice(surnameStart).join(" ")
+  const given = tokens[0]
+  const middles = tokens.slice(1, surnameStart)
+  if (!surname || !given) return trimmed
+
+  return `${surname}, ${given}${middles.length ? ` ${middles.join(" ")}` : ""}`
+}
+
 export function getRemarkColor(remarks: string | null): string {
   switch (remarks) {
     case "Outstanding": return "bg-success-bg text-success-text"

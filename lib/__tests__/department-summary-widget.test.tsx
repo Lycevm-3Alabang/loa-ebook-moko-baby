@@ -82,15 +82,18 @@ describe("Department results page - Department Summary widget", () => {
   it("shows the server department average, not a mean of the subject averages", async () => {
     render(<DepartmentDetailPage />)
 
-    await waitFor(() => expect(screen.getByText("3.50")).toBeTruthy())
+    // The card repeats the figure (the department's and, for a single-member
+    // department, the teacher's) — the mean of the subject averages must be
+    // nowhere on the page.
+    await waitFor(() => expect(screen.getAllByText("3.50").length).toBeGreaterThan(0))
     expect(screen.queryByText("3.00")).toBeNull()
-    expect(screen.getByText("Very Satisfactory")).toBeTruthy()
+    expect(screen.getAllByText("Very Satisfactory").length).toBeGreaterThan(0)
   })
 
   it("no longer shows a sentiment figure", async () => {
     render(<DepartmentDetailPage />)
 
-    await waitFor(() => expect(screen.getByText("3.50")).toBeTruthy())
+    await waitFor(() => expect(screen.getAllByText("3.50").length).toBeGreaterThan(0))
     expect(screen.queryByText("Overall Sentiment")).toBeNull()
     expect(screen.queryByText("0.4000")).toBeNull()
   })
