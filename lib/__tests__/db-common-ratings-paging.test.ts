@@ -15,6 +15,8 @@ interface Captured {
   ranges: number[][]
   orders: string[]
   inCalls: string[][]
+  /** The columns each read asked for, in the order the reads were made. */
+  selects?: string[]
 }
 
 interface Page {
@@ -32,7 +34,10 @@ interface Page {
 function makeChain(captured: Captured, staticResponse: Page, nextPage: () => Page) {
   let pending = staticResponse
   const chain = {
-    select: vi.fn(() => chain),
+    select: vi.fn((columns: string) => {
+      captured.selects?.push(columns)
+      return chain
+    }),
     in: vi.fn((_column: string, ids: string[]) => {
       captured.inCalls.push(ids)
       return chain
@@ -72,14 +77,22 @@ function installClient(pages: Page[], captured: Captured) {
     if (table === "rubric_items") {
       return makeChain(
         captured,
-        { data: ITEM_IDS.map((id) => ({ id, categoryId: "cat-1" })), error: null },
+        {
+          data: ITEM_IDS.map((id) => ({
+            id,
+            categoryId: "cat-1",
+            text: `Statement ${id}`,
+            displayOrder: 1,
+          })),
+          error: null,
+        },
         nextPage,
       )
     }
     if (table === "rubric_categories") {
       return makeChain(
         captured,
-        { data: [{ id: "cat-1", name: "Professional Manner" }], error: null },
+        { data: [{ id: "cat-1", name: "Professional Manner", displayOrder: 1 }], error: null },
         nextPage,
       )
     }
@@ -190,5 +203,52 @@ describe("fetchRatingsWithCategories — PostgREST row cap", () => {
     for (const chunk of captured.inCalls.slice(0, 7)) {
       expect(chunk.length).toBeLessThanOrEqual(37)
     }
+  })
+})
+
+/**
+ * The rubric item's identity has to survive the read.
+ *
+ * The category grain was enough until the export's form: its column I holds one
+ * value per *statement*, so the item's id, text and order have to arrive with
+ * the rating — the read used to select `itemId` and then drop it.
+ */
+describe("fetchRatingsWithCategories — the rubric item comes through", () => {
+  it("carries the item's id, text and order, and the criterion's order", async () => {
+    const captured: Captured = { ranges: [], orders: [], inCalls: [] }
+    installClient([{ data: ratingsRows(2), error: null }], captured)
+
+    const result = await fetchRatingsWithCategories(client, ["e-0000"])
+
+    expect(result[0].itemId).toBe("item-0")
+    expect(result[0].rubric_items.id).toBe("item-0")
+    expect(result[0].rubric_items.text).toBe("Statement item-0")
+    expect(result[0].rubric_items.displayOrder).toBe(1)
+    expect(result[0].rubric_items.rubric_categories.name).toBe("Professional Manner")
+    expect(result[0].rubric_items.rubric_categories.displayOrder).toBe(1)
+  })
+
+  it("asks the rubric for the columns the form needs", async () => {
+    const captured: Captured = { ranges: [], orders: [], inCalls: [], selects: [] }
+    installClient([{ data: ratingsRows(1), error: null }], captured)
+
+    await fetchRatingsWithCategories(client, ["e-0000"])
+
+    expect(captured.selects).toContain("id, categoryId, text, displayOrder")
+    expect(captured.selects).toContain("id, name, displayOrder")
+  })
+
+  it("keeps an unresolvable item in the error bucket rather than dropping the rating", async () => {
+    const captured: Captured = { ranges: [], orders: [], inCalls: [] }
+    // The rubric answers with nothing for this item, so it cannot be named.
+    installClient([{ data: [{ evaluationId: "e-0000", rating: 4, itemId: "ghost" }], error: null }], captured)
+
+    const result = await fetchRatingsWithCategories(client, ["e-0000"])
+
+    expect(result).toHaveLength(1)
+    expect(result[0].rating).toBe(4)
+    expect(result[0].itemId).toBe("ghost")
+    expect(result[0].rubric_items.categoryId).toBe("")
+    expect(result[0].rubric_items.rubric_categories.name).toBe("")
   })
 })

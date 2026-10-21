@@ -54,7 +54,15 @@ export function isMissingUserrole(err: QueryError): boolean {
 export interface RatingWithCategory {
   evaluationId: string
   rating: number
-  rubric_items: { categoryId: string; rubric_categories: { name: string } }
+  /** The rubric item this rating is for — the statement, not the criterion. */
+  itemId: string
+  rubric_items: {
+    id: string
+    categoryId: string
+    text: string
+    displayOrder: number
+    rubric_categories: { id: string; name: string; displayOrder: number }
+  }
 }
 
 // A chunk of 37 evaluations holds 37 x 27 = 999 rating rows — one page under
@@ -141,15 +149,19 @@ export async function fetchRatingsWithCategories(
     return ratingRows.map((r) => ({
       evaluationId: r.evaluationId,
       rating: r.rating,
+      itemId: r.itemId,
       rubric_items: {
+        id: r.itemId,
         categoryId: UNMAPPED_CATEGORY_NAME,
-        rubric_categories: { name: UNMAPPED_CATEGORY_NAME },
+        text: "",
+        displayOrder: 0,
+        rubric_categories: { id: "", name: UNMAPPED_CATEGORY_NAME, displayOrder: 0 },
       },
     }))
   }
   const itemResults = await Promise.all(
     chunkIds(itemIds, RATINGS_IN_CHUNK_SIZE).map((ids) =>
-      client.from("rubric_items").select("id, categoryId").in("id", ids),
+      client.from("rubric_items").select("id, categoryId, text, displayOrder").in("id", ids),
     ),
   )
   for (const res of itemResults) {
@@ -169,7 +181,7 @@ export async function fetchRatingsWithCategories(
       ? []
       : await Promise.all(
           chunkIds(categoryIds, RATINGS_IN_CHUNK_SIZE).map((ids) =>
-            client.from("rubric_categories").select("id, name").in("id", ids),
+            client.from("rubric_categories").select("id, name, displayOrder").in("id", ids),
           ),
         )
   for (const res of catResults) {
@@ -177,17 +189,30 @@ export async function fetchRatingsWithCategories(
   }
   const catRows = catResults.flatMap((res) => res.data || [])
 
-  const catMap = new Map((catRows || []).map((c) => [c.id, c.name]))
-  const itemMap = new Map((itemRows || []).map((i) => [i.id, i.categoryId]))
+  const catMap = new Map((catRows || []).map((c) => [c.id, c]))
+  const itemMap = new Map((itemRows || []).map((i) => [i.id, i]))
 
-  return ratingRows.map((r) => ({
-    evaluationId: r.evaluationId,
-    rating: r.rating,
-    rubric_items: {
-      categoryId: itemMap.get(r.itemId) || UNMAPPED_CATEGORY_NAME,
-      rubric_categories: { name: catMap.get(itemMap.get(r.itemId) || "") || UNMAPPED_CATEGORY_NAME },
-    },
-  }))
+  return ratingRows.map((r) => {
+    const item = itemMap.get(r.itemId)
+    const categoryId = item?.categoryId || UNMAPPED_CATEGORY_NAME
+    const category = catMap.get(categoryId)
+    return {
+      evaluationId: r.evaluationId,
+      rating: r.rating,
+      itemId: r.itemId,
+      rubric_items: {
+        id: item?.id ?? r.itemId,
+        categoryId,
+        text: item?.text ?? "",
+        displayOrder: item?.displayOrder ?? 0,
+        rubric_categories: {
+          id: category?.id ?? "",
+          name: category?.name || UNMAPPED_CATEGORY_NAME,
+          displayOrder: category?.displayOrder ?? 0,
+        },
+      },
+    }
+  })
 }
 
 export const appointmentSelect = `

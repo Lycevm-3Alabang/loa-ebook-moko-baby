@@ -526,9 +526,14 @@ export interface EvaluationStatusItem {
 export interface EvaluationRatingRow {
   evaluationId: string
   rating: number
+  /** The rubric item this rating is for — the statement, not the criterion. */
+  itemId: string
   rubric_items: {
+    id: string
     categoryId: string
-    rubric_categories: { name: string }
+    text: string
+    displayOrder: number
+    rubric_categories: { id: string; name: string; displayOrder: number }
   }
 }
 

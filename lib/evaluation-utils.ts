@@ -96,6 +96,82 @@ export function computeCategoryAverages(ratings: RatingRow[]): CategoryAverages 
 }
 
 /**
+ * A rating row that knows its rubric item — the statement, not the criterion.
+ *
+ * `RatingRow` is the criterion grain: it carries the category's name and nothing
+ * below it. The export's form needs the grain *below* that — one value per
+ * statement — so the read carries the item's identity, text and order as well.
+ */
+export interface ItemRatingRow {
+  rating: number
+  itemId: string
+  rubric_items: {
+    id: string
+    categoryId: string
+    text: string
+    displayOrder: number
+    rubric_categories: { id: string; name: string; displayOrder: number }
+  }
+}
+
+/** One rubric item's average over a set of rating rows. */
+export interface ItemAverage {
+  itemId: string
+  text: string
+  displayOrder: number
+  categoryId: string
+  categoryName: string
+  categoryDisplayOrder: number
+  /** The mean of the ratings for this item. Not rounded — the caller rounds. */
+  avg: number
+  /** How many ratings the mean is over. */
+  count: number
+}
+
+/**
+ * The per-ITEM averages of a set of rating rows: one entry per rubric item,
+ * ordered by the criterion's order and then the item's own.
+ *
+ * This is the grain below `computeCategoryAverages` — the same rows, grouped by
+ * the statement rather than the criterion. The mean is left raw for the same
+ * reason the category mean is: the rounding belongs to whoever renders it.
+ */
+export function computeItemAverages(ratings: ItemRatingRow[]): ItemAverage[] {
+  const acc = new Map<
+    string,
+    { sum: number; count: number; meta: Omit<ItemAverage, "avg" | "count"> }
+  >()
+  for (const r of ratings) {
+    if (!r.itemId) continue
+    const current = acc.get(r.itemId)
+    if (current) {
+      current.sum += r.rating
+      current.count += 1
+      continue
+    }
+    const item = r.rubric_items
+    acc.set(r.itemId, {
+      sum: r.rating,
+      count: 1,
+      meta: {
+        itemId: r.itemId,
+        text: item?.text ?? "",
+        displayOrder: item?.displayOrder ?? 0,
+        categoryId: item?.categoryId || UNMAPPED_CATEGORY_NAME,
+        categoryName: item?.rubric_categories?.name || UNMAPPED_CATEGORY_NAME,
+        categoryDisplayOrder: item?.rubric_categories?.displayOrder ?? 0,
+      },
+    })
+  }
+  return [...acc.values()]
+    .map(({ sum, count, meta }) => ({ ...meta, avg: sum / count, count }))
+    .sort(
+      (a, b) =>
+        a.categoryDisplayOrder - b.categoryDisplayOrder || a.displayOrder - b.displayOrder,
+    )
+}
+
+/**
  * The category totals of a set of rating rows: the sum and the count of each
  * rubric category.
  *
