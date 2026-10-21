@@ -62,22 +62,34 @@ session, or none),
   **Remaining slices:** (4) the export routes (three, each mirroring its own read route's
   guards — the faculty's **includes the visibility map**) and the ZIP reader; (5) the buttons
   (`IosButton`, not the hand-rolled `<button>` the current PDF button uses).
-  **What landed (slice 3, `ef71931`):** the template is **CUT, not hand-made** —
+  **What landed (slice 3, `ef71931` + `bec0132`):** the template is **CUT, not hand-made** —
   `scripts/cut-eval-template.mjs` takes `docs/eval reports.xlsx` and writes
-  `data/templates/eval-report.xlsx`. It is idempotent (re-runnable whenever the legacy changes)
-  and never edits the legacy. Two things the cut found that the plan had wrong: ⭐ **r3/r4/r5
-  were all `hidden`** — the legacy's **banner image** carried the title and the term, so removing
-  the image means the title block has to become cells (r3 the title, r4 the semester, r5 the
-  evaluation period, all un-hidden; r5 did not exist as a row). ⭐ And the **"Interpretation of
-  Data" legend disagreed with the app** — it printed *"Fair"* and *"Needs improvement"* while
-  `getRemark` says *"Unsatisfactory"* and *"Poor"*, so the template would have printed a ladder
-  the app does not use, right next to the app's own remark. Corrected. The script **asserts the
-  legacy's shape before cutting** and refuses to run if it moved (a cut that lands in the wrong
-  place would write a number against the wrong statement), and **reads back what it wrote** to
-  check every cell the export fills plus the anchor's validity. `next.config.ts` gained
-  `outputFileTracingIncludes` — without it the template is absent in production and the export
-  500s there while working locally. The template is **307 KB** (deflated); the app's *output*
-  stays store-only (`lib/zip.ts`), and the reader handles both methods.
+  `data/templates/eval-report.xlsx`. It is idempotent (re-runnable whenever the legacy changes),
+  deterministic (two runs are byte-identical), and never edits the legacy. Two things the cut
+  found that the plan had wrong: ⭐ **r3/r4/r5 were all `hidden`** — the legacy's **banner image**
+  carried the title and the term, so removing the image means the title block has to become
+  cells (r3 the title, r4 the semester, r5 the evaluation period, all un-hidden; r5 did not exist
+  as a row). ⭐ And the **"Interpretation of Data" legend disagreed with the app** — it printed
+  *"Fair"* and *"Needs improvement"* while `getRemark` says *"Unsatisfactory"* and *"Poor"*, so the
+  template would have printed a ladder the app does not use, right next to the app's own remark.
+  Corrected. The script **asserts the legacy's shape before cutting** and refuses to run if it
+  moved (a cut that lands in the wrong place would write a number against the wrong statement),
+  and **reads back what it wrote** to check every cell the export fills plus the anchor's
+  validity. `next.config.ts` gained `outputFileTracingIncludes` — without it the template is
+  absent in production and the export 500s there while working locally.
+  ⭐ **The legacy is now the owner's RE-SAVED file** (`bec0132`) — it had been re-saved by a
+  spreadsheet app, and the owner adopted it. ⭐ **The guard is now SEMANTIC** (it asserts the
+  cells' TEXT, the hidden rows, the merges and the picture, not the style ids — the re-save
+  renumbered them, and a spreadsheet app renumbers them whenever it re-saves), and the identity
+  block's styles are READ from r7/r8 rather than hard-coded. ⭐ **The letterhead is the owner's
+  own placement, normalised**: they had already put our logo in the sheet (340×156, re-encoded)
+  at 65.7 mm, left of centre, and stretched by 3.6 %; the cut keeps their asset and re-anchors
+  it to 50 mm, centred, at its own aspect, with the media replaced by the repo's exact bytes. ⭐
+  And the **picture's anchor is now found, not assumed** — the first anchor in the drawing is the
+  legend's textbox, and a lazy match spanning to the picture's would have deleted the legend.
+  ⚠️ **The re-save cost the workbook its print setup** (3 `printerSettings` parts), so the
+  exported form falls back to the reader's default page setup. The Overall sheet's near-empty
+  rows fell from 10,615 to 161 — the export clears row 7 down either way, so that is unchanged.
   ⭐ **The guard (a hard rule):** the template's positions encode 34 statements in a fixed order, so
   the export **verifies the live rubric's shape** and fails loudly if it moved. A wrong form is
   worse than no form.
@@ -773,9 +785,11 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   the export reads now deliver the employee number, the program, the section, the semester and
   the evaluation period. See "NEXT".
 
-- [x] **The export's template is cut — 2026-10-22** (`ef71931`). `scripts/cut-eval-template.mjs`
-  writes `data/templates/eval-report.xlsx` from the legacy workbook: idempotent, self-verifying,
-  and it refuses to run if the legacy has moved. See "NEXT".
+- [x] **The export's template is cut — 2026-10-22** (`ef71931`, `bec0132`).
+  `scripts/cut-eval-template.mjs` writes `data/templates/eval-report.xlsx` from the legacy
+  workbook: idempotent, deterministic, self-verifying, and it refuses to run if the legacy has
+  moved. The legacy is now the owner's re-saved file, and the guard is semantic rather than
+  style-based. See "NEXT".
 
 - [x] **The drill-down's "By Faculty" cards — decided and implemented 2026-10-20**
   (`.opencode/skills/plan-fix/runs/20261020-2300-drill-down-faculty-cards.md`).

@@ -466,6 +466,30 @@ in the wrong place. The first cut had both — a greedy regex reading `customHei
 row height, and a column lookup that worked per col-range instead of per column — and the check
 caught them.
 
+> ⭐ **v2.1 (2026-10-22, later the same day): the legacy is the owner's RE-SAVED file.** It had
+> been re-saved by a spreadsheet application, and the owner adopted that file rather than
+> restoring the previous one. Three things changed with it:
+>
+> - ⭐ **The guard is now SEMANTIC.** It asserted style ids — an implementation detail of
+>   whichever app wrote the file — and the re-save renumbered them (`A1` went from style `67` to
+>   `3`), so the guard fired on a workbook that had not really moved. It now asserts what the
+>   workbook **says**: the cells' text, the hidden rows, the merges, the picture. The identity
+>   block's styles are **read from r7/r8** rather than hard-coded.
+> - ⭐ **The letterhead is the owner's, normalised.** They had already put our logo in the sheet
+>   (`image1.png` is 340 × 156 — the repo logo, re-encoded by their app) at **65.7 mm, left of
+>   centre, and stretched by 3.6 %** (2.258 against the logo's native 2.179). The cut keeps their
+>   asset and re-anchors it to the contract's geometry: **50 mm** (the width the PDF's letterhead
+>   uses), **centred**, at its own aspect, with the media replaced by the repo's exact bytes.
+> - ⭐ **The picture's anchor is now FOUND, not assumed.** The first anchor in the drawing is
+>   the legend's textbox, and a lazy match that had to contain a `<xdr:pic>` spanned from the
+>   textbox's anchor to the picture's — so replacing it **deleted the legend**. The anchors are
+>   matched one at a time now, and the read-back check asserts the textbox is still there.
+>
+> ⚠️ **The re-save also cost the workbook its PRINT SETUP** (3 `printerSettings` parts). The
+> exported workbook therefore has no print setup, and the printed form falls back to the
+> reader's default page setup. ⚠️ And the Overall sheet's near-empty rows fell from **10,615 to
+> 161** — the export clears row 7 and down either way, so that is unchanged.
+
 `next.config.ts` gained `outputFileTracingIncludes`, so the template is traced into the
 serverless bundle: without it the file is absent in production and the export 500s there while
 working locally. The template is **307 KB** (deflated); the app's *output* stays store-only —
