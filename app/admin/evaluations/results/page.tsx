@@ -368,7 +368,7 @@ export default function AdminEvaluationResultsPage() {
                     ) : (
                       dept.highestRubrics.length > 0 && (
                         <span className="text-[11px] text-emerald-600 dark:text-emerald-400">
-                          {dept.highestRubrics[0].label} ({formatScore(dept.highestRubrics[0].score)})
+                          {dept.highestRubrics.map((r) => `${r.label} ${formatScore(r.score)}`).join(", ")}
                         </span>
                       )
                     )}
@@ -378,9 +378,9 @@ export default function AdminEvaluationResultsPage() {
                       {pending ? (
                         <div className="ml-auto w-28"><Skeleton variant="text" /></div>
                       ) : (
-                        attentionByDept[dept.departmentId]?.[0] && (
+                        attentionByDept[dept.departmentId] && (
                           <span className="text-[11px] text-red-600 dark:text-red-400">
-                            {attentionByDept[dept.departmentId][0].label} ({formatScore(attentionByDept[dept.departmentId][0].score)})
+                            {attentionByDept[dept.departmentId].map((r) => `${r.label} ${formatScore(r.score)}`).join(", ")}
                           </span>
                         )
                       )}

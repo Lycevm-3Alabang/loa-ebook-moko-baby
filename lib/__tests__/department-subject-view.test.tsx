@@ -268,6 +268,26 @@ describe("DepartmentSubjectView - Section column", () => {
     expect(screen.getByText("BSCS-2A")).toBeTruthy()
   })
 
+  it("shows every tied rubric, not just the first", () => {
+    renderView({
+      subjects: [
+        row({
+          facultySubjectId: "fs1",
+          highestRubrics: [
+            { key: "professionalManner", label: "Professional Manner", score: 4 },
+            { key: "studentEngagement", label: "Student Engagement", score: 4 },
+          ],
+        }),
+      ],
+      facultyAggregates: { f1: aggregate() },
+    })
+
+    fireEvent.click(screen.getByText("Reyes, Ana"))
+
+    // The tie is shown as a tie - the same number the subject page shows.
+    expect(screen.getByText("Professional Manner 4.00, Student Engagement 4.00")).toBeTruthy()
+  })
+
   it("gives a card only to a member of the department", () => {
     // f1 teaches a subject here but the server does not count them as one of
     // this department's members: no card, and the subject stays in the rows.

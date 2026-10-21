@@ -138,14 +138,14 @@ export default function FacultyEvaluationResultsPage() {
                   <td className="py-3 pr-4 text-right">
                     {row.highestRubrics.length > 0 && (
                       <span className="text-[11px] text-emerald-600 dark:text-emerald-400">
-                        {row.highestRubrics[0].label} ({formatScore(row.highestRubrics[0].score)})
+                        {row.highestRubrics.map((r) => `${r.label} ${formatScore(r.score)}`).join(", ")}
                       </span>
                     )}
                   </td>
                   <td className="py-3 pr-4 text-right">
                     {row.lowestRubrics.length > 0 && (
                       <span className="text-[11px] text-red-600 dark:text-red-400">
-                        {row.lowestRubrics[0].label} ({formatScore(row.lowestRubrics[0].score)})
+                        {row.lowestRubrics.map((r) => `${r.label} ${formatScore(r.score)}`).join(", ")}
                       </span>
                     )}
                   </td>

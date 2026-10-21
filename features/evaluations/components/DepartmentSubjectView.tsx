@@ -323,10 +323,10 @@ export default function DepartmentSubjectView({ subjects, members = [], departme
                           <td className="py-2 pr-3 text-xs text-secondary">{sectionLabel(s.sectionProgram, s.sectionName)}</td>
                           <td className="py-2 pr-3 text-right text-xs font-semibold">{formatScore(s.avgRating)}</td>
                           <td className="py-2 pr-3 text-right text-[10px] text-emerald-600 dark:text-emerald-400">
-                            {s.highestRubrics.length > 0 ? `${s.highestRubrics[0].label} (${formatScore(s.highestRubrics[0].score)})` : "—"}
+                            {s.highestRubrics.length > 0 ? s.highestRubrics.map((r) => `${r.label} ${formatScore(r.score)}`).join(", ") : "—"}
                           </td>
                           <td className="py-2 pr-3 text-right text-[10px] text-red-600 dark:text-red-400">
-                            {s.lowestRubrics.length > 0 ? `${s.lowestRubrics[0].label} (${formatScore(s.lowestRubrics[0].score)})` : "—"}
+                            {s.lowestRubrics.length > 0 ? s.lowestRubrics.map((r) => `${r.label} ${formatScore(r.score)}`).join(", ") : "—"}
                           </td>
                         </tr>
                       ))}
