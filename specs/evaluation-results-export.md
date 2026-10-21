@@ -428,7 +428,7 @@ Each of the three pages gets the export affordance, using `components/ui/IosButt
 |---|---|---|---|
 | 1 | **The statement ratings** — the item identity through the read + `computeItemAverages` | `lib/db/common.ts`, `lib/types/evaluation.ts`, `lib/evaluation-utils.ts`, + tests | **done 2026-10-22** (`abcc919`) |
 | 2 | **The routes** — the period/semester read, `employeeNo`, the section on the faculty route | 3 route files + tests | **done 2026-10-22** (`13ade13`) |
-| 3 | **The template** — cut `data/templates/eval-report.xlsx` (§3.2, §3.3); the ZIP reader | `data/templates/eval-report.xlsx` (owner-cut), `lib/xlsx-template.ts` (new), `next.config.ts` | next |
+| 3 | **The template** — cut `data/templates/eval-report.xlsx` (§3.2, §3.3); the ZIP reader | `data/templates/eval-report.xlsx` (owner-cut), `lib/xlsx-template.ts` (new), `next.config.ts` | **done 2026-10-22** (`ef71931`) |
 | 4 | **The export route** — the fill, the rubric guard, the three routes | 3 new route files, `lib/evaluation-form-xlsx.ts` (new) | |
 | 5 | **The buttons** — the export affordance on the three pages | 3 page files | |
 
@@ -442,6 +442,34 @@ ownership guard. The `employeeNo` came free: `USER_SELECT` already carried it, s
 `userRepository.findById` was returning it and the routes were dropping it. And the period is
 **optional**: a period that cannot be read leaves the figures intact and the header's labels
 null — the figures are the point, the labels are the header.
+
+⭐ **What slice 3 changed about the plan.** The template is **cut by a script**, not made by
+hand: `scripts/cut-eval-template.mjs` takes `docs/eval reports.xlsx` and writes
+`data/templates/eval-report.xlsx`. It is idempotent, so it can be re-run whenever the legacy
+changes, and it never edits the legacy. Two things the cut found that the plan had wrong:
+
+- **r3/r4/r5 were all `hidden`.** The legacy's **banner image** carried the title and the term,
+  so the cells that duplicate them were hidden. Removing the image therefore means the title
+  block has to become cells — r3 the title, r4 the semester, r5 the evaluation period, all
+  un-hidden. (r5 did not exist as a row; the cut makes it.)
+- **The "Interpretation of Data" legend disagreed with the app.** It printed *"Fair"* and
+  *"Needs improvement"*; `getRemark` says *"Unsatisfactory"* and *"Poor"*. The template would
+  have printed a ladder the app does not use, right next to the app's own remark. The cut
+  corrects the two bands.
+
+The script **asserts the legacy's shape before cutting** (the cells it touches, their styles,
+the hidden rows, the `A10:H10` merge, the picture's crop) and **refuses to run** if the legacy
+moved — a cut that lands in the wrong place would write a number against the wrong statement.
+It also **reads back what it wrote** and checks every cell the export fills, plus the anchor's
+validity: a negative offset, or one wider than its own column, is how a drawing silently lands
+in the wrong place. The first cut had both — a greedy regex reading `customHeight="1"` as the
+row height, and a column lookup that worked per col-range instead of per column — and the check
+caught them.
+
+`next.config.ts` gained `outputFileTracingIncludes`, so the template is traced into the
+serverless bundle: without it the file is absent in production and the export 500s there while
+working locally. The template is **307 KB** (deflated); the app's *output* stays store-only —
+that is `lib/zip.ts`'s writer, and the export's reader handles both methods.
 
 **Gate (the owner's run):**
 
