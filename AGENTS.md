@@ -81,6 +81,7 @@ lib/                    # Global utilities & infrastructure
 - **Types** in `lib/types/` (shared) + `features/*/types.ts` (per-slice re-exports)
 - DB schema in `supabase-schema.sql` (run manually in Supabase SQL Editor)
 - Supabase client in `lib/supabase.ts` (uses `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`)
+- **All database access goes through the repositories and the services — no Supabase change or setup beyond what already exists** (hard rule **H4**)
 
 ## Key Conventions
 
@@ -260,6 +261,32 @@ Renaming DB columns cascade through the full TypeScript stack:
   - **verified not to break anything** before moving to the next.
 - When decomposition is warranted, **offer to create a tracking file** (e.g. a checklist/markdown file in the repo) and/or frame the work as a **spike** (time-boxed investigation) or a **spec** (written design) before any implementation.
 - Never attempt a large change in one shot.
+
+### H4. NO Supabase change or setup — read and write only through the repositories and services
+
+- **Absolute rule:** Do **not** change, create or drop anything in the database, and do **not** add
+  any Supabase setup beyond what already exists. No new table, column, index, constraint,
+  function, RPC, view, extension, bucket, policy or trigger; no `exec_sql`; no
+  `CREATE OR REPLACE`; no edit to `supabase-schema.sql` — **unless the owner asks for that
+  specific change, by name.**
+- **The only way in or out of the data is the repository layer**: `features/*/*.repository.ts`
+  (wired through `lib/repositories/factory.ts`) for the reads and the writes, and
+  `features/*/*.service.ts` for the business rules. No `supabase` client call outside a repository,
+  no raw SQL, no direct Postgres connection. (`pg` and `DATABASE_URL` exist in the repo for
+  `scripts/apply-schema.mjs` — the owner's manual schema runner — and for nothing else.)
+- **Why:** the schema is the owner's, applied by hand in the Supabase SQL Editor, and this
+  environment is not the place to experiment. A change that needs a column is a change to the
+  **schema file** *and* to the **repositories**, in that order, and only on the owner's word.
+- **Corollary — a missing field is a code question first.** Before asking for a column, check
+  whether the data is already there under another name: `evaluations` already carries
+  `semesterId`, `evaluation_period_id`, `status` and `isDisabled`; the `isDisabled` flag already
+  means "this response does not count"; `faculty_subjects.semesterId` exists (nullable, added by
+  migration 24) even when it is empty. And check whether the rule can live in TypeScript instead —
+  `lib/evaluation-utils.ts` is where the display and pooling rules live.
+- **Corollary — a question the repositories cannot answer is the owner's to run.** Hand them a
+  read-only `SELECT` to paste into the Supabase SQL Editor; do **not** add an RPC, a view or a
+  function to get the answer. If the app needs the number, it needs a **repository method** — a
+  read through the existing tables.
 
 ## Behavioral Rules (from deleted `app/AGENT.md`)
 
