@@ -18,6 +18,7 @@ import type {
   DepartmentFigures,
   DepartmentResponseSet,
   FacultyFigures,
+  IntegrityWarnings,
   PeriodDepartmentFigure,
   PeriodFigures,
   StudentBreakdownItem,
@@ -382,6 +383,20 @@ async function buildAttributionWarnings(
 }
 
 /**
+ * The integrity conditions the RESULTS surfaces report. The "another semester"
+ * condition belongs to the coverage page alone — the results list is
+ * period-scoped, so a response on an earlier term's assignment is a response
+ * of this period (contract §3.21), not an anomaly.
+ */
+async function buildIntegrityWarnings(
+  facts: PeriodFacts,
+  scopeDepartmentId?: string,
+): Promise<IntegrityWarnings> {
+  const { unattributed } = await buildAttributionWarnings(facts, scopeDepartmentId)
+  return { unattributed }
+}
+
+/**
  * The period's submitted and enabled evaluations for a set of faculty.
  * Chunked (the URL cap) and paged (the row cap), ordered by id — the primary
  * key, so a total order.
@@ -644,7 +659,7 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
       }))
       .sort((a, b) => a.departmentId.localeCompare(b.departmentId))
 
-    return { departments, warnings: await buildAttributionWarnings(facts, departmentId) }
+    return { departments, warnings: await buildIntegrityWarnings(facts, departmentId) }
   },
 
   /**

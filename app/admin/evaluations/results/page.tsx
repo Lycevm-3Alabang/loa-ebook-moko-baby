@@ -37,9 +37,8 @@ const FIGURE_CONCURRENCY = 3
 /** How often the figures are read again. */
 const FIGURES_REFRESH_MS = 5 * 60 * 1000
 
-interface AttributionWarnings {
+interface IntegrityWarnings {
   unattributed: { count: number; faculty: { id: string; name: string }[] }
-  offSemester: { count: number; faculty: { id: string; name: string }[] }
 }
 
 interface Period {
@@ -68,7 +67,7 @@ export default function AdminEvaluationResultsPage() {
     }
   }, [periods, selectedPeriod])
 
-  const { data: resultsData, error: resultsError } = useApiGet<{ departments: DepartmentRow[]; warnings?: AttributionWarnings }>(
+  const { data: resultsData, error: resultsError } = useApiGet<{ departments: DepartmentRow[]; warnings?: IntegrityWarnings }>(
     selectedPeriod ? `/api/admin/evaluation-results?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}` : null,
   )
   const departments = useMemo(() => resultsData?.departments ?? [], [resultsData])
@@ -280,27 +279,17 @@ export default function AdminEvaluationResultsPage() {
 
       {error && <ErrorState message={error} onRetry={() => window.location.reload()} />}
 
-      {warnings && (warnings.unattributed.count > 0 || warnings.offSemester.count > 0) && (
+      {warnings && warnings.unattributed.count > 0 && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-4 space-y-1">
           <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
             Some evaluations could not be attributed to a department
           </p>
-          {warnings.unattributed.count > 0 && (
-            <p className="text-xs text-amber-700 dark:text-amber-400">
-              {warnings.unattributed.count} evaluation(s) point at a subject whose department could not be resolved
-              {warnings.unattributed.faculty.length > 0 && (
-                <> — {warnings.unattributed.faculty.map((f) => f.name).join(", ")}</>
-              )}
-            </p>
-          )}
-          {warnings.offSemester.count > 0 && (
-            <p className="text-xs text-amber-700 dark:text-amber-400">
-              {warnings.offSemester.count} evaluation(s) point at a subject from another semester
-              {warnings.offSemester.faculty.length > 0 && (
-                <> — {warnings.offSemester.faculty.map((f) => f.name).join(", ")}</>
-              )}
-            </p>
-          )}
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            {warnings.unattributed.count} evaluation(s) point at a subject whose department could not be resolved
+            {warnings.unattributed.faculty.length > 0 && (
+              <> — {warnings.unattributed.faculty.map((f) => f.name).join(", ")}</>
+            )}
+          </p>
         </div>
       )}
 

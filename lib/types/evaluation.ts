@@ -653,16 +653,26 @@ export interface FacultyFigures {
  */
 export interface PeriodFigures {
   departments: PeriodDepartmentFigure[]
-  warnings: AttributionWarnings
+  warnings: IntegrityWarnings
 }
 
 /**
- * The evaluations that could not be attributed cleanly. Both are integrity
- * conditions in the data, not buckets of people.
+ * The integrity conditions the RESULTS surfaces report: the assignments whose
+ * teacher has no home department — a subject that belongs to no department.
  */
-export interface AttributionWarnings {
+export interface IntegrityWarnings {
   /** The assignment's department could not be resolved. */
   unattributed: { count: number; faculty: { id: string; name: string }[] }
+}
+
+/**
+ * The coverage page's conditions: the integrity ones plus the assignments that
+ * belong to another semester than the period — its list IS term-scoped, so
+ * "outside the term" is a real condition there. The results surfaces do not
+ * report it: their list is period-scoped, so a response on an earlier term's
+ * assignment is a response of this period (contract §3.21).
+ */
+export interface AttributionWarnings extends IntegrityWarnings {
   /** The assignment belongs to another semester than the period. */
   offSemester: { count: number; faculty: { id: string; name: string }[] }
 }

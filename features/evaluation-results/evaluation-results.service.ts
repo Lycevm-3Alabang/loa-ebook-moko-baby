@@ -20,7 +20,7 @@ import {
   type FacultyAggregate,
   type DepartmentAggregate,
 } from "@/lib/evaluation-utils"
-import type { AttributionWarnings, EvaluationAssignment, UserData } from "@/lib/types"
+import type { IntegrityWarnings, EvaluationAssignment, UserData } from "@/lib/types"
 import { getFacultyCountsByDepartment } from "@/features/users/users.service"
 
 /** One row of the results list: a department and its figures for a period. */
@@ -50,7 +50,7 @@ export interface DepartmentResultsRow {
 export async function getDepartmentResults(
   evaluationPeriodId: string,
   departmentId?: string,
-): Promise<{ departments: DepartmentResultsRow[]; warnings: AttributionWarnings }> {
+): Promise<{ departments: DepartmentResultsRow[]; warnings: IntegrityWarnings }> {
   const [figures, allDepts, facultyCounts] = await Promise.all([
     evaluationResultRepository.listPeriodFigures(evaluationPeriodId, departmentId),
     departmentRepository.listAll(),

@@ -31,8 +31,7 @@ function figures(
   departments: { departmentId: string; totalRespondents: number; facultyIds: string[] }[],
   warnings: {
     unattributed: { count: number; faculty: { id: string; name: string }[] }
-    offSemester: { count: number; faculty: { id: string; name: string }[] }
-  } = { unattributed: { count: 0, faculty: [] }, offSemester: { count: 0, faculty: [] } },
+  } = { unattributed: { count: 0, faculty: [] } },
 ) {
   return { departments, warnings }
 }
@@ -102,7 +101,7 @@ describe("GET /api/admin/evaluation-results", () => {
     mockEvalResultRepo.listPeriodFigures.mockResolvedValue(
       figures(
         [{ departmentId: "d1", totalRespondents: 2, facultyIds: ["f1"] }],
-        { unattributed: { count: 1, faculty: [{ id: "f9", name: "Ana" }] }, offSemester: { count: 0, faculty: [] } },
+        { unattributed: { count: 1, faculty: [{ id: "f9", name: "Ana" }] } },
       ),
     )
     mockDeptRepo.listAll.mockResolvedValue([{ id: "d1", name: "CCS", code: "CCS" }])
@@ -125,7 +124,6 @@ describe("GET /api/admin/evaluation-results", () => {
     const res = await GET(req("?evaluationPeriodId=p1"))
     const body = await res.json()
     expect(body.warnings.unattributed.count).toBe(0)
-    expect(body.warnings.offSemester.count).toBe(0)
   })
 
   it("does not serve a no-response roster - the coverage page owns that number", async () => {

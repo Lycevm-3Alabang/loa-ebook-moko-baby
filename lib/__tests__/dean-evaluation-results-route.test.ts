@@ -53,7 +53,6 @@ beforeEach(() => {
     departments: [FIGURE],
     warnings: {
       unattributed: { count: 0, faculty: [] },
-      offSemester: { count: 0, faculty: [] },
     },
   })
   mockUserRepo.listByRole.mockResolvedValue([
@@ -119,7 +118,6 @@ describe("GET /api/dean/evaluation-results", () => {
       departments: [],
       warnings: {
         unattributed: { count: 0, faculty: [] },
-        offSemester: { count: 0, faculty: [] },
       },
     })
     const res = await DeanGET(req("?evaluationPeriodId=p1"))
