@@ -579,6 +579,27 @@ export function resolveSubjectDepartment(
 }
 
 /**
+ * Does this subject belong to this department? The teacher's HOME department
+ * decides, through the one resolver (contract §3.1 — the home is the only
+ * rule; the section's department is not a fallback).
+ *
+ * The subject pages use it as a guard: the department's drill-down is the only
+ * thing that scopes a subject today, so the URL is a way around it (D9).
+ */
+export function isSubjectInDepartment(
+  teacher: { id: string; departmentId: string | null } | null | undefined,
+  departmentId: string,
+): boolean {
+  if (!teacher) return false
+  const ctx: SubjectResolutionContext = {
+    userDept: new Map([[teacher.id, teacher.departmentId]]),
+    sections: new Map(),
+    departmentCourses: new Map(),
+  }
+  return resolveSubjectDepartment({ faculty_id: teacher.id, section_id: null }, ctx) === departmentId
+}
+
+/**
  * The inverse of resolveFacultyDepartment: the candidates whose department is
  * this one. Uses the same helper, so the forward and the backward direction
  * can never disagree.

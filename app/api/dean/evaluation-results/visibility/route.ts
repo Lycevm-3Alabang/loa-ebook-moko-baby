@@ -6,7 +6,7 @@ import {
   departmentRepository,
   evaluationResultRepository,
 } from "@/lib/repositories/factory"
-import { getDepartmentMemberTeaching } from "@/features/evaluation-results/evaluation-results.service"
+import { getDepartmentMembers } from "@/features/evaluation-results/evaluation-results.service"
 
 export async function POST(request: NextRequest) {
   const session = await auth()
@@ -35,8 +35,8 @@ export async function POST(request: NextRequest) {
     // The dean's membership set is the department's OWN faculty — the same
     // set the results page lists, so the toggle never 403s a faculty the
     // dean can actually see.
-    const { assignments } = await getDepartmentMemberTeaching(dept.id, evaluationPeriodId)
-    const deptFacIds = new Set(assignments.map((a) => a.faculty_id))
+    const members = await getDepartmentMembers(dept.id)
+    const deptFacIds = new Set(members.map((m) => m.id))
     if (facultyIds.some((id) => !deptFacIds.has(id))) {
       return NextResponse.json({ error: "You can only manage visibility for faculty in your own department" }, { status: 403 })
     }

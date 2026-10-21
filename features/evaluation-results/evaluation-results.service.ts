@@ -140,35 +140,15 @@ export async function getDepartmentTeachingFaculty(
 }
 
 /**
- * The department's own teaching: the assignments of the faculty homed in it
- * (contract §3.15). The one place the membership set is decided - the
- * results page, the dean's release gate and the dean's guards all read it.
+ * The department's own faculty — the accounts homed in it (contract §3.15,
+ * §3.17). The one membership set: the dean's guards, the drill-down's rows
+ * and the headcount all read it.
+ *
+ * The set does not depend on the period: a teacher homed in the department is
+ * a member of it, whether or not they have an assignment this term.
  */
-export async function getDepartmentMemberTeaching(
-  departmentId: string,
-  evaluationPeriodId: string,
-): Promise<{ assignments: EvaluationAssignment[]; users: Map<string, UserData> }> {
-  const period = await evaluationPeriodRepository.findById(evaluationPeriodId)
-  if (!period) return { assignments: [], users: new Map() }
-  const assignments = await evaluationResultRepository.listDepartmentTeachingAssignments(departmentId, period.semesterId)
-  if (assignments.length === 0) return { assignments: [], users: new Map() }
-
-  // The chain does not filter deletedAt, so a soft-deleted faculty can be in
-  // the set - fetch their row too, or their rows would read "Unknown".
-  const facUsers = await userRepository.listByIds(
-    [...new Set(assignments.map((a) => a.faculty_id))],
-    { includeDeleted: true },
-  )
-  const users = new Map(facUsers.map((u) => [u.id, u]))
-
-  // The department's OWN teaching: the assignments of the faculty homed in it
-  // (contract §3.15). The resolver files a subject under the teacher's home
-  // department, so these assignments are its members' - and the filter makes
-  // the rows' population explicit here, where the rows are built.
-  const members = assignments.filter(
-    (a) => (users.get(a.faculty_id)?.departmentId ?? null) === departmentId,
-  )
-  return { assignments: members, users }
+export async function getDepartmentMembers(departmentId: string): Promise<UserData[]> {
+  return userRepository.listFacultyByDepartment(departmentId)
 }
 
 export async function getDepartmentSubjectResults(

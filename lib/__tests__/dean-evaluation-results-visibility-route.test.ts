@@ -6,7 +6,7 @@ const mockDeptRepo = vi.hoisted(() => ({ findByDeanId: vi.fn() }))
 const mockEvalResultRepo = vi.hoisted(() => ({
   setVisibility: vi.fn(),
 }))
-const mockGetMemberTeaching = vi.hoisted(() => vi.fn())
+const mockGetMembers = vi.hoisted(() => vi.fn())
 const mockLogServerError = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }))
@@ -16,7 +16,7 @@ vi.mock("@/lib/repositories/factory", () => ({
   evaluationResultRepository: mockEvalResultRepo,
 }))
 vi.mock("@/features/evaluation-results/evaluation-results.service", () => ({
-  getDepartmentMemberTeaching: mockGetMemberTeaching,
+  getDepartmentMembers: mockGetMembers,
 }))
 vi.mock("@/lib/services/audit", () => ({ logServerError: mockLogServerError }))
 
@@ -31,20 +31,14 @@ function body(payload: unknown) {
   }) as never
 }
 
-const assignment = (facultyId: string) => ({
-  id: `fs-${facultyId}`,
-  faculty_id: facultyId,
-  subject_id: "s1",
-  section_id: "sec1",
-  departmentId: "dept-1",
-})
+const member = (facultyId: string) => ({ id: facultyId, name: "F", email: "f@x", departmentId: "dept-1" })
 
 beforeEach(() => {
   vi.resetAllMocks()
   mockAuth.mockResolvedValue({ user: { id: "dean-1", role: "DEAN" } })
   mockHasRole.mockReturnValue(true)
   mockDeptRepo.findByDeanId.mockResolvedValue(DEPT)
-  mockGetMemberTeaching.mockResolvedValue({ assignments: [assignment("f1"), assignment("f2")], users: new Map() })
+  mockGetMembers.mockResolvedValue([member("f1"), member("f2")])
   mockEvalResultRepo.setVisibility.mockResolvedValue(undefined)
 })
 
@@ -76,23 +70,23 @@ describe("POST /api/dean/evaluation-results/visibility", () => {
 
   it("scopes the membership to the department's OWN faculty", async () => {
     await POST(body({ evaluationPeriodId: "p1", facultyIds: ["f1"], visible: true }))
-    expect(mockGetMemberTeaching).toHaveBeenCalledWith("dept-1", "p1")
+    expect(mockGetMembers).toHaveBeenCalledWith("dept-1")
   })
 
-  it("allows a toggle for a faculty of the department's assignments", async () => {
+  it("allows a toggle for a faculty of the department", async () => {
     const res = await POST(body({ evaluationPeriodId: "p1", facultyIds: ["f1", "f2"], visible: true }))
     expect(res.status).toBe(200)
     expect(mockEvalResultRepo.setVisibility).toHaveBeenCalledWith("p1", ["f1", "f2"], true)
   })
 
-  it("rejects a faculty outside the department's assignments", async () => {
+  it("rejects a faculty outside the department", async () => {
     const res = await POST(body({ evaluationPeriodId: "p1", facultyIds: ["f1", "f-other"], visible: true }))
     expect(res.status).toBe(403)
     expect(mockEvalResultRepo.setVisibility).not.toHaveBeenCalled()
   })
 
   it("rejects every toggle when the department has no faculty of its own", async () => {
-    mockGetMemberTeaching.mockResolvedValue({ assignments: [], users: new Map() })
+    mockGetMembers.mockResolvedValue([])
     const res = await POST(body({ evaluationPeriodId: "p1", facultyIds: ["f1"], visible: true }))
     expect(res.status).toBe(403)
     expect(mockEvalResultRepo.setVisibility).not.toHaveBeenCalled()

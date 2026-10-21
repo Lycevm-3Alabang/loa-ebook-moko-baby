@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
 import { departmentRepository } from "@/lib/repositories/factory"
-import { getDepartmentMemberTeaching } from "@/features/evaluation-results/evaluation-results.service"
+import { getDepartmentMembers } from "@/features/evaluation-results/evaluation-results.service"
 import { getStudentBreakdownsForFaculty } from "@/features/evaluation-results/evaluation-results.repository"
 import { logServerError } from "@/lib/services/audit"
 
@@ -32,8 +32,8 @@ export async function GET(request: Request) {
       // membership the results page and the visibility toggle use. Without
       // this, any facultyId in the query string returns another department's
       // student-level breakdown.
-      const { assignments } = await getDepartmentMemberTeaching(dept.id, evaluationPeriodId)
-      const deptFacultyIds = new Set(assignments.map((a) => a.faculty_id))
+      const members = await getDepartmentMembers(dept.id)
+      const deptFacultyIds = new Set(members.map((m) => m.id))
       if (!deptFacultyIds.has(facultyId)) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 })
       }

@@ -255,6 +255,25 @@ department; the section's department is no longer a fallback). All three are
   same check covers the placeholder buckets: a bucket now holds the teaching of
   the faculty homed in it, and nobody else's.
 
+- [ ] **CLEANUP (decide) — the seeded dean carries only the `DEAN` role, and a dean is
+  always a faculty.** Where: `supabase-schema.sql:1560` — the seeded dean (`Regie Ellana`)
+  gets the `DEAN` role row **only** (and is homed in CCS at `:1568`). What it is: the
+  domain fact is that **a dean is a faculty member of their own department** — the app
+  already treats DEAN as faculty in the availability list
+  (`app/faculty/availability/page.tsx:61`) and in bookings
+  (`app/api/appointments/route.ts:59`), and the attribution contract says so
+  (`specs/evaluation-results-attribution.md` §3.14: *"A `DEAN|FACULTY` account is faculty
+  (it holds a FACULTY role row); a `DEAN`-only account is not"*). Why it matters now: the
+  membership set is the **members** — the accounts homed in the department carrying the
+  FACULTY role (`listFacultyByDepartment`) — and so is the headcount. A dean who carries
+  both roles is in both; the **seeded** dean carries one, so on a fresh install that dean
+  is in neither, and the dean's own guards refuse their own id (the student-breakdown
+  route answers 403 for the dean's own id). Options: **(a)** give the seeded dean a
+  `FACULTY` role row too (one extra insert; the owner's manual schema runner applies it);
+  **(b)** leave it — the real data already carries both roles, and the seeded dean is a
+  dean who does not teach. ⭐ **Deferred 2026-10-21 (owner)** — it is a **schema** edit
+  (AGENTS.md H4), so it is the owner's call, and the contract is already right.
+
 - [ ] **CLEANUP (decide) — `evaluationResultRepository.listDepartmentAssignments`
   has no app caller left.** It returned a department's **evaluated** assignments
   (the attribution set). The results service now uses

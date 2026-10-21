@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 const mockAuth = vi.hoisted(() => vi.fn())
 const mockHasRole = vi.hoisted(() => vi.fn())
 const mockDeptRepo = vi.hoisted(() => ({ findByDeanId: vi.fn() }))
-const mockGetMemberTeaching = vi.hoisted(() => vi.fn())
+const mockGetMembers = vi.hoisted(() => vi.fn())
 const mockGetBreakdowns = vi.hoisted(() => vi.fn())
 const mockLogServerError = vi.hoisted(() => vi.fn())
 
@@ -13,7 +13,7 @@ vi.mock("@/lib/repositories/factory", () => ({
   departmentRepository: mockDeptRepo,
 }))
 vi.mock("@/features/evaluation-results/evaluation-results.service", () => ({
-  getDepartmentMemberTeaching: mockGetMemberTeaching,
+  getDepartmentMembers: mockGetMembers,
 }))
 vi.mock("@/features/evaluation-results/evaluation-results.repository", () => ({
   getStudentBreakdownsForFaculty: mockGetBreakdowns,
@@ -33,12 +33,7 @@ beforeEach(() => {
   mockAuth.mockResolvedValue({ user: { id: "dean-1", role: "DEAN" } })
   mockHasRole.mockImplementation((role: string, want: string) => role === want)
   mockDeptRepo.findByDeanId.mockResolvedValue(DEPT)
-  mockGetMemberTeaching.mockResolvedValue({
-    assignments: [
-      { id: "fs1", faculty_id: "f1", subject_id: "s1", section_id: "sec1", departmentId: "dept-1" },
-    ],
-    users: new Map(),
-  })
+  mockGetMembers.mockResolvedValue([{ id: "f1", name: "F", email: "f@x", departmentId: "dept-1" }])
   mockGetBreakdowns.mockResolvedValue([{ id: "stu-1", name: "Ann", email: "ann@x", rating: 5 }])
 })
 
@@ -57,9 +52,9 @@ describe("GET /api/dean/evaluation-results/details", () => {
     expect(mockGetBreakdowns).not.toHaveBeenCalled()
   })
 
-  it("scopes the membership to the dean's own department and period", async () => {
+  it("scopes the membership to the dean's own department", async () => {
     await GET(req("?evaluationPeriodId=p1&facultyId=f1"))
-    expect(mockGetMemberTeaching).toHaveBeenCalledWith("dept-1", "p1")
+    expect(mockGetMembers).toHaveBeenCalledWith("dept-1")
   })
 
   it("returns 400 when the params are missing", async () => {

@@ -80,6 +80,7 @@ departments, no "back" link).
 | 5.2 | The dean's **"Faculty"** count and their results page agree with the admin's view of the same department | the two differ |
 | 5.3 | The dean can open a subject in their department | 403 |
 | 5.4 | The dean **cannot** open a subject in another department (change the id in the URL) | a 200 with another department's data |
+| 5.4b | The dean **cannot** open another department's subject under **their own** department's id — the subject's teacher is homed elsewhere, and the route says so | a 200 with another department's responses, under the dean's own department's name |
 | 5.5 | The dean's show/hide-results toggle works for their own teachers, and refuses another department's | a 403 on their own teacher, or a 200 for another department's |
 
 ---

@@ -16,6 +16,7 @@ import {
   findHighestLowestRubrics,
   computeSentimentScore,
   getRemark,
+  isSubjectInDepartment,
 } from "@/lib/evaluation-utils"
 
 export async function GET(
@@ -41,6 +42,14 @@ export async function GET(
       departmentRepository.findById(departmentId),
       sectionRepository.list(),
     ])
+
+    // The subject belongs to the teacher's HOME department (contract §3.1).
+    // The department's drill-down is the only thing that scopes a subject
+    // today, so without this the URL is a way around it (D9).
+    if (!isSubjectInDepartment(faculty, departmentId)) {
+      return NextResponse.json({ error: "This subject does not belong to the department" }, { status: 404 })
+    }
+
     // Sections are few — one lookup for the row's OWN section.
     const section = fsData.section_id ? allSections.find((s) => s.id === fsData.section_id) : undefined
 
