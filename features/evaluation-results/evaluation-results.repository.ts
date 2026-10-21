@@ -16,6 +16,7 @@ import {
 import type {
   IEvaluationResultRepository,
   DepartmentFigures,
+  DepartmentResponseSet,
   FacultyFigures,
   PeriodDepartmentFigure,
   PeriodFigures,
@@ -417,6 +418,57 @@ async function listSubmittedEvaluatesForFaculty(
 }
 
 /**
+ * A department's live response set for a period: the period's submitted and
+ * enabled evaluations by the faculty homed in the department, minus the ones
+ * whose assignment no longer belongs to their evaluatee (the live-eval rule).
+ *
+ * The ONE place the set is decided. The results list's figure
+ * (`listDepartmentFigures`) and the department page's rows read it, so the two
+ * pages cannot drift apart — the parity the attribution contract asks for
+ * (§3.18) becomes structural instead of coincidental.
+ */
+async function loadDepartmentResponseSet(
+  departmentId: string,
+  evaluationPeriodId: string,
+): Promise<DepartmentResponseSet> {
+  // The department's own faculty — the accounts homed in it. The role and the
+  // department are both filters in the query, so the department's students
+  // never cross the wire.
+  const members = await userRepository.listFacultyByDepartment(departmentId)
+  if (members.length === 0) return { members: [], evaluations: [], assignments: new Map() }
+
+  // The period's submitted and enabled evaluations for them.
+  const evaluations = await listSubmittedEvaluatesForFaculty(evaluationPeriodId, members.map((m) => m.id))
+  if (evaluations.length === 0) return { members, evaluations: [], assignments: new Map() }
+
+  // The assignments they point at, and the live-eval rule: an evaluation
+  // counts for the faculty the assignment actually has. A reassigned
+  // assignment leaves the old evaluation behind.
+  const fsIds = [...new Set(evaluations.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
+  const rowById = new Map((await loadAssignmentRows(fsIds)).map((r) => [r.id, r]))
+  const live = evaluations.filter(
+    (e) => !!e.facultySubjectId && rowById.get(e.facultySubjectId)?.faculty_id === e.evaluateeId,
+  )
+
+  // The assignments the live evaluations point at. Their teacher IS the
+  // evaluatee, so their teacher is homed in this department — the assignment
+  // counts under it.
+  const assignments = new Map<string, EvaluationAssignment>()
+  for (const e of live) {
+    const row = e.facultySubjectId ? rowById.get(e.facultySubjectId) : undefined
+    if (!row) continue
+    assignments.set(row.id, {
+      id: row.id,
+      faculty_id: row.faculty_id,
+      subject_id: row.subject_id,
+      section_id: row.section_id,
+      departmentId,
+    })
+  }
+  return { members, evaluations: live, assignments }
+}
+
+/**
  * The comment sentiment scores of a set of evaluations. Chunked: the URL cap.
  * A chunk of 100 evaluation ids holds at most a few hundred comments, so the
  * 1,000-row cap cannot bite here.
@@ -435,6 +487,14 @@ async function listCommentScores(evaluationIds: string[]): Promise<{ sentimentSc
 }
 
 export const evaluationResultRepository: IEvaluationResultRepository = {
+  /**
+   * A department's live response set for a period — the one place the set is
+   * decided (contract §3.21: the period scopes the responses).
+   */
+  async listDepartmentResponseSet(departmentId: string, evaluationPeriodId: string): Promise<DepartmentResponseSet> {
+    return loadDepartmentResponseSet(departmentId, evaluationPeriodId)
+  },
+
   /**
    * One department's figures for a period: the response count, the pooled
    * rating and its remark, the highest and lowest rubrics, and the comment
@@ -457,23 +517,11 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
       sentimentScore: null,
     }
 
-    // The department's own faculty — the accounts homed in it.
-    const faculty = await userRepository.listByRole("FACULTY")
-    const facultyIds = faculty.filter((u) => u.departmentId === departmentId).map((u) => u.id)
-    if (facultyIds.length === 0) return empty
-
-    // The department's submitted and enabled evaluations in the period.
-    const evaluations = await listSubmittedEvaluatesForFaculty(evaluationPeriodId, facultyIds)
+    // The department's live response set — the same set the department page's
+    // rows are built from, so the two pages print the same number.
+    const { evaluations } = await loadDepartmentResponseSet(departmentId, evaluationPeriodId)
     if (evaluations.length === 0) return empty
-
-    // The assignments they point at, and the live-eval rule: an evaluation
-    // counts for the faculty the assignment actually has.
-    const fsIds = [...new Set(evaluations.map((e) => e.facultySubjectId).filter(Boolean))] as string[]
-    const assignments = new Map((await loadAssignmentRows(fsIds)).map((r) => [r.id, r]))
-    const liveEvalIds = evaluations
-      .filter((e) => !!e.facultySubjectId && assignments.get(e.facultySubjectId)?.faculty_id === e.evaluateeId)
-      .map((e) => e.id)
-    if (liveEvalIds.length === 0) return empty
+    const liveEvalIds = evaluations.map((e) => e.id)
 
     const [ratings, comments] = await Promise.all([
       fetchRatingsWithCategories(supabase, liveEvalIds),

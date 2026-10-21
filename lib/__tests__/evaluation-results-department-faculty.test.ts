@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 
 const mockSupabase = vi.hoisted(() => ({ from: vi.fn() }))
 const mockUserRepo = vi.hoisted(() => ({
-  listByRole: vi.fn(),
+  listFacultyByDepartment: vi.fn(),
 }))
 
 vi.mock("@/lib/db", () => ({ supabase: mockSupabase }))
@@ -48,7 +48,7 @@ function respondWith(rows: TableRows) {
 
 beforeEach(() => {
   vi.resetAllMocks()
-  mockUserRepo.listByRole.mockResolvedValue([])
+  mockUserRepo.listFacultyByDepartment.mockResolvedValue([])
 })
 
 describe("evaluationResultRepository.listDepartmentAssignments", () => {
@@ -313,7 +313,7 @@ describe("evaluationResultRepository.listDepartmentFigures", () => {
     ratings?: { evaluationId: string; rating: number; itemId: string }[]
     comments?: { evaluationId: string; sentimentScore: number | null }[]
   } = {}) {
-    respondWith({
+    return respondWith({
       evaluations: { data: over.evaluations ?? [], error: null },
       faculty_subjects: {
         data: [{ id: "fs1", faculty_id: over.assignmentFaculty ?? "f1", subject_id: "s1", section_id: null, semesterId: "sem1" }],
@@ -328,7 +328,7 @@ describe("evaluationResultRepository.listDepartmentFigures", () => {
   }
 
   it("pools a department's ratings into its figures", async () => {
-    mockUserRepo.listByRole.mockResolvedValue([
+    mockUserRepo.listFacultyByDepartment.mockResolvedValue([
       { id: "f1", name: "Ana", email: "ana@x", departmentId: "d1", role: "FACULTY" },
     ])
     respondWithDepartmentFacts({
@@ -347,7 +347,7 @@ describe("evaluationResultRepository.listDepartmentFigures", () => {
   })
 
   it("drops an evaluation whose assignment no longer belongs to its evaluatee", async () => {
-    mockUserRepo.listByRole.mockResolvedValue([
+    mockUserRepo.listFacultyByDepartment.mockResolvedValue([
       { id: "f1", name: "Ana", email: "ana@x", departmentId: "d1", role: "FACULTY" },
     ])
     respondWithDepartmentFacts({
@@ -361,10 +361,29 @@ describe("evaluationResultRepository.listDepartmentFigures", () => {
     expect(figures.avgRating).toBeNull()
   })
 
-  it("leaves a teacher homed in another department out", async () => {
-    mockUserRepo.listByRole.mockResolvedValue([
-      { id: "f2", name: "Ben", email: "ben@x", departmentId: "d2", role: "FACULTY" },
+  it("scopes the period's evaluations to the department's own faculty", async () => {
+    mockUserRepo.listFacultyByDepartment.mockResolvedValue([
+      { id: "f1", name: "Ana", email: "ana@x", departmentId: "d1", role: "FACULTY" },
     ])
+    const chains = respondWithDepartmentFacts({
+      evaluations: [{ id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" }],
+      users: [{ id: "f1", name: "Ana", email: "ana@x", departmentId: "d1" }],
+    })
+
+    await evaluationResultRepository.listDepartmentFigures("d1", "p1")
+
+    // The members are the accounts homed in the department — the one read
+    // that decides them.
+    expect(mockUserRepo.listFacultyByDepartment).toHaveBeenCalledWith("d1")
+    // And the period's evaluations are asked for those members only: a
+    // teacher homed elsewhere cannot come back through the query.
+    expect(chains[0].in).toHaveBeenCalledWith("evaluateeId", ["f1"])
+  })
+
+  it("leaves a teacher homed in another department out", async () => {
+    // The department's faculty read returns nobody for d1: a teacher homed
+    // in d2 is not a member of d1, so the department has no responses.
+    mockUserRepo.listFacultyByDepartment.mockResolvedValue([])
     respondWithDepartmentFacts({
       evaluations: [{ id: "e1", evaluateeId: "f2", facultySubjectId: "fs1" }],
       users: [{ id: "f2", name: "Ben", email: "ben@x", departmentId: "d2" }],

@@ -1,5 +1,7 @@
 // ── Entity Types ──────────────────────────────────────────
 
+import type { UserData } from "./repository"
+
 export interface Semester {
   id: string
   title: string
@@ -673,7 +675,29 @@ export interface EvaluationVisibilityRow {
   is_results_visible: boolean
 }
 
+/**
+ * A department's live response set for a period: the period's submitted and
+ * enabled evaluations by the faculty homed in the department, minus the ones
+ * whose assignment no longer belongs to their evaluatee (the live-eval rule).
+ *
+ * The ONE place the set is decided — the results list's figure and the
+ * department page's rows both read it, so the two cannot drift apart.
+ */
+export interface DepartmentResponseSet {
+  /** The department's own faculty — the accounts homed in it. */
+  members: UserData[]
+  /** The live evaluations — the period's, by those members. */
+  evaluations: { id: string; evaluateeId: string; facultySubjectId: string | null }[]
+  /** The assignments those evaluations point at — the subject rows' source. */
+  assignments: Map<string, EvaluationAssignment>
+}
+
 export interface IEvaluationResultRepository {
+  /**
+   * A department's live response set for a period — the one place the set is
+   * decided (the period scopes the responses, contract §3.21).
+   */
+  listDepartmentResponseSet(departmentId: string, evaluationPeriodId: string): Promise<DepartmentResponseSet>
   /**
    * The period's departments and their response counts, with the attribution
    * warnings read from the same facts.

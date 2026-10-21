@@ -187,6 +187,33 @@ export const userRepository: IUserRepository = {
       throw err
     }
   },
+  async listFacultyByDepartment(departmentId, options) {
+    try {
+      // The listByRole query with the department as a second filter: the role
+      // and the department are BOTH filters in the query, so only this
+      // department's faculty come back. listByDepartment would transfer the
+      // department's students too, and listByRole would transfer every
+      // faculty in the school.
+      let query = supabase
+        .from("users")
+        .select(USER_SELECT_INNER)
+        .eq("userrole.roleName", "FACULTY")
+        .eq("departmentId", departmentId)
+      if (!options?.includeDeleted) {
+        query = query.is("deletedAt", null)
+      }
+      const { data, error } = await query
+      if (error) throw error
+      return toUsersWithRoles(data as DbRecord[])
+    } catch (err) {
+      if (isMissingUserrole(err as QueryError)) {
+        // No role table: nobody can be known to be faculty — the same answer
+        // listByRole gives.
+        return []
+      }
+      throw err
+    }
+  },
   async listByIds(ids, options) {
     const CHUNK = 200
     const allRows: DbRecord[] = []

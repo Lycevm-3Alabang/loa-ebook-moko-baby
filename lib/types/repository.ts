@@ -56,6 +56,15 @@ export interface IUserRepository {
   createMany(inputs: CreateUserInput[]): Promise<Map<string, UserData>>
   listByRole(role: string, options?: ListUsersOptions): Promise<UserData[]>
   listByDepartment(departmentId: string, options?: ListUsersOptions): Promise<UserData[]>
+  /**
+   * The faculty homed in a department: the accounts whose home is that
+   * department and who carry the FACULTY role.
+   *
+   * The role and the department are both filters in the query, so the
+   * department's students never cross the wire — `listByDepartment` would
+   * transfer them, and `listByRole` would transfer every faculty in the school.
+   */
+  listFacultyByDepartment(departmentId: string, options?: ListUsersOptions): Promise<UserData[]>
   listByIds(ids: string[], options?: ListUsersOptions): Promise<UserData[]>
   listAll(options?: ListUsersOptions): Promise<UserData[]>
   update(id: string, data: Partial<UserData>): Promise<UserData>
