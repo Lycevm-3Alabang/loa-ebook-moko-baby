@@ -173,8 +173,21 @@ export default function DeanDepartmentDetailPage() {
       {!loading && !isLocked && subjects.length > 0 && departmentAggregate && (
         <>
           <div className="card p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-secondary">Department Summary</p>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex items-baseline gap-3">
+                  <span className="text-4xl font-bold leading-none text-primary">
+                    {departmentAggregate.avgRating?.toFixed(2) ?? "\u2014"}
+                  </span>
+                  {departmentAggregate.remarks && (
+                    <span className={`text-sm font-semibold px-2.5 py-1 rounded-full ${getRemarkColor(departmentAggregate.remarks)}`}>
+                      {departmentAggregate.remarks}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-tertiary mt-1">Department average</p>
+              </div>
+
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1.5">
                   <IosButton
@@ -201,46 +214,33 @@ export default function DeanDepartmentDetailPage() {
                   title={`Download ${pdfMode === "per_faculty" ? "per-faculty" : "per-subject"} PDF`}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 012 0V19a2 2 0 01-2 2z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                   Download PDF
                 </IosButton>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div>
-                <p className="text-[10px] text-tertiary">Faculty</p>
-                <p className="text-lg font-bold">{members.length}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-tertiary">Department Average</p>
-                <p className="text-lg font-bold">{departmentAggregate.avgRating?.toFixed(2) ?? "\u2014"}</p>
-                {departmentAggregate.remarks && (
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${getRemarkColor(departmentAggregate.remarks)}`}>
-                    {departmentAggregate.remarks}
-                  </span>
+            {(attentionRubrics.length > 0 || departmentAggregate.highestRubrics.length > 0) && (
+              <div className="space-y-1 border-t border-default pt-3">
+                {attentionRubrics.length > 0 && (
+                  <div className="flex items-baseline justify-between gap-4">
+                    <span className="text-xs text-tertiary">Needs attention</span>
+                    <span className="text-sm font-semibold text-danger-text text-right">
+                      {attentionRubrics.map((r) => `${r.label} ${r.score.toFixed(2)}`).join(", ")}
+                    </span>
+                  </div>
+                )}
+                {departmentAggregate.highestRubrics.length > 0 && (
+                  <div className="flex items-baseline justify-between gap-4">
+                    <span className="text-xs text-tertiary">Top rubric</span>
+                    <span className="text-sm font-semibold text-success-text text-right">
+                      {departmentAggregate.highestRubrics.map((r) => `${r.label} ${r.score.toFixed(2)}`).join(", ")}
+                    </span>
+                  </div>
                 )}
               </div>
-              <div>
-                <p className="text-[10px] text-tertiary">Top Rubric</p>
-                {departmentAggregate.highestRubrics.map((r) => (
-                  <p key={r.key} className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                    {r.label}: {r.score.toFixed(2)}
-                  </p>
-                ))}
-              </div>
-              {attentionRubrics.length > 0 && (
-                <div>
-                  <p className="text-[10px] text-tertiary">Needs Attention Rubric</p>
-                  {attentionRubrics.map((r) => (
-                    <p key={r.key} className="text-xs font-semibold text-red-600 dark:text-red-400">
-                      {r.label}: {r.score.toFixed(2)}
-                    </p>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
           </div>
 
           <DepartmentSubjectView

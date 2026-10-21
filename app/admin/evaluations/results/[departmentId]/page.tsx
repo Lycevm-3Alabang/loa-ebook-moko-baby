@@ -182,10 +182,25 @@ export default function DepartmentDetailPage() {
 
       {!loading && subjects.length > 0 && departmentAggregate && (
         <>
-          {/* Department Summary Widget */}
+          {/* Department Summary Widget - the card is a summary, not a
+              dashboard: the verdict is the headline, the rubric read-out is
+              under it, and the card's shape does not change with the data. */}
           <div className="card p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-secondary">Department Summary</p>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex items-baseline gap-3">
+                  <span className="text-4xl font-bold leading-none text-primary">
+                    {departmentAggregate.avgRating?.toFixed(2) ?? "\u2014"}
+                  </span>
+                  {departmentAggregate.remarks && (
+                    <span className={`text-sm font-semibold px-2.5 py-1 rounded-full ${getRemarkColor(departmentAggregate.remarks)}`}>
+                      {departmentAggregate.remarks}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-tertiary mt-1">Department average</p>
+              </div>
+
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1.5">
                   <IosButton
@@ -219,39 +234,26 @@ export default function DepartmentDetailPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div>
-                <p className="text-[10px] text-tertiary">Faculty</p>
-                <p className="text-lg font-bold">{members.length}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-tertiary">Department Average</p>
-                <p className="text-lg font-bold">{departmentAggregate.avgRating?.toFixed(2) ?? "\u2014"}</p>
-                {departmentAggregate.remarks && (
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${getRemarkColor(departmentAggregate.remarks)}`}>
-                    {departmentAggregate.remarks}
-                  </span>
+            {(attentionRubrics.length > 0 || departmentAggregate.highestRubrics.length > 0) && (
+              <div className="space-y-1 border-t border-default pt-3">
+                {attentionRubrics.length > 0 && (
+                  <div className="flex items-baseline justify-between gap-4">
+                    <span className="text-xs text-tertiary">Needs attention</span>
+                    <span className="text-sm font-semibold text-danger-text text-right">
+                      {attentionRubrics.map((r) => `${r.label} ${r.score.toFixed(2)}`).join(", ")}
+                    </span>
+                  </div>
+                )}
+                {departmentAggregate.highestRubrics.length > 0 && (
+                  <div className="flex items-baseline justify-between gap-4">
+                    <span className="text-xs text-tertiary">Top rubric</span>
+                    <span className="text-sm font-semibold text-success-text text-right">
+                      {departmentAggregate.highestRubrics.map((r) => `${r.label} ${r.score.toFixed(2)}`).join(", ")}
+                    </span>
+                  </div>
                 )}
               </div>
-              <div>
-                <p className="text-[10px] text-tertiary">Top Rubric</p>
-                {departmentAggregate.highestRubrics.map((r) => (
-                  <p key={r.key} className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                    {r.label}: {r.score.toFixed(2)}
-                  </p>
-                ))}
-              </div>
-              {attentionRubrics.length > 0 && (
-                <div>
-                  <p className="text-[10px] text-tertiary">Needs Attention Rubric</p>
-                  {attentionRubrics.map((r) => (
-                    <p key={r.key} className="text-xs font-semibold text-red-600 dark:text-red-400">
-                      {r.label}: {r.score.toFixed(2)}
-                    </p>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
           </div>
 
           <DepartmentSubjectView

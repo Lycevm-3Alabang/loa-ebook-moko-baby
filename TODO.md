@@ -207,6 +207,17 @@ session, or none),
   trimming now would silently kill mismatch detection. Unblocks only via explicit
   product call (drop MISMATCH) or server-side ownership resolution.
 
+- [ ] **CLEANUP (decide) — the "Department Summary" card is written twice.** Where: the
+  department drill-down's header card is inlined in **both** pages —
+  `app/admin/evaluations/results/[departmentId]/page.tsx` and the dean's twin
+  `app/dean/evaluations/results/[departmentId]/page.tsx` (the same markup, the same numbers).
+  Why it is open: the card's **redesign** (`specs/evaluation-results-summary-card.md`) touches
+  the markup twice, and a change to one without the other shows a difference on the dean's
+  page. Options: **(a)** extract it to a shared component (e.g.
+  `features/evaluations/components/DepartmentSummaryCard.tsx`) — one markup, one test, both
+  pages; **(b)** leave it inlined. ⭐ **Not part of the redesign** (AGENTS.md: no adjacent
+  refactoring) — recorded here, to be decided on its own.
+
 ## Open — three items to revisit (2026-10-20)
 
 Tracked 2026-10-20 after the faculty-count unification

@@ -91,7 +91,7 @@ describe("Department results page - Department Summary widget", () => {
     expect(screen.getAllByText("Very Satisfactory").length).toBeGreaterThan(0)
   })
 
-  it("counts the department's faculty - the members, with or without results", async () => {
+  it("carries no faculty count - the cards below are the faculty", async () => {
     mockUseApiGet.mockReturnValue({
       data: {
         department: { id: "d1", name: "CCS", code: "CCS" },
@@ -109,18 +109,67 @@ describe("Department results page - Department Summary widget", () => {
 
     render(<DepartmentDetailPage />)
 
-    await waitFor(() => expect(screen.getByText("Faculty")).toBeTruthy())
-    // Two members - one of them has no results, and the card counts him.
-    const label = screen.getByText("Faculty")
-    expect(label.parentElement?.textContent).toContain("2")
+    await waitFor(() => expect(screen.getByText("Department average")).toBeTruthy())
+    // The count would only repeat what the cards below already show.
+    expect(screen.queryByText("Faculty")).toBeNull()
   })
 
   it("shows no subject count and no response count - the coverage page owns them", async () => {
     render(<DepartmentDetailPage />)
 
-    await waitFor(() => expect(screen.getByText("Faculty")).toBeTruthy())
+    await waitFor(() => expect(screen.getByText("Department average")).toBeTruthy())
     expect(screen.queryByText("Subjects")).toBeNull()
     expect(screen.queryByText("Total Responses")).toBeNull()
+  })
+
+  it("puts the alarm before the strength, and joins the ties on one line", async () => {
+    mockUseApiGet.mockReturnValue({
+      data: {
+        department: { id: "d1", name: "CCS", code: "CCS" },
+        subjects: SUBJECTS,
+        members: [{ id: "f1", name: "Ana Reyes", email: "ana@x.com" }],
+        visibilityMap: { f1: true },
+        facultyAggregates: { f1: { ...DEPARTMENT_AGGREGATE, facultyId: "f1" } },
+        departmentAggregate: {
+          ...DEPARTMENT_AGGREGATE,
+          highestRubrics: [
+            { key: "professionalManner", label: "Professional Manner", score: 3.5 },
+            { key: "studentEngagement", label: "Student Engagement", score: 3.5 },
+          ],
+          lowestRubrics: [{ key: "timeManagement", label: "Time Management", score: 2.1 }],
+        },
+      },
+      error: undefined,
+    })
+
+    const { container } = render(<DepartmentDetailPage />)
+
+    await waitFor(() => expect(screen.getByText("Needs attention")).toBeTruthy())
+    const text = container.textContent ?? ""
+    // The alarm comes before the strength.
+    expect(text.indexOf("Needs attention")).toBeLessThan(text.indexOf("Top rubric"))
+    // The ties are on ONE line, not one cell each.
+    expect(screen.getByText("Professional Manner 3.50, Student Engagement 3.50")).toBeTruthy()
+  })
+
+  it("shows no rubric read-out when the department has no ratings", async () => {
+    mockUseApiGet.mockReturnValue({
+      data: {
+        department: { id: "d1", name: "CCS", code: "CCS" },
+        subjects: SUBJECTS,
+        members: [{ id: "f1", name: "Ana Reyes", email: "ana@x.com" }],
+        visibilityMap: { f1: true },
+        facultyAggregates: {},
+        departmentAggregate: { ...DEPARTMENT_AGGREGATE, avgRating: null, remarks: null, highestRubrics: [], lowestRubrics: [] },
+      },
+      error: undefined,
+    })
+
+    render(<DepartmentDetailPage />)
+
+    await waitFor(() => expect(screen.getByText("Department average")).toBeTruthy())
+    expect(screen.queryByText("Top rubric")).toBeNull()
+    expect(screen.queryByText("Needs attention")).toBeNull()
   })
 
   it("shows a Needs Attention Rubric only when the weakest is critically low", async () => {
@@ -141,8 +190,8 @@ describe("Department results page - Department Summary widget", () => {
 
     render(<DepartmentDetailPage />)
 
-    await waitFor(() => expect(screen.getByText("Needs Attention Rubric")).toBeTruthy())
-    expect(screen.getByText("Time Management: 2.10")).toBeTruthy()
+    await waitFor(() => expect(screen.getByText("Needs attention")).toBeTruthy())
+    expect(screen.getByText("Time Management 2.10")).toBeTruthy()
   })
 
   it("no longer shows a sentiment figure", async () => {
@@ -153,11 +202,13 @@ describe("Department results page - Department Summary widget", () => {
     expect(screen.queryByText("0.4000")).toBeNull()
   })
 
-  it("labels the response count as responses", async () => {
+  it("names the average for what it is", async () => {
     render(<DepartmentDetailPage />)
 
-    const label = await screen.findByText("Total Responses")
-    expect(label.parentElement?.textContent).toContain("4")
+    // The headline says what the number is - there is no response count to
+    // label (the coverage page owns the counts).
+    expect(await screen.findByText("Department average")).toBeTruthy()
+    expect(screen.queryByText("Total Responses")).toBeNull()
     expect(screen.queryByText("Total Respondents")).toBeNull()
   })
 })

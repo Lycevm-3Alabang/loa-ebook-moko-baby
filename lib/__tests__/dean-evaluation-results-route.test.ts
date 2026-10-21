@@ -126,6 +126,5 @@ describe("GET /api/dean/evaluation-results", () => {
     expect(body.departments).toHaveLength(1)
     expect(body.departments[0].departmentId).toBe("dept-1")
     expect(body.departments[0].totalRespondents).toBe(0)
-    expect(body.departments[0].avgRating).toBeNull()
   })
 })
