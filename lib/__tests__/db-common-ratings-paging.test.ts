@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 const mockSupabase = vi.hoisted(() => ({ from: vi.fn() }))
 vi.mock("@/lib/db", () => ({ supabase: mockSupabase }))
 
-import { fetchRatingsWithCategories } from "@/lib/db/common"
+import { fetchRatingsWithCategories, RUBRIC_STATEMENT_COUNT } from "@/lib/db/common"
 
 /** The mocked client, in the shape the helper takes. */
 const client = mockSupabase as never
@@ -61,11 +61,11 @@ function ratingsRows(n: number, offset = 0) {
   return Array.from({ length: n }, (_, i) => ({
     evaluationId: `e-${String(offset + i).padStart(4, "0")}`,
     rating: ((offset + i) % 5) + 1,
-    itemId: `item-${(offset + i) % 27}`,
+    itemId: `item-${(offset + i) % RUBRIC_STATEMENT_COUNT}`,
   }))
 }
 
-const ITEM_IDS = Array.from({ length: 27 }, (_, i) => `item-${i}`)
+const ITEM_IDS = Array.from({ length: RUBRIC_STATEMENT_COUNT }, (_, i) => `item-${i}`)
 
 function installClient(pages: Page[], captured: Captured) {
   let cursor = 0
@@ -194,14 +194,19 @@ describe("fetchRatingsWithCategories — PostgREST row cap", () => {
       Array.from({ length: 250 }, (_, i) => `e-${String(i).padStart(4, "0")}`),
     )
 
-    // A chunk holds 37 evaluations, so a chunk's ratings (37 x 27 = 999) fit
-    // under PostgREST's 1,000-row cap in ONE request: 250 ids = 7 requests,
-    // and the ~8KB URL cap still holds. Each chunk pages from its own offset 0.
-    expect(captured.ranges).toEqual([
-      [0, 999], [0, 999], [0, 999], [0, 999], [0, 999], [0, 999], [0, 999],
-    ])
-    for (const chunk of captured.inCalls.slice(0, 7)) {
-      expect(chunk.length).toBeLessThanOrEqual(37)
+    // A chunk's ratings must fit under PostgREST's 1,000-row cap in ONE
+    // request, so the chunk is sized from the rubric's statement count:
+    // floor(1000 / 34) = 29 evaluations, and 29 x 34 = 986 rows. The ~8KB URL
+    // cap still holds (29 ids ≈ 1.1KB). Each chunk pages from its own offset 0.
+    const chunkSize = captured.inCalls[0].length
+    expect(chunkSize).toBe(Math.floor(1000 / RUBRIC_STATEMENT_COUNT))
+    expect(chunkSize * RUBRIC_STATEMENT_COUNT).toBeLessThan(1000)
+
+    const chunkCount = Math.ceil(250 / chunkSize)
+    expect(captured.ranges).toEqual(Array.from({ length: chunkCount }, () => [0, 999]))
+    // The reads after the ratings (the rubric) are not chunks of evaluations.
+    for (const chunk of captured.inCalls.slice(0, chunkCount)) {
+      expect(chunk.length).toBeLessThanOrEqual(chunkSize)
     }
   })
 })

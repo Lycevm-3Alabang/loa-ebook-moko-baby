@@ -454,11 +454,15 @@ Baseline: 62 files · 687 tests (2026-10-21).
   stays as it is. The Overall sheet's column set for that scope is a separate decision.
 - **The general rating's arithmetic** (§6.5) — one function, every surface, a product
   decision. **Not decided by an export.**
-- **The `RATINGS_IN_CHUNK_SIZE` staleness.** `lib/db/common.ts:60` sizes a chunk of 37
-  evaluations at 37 × **27** = 999 rows, but the rubric has **34** statements, so a chunk now
-  spills into two pages and its first 1,000 rows are read twice. Correctness is fine (the read
-  pages), performance is not. The fix is `37 → 29` — but **only after the live rubric is
-  confirmed to be 34 statements**, which is a read-only check for the owner.
+- **The `RATINGS_IN_CHUNK_SIZE` staleness — FIXED 2026-10-22.** `lib/db/common.ts` sized a chunk
+  of 37 evaluations at 37 × **27** = 999 rows, but the rubric has **34** statements (migrations
+  28/29 took it from 24 to 34; the "27" was the *seed's* count), so every chunk spilled into two
+  pages and its first 1,000 rows were read twice. Correctness was never affected — the page loop
+  pages until a page comes back short. The chunk is now **derived**
+  (`Math.floor(RATINGS_PAGE_SIZE / RUBRIC_STATEMENT_COUNT)` = 29), with the count exported and the
+  invariant asserted by the paging test. AGENTS.md **Lesson 7b** carries the corollary. ⭐ The
+  schema's two "27"s were left alone — `supabase-schema.sql` is the owner's file (H4) and the
+  rubric group's description is seeded data.
 - **`downloadDeptPdf` (`lib/evaluation-pdf.ts:279`)** — no callers. A cleanup, not this slice.
 
 ---

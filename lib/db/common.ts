@@ -65,15 +65,39 @@ export interface RatingWithCategory {
   }
 }
 
-// A chunk of 37 evaluations holds 37 x 27 = 999 rating rows — one page under
-// PostgREST's 1,000-row cap. The chunk is sized so the ratings come back in a
-// SINGLE request: with a bigger chunk the rows spill into a second and third
-// page, and every OFFSET page re-scans the chunk's rows, so the database read
-// the same ratings three times over.
-const RATINGS_IN_CHUNK_SIZE = 37
 // PostgREST's db-max-rows (1,000) truncates an unbounded read with HTTP 200
 // and no error, so the ratings of a chunk of evaluations must be paged out.
 const RATINGS_PAGE_SIZE = 1000
+
+/**
+ * The rubric's statement count — how many rows one evaluation contributes to
+ * `evaluation_ratings` (one per statement).
+ *
+ * ⚠️ The rubric is **DATA** — the app has a rubric editor — so this number has
+ * to track it. The seeded rubric has **34** statements across 8 criteria
+ * (3 · 6 · 4 · 4 · 4 · 4 · 3 · 6): migrations 28/29 took it from 24 to 34.
+ * The "27" this constant used to assume was the *seed's* own count, which the
+ * schema's comment and the rubric group's description still carry, but the
+ * live rubric has had 34 since migration 29.
+ */
+export const RUBRIC_STATEMENT_COUNT = 34
+
+/**
+ * A chunk of evaluations holds `chunk x RUBRIC_STATEMENT_COUNT` rating rows,
+ * and the chunk is sized so those rows come back in a **single** request: with
+ * a bigger chunk the rows spill into a second and third page, and every OFFSET
+ * page re-scans the chunk's rows, so the database reads the same ratings
+ * twice over.
+ *
+ * 29 x 34 = **986** rows — one page under the 1,000-row cap. The ids are
+ * ~1.1KB, well under the ~8KB URL cap.
+ *
+ * ⭐ This is a **performance** knob, not a correctness one: the page loop
+ * below pages until a page comes back short, so a chunk that spills into two
+ * pages is still read whole — it is only read twice. If the rubric grows, the
+ * chunk stays correct and gets slower; re-check `RUBRIC_STATEMENT_COUNT`.
+ */
+const RATINGS_IN_CHUNK_SIZE = Math.floor(RATINGS_PAGE_SIZE / RUBRIC_STATEMENT_COUNT)
 
 function chunkIds(ids: string[], size: number): string[][] {
   const chunks: string[][] = []
@@ -91,7 +115,7 @@ interface RatingRowRaw {
 
 /**
  * The ratings of one chunk of evaluation ids, paged past PostgREST's 1,000-row
- * cap. A chunk of 100 evaluations holds 100 x 27 = 2,700 rating rows, so an
+ * cap. A chunk of 100 evaluations holds 100 x 34 = 3,400 rating rows, so an
  * unbounded read silently returns only the first 1,000. Ordered by
  * (evaluationId, itemId) — a total order, because the pair is UNIQUE — so no
  * row is duplicated or skipped across a page boundary.
