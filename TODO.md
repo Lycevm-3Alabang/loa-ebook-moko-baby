@@ -49,8 +49,17 @@ session, or none),
   rows **equals** the mean of its statement means, so the workbook reproduces the legacy's FINAL
   RATING. (A submitted response rates every statement — the submit button is disabled until they
   are all answered — so the two grains are the same number, not merely the same rule.)
-  **Remaining slices:** (2) the routes — the period/semester read, `employeeNo`, the section on the
-  faculty route; (3) **the template cut — the owner's hands**: `data/templates/eval-report.xlsx`
+  **What landed (slice 2, `13ade13`):** the three routes the export reads now **deliver** the
+  identity block. The period **and** its semester come from ONE read
+  (`evaluationPeriodRepository.findById` joins `semesters!inner(title)`), so the header never
+  types a value it could have read. ⭐ **The faculty route never resolved its section** — the
+  admin and dean routes have carried the program and the section name all along — so it gained a
+  `sectionRepository.findById` for the row's OWN section, read **after** the ownership guard. The
+  `employeeNo` came free: `USER_SELECT` already carried it and the routes were dropping it. The
+  period is **optional**: a period that cannot be read leaves the figures intact and the header's
+  labels null. 9 cases (4 in the route test, 5 in a new file for the faculty route, which had no
+  test at all).
+  **Remaining slices:** (3) **the template cut — the owner's hands**: `data/templates/eval-report.xlsx`
   with the header edits, the letterhead swap, and `next.config.ts`'s `outputFileTracingIncludes`
   (without it the file is absent in production and the export 500s there while working locally);
   (4) the export routes (three, each mirroring its own read route's guards — the faculty's
@@ -746,6 +755,10 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   `specs/evaluation-results-export.md` (v2.0) + the specs index row; and the statement ratings
   (`abcc919`): the read now carries the rubric item's identity, and `computeItemAverages` is the
   statement grain. See "NEXT" for the whole thread.
+
+- [x] **The export's routes carry the identity block — 2026-10-22** (`13ade13`). The three routes
+  the export reads now deliver the employee number, the program, the section, the semester and
+  the evaluation period. See "NEXT".
 
 - [x] **The drill-down's "By Faculty" cards — decided and implemented 2026-10-20**
   (`.opencode/skills/plan-fix/runs/20261020-2300-drill-down-faculty-cards.md`).

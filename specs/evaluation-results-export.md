@@ -424,16 +424,24 @@ Each of the three pages gets the export affordance, using `components/ui/IosButt
 
 ## 9. The slices
 
-| # | Slice | Files |
-|---|---|---|
-| 1 | **The statement ratings** — the item identity through the read + `computeItemAverages` | `lib/db/common.ts`, `lib/types/evaluation.ts`, `lib/evaluation-utils.ts`, + tests |
-| 2 | **The routes** — the period/semester read, `employeeNo`, the section on the faculty route | 3 route files + tests |
-| 3 | **The template** — cut `data/templates/eval-report.xlsx` (§3.2, §3.3); the ZIP reader | `data/templates/eval-report.xlsx` (owner-cut), `lib/xlsx-template.ts` (new), `next.config.ts` |
-| 4 | **The export route** — the fill, the rubric guard, the three routes | 3 new route files, `lib/evaluation-form-xlsx.ts` (new) |
-| 5 | **The buttons** — the export affordance on the three pages | 3 page files |
+| # | Slice | Files | State |
+|---|---|---|---|
+| 1 | **The statement ratings** — the item identity through the read + `computeItemAverages` | `lib/db/common.ts`, `lib/types/evaluation.ts`, `lib/evaluation-utils.ts`, + tests | **done 2026-10-22** (`abcc919`) |
+| 2 | **The routes** — the period/semester read, `employeeNo`, the section on the faculty route | 3 route files + tests | **done 2026-10-22** (`13ade13`) |
+| 3 | **The template** — cut `data/templates/eval-report.xlsx` (§3.2, §3.3); the ZIP reader | `data/templates/eval-report.xlsx` (owner-cut), `lib/xlsx-template.ts` (new), `next.config.ts` | next |
+| 4 | **The export route** — the fill, the rubric guard, the three routes | 3 new route files, `lib/evaluation-form-xlsx.ts` (new) | |
+| 5 | **The buttons** — the export affordance on the three pages | 3 page files | |
 
-Slice 1 changes no output and can land on its own. Slice 3 needs the owner's hands (the
-template is cut in Excel).
+⭐ **Slices 1 and 2 are data-only** — they change no output, so each can land on its own. Slice 1
+made the statement-level numbers exist; slice 2 made the header's fields **deliverable**.
+
+⭐ **What slice 2 settled that the plan had not:** the **faculty** route never resolved its
+section — the admin and dean routes have carried the program and the section name all along —
+so it gained a `sectionRepository.findById` for the row's OWN section, read **after** the
+ownership guard. The `employeeNo` came free: `USER_SELECT` already carried it, so
+`userRepository.findById` was returning it and the routes were dropping it. And the period is
+**optional**: a period that cannot be read leaves the figures intact and the header's labels
+null — the figures are the point, the labels are the header.
 
 **Gate (the owner's run):**
 
