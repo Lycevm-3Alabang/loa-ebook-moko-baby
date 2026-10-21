@@ -1,7 +1,9 @@
 # Evaluation results — the handover
 
 **Date:** 2026-10-21
-**Status:** 🟡 **one slice is planned and waiting on a number; one change landed today.**
+**Status:** 🟢 **the membership gate is closed** — nine commits landed on 2026-10-21 (the gate in
+five steps, the drill-down's redesign, the ties). What is left is a **spec** (the export) and the
+deferred cleanups.
 **Part of:** `.opencode/skills/plan-fix/runs/20261021-1800-open-gaps.md` (slice 3 of 7).
 **Durable records** — the **spec** carries the rules, the **TODO** carries the open items, the
 **run file** carries the slice. This file is the entry point; it goes stale first.
@@ -16,10 +18,10 @@
 | surface | the response set | the figure |
 |---|---|---|
 | `/admin/evaluations/results` · `/dean/evaluations/results` — a row per **department** | the **period** only (`listSubmittedEvaluatesForFaculty` → `.eq("evaluation_period_id", …)`) | the department's pooled rating, read **per department** and **cached 5 minutes** (`features/evaluation-results/figure-cache.ts`) |
-| `/admin/evaluations/results/[departmentId]` · `/dean/…` — a row per **subject** | the period **∧ the term's assignments** ← **the gate, being fixed** | the same pooling, over the gated set |
+| `/admin/evaluations/results/[departmentId]` · `/dean/…` — a **card per faculty** | the **period** only ✔ (the gate is **gone**) | the same pooling, over the shared set ✔ |
 | `/admin/evaluations/results/[departmentId]/[facultySubjectId]` — a row per **response** | the **period** only (`listSubmittedByPeriodAndEvaluateeAndFS`) | the same ratings, per subject |
 | `/faculty/evaluations/results/[facultySubjectId]` — a teacher's own | the **period** only | the same |
-| both **export CSVs** | the department page's read ← **the gate, being fixed** | the same |
+| both **export CSVs** | the department page's read ✔ (the gate is **gone**) | the same |
 
 **No surface opens a direct connection.** The group-by that needed one cannot be expressed through
 PostgREST (AGENTS.md **Lesson 7c**), so the rows cross the wire and the group-by happens in Node —
@@ -31,13 +33,12 @@ on demand** (rule 3 of `specs/evaluation-results-cache.md`).
 ⚠️ `pg` and `DATABASE_URL=` stay in the repo — `scripts/apply-schema.mjs` (the owner's manual
 schema runner) needs both. The **app** does not.
 
-## 2. The membership gate — decided, not built (the next slice)
+## 2. The membership gate — BUILT (2026-10-21)
 
 **The rule (owner, 2026-10-21).** A response is in scope **iff its period is the selected
 period** (`evaluations.evaluation_period_id`). The period's **parent semester**
-(`evaluation_periods.semesterId` — free, `service.ts:151` loads it in the same call) scopes the
-**subject list** only. The assignment's `faculty_subjects.semesterId` is the **teaching's** stamp and
-is **not** a response filter.
+(`evaluation_periods.semesterId`) scopes the **subject list** only. The assignment's
+`faculty_subjects.semesterId` is the **teaching's** stamp and is **not** a response filter.
 
 **The three columns** — this is the whole finding:
 
@@ -47,53 +48,46 @@ is **not** a response filter.
 | `evaluation_periods.semesterId` | the period | the period's **parent** term | **yes — the subject list's** |
 | `faculty_subjects.semesterId` | the assignment | a **stamp applied at write time** | **no — never** |
 
-**The defect, exactly.** The department page used the **subject list's** scope as a **response**
-filter: `deptEvals = evals.filter((e) => memberIds.has(e.facultySubjectId))`
-(`features/evaluation-results/evaluation-results.service.ts:190`). So it — and both export CSVs —
-**under-report** against the results list, one click apart and in the file you send.
+### What landed (five steps, one commit each)
 
-**The six changes** (`specs/evaluation-results-attribution.md` §4 **S6.1** — the file list, the
-algorithm and the proof are there):
+1. **One read decides the set** — `listDepartmentResponseSet` (the members, the period's submitted
+   and enabled evaluations, the live-eval rule, the assignments they point at). The list's figure
+   and the drill-down's rows read the **same** set, so §3.18's parity is structural, not
+   coincidental. The members come from `listFacultyByDepartment` — the role **and** the
+   department are both filters in the query, so the department's students never cross the wire.
+2. **The service reads that set** — the subject list is the members' teaching this term **∪**
+   the assignments the counted responses point at, so a counted response always has a row; the
+   pooled rating is over the set, so it **equals** the list's figure.
+3. **The dean's guards read the members** (the governable set widens) and **D9 is closed** — both
+   `groups/[facultySubjectId]` routes check that the subject belongs to the department in the URL.
+4. **The list page's `offSemester` banner is retired** — the coverage page keeps its own: its
+   list **is** semester-scoped, so "outside the term" is a real condition there.
+5. **The surfaces show the ratings, not the counts**, and **every department is a row**.
 
-1. the response set — the members = the accounts homed in the department; the evaluations = the
-   period's, and the stamp filter is **deleted**;
-2. the subject list — the members' assignments this term **∪** the assignments the responses point
-   at, so a counted response always has a row;
-3. the pooled rating — over the response set, so it **equals** the list's figure;
-4. "Faculty" → the headcount, so both pages count the same population;
-5. the list page's `offSemester` banner **retired** (the coverage page keeps its own — its list
-   **is** semester-scoped);
-6. **D9** — the subject page's routes check that the assignment belongs to the department.
+### The release note
 
-⭐ **The inputs are the two the route already has** — `evaluationPeriodId` + `departmentId`.
-Nothing new is plumbed.
-
-### ⭐ Capture before anything else
-
-The department page's figure is **computed**, so the "before" is gone once the change lands.
-
-```
-/api/admin/evaluation-results/departments/b0000000-0000-0000-0000-000000000001?evaluationPeriodId=5a01886e-4eb9-4cf9-84d1-c314f610bb59
-  → departmentAggregate.avgRating + totalResponses      ← the BEFORE
-/api/admin/evaluation-results/figures?evaluationPeriodId=5a01886e-4eb9-4cf9-84d1-c314f610bb59&departmentId=b0000000-0000-0000-0000-000000000001
-  → avgRating + totalRespondents                        ← the AFTER (already on screen)
-```
-
-If the two averages are **equal**, the gap is zero for that department and the slice is
-**insurance** rather than a fix — the plan stands either way, but the release note changes.
+- ⚠️ **The published department average and both export CSVs moved** — onto the results list's
+  figure. That is the point of the slice; a number that has been quoted will change.
+- ⭐ **The capture was never taken** (the code landed first), so the note says *"the drill-down
+  now equals the results list"* rather than quantifying the movement.
+- **The membership set widened** — a teacher homed in the department with no assignment this term
+  is a member of it, so the dean's guards say so.
+- **The drill-down stopped counting** a soft-deleted teacher's responses and the legacy
+  `isDisabled` rows — the list never counted them (that is the parity closing).
+- ⚠️ **The list was missing the departments with no responses** — a pre-existing bug, fixed in
+  the same pass: the rows came from the period's *evaluations*, so a department nobody answered
+  in had no row, while the export's `summary.csv` and the coverage page both carried it.
 
 ### The rule's reach
 
-- **The published department average and both export CSVs move** — onto the results list's figure.
-  That is the point (§3.18), and a number that has been quoted will change.
-- **The membership set widens** — "the members" becomes *the faculty homed in the department*, not
-  *the faculty with an assignment this term* — which moves the dean's **visibility scope** (§3.8)
-  and the **release gate** (§3.9). Those two guards move in the same slice.
-- ⭐ **The dean's release gate is already safe**: it reads `subjects.some(s => s.totalRespondents > 0)`
+- **The dean's release gate was already safe**: it reads `subjects.some(s => s.totalRespondents > 0)`
   — the **results**, not the term's assignments
   (`app/api/dean/evaluation-results/departments/[departmentId]/route.ts:42`).
-- ⭐ **The subject page already complies** with the rule (it reads the period) — it needs no read
+- ⭐ **The subject page complied with the rule already** (it reads the period) — it needed no read
   change, only the D9 guard.
+- ⭐ **Still open from this item:** §7 **D8** (the legacy NULL `evaluation_period_id` rows) — a
+  data condition, not a rule: every surface drops those rows identically, so no surface
+  disagrees, but recovering them adds responses to **every** period's published figures.
 
 ## 3. The sentiment figure — half done (2026-10-21)
 
@@ -122,14 +116,17 @@ touches the same files the membership gate does.
 | # | item | state |
 |---|---|---|
 | 1 | **`isDisabled`** — the list excludes a disabled evaluation, the drill-down and the faculty page counted it | **done 2026-10-21** — the two flag-only writers now also set `status = 'INVALID'`, so every surface's state filter excludes them |
-| 2 | **the membership gate** | **decided (D′), not built** — §2 above |
+| 2 | **the membership gate** | **done** — §2 above |
 | 3 | the `""` bucket | **done** — the general rating leaves the error bucket out; the state cannot occur (the FKs cascade) |
 | 4 | the `CATEGORY_NAMES` aliases | **done** — the map stays; the state cannot occur (a period has one rubric group) |
-| 5 | **the ties** — the admin table prints the first, the faculty page prints them all | open |
+| 5 | **the ties** | **done** — every surface prints **every** tied criterion; the shape follows the container (a label and a value joins them on one line, a label and a list stacks them) |
 | 6 | the report dashboard | **done** — it reads per faculty now; nothing opens a direct connection |
 | 7 | three reads still on a cap | **done** — all chunked and paged |
 | 8 | ⭐ **the sentiment calculation** — the figure is no longer displayed, but it is still **computed** and the comments are still read | **deferred** — §3 above |
 | 9 | ⭐ **the `evaluation_period_id` legacy NULLs** | open — a data condition, not a rule. `evaluations.evaluation_period_id` is nullable (`supabase-schema.sql:1846`) and migration 30c's backfill skipped some semesters (`:1883`) and mis-pointed multi-period semesters (`:1884-1889`). **Every** surface drops those rows identically, so no surface disagrees — but recovering them adds responses to **every** period's published figures. Not this slice |
+| 10 | ⭐ **the export's two views** — the flat rows and the per-faculty narrative | **open** — a spec to write (`specs/evaluation-results-export.md`); the per-faculty figures are already computed (`facultyAggregates`), the export route just does not destructure them |
+| 11 | ⭐ **the PDF's per-faculty average is a mean of means** | **open, deferred** — `lib/evaluation-pdf.ts:352` computes the mean of a teacher's subject averages where the page shows the **pooled** figure; it wants its own spec |
+| 12 | ⭐ **the dead code** — `listDepartmentAssignments`, `listSubmittedByPeriodAndEvaluatees`, `DepartmentAggregate.totalSubjects` / `uniqueFaculty` | **open, deferred** — ⚠️ the second one's tests are the **proof** of AGENTS.md Lesson 7, so the lessons need re-anchoring before it goes |
 
 ## 5. The files
 
@@ -138,10 +135,12 @@ touches the same files the membership gate does.
 | `specs/evaluation-results-attribution.md` | **the contract** — §1.10 the three reads · §3.21 the period is the strict gate · §4 S6.1 the slice · §6.1 the measurement · §7 D7/D8/D9 |
 | `specs/evaluation-results-cache.md` | the cache contract (rule 3: a detail page stays live) |
 | `docs/evaluation-surfaces-verification.md` | ⭐ the manual checks and the home-less-teachers SQL |
-| `features/evaluation-results/evaluation-results.service.ts` | `getDepartmentSubjectResults` (:174) and `getDepartmentMemberTeaching` (:147) — where the gate is applied |
-| `features/evaluation-results/evaluation-results.repository.ts` | `listDepartmentFigures` (:449) — the reference read · `listDepartmentTeachingAssignments` (:625) — the term's assignments |
-| `features/evaluations/evaluations.repository.ts` | `listSubmittedByPeriodAndEvaluatees` (:494) — the period-scoped read the department page uses |
-| `lib/evaluation-utils.ts` | `classifyWarningAssignments` (:486) · `aggregateDepartmentResults` (:341) · `computeSentimentScore` |
+| `specs/evaluation-results-summary-card.md` | the Department Summary card's design (the headline, the read-out, the triage rule) |
+| `features/evaluation-results/evaluation-results.service.ts` | `getDepartmentSubjectResults` (:186) — the drill-down's assembly · `getDepartmentMembers` (:150) — the membership set |
+| `features/evaluation-results/evaluation-results.repository.ts` | `loadDepartmentResponseSet` — **the one place the set is decided** · `listDepartmentFigures` — the reference read · `listDepartmentTeachingAssignments` — the term's assignments |
+| `features/users/users.repository.ts` | `listFacultyByDepartment` — the members, with the role **and** the department as query filters |
+| `features/evaluations/components/DepartmentSubjectView.tsx` | the faculty cards — the members, their subjects, the name format, the sort, the expand-all |
+| `lib/evaluation-utils.ts` | `findAttentionRubrics` (the triage rule) · `isSubjectInDepartment` (the D9 guard) · `formatFacultyName` (the name format) · `aggregateDepartmentResults` · `computeSentimentScore` |
 | `.opencode/skills/plan-fix/runs/20261021-1800-open-gaps.md` | the run file — the scan, the decisions, the slice |
 
 ## 6. The gate (the owner's run — AGENTS.md **H1**)

@@ -285,15 +285,24 @@ department; the section's department is no longer a fallback). All three are
   dean who does not teach. ⭐ **Deferred 2026-10-21 (owner)** — it is a **schema** edit
   (AGENTS.md H4), so it is the owner's call, and the contract is already right.
 
-- [ ] **CLEANUP (decide) — `evaluationResultRepository.listDepartmentAssignments`
-  has no app caller left.** It returned a department's **evaluated** assignments
-  (the attribution set). The results service now uses
-  `listDepartmentTeachingAssignments` (the term's assignments), and the dean's
-  three guards read `getDepartmentMemberTeaching` — so nothing calls it. It
-  still has its own five test cases in
-  `lib/__tests__/evaluation-results-department-faculty.test.ts`. Either delete
-  it (method + the `IEvaluationResultRepository` entry + those cases) or keep it
-  as a public capability for a future surface.
+- [ ] **CLEANUP (decide) — four now-dead reads and fields. DEFERRED 2026-10-21 (owner).** The
+  list grew as the gate closed:
+  1. **`evaluationResultRepository.listDepartmentAssignments`** — returned a department's
+     **evaluated** assignments (the attribution set). The results service now uses
+     `listDepartmentTeachingAssignments` (the term's assignments) and the dean's guards read the
+     **members** — so nothing calls it. It still has its own five test cases in
+     `lib/__tests__/evaluation-results-department-faculty.test.ts`. Either delete it (method + the
+     `IEvaluationResultRepository` entry + those cases) or keep it as a public capability for a
+     future surface.
+  2. ⭐ **`evaluationRepository.listSubmittedByPeriodAndEvaluatees`** — no app caller since the
+     service layer moved to the shared set (2026-10-21). ⚠️ **Its tests are the proof of AGENTS.md
+     Lesson 7** (the URL cap and the row cap) — deleting the read deletes the proof with it, so
+     the lessons need re-anchoring on a read that stays.
+  3. ⭐ **`DepartmentAggregate.totalSubjects`** — the Department Summary card was its last reader
+     (the card dropped the subject count on 2026-10-21).
+  4. ⭐ **`DepartmentAggregate.uniqueFaculty`** — the same card (it now prints the members'
+     count through the payload, not the aggregate). ⚠️ `totalResponses` **stays** — the export's
+     `summary.csv` uses it.
 
 ## Open — evaluation results gaps (2026-10-21)
 
@@ -329,7 +338,8 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
 > — item 6 — and the list's `isDisabled` filter now lives in
 > `listPeriodFigures` / `listDepartmentFigures` (item 1).
 
-- [ ] **The `isDisabled` filter is missing on the results drill-down and on the faculty page.**
+- [x] **The `isDisabled` filter was missing on the results drill-down and on the faculty page —
+  DONE 2026-10-21 (option b).**
   Where: the results **list** filters it — `features/evaluation-results/evaluation-results.repository.ts:154`
   (the period's spine) and `:417` (a department's figures), both `.eq("isDisabled", false)` — but the
   drill-down (`features/evaluation-results/evaluation-results.service.ts` →
@@ -358,9 +368,19 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   way). Note: the coverage page already treats a disabled submission as **Disputed**
   (`features/evaluations/evaluation-status.service.ts:115-116`), so today a response can be
   *disputed* on one page and *counted* on another.
+  ⭐ **What landed (option b):** the two flag-only writers — `bulkDisableByPeriod` (the admin's
+  "Invalidate Result") and the stale-mapping path in `findPending` — now write
+  `{ isDisabled: true, status: "INVALID" }` too, so every surface's existing
+  `status = 'SUBMITTED'` filter excludes them. `restoreByIds` came with it: it cleared only the
+  flag, so an invalidated row stayed out of every figure even after the admin restored it (a
+  pre-existing half-bug for the four `invalidate*` paths, which this would have extended to the
+  bulk path) — it now restores `SUBMITTED` for a row with a `submittedAt` and `DRAFT` for one
+  without (it was never a response). The "Invalidated" page still lists them (`listDisabled` reads
+  `isDisabled = true`) ✔. Tests: `lib/__tests__/evaluations-repository-writes.test.ts` (new — the
+  write methods had none) and the coverage page's disputed bucket ✔.
 
-- [ ] **The admin drill-down's membership gate is stricter than the faculty page's — DECIDED
-  2026-10-21 (D′), not built.**
+- [x] **The admin drill-down's membership gate was stricter than the faculty page's — DECIDED
+  2026-10-21 (D′), BUILT 2026-10-21.**
   Where: the department page keeps an evaluation only if its `facultySubjectId` is in the
   department's **term assignments** (`features/evaluation-results/evaluation-results.service.ts:190`
   — `memberIds.has(e.facultySubjectId)`) — and that list is **semester-scoped**
@@ -387,6 +407,21 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   equal, the gap is zero there and the slice is insurance rather than a fix.
   The working note is `docs/evaluation-results-handover.md` §2; the run file is
   `.opencode/skills/plan-fix/runs/20261021-1800-open-gaps.md`.
+  ⭐ **What landed (five steps, one commit each):** **(1)** the response set is decided in **one**
+  read — `listDepartmentResponseSet` (the members, the period's submitted and enabled evaluations,
+  the live-eval rule) — and the members come from `listFacultyByDepartment` (the role *and* the
+  department are both filters in the query, so the department's students never cross the wire);
+  **(2)** the service reads that set, and the subject list is the members' teaching this term
+  **∪** the assignments the counted responses point at; **(3)** the dean's guards read the
+  **members** (the governable set widens) and **D9 is closed** — both `groups/[facultySubjectId]`
+  routes check the department; **(4)** the results list's `offSemester` banner is retired (the
+  coverage page keeps its own); **(5)** the surfaces show the ratings, not the counts, and every
+  department is a row. The contract is **v1.14**.
+  ⚠️ **The number moved:** the department page's average and **both export CSVs** now sit on the
+  results list's figure — that is the point of the slice. The **capture was never taken** (the code
+  landed first), so the release note says *"the drill-down now equals the results list"* rather
+  than quantifying the movement. ⭐ **Still open from this item:** §7 **D8** (the legacy NULL
+  `evaluation_period_id` rows) — a data condition, not a rule.
 
 - [x] **The drill-down's rating read — decided 2026-10-21: it stays LIVE, on demand.**
   `getDepartmentSubjectResults` (`features/evaluation-results/evaluation-results.service.ts`) reads
@@ -465,7 +500,7 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   the per-category **counts** to pool them exactly, which the column mapping does not have — a
   ripple through every caller to fix a state the schema forbids.
 
-- [ ] **The admin table renders only the first tie; the faculty page renders them all.**
+- [x] **A tie is shown as a tie, everywhere — DONE 2026-10-21 (owner: "all not just the first").**
   Where: `features/evaluations/components/DepartmentSubjectView.tsx:261` and `:268` (the subject
   table) and `:426`/`:429` (the per-faculty table) print `highestRubrics[0]` / `lowestRubrics[0]`;
   the faculty page (`app/faculty/evaluations/results/[facultySubjectId]/page.tsx:121-133`) and the
@@ -479,6 +514,14 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   Options: **(a)** the admin table renders every tie, like the other two surfaces (one component
   change, 4 call sites); **(b)** the other two surfaces render only the first, like the table;
   **(c)** leave it and make the parity check compare the *first* tie only.
+  ⭐ **What landed (option a, everywhere):** the flat admin table is **gone** (the drill-down is
+  per-teacher now), so the three surfaces that still printed only the first were the results
+  list's "Top Rubric" and "Needs Attention" columns, the expanded table inside each faculty card,
+  and the faculty's own list. All of them now print **every** tie, and the **shape follows the
+  container**: a label and a value joins them on one line ("Professional Manner 4.60, Student
+  Engagement 4.60"), a label and a list stacks them (the subject pages' two cells). The numbers
+  are the same either way — that is what §3.18 compares. The contract is **v1.14**; the manual
+  verification gains 4.4d.
 
 - [ ] **The bulk-invalidate's reason is not stored on the row.**
   Where: `app/api/admin/evaluation-results/invalidate/route.ts:24-26` — the `reason` goes to the
@@ -514,12 +557,15 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   the second's only caller). Run file:
   `.opencode/skills/plan-fix/runs/20261021-1300-session.md`.
 
-- [ ] **CLEANUP (decide) — two helpers with no app caller.**
+- [x] **CLEANUP (decided) — two helpers with no app caller: they are KEPT.**
   `resolveFacultyDepartment` (`lib/evaluation-utils.ts`) and `resolveDepartmentFaculties` (the same
   file) are only called by their own tests — the results surfaces use `resolveSubjectDepartment`
   (the home-department rule). Either delete them (functions + `DeptResolutionContext` + ~11 test
   cases) or keep them as public capabilities. The adjacent sweep found them; the cleanup of
   2026-10-21 deliberately left them.
+  ⭐ **Decided 2026-10-21 (owner): they are KEPT** — their own doc comment makes them the answer
+  to a *different* question ("a person's department", not a subject's), and they are a public
+  capability of the module. The `DeptResolutionContext` and their ~11 test cases stay with them.
 
 - [x] **CLEANUP (decide) — the docs still describe the pattern the app no longer uses.**
   Four places, all written for the direct-connection story. **All four are done (2026-10-21):**
@@ -583,6 +629,35 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   the **misattributed** half is unreachable by any filter and needs the owner's read-only audit.
   ⭐ It **adds** responses to **every** period's published figures — a bigger semantic change than
   the membership gate — so it is not that slice's job. No DDL either way.
+
+- [ ] **SPEC — the export's two views: the flat rows and the per-faculty narrative.** Where: the
+  export route (`app/api/admin/evaluation-results/export/route.ts`) and the dean's twin. What it
+  is: the ZIP today carries a per-department `<code>_results.csv` (the flat subject rows) and a
+  `summary.csv` (one row per department). The owner's ask (2026-10-21): the export should offer a
+  **flat** view — *the same rows as when all the faculty cards are expanded* — **and** a
+  **high-level per-individual / faculty narrative**. Open questions: ⭐ **the flat file's
+  population** — the cards' rows as expanded (the members *with* responses, each with all their
+  subjects, answered or not) or the rows with responses only (the manual check 4.7 as written —
+  today the CSV carries every row, so the check and the page disagree); ⭐ **the narrative's
+  form** — a per-faculty **table** (one row per teacher: the **pooled** average, the remark, the
+  responses, the subjects, the top and the weakest) or **prose** (a readable paragraph per
+  teacher: *"Ana Reyes — 4.20 (Very Satisfactory) from 32 responses across 4 subjects…"*), or
+  both; ⭐ and whether the **per-response** grain is offered too (the individual responses live
+  in the subject page's route, so that is **one read per subject** — the expensive one).
+  ⭐ The per-faculty figures are **already computed** — the service returns `facultyAggregates` and
+  the export route simply does not destructure it. The spec is to be written
+  (`specs/evaluation-results-export.md`).
+
+- [ ] **SPEC — the PDF's per-faculty average is a MEAN OF MEANS.** Where:
+  `lib/evaluation-pdf.ts:352` — the "Per Faculty" PDF computes each teacher's average as the
+  **mean of their subject averages**, while the page's card shows the **pooled** average (the
+  server's `facultyAggregates`, the weights carried through the read). For a teacher with more than
+  one subject the two **disagree** — the same arithmetic the app stopped doing everywhere else.
+  What it is: the PDF builds its own aggregate from the subject rows instead of taking the
+  server's per-faculty figure. Options: **(a)** the PDF takes the pooled figure (the service
+  already returns it) — one source of truth; **(b)** leave it and document the difference.
+  ⭐ **Deferred 2026-10-21 (owner)** — it is a document, not the results page, and it wants its
+  own spec (with the export's, or beside it).
 
 ## Done this session (do not redo)
 
