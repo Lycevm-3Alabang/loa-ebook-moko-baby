@@ -6,17 +6,64 @@ Two threads: the **student CSV importer** (tracked 2026-10-09 — all production
 containment and the evaluation gaps — nothing is on fire.
 
 Gate for every item: `npx tsc --noEmit` → `npm run lint` → `npx vitest run`
-(baseline 60 files / 656 tests, 2026-10-21 — 14 cases removed by the dead-code cleanup; the owner's
-run is the proof) → `npm run build`.
+(baseline 65 test files, 2026-10-22 — the case count is the owner's run) → `npm run build`.
 
 Context: `specs/README.md` ("Next Session — Start Here" + status table),
 `.opencode/skills/plan-fix/runs/20261009-1743-student-import-c1.md` (defect ledger),
 `docs/evaluation-results-handover.md` (the results surfaces' handover — **current**; one per
 session, or none),
 `specs/evaluation-results-cache.md` (the cache contract),
-`specs/evaluation-results-attribution.md` (the attribution contract — §1.10, §3.21, S6.1, D7–D9).
+`specs/evaluation-results-attribution.md` (the attribution contract — §1.10, §3.21, S6.1, D7–D9),
+`specs/evaluation-results-export.md` (the export contract — the Excel workbook, 2026-10-22).
 
 ## NEXT (do first)
+
+- [ ] **The Excel export — the legacy workbook, filled. Spec written 2026-10-22; slice 1 landed.**
+  Contract: **`specs/evaluation-results-export.md`** (v2.0). The school produces its results as a
+  spreadsheet — a per-faculty form (the "Individual" sheet), a comments sheet, and a flat
+  per-faculty table (the "Overall" sheet) — and that workbook (`docs/eval reports.xlsx`) is the
+  artifact they circulate. The app produces the same numbers on screen, but not the same artifact.
+  ⭐ **The decision (owner, 2026-10-22):** the Excel is the **legacy workbook filled as a
+  template** — all three sheets, the formulas replaced by their values. Not a writer library:
+  `exceljs` would have to rebuild 65 merged cells, the styles, the letterhead and the print setup
+  by hand and would only *approximate* the legacy file. **Proven**: the workbook was exploded,
+  patched and re-zipped store-only — a valid zip, 24 parts, the letterhead, 65 merges, the styles
+  and 3/3 printerSettings all intact.
+  ⭐ **The fields the legacy lacks, now filled:** Employee No (`users.employeeNo` — already in
+  `USER_SELECT`), **Program** and **Section** (`sections.program` / `sections.name` — the admin and
+  dean routes already return them; the **faculty route does not**, it never resolves the section),
+  **Semester** and **Evaluation Period** (`evaluation_periods.name` + `semesters.title` — one read,
+  `evaluationPeriodRepository.findById`, and the repository already joins `semesters!inner(title)`).
+  ⭐ **The letterhead is ours** — `public/logo-blk.png`, the same asset the PDF already places. The
+  workbook's embedded colour lockup is replaced (and **re-anchored**: the banner slot is 6.14:1 and
+  the logo is 2.18:1, so swapping the bytes into the old slot would stretch it).
+  ⭐ **The scope:** the drill-down's subject page — **admin, dean and the faculty's own** — at the
+  grain of one (faculty × subject × section). The Overall sheet carries **one row**. A faculty's
+  whole period is a different export.
+  ⭐ **The PDF is OUT of scope** (owner, 2026-10-22): it keeps its shape, its letterhead and its
+  30-comment truncation. Its four live defects are listed under "Open — evaluation results gaps".
+  **What landed (slice 1, `abcc919`):** the read now carries the rubric item's identity — it used
+  to select `itemId` and then drop it, because the criterion grain was enough until the form. The
+  new pure `computeItemAverages` is the statement grain, one below `computeCategoryAverages`. 14
+  cases, including the one that pins the export's foundation: a criterion's mean over its rating
+  rows **equals** the mean of its statement means, so the workbook reproduces the legacy's FINAL
+  RATING. (A submitted response rates every statement — the submit button is disabled until they
+  are all answered — so the two grains are the same number, not merely the same rule.)
+  **Remaining slices:** (2) the routes — the period/semester read, `employeeNo`, the section on the
+  faculty route; (3) **the template cut — the owner's hands**: `data/templates/eval-report.xlsx`
+  with the header edits, the letterhead swap, and `next.config.ts`'s `outputFileTracingIncludes`
+  (without it the file is absent in production and the export 500s there while working locally);
+  (4) the export routes (three, each mirroring its own read route's guards — the faculty's
+  **includes the visibility map**); (5) the buttons (`IosButton`, not the hand-rolled `<button>`
+  the current PDF button uses).
+  ⭐ **The guard (a hard rule):** the template's positions encode 34 statements in a fixed order, so
+  the export **verifies the live rubric's shape** and fails loudly if it moved. A wrong form is
+  worse than no form.
+  ⭐ **The arithmetic is settled for this slice:** the export writes the app's
+  `computeGeneralRating` into the template's FINAL RATING, and the legacy agrees with the app.
+  The open question — criterion-equal (1/8 each) vs pooled over the rating rows (1/34 each) — is
+  a **product** call that moves every surface at once, so it is its own slice and **not decided by
+  an export**.
 
 - [x] **The evaluation results endpoint — the direct connection is gone; the figures are read per
   department and per faculty, and cached. Done 2026-10-21.**
@@ -451,6 +498,9 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
     size `listCommentScores` uses, so the row cap cannot bite either.
   - The **ratings** read was already safe (`fetchRatingsWithCategories` chunks at 37 evaluations =
     999 rating rows = one page).
+    ⚠️ **Correction 2026-10-22:** the chunk was sized for **27** statements and the rubric has
+    **34** — the read stayed correct, but every chunk spilled into a second page. Now **29**
+    evaluations (29 × 34 = 986), derived from `RUBRIC_STATEMENT_COUNT`. See "Done this session".
   - Tests: `lib/__tests__/evaluations-repository-chunking.test.ts` gained the row-cap cases for
     both evaluations reads (the paging model was already in that file), and
     `lib/__tests__/evaluation-results-student-breakdown.test.ts` is new — the student-breakdown
@@ -573,6 +623,9 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
      that needs dashboard access, and the pattern as per-department **and** per-faculty reads, each
      cached for five minutes. Lesson 7b gained the chunk-sizing corollary (37 evaluations = 999 rows
      = one page).
+     ⚠️ **Corrected 2026-10-22:** the corollary's numbers were themselves stale (27 statements, not
+     34) — the corollary now says 29 × 34 = 986, and carries the new "a stale multiplier is a
+     silent perf regression" corollary.
   2. ~~`docs/evaluation-results-endpoint-handover.md`~~ — **done**: marked superseded, with a
      pointer to the current handover; the file stays as the record of the measurement.
      ⭐ **2026-10-21 — the three handovers are folded into one** and the files are **gone**:
@@ -630,29 +683,38 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   ⭐ It **adds** responses to **every** period's published figures — a bigger semantic change than
   the membership gate — so it is not that slice's job. No DDL either way.
 
-- [ ] **SPEC — the export's two views: the flat rows and the per-faculty narrative.** Where: the
-  export route (`app/api/admin/evaluation-results/export/route.ts`) and the dean's twin. What it
-  is: the ZIP today carries a per-department `<code>_results.csv` (the flat subject rows) and a
-  `summary.csv` (one row per department). The owner's ask (2026-10-21): the export should offer a
-  **flat** view — *the same rows as when all the faculty cards are expanded* — **and** a
-  **high-level per-individual / faculty narrative**. Open questions: ⭐ **the flat file's
-  population** — the cards' rows as expanded (the members *with* responses, each with all their
-  subjects, answered or not) or the rows with responses only (the manual check 4.7 as written —
-  today the CSV carries every row, so the check and the page disagree); ⭐ **the narrative's
-  form** — a per-faculty **table** (one row per teacher: the **pooled** average, the remark, the
-  responses, the subjects, the top and the weakest) or **prose** (a readable paragraph per
-  teacher: *"Ana Reyes — 4.20 (Very Satisfactory) from 32 responses across 4 subjects…"*), or
-  both; ⭐ and whether the **per-response** grain is offered too (the individual responses live
-  in the subject page's route, so that is **one read per subject** — the expensive one).
-  ⭐ The per-faculty figures are **already computed** — the service returns `facultyAggregates` and
-  the export route simply does not destructure it. The spec is to be written
-  (`specs/evaluation-results-export.md`).
+- [x] **SPEC — the export's two views: the flat rows and the per-faculty narrative. The spec is
+  WRITTEN (2026-10-22) — `specs/evaluation-results-export.md` (v2.0) — and the first slice
+  landed.** The open questions below are **answered by the spec**, so this item moves to "NEXT".
+  Where: the export route (`app/api/admin/evaluation-results/export/route.ts`) and the dean's twin.
+  What it is: the ZIP today carries a per-department `<code>_results.csv` (the flat subject rows)
+  and a `summary.csv` (one row per department). The owner's ask (2026-10-21): the export should
+  offer a **flat** view — *the same rows as when all the faculty cards are expanded* — **and** a
+  **high-level per-individual / faculty narrative**. ⭐ The answers: the artifact is the **legacy
+  workbook as a template** (all three sheets, formulas → values), the narrative's form is the
+  workbook's own **Individual** sheet (the form, with the 34 statements), the flat view is the
+  workbook's **Overall** sheet (**one row** at the subject grain — a faculty's whole period is a
+  different export), and the per-response grain is **not** offered (the comments are on the
+  workbook's **Comments** sheet — one per row, uncapped). The per-faculty figures were already
+  computed — the service returns `facultyAggregates`; the export route simply did not destructure
+  it. ⚠️ **The period-level export (every department, every faculty, every subject, in one
+  download) is NOT in this spec** — the existing CSV export stays as it is, and the Overall sheet's
+  column set for that scope is a separate decision.
 
 - [ ] **SPEC — the PDF's per-faculty average is a MEAN OF MEANS.** Where:
   `lib/evaluation-pdf.ts:352` — the "Per Faculty" PDF computes each teacher's average as the
   **mean of their subject averages**, while the page's card shows the **pooled** average (the
   server's `facultyAggregates`, the weights carried through the read). For a teacher with more than
   one subject the two **disagree** — the same arithmetic the app stopped doing everywhere else.
+  ⭐ **The PDF carries three more live defects** (recorded 2026-10-22 in
+  `specs/evaluation-results-export.md` §11, so they are not lost with the export's scope change —
+  the PDF is out of scope for the Excel slice):
+  1. **It prints `Semester: Semester`** — `lib/evaluation-pdf.ts:149` and `:306`; `semesterLabel`
+     is passed by **no one**: not the admin page, not the dean page, not the faculty page.
+  2. **It prints no Section** — `PdfData` has no section field, though the pages and the routes
+     both carry `sectionProgram` / `sectionName`.
+  3. **It truncates the comments at 30** — `:211-227`, "… and N more comments": a silent
+     truncation in a document that is meant to be the record.
   What it is: the PDF builds its own aggregate from the subject rows instead of taking the
   server's per-faculty figure. Options: **(a)** the PDF takes the pooled figure (the service
   already returns it) — one source of truth; **(b)** leave it and document the difference.
@@ -660,6 +722,30 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   own spec (with the export's, or beside it).
 
 ## Done this session (do not redo)
+
+- [x] **The ratings chunk was sized for a rubric that no longer exists — fixed 2026-10-22.**
+  Where: `lib/db/common.ts` — `RATINGS_IN_CHUNK_SIZE` was **37**, sized for "37 × 27 = 999 rating
+  rows, one page under the cap". ⭐ **The rubric has 34 statements, not 27** (8 criteria:
+  3 · 6 · 4 · 4 · 4 · 4 · 3 · 6): migrations 28/29 took it from 24 to 34, and the "27" was the
+  *seed's* count, carried in the code, in `supabase-schema.sql:1603` (the rubric group's
+  description) and in `:1618` (the seed's comment). **Correctness was never affected** — the page
+  loop pages until a page comes back short, so a chunk that spills into two pages is still read
+  whole. **Performance was**: every chunk spilled into a second page, and `OFFSET` paging re-scans
+  the chunk's rows, so each chunk's first 1,000 rows were read **twice**. ⭐ **No test failed, no
+  number moved and nothing errored** — only a count of the live rubric caught it.
+  **What landed:** the chunk is now **derived** — `Math.floor(RATINGS_PAGE_SIZE /
+  RUBRIC_STATEMENT_COUNT)` = **29** evaluations (29 × 34 = **986** rows, one page) — with
+  `RUBRIC_STATEMENT_COUNT` exported and the paging test asserting the invariant, so the
+  relationship is stated once. AGENTS.md **Lesson 7b** gained the corollary ("a stale multiplier
+  is a silent perf regression, not a wrong number") and its numbers were corrected.
+  ⚠️ **The schema's two "27"s were left alone** — `supabase-schema.sql` is the owner's file
+  (AGENTS.md **H4**), and the rubric group's *description* is seeded DATA, so changing it would
+  change what the owner's manual runner inserts. Re-cut it when the owner asks by name.
+
+- [x] **The export's contract is written, and its first slice landed — 2026-10-22.**
+  `specs/evaluation-results-export.md` (v2.0) + the specs index row; and the statement ratings
+  (`abcc919`): the read now carries the rubric item's identity, and `computeItemAverages` is the
+  statement grain. See "NEXT" for the whole thread.
 
 - [x] **The drill-down's "By Faculty" cards — decided and implemented 2026-10-20**
   (`.opencode/skills/plan-fix/runs/20261020-2300-drill-down-faculty-cards.md`).
