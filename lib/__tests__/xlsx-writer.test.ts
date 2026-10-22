@@ -70,6 +70,13 @@ describe("the workbook writer", () => {
     expect(workbook).toContain('name="_xlnm.Print_Titles"')
   })
 
+  it("writes a landscape sheet's own orientation", () => {
+    const parts = readZip(buildWorkbook({ sheets: [{ ...SHEET, orientation: "landscape" }] }))
+    expect(partText(parts, "xl/worksheets/sheet1.xml")).toContain(
+      '<pageSetup paperSize="1" orientation="landscape" fitToWidth="1" fitToHeight="0"/>',
+    )
+  })
+
   it("refuses a picture whose anchor is broken", () => {
     expect(() =>
       buildWorkbook({

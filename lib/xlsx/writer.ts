@@ -73,6 +73,8 @@ export interface SheetSpec {
   printArea?: string
   /** the rows that repeat at the top of every printed page, e.g. "$1:$10" */
   printTitles?: string
+  /** the page's orientation — "portrait" (the default) or "landscape" */
+  orientation?: "portrait" | "landscape"
 }
 
 /** The workbook. */
@@ -215,7 +217,7 @@ function sheetXml(sheet: SheetSpec, drawingRelId: string | null): string {
     mergesXml(sheet.merges) +
     '<printOptions headings="0" gridLines="0"/>' +
     '<pageMargins left="0.63" right="0.35" top="0.51" bottom="0.71" header="0.51" footer="0.39"/>' +
-    '<pageSetup paperSize="1" orientation="portrait" fitToWidth="1" fitToHeight="0"/>' +
+    `<pageSetup paperSize="1" orientation="${sheet.orientation ?? "portrait"}" fitToWidth="1" fitToHeight="0"/>` +
     (drawingRelId ? `<drawing r:id="${drawingRelId}"/>` : "") +
     "</worksheet>"
   )

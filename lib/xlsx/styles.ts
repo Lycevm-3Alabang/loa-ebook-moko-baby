@@ -83,6 +83,9 @@ export type StyleToken =
   | "finalValue"
   | "banner"
   | "comment"
+  | "tableHeader"
+  | "tableCell"
+  | "tableNumber"
 
 const GOTHIC = "Century Gothic"
 const TEXT = "FF000000"
@@ -118,6 +121,10 @@ const FORMATS: Record<StyleToken, FormatSpec> = {
   finalValue:      { font: { name: GOTHIC, size: 12, bold: true }, border: BOX, align: { horizontal: "center", vertical: "center" }, numFmt: "accounting" },
   banner:          { font: { name: GOTHIC, size: 9, bold: true }, border: { top: true }, align: { horizontal: "center" } },
   comment:         { font: { name: GOTHIC, size: 8 }, align: { horizontal: "left", vertical: "center", wrap: true } },
+  // the Overall sheet's table - a header band and the cells under it
+  tableHeader:     { font: { name: GOTHIC, size: 9, bold: true }, fill: BAND, border: BOX, align: { horizontal: "center", vertical: "center", wrap: true } },
+  tableCell:       { font: { name: GOTHIC, size: 9 }, border: BOX, align: { horizontal: "center", vertical: "center" } },
+  tableNumber:     { font: { name: GOTHIC, size: 9 }, border: BOX, align: { horizontal: "center", vertical: "center" }, numFmt: "plain2dp" },
 }
 
 /** The tokens, in the order their cell formats appear in styles.xml. */
