@@ -6,18 +6,11 @@ import {
   userRepository,
   subjectRepository,
   departmentRepository,
-  evaluationRepository,
   evaluationPeriodRepository,
   sectionRepository,
   rubricRepository,
 } from "@/lib/repositories/factory"
 import {
-  computeCategoryAverages,
-  computeGeneralRating,
-  mapCategoryAveragesToColumns,
-  findHighestLowestRubrics,
-  computeSentimentScore,
-  getRemark,
   isSubjectInDepartment,
 } from "@/lib/evaluation-utils"
 import { getSubjectResultSet } from "@/features/evaluation-results/evaluation-results.service"
@@ -69,7 +62,7 @@ export async function GET(
     const criteria = rubricCategories.map((category) => ({
       name: category.name,
       average: resultSet.summary.categoryAverages[category.name] ?? null,
-      statements: (category.items ?? []).map((item) => ({
+      statements: ((category as { items?: { id: string; text: string }[] }).items ?? []).map((item) => ({
         text: item.text,
         avg: itemByStatement.get(item.id)?.avg ?? null,
       })),

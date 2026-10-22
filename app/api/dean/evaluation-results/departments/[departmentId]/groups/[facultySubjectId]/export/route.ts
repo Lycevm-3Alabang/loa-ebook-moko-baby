@@ -7,7 +7,7 @@ import {
   userRepository,
   subjectRepository,
   departmentRepository,
-  evaluationRepository,
+  evaluationResultRepository,
   evaluationPeriodRepository,
   sectionRepository,
   rubricRepository,
@@ -72,7 +72,7 @@ export async function GET(
     const criteria = rubricCategories.map((category) => ({
       name: category.name,
       average: resultSet.summary.categoryAverages[category.name] ?? null,
-      statements: (category.items ?? []).map((item) => ({
+      statements: ((category as { items?: { id: string; text: string }[] }).items ?? []).map((item) => ({
         text: item.text,
         avg: itemByStatement.get(item.id)?.avg ?? null,
       })),
