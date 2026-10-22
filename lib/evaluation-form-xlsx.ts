@@ -91,7 +91,7 @@ interface BlockStyles {
   final: DonatedRow
 }
 
-function donor(sheet: string, row: number, refs: string[]): DonatedRow {
+function donor(sheet: string, row: number, _refs: string[]): DonatedRow {
   const info = readRow(sheet, row)
   if (!info) throw new Error(`the template has no row ${row} - it is not the form`)
   return {
