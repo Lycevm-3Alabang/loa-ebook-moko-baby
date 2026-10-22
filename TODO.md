@@ -10,7 +10,7 @@ Gate for every item: `npx tsc --noEmit` → `npm run lint` → `npx vitest run`
 
 Context: `specs/README.md` ("Next Session — Start Here" + status table),
 `.opencode/skills/plan-fix/runs/20261009-1743-student-import-c1.md` (defect ledger),
-`docs/evaluation-results-handover.md` (the results surfaces' handover — **current**; one per
+`docs/evaluation-export-handover.md` (the Excel export's handover — **current**; one per
 session, or none),
 `specs/evaluation-results-cache.md` (the cache contract),
 `specs/evaluation-results-attribution.md` (the attribution contract — §1.10, §3.21, S6.1, D7–D9),
@@ -59,9 +59,17 @@ session, or none),
   period is **optional**: a period that cannot be read leaves the figures intact and the header's
   labels null. 9 cases (4 in the route test, 5 in a new file for the faculty route, which had no
   test at all).
-  **Remaining slices:** (4) the export routes (three, each mirroring its own read route's
-  guards — the faculty's **includes the visibility map**) and the ZIP reader; (5) the buttons
-  (`IosButton`, not the hand-rolled `<button>` the current PDF button uses).
+  ⭐ **Superseded 2026-10-22 — the workbook is now GENERATED from scratch** (owner: *"let's do
+  B"*), so the slices below were re-cut. The generator is **built** (`lib/xlsx/`: the style table,
+  the writer, the form model, the Individual renderer, the workbook, the letterhead) and the
+  **donor** is still the live path. **What is left:** the **Comments** sheet (the donor writes the
+  text into a cell the `A:I` merge swallows — the *"it only shows the date"*), the **Overall**
+  sheet (**one row per student response** — its columns are the owner's to confirm), the **route
+  flip**, and the **legend** (the rating ladder must become data in `lib/evaluation-utils.ts`).
+  ⭐ The rubric is **data and it changes between periods** — the export reads the **live** rubric,
+  so nothing may assume a criterion count. The handover is
+  `docs/evaluation-export-handover.md` — ⭐ **one per session**; it replaced
+  `docs/evaluation-results-handover.md` (**deleted**, 2026-10-22).
   **What landed (slice 3, `ef71931` + `bec0132`):** the template is **CUT, not hand-made** —
   `scripts/cut-eval-template.mjs` takes `docs/eval reports.xlsx` and writes
   `data/templates/eval-report.xlsx`. It is idempotent (re-runnable whenever the legacy changes),
@@ -101,8 +109,8 @@ session, or none),
 
 - [x] **The evaluation results endpoint — the direct connection is gone; the figures are read per
   department and per faculty, and cached. Done 2026-10-21.**
-  **Read `docs/evaluation-results-handover.md` first** — it has the shape, the rules, the
-  cache and what is still open. **The endpoint no longer needs `DATABASE_URL`:** the aggregate
+  **Read `specs/evaluation-results-cache.md` and `specs/evaluation-results-attribution.md` first** —
+  they have the shape, the rules, the cache and what is still open. **The endpoint no longer needs `DATABASE_URL`:** the aggregate
   (a group-by in Postgres over a direct connection) could never run here — the connection string
   comes from the Supabase dashboard, which this environment cannot reach, so the route answered
   **500**. The figures are now read **per department** through the app's own repositories
@@ -756,6 +764,26 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   own spec (with the export's, or beside it).
 
 ## Done this session (do not redo)
+
+- [x] **The export's workbook is generated from scratch — the generator is built (2026-10-22).**
+  The decision (owner): **B** — the workbook is built, not patched; the template file stays as the
+  **reference** and the cut script as the reference tool. Six slices, one commit each:
+  `lib/xlsx/styles.ts` (20 semantic tokens → the derived cell formats; the theme references
+  resolved to plain RGB, so the workbook carries no theme part) · `lib/xlsx/writer.ts` (the
+  package builder — it **authors the print setup**: portrait Letter, fit 1 page wide, the print
+  area, the repeating header rows) · `lib/xlsx/form-model.ts` (the pure model — what the form
+  **is**) · `lib/xlsx/individual.ts` + `lib/xlsx/png.ts` (the model drawn as the sheet; the
+  letterhead sized from the **image's own** aspect) · `lib/xlsx/workbook.ts` (the glue) ·
+  `lib/xlsx/letterhead.ts` (the one server module — the logo is read from disk and **traced**
+  into the bundle). ⭐ **Nothing the school receives has changed yet**: the donor
+  (`lib/evaluation-form-xlsx.ts`) is still the live path, and the **route flip** is the last step
+  (the Comments and the Overall sheets first). ⭐ **The Excel proof** — open it in Excel and print
+  it — is the one thing no test can do, and it comes with the flip.
+- [x] **The handover moved — one per session (2026-10-22).**
+  `docs/evaluation-results-handover.md` → **`docs/evaluation-export-handover.md`** (the export's
+  handover: where the generator stands, the two remaining sheets' specs, the live-rubric rule, the
+  route flip, the proofs). The old file is **deleted**; its durable content was already in the
+  specs. The TODO's live references are repointed at the specs.
 
 - [x] **The ratings chunk was sized for a rubric that no longer exists — fixed 2026-10-22.**
   Where: `lib/db/common.ts` — `RATINGS_IN_CHUNK_SIZE` was **37**, sized for "37 × 27 = 999 rating
