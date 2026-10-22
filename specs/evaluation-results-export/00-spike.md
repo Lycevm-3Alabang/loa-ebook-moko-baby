@@ -58,8 +58,10 @@ Specifically:
   `ACES_SPIKE_DEPARTMENT` (the department id — default: the first with rows),
   `ACES_SPIKE_PATH` (where the ZIP is written — default `/tmp/aces-dept-zip.zip`).
 - **It builds the real thing**: the department read → the rubric read (once) → per subject the
-  subject read → the workbook → the entries → the zip. ⭐ Both zips (store and DEFLATE) are
-  built, so the lever's effect is **measured**, not assumed.
+  subject read → the workbook → the entries → the zip. ⭐ The **store** zip is built (real); the
+  **DEFLATE effect** is measured by deflating the entries (`zlib.deflateRawSync`) and adding the
+  same header overhead — ⭐ the DEFLATE **writer** lands in sub-spec 01, so the spike measures
+  the *effect*, not the finished file.
 - **It prints** the six numbers above, one per line, so they can be pasted into
   `02-department-zip.md`.
 - **It writes** the ZIP to `ACES_SPIKE_PATH` so the owner can unzip it and look.
@@ -94,3 +96,30 @@ Specifically:
   land.
 - **Any change to the database** (H4) and **any change to the school data**.
 - **The Excel proof** — that is sub-spec 03's owner run, on the real ZIP.
+
+## 7. The result (2026-10-22) — ⭐ the estimates above are superseded
+
+**Three runs, 0 failures.** CCA (21 sections) · CTHM (145) · GENED (199).
+
+| | CCA | CTHM | GENED |
+|---|---|---|---|
+| the workbook (median) | 99,670 | 103,014 | 101,603 |
+| the **store** ZIP | 2.03 MB | 14.41 MB | **19.63 MB** |
+| the **deflated** ZIP | 0.82 MB | **6.00 MB** | **8.23 MB** |
+| the **department read** | 4,577 ms | 9,600 ms | 8,012 ms |
+| the **subject reads** (sequential) | 33,750 ms | 248,721 ms | **346,829 ms** |
+| the builds / the zip | 86 / 58 ms | 775 / 839 ms | 1,121 / 1,143 ms |
+
+**What it decided**
+
+1. ⭐ **The bytes per workbook are a constant**: ≈ **41.4 KB** deflated (≈ **103 KB** stored) —
+   the same across **21 · 145 · 199** sections. ⭐ A workbook is ≈ **100 KB** because the
+   **47 KB letterhead is 46% of it**. → **the DEFLATE outer zip is required**, not an
+   optimisation.
+2. ⭐ **The size binds before the time**: 4.5 MB ÷ 41.4 KB ≈ **108 sections** ⇒ the guard
+   refuses above ≈ **90**. ⭐ **CTHM (145) and GENED (199) cannot be one download** → ⭐ a
+   department over the bound is exported **per faculty** (always fits).
+3. ⭐ **The reads dominate**: ≈ **1.7 s per subject** (≈8 round trips); the **builds are free**
+   (5.6 ms each). ⭐ **Parallelisation is required** — ⭐ and its speed-up is **not measured**
+   (the spike was sequential; the contention is unknown).
+4. ⭐ **"All departments" is not one download** — the school-wide **data** stays the CSV ZIP.

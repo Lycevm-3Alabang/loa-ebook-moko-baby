@@ -86,6 +86,7 @@ export type StyleToken =
   | "tableHeader"
   | "tableCell"
   | "tableNumber"
+  | "tableText"
 
 const GOTHIC = "Century Gothic"
 const TEXT = "FF000000"
@@ -125,6 +126,9 @@ const FORMATS: Record<StyleToken, FormatSpec> = {
   tableHeader:     { font: { name: GOTHIC, size: 9, bold: true }, fill: BAND, border: BOX, align: { horizontal: "center", vertical: "center", wrap: true } },
   tableCell:       { font: { name: GOTHIC, size: 9 }, border: BOX, align: { horizontal: "center", vertical: "center" } },
   tableNumber:     { font: { name: GOTHIC, size: 9 }, border: BOX, align: { horizontal: "center", vertical: "center" }, numFmt: "plain2dp" },
+  // a table cell that carries TEXT: left, and it wraps — a subject's name and
+  // a rubric's list are both longer than their column
+  tableText:       { font: { name: GOTHIC, size: 9 }, border: BOX, align: { horizontal: "left", vertical: "center", wrap: true } },
 }
 
 /** The tokens, in the order their cell formats appear in styles.xml. */

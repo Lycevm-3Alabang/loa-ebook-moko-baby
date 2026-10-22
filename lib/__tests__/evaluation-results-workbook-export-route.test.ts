@@ -4,7 +4,7 @@ const mockRequireAdmin = vi.hoisted(() => vi.fn())
 const mockAuth = vi.hoisted(() => vi.fn())
 const mockHasRole = vi.hoisted(() => vi.fn())
 const mockLogServerError = vi.hoisted(() => vi.fn())
-const mockBuildWorkbook = vi.hoisted(() => vi.fn())
+const mockBuildSubjectWorkbook = vi.hoisted(() => vi.fn())
 const mockGetSubjectResultSet = vi.hoisted(() => vi.fn())
 const mockDeptRepo = vi.hoisted(() => ({ findByDeanId: vi.fn(), findById: vi.fn() }))
 const mockFsRepo = vi.hoisted(() => ({ findById: vi.fn() }))
@@ -37,9 +37,10 @@ vi.mock("@/features/evaluation-results/evaluation-results.repository", () => ({
     status = 409
   },
 }))
-// The workbook is mocked: the ROUTE's job is the input it assembles — the
-// workbook's own test owns the bytes.
-vi.mock("@/lib/xlsx/workbook", () => ({ buildEvaluationWorkbook: mockBuildWorkbook }))
+// The BUILDER is mocked: the ROUTE's job is to hand it the result set, the
+// rubric and the letterhead — the builder's own test owns the assembly, and
+// the workbook's own test owns the bytes.
+vi.mock("@/lib/xlsx/subject-workbook", () => ({ buildSubjectWorkbook: mockBuildSubjectWorkbook }))
 vi.mock("@/lib/xlsx/letterhead", () => ({ loadLetterhead: () => new Uint8Array([1, 2, 3]) }))
 
 import { GET as adminGET } from "@/app/api/admin/evaluation-results/departments/[departmentId]/groups/[facultySubjectId]/export/route"
@@ -110,7 +111,7 @@ function facultyParams(facultySubjectId: string) {
 
 beforeEach(() => {
   vi.resetAllMocks()
-  mockBuildWorkbook.mockImplementation(() => new Uint8Array([80, 75, 3, 4]))
+  mockBuildSubjectWorkbook.mockImplementation(() => new Uint8Array([80, 75, 3, 4]))
   mockRequireAdmin.mockResolvedValue(null)
   mockAuth.mockResolvedValue({ user: { id: "f1", role: "DEAN" } })
   mockHasRole.mockImplementation((role: string, want: string) => role === want)
@@ -148,46 +149,44 @@ beforeEach(() => {
 })
 
 describe("the workbook export routes", () => {
-  it("hands the generator the rubric's criteria, the comments and the per-response map", async () => {
+  it("hands the builder the result set, the rubric and the letterhead", async () => {
     const res = await adminGET(req("?evaluationPeriodId=p1"), params("d1", "fs1"))
     expect(res.status).toBe(200)
     expect(res.headers.get("content-type")).toBe(
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     expect(res.headers.get("content-disposition")).toContain(".xlsx")
-    const input = mockBuildWorkbook.mock.calls[0][0]
-    expect(input.form.criteria).toEqual([
+    // ⭐ the route's job is the HAND-OFF — the assembly is the builder's, and
+    // the builder's own test owns the input it builds
+    const [resultSet, rubric, logo] = mockBuildSubjectWorkbook.mock.calls[0]
+    expect(resultSet).toBe(RESULT_SET)
+    expect(rubric).toEqual([
       {
         name: "Professional Manner",
-        average: 4.5,
-        statements: [{ text: "He/she behaves appropriately at all times.", avg: 4.5 }],
+        displayOrder: 1,
+        items: [{ id: "i1", text: "He/she behaves appropriately at all times." }],
       },
     ])
-    // the Comments sheet takes the TEXTS only — no date
-    expect(input.comments).toEqual(["Great explanations."])
-    // ⭐ the rows carry the LIVE map, so the Overall sheet's columns follow the
-    // rubric with the values under them
-    expect(input.responses).toEqual(EVALUATIONS)
-    expect(input.logo).toEqual(new Uint8Array([1, 2, 3]))
+    expect(logo).toEqual(new Uint8Array([1, 2, 3]))
   })
 
   it("refuses a subject that is not in the department — and builds nothing", async () => {
     mockUserRepo.findById.mockResolvedValue({ ...FACULTY, departmentId: "d2" })
     const res = await adminGET(req("?evaluationPeriodId=p1"), params("d1", "fs1"))
     expect(res.status).toBe(404)
-    expect(mockBuildWorkbook).not.toHaveBeenCalled()
+    expect(mockBuildSubjectWorkbook).not.toHaveBeenCalled()
   })
 
   it("the dean gets the same workbook", async () => {
     const res = await deanGET(req("?evaluationPeriodId=p1"), params("d1", "fs1"))
     expect(res.status).toBe(200)
-    expect(mockBuildWorkbook).toHaveBeenCalledTimes(1)
+    expect(mockBuildSubjectWorkbook).toHaveBeenCalledTimes(1)
   })
 
   it("the faculty gets it too — for their own subject", async () => {
     const res = await facultyGET(req("?evaluationPeriodId=p1"), facultyParams("fs1"))
     expect(res.status).toBe(200)
-    expect(mockBuildWorkbook).toHaveBeenCalledTimes(1)
+    expect(mockBuildSubjectWorkbook).toHaveBeenCalledTimes(1)
   })
 
   it("the faculty cannot export another faculty's subject", async () => {
@@ -199,6 +198,6 @@ describe("the workbook export routes", () => {
     })
     const res = await facultyGET(req("?evaluationPeriodId=p1"), facultyParams("fs1"))
     expect(res.status).toBe(403)
-    expect(mockBuildWorkbook).not.toHaveBeenCalled()
+    expect(mockBuildSubjectWorkbook).not.toHaveBeenCalled()
   })
 })

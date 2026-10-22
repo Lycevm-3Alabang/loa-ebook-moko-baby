@@ -6,13 +6,12 @@ import {
   userRepository,
   subjectRepository,
   evaluationPeriodRepository,
-  sectionRepository,
   rubricRepository,
   evaluationResultRepository,
 } from "@/lib/repositories/factory"
 import { EvaluationPeriodInactiveError } from "@/features/evaluation-results/evaluation-results.repository"
 import { getSubjectResultSet } from "@/features/evaluation-results/evaluation-results.service"
-import { buildEvaluationWorkbook } from "@/lib/xlsx/workbook"
+import { buildSubjectWorkbook } from "@/lib/xlsx/subject-workbook"
 import { loadLetterhead } from "@/lib/xlsx/letterhead"
 
 export const maxDuration = 60
@@ -48,10 +47,9 @@ export async function GET(
     const facultyUser = await userRepository.findById(userId)
     if (!facultyUser) return NextResponse.json({ error: "User not found" }, { status: 404 })
 
-    const [subject, period, section] = await Promise.all([
+    const [subject, period] = await Promise.all([
       subjectRepository.findById(fsData.subject_id),
       evaluationPeriodRepository.findById(evaluationPeriodId),
-      fsData.section_id ? sectionRepository.findById(fsData.section_id) : Promise.resolve(null),
     ])
 
     if (!period) return NextResponse.json({ error: "periodId is required" }, { status: 400 })
@@ -65,38 +63,9 @@ export async function GET(
       return NextResponse.json({ error: "No evaluations found" }, { status: 404 })
     }
 
-    const itemByStatement = new Map(resultSet.itemAverages.map((i) => [i.itemId, i]))
-    const criteria = rubricCategories.map((category) => ({
-      name: category.name,
-      average: resultSet.summary.categoryAverages[category.name] ?? null,
-      statements: ((category as { items?: { id: string; text: string }[] }).items ?? []).map((item) => ({
-        text: item.text,
-        avg: itemByStatement.get(item.id)?.avg ?? null,
-      })),
-    }))
-
-    const bytes = buildEvaluationWorkbook({
-      form: {
-        semesterTitle: period.semesterTitle ?? null,
-        evaluationPeriodName: period.name ?? null,
-        employeeNo: facultyUser.employeeNo,
-        facultyName: facultyUser.name,
-        program: section?.program ?? null,
-        sectionName: section?.name ?? null,
-        subject: subject ? { code: subject.code, name: subject.name } : null,
-        avgRating: resultSet.summary.avgRating,
-        remarks: resultSet.summary.remarks,
-        totalRespondents: resultSet.summary.totalRespondents,
-        criteria,
-      },
-      // ⭐ the letterhead is decoration — a missing logo must not fail the export
-      logo: loadLetterhead(),
-      // the Comments sheet: the texts only (no date, by the owner's decision)
-      comments: resultSet.comments.map((comment) => comment.comment),
-      // ⭐ the rows carry the LIVE per-response map, so the Overall sheet's
-      // columns follow the rubric with the values under them — no second query
-      responses: resultSet.evaluations,
-    })
+    // ⭐ the workbook is assembled in ONE place — the three routes and the
+    // department ZIP share it, so they cannot drift
+    const bytes = buildSubjectWorkbook(resultSet, rubricCategories, loadLetterhead())
 
     return new NextResponse(bytes as unknown as BodyInit, {
       headers: {

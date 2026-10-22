@@ -41,6 +41,13 @@ cheaper to make in front of the artifact than in front of a tree.
   button makes the school unzip a 75-file ZIP to get one form.
 - ⭐ **B or C are one line each** — and the surface is decided with the ZIP in hand.
 
+⭐ **The measurement answers the "faculty-card level" question (2026-10-22).** GENED (199
+sections) and CTHM (145) **cannot be exported as one department ZIP** — **8.2 MB** and **6.0 MB**
+against the platform's ≈ **4.5 MB** ceiling — and a **faculty ZIP always fits** (≈ **300–600 KB**,
+≈ **10–25 s**). ⭐ So the **faculty card's export button STAYS, and becomes the per-faculty
+ZIP**: it is the only way the two biggest departments reach the school at all. ⭐ The
+per-subject "Export Excel" buttons (admin · dean · faculty) stay exactly as they are.
+
 ## 3. Pinned contracts
 
 1. ⭐ **The faculty's own page keeps its "Export Excel" button, always.** A faculty must be
@@ -72,7 +79,10 @@ cheaper to make in front of the artifact than in front of a tree.
 
 ## 5. The scope picker (the list page)
 
-- **The states**: **all departments** (the default) · **one** · **a selected few**.
+- **The states**: **one department** (the default) · **a selected few** — ⭐ **bounded by the
+  size guard** (≈ **90** subject-sections, measured). ⭐ **"all departments" is not offered**:
+  GENED (199 sections) measures **8.2 MB** and **359 s** — the platform's ceiling is ≈4.5 MB.
+  The school-wide **data** is the CSV "Export" button that already sits next to it.
 - **The surface**: the list page already renders **one row per department** — ⭐ the picker is
   that table's selection (a checkbox per row, plus "all" / "none"), not a second list.
 - **The scope travels in the request** — `departmentIds` — and is the route's own parameter

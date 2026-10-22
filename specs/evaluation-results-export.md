@@ -455,7 +455,7 @@ faculty cards show. The subject-grain export (§1–14) is untouched.
 | D24 | The routes are **admin + the dean twin**; the faculty role does not apply at this grain | 2026-10-22 |
 | D25 | ⭐ The consolidated file is **one XLSX per faculty** — the **new SUMMARY model** (one row per subject-section under a per-faculty band: name, email, pooled average + remark), in **its own file** | 2026-10-22 |
 | D26 | Highest/Lowest print **every tie**, comma-joined (`"Professional Manner 3.60, Student Engagement 3.60"`) — the 2026-10-21 rule ("all, not just the first"). ⭐ The owner's example printed one per column because one tie happened to exist; veto this decision if the columns should carry the first tie only | 2026-10-22 |
-| D27 | ⭐ The **scope**: **all departments / one department / a selected few**; the unit is **per department** (a department folder in the ZIP) | 2026-10-22 |
+| D27 | ⭐ The **scope**: **one department or a selected few**, **bounded by the size guard** (≈ **90** subject-sections — measured). ⭐ **"all departments" is NOT one download of workbooks** (GENED: 199 sections ⇒ **8.2 MB** deflated, **359 s**; the ceiling is ≈ **4.5 MB**). ⭐ **A department over the bound is exported PER FACULTY** (a faculty ZIP always fits). The school-wide **data** stays the CSV ZIP that ships today. The unit is **per department** (a department folder in the ZIP) | 2026-10-22, amended by the spike |
 | D28 | ⭐ The **outer** ZIP is **DEFLATE** — the workbook's own bytes do not move, but the ZIP's size does (§23) | 2026-10-22 |
 | D29 | ⭐ The **structure**: **department folder → faculty folder → subject (and section)** | 2026-10-22 |
 
@@ -596,9 +596,15 @@ The export adds **no new query** — it reads what the drill-down already reads:
   department drill-down is opened for a reason) and return the ZIP as a download
   (`application/zip`).
 - The **filename** is `evaluation-results-<periodId>.zip` — the CSV export's own convention.
-- ⭐ **The scope guard** — when the selection would exceed what one response can carry (§23),
-  the route **refuses loudly** (the count, the estimate and the suggestion) instead of failing
-  on the platform. ⭐ The threshold is **measured**, not guessed (the spike).
+- ⭐ **The scope guard** — the route estimates the ZIP's size from the **measured** bytes per
+  workbook (≈ **41.4 KB** deflated — the spike) × the selection's subject-section count, and
+  **refuses loudly** (the count, the estimate, the way out) when that would exceed the
+  platform's ≈ **4.5 MB** ceiling. ⭐ **Measured across three departments (21 · 145 · 199
+  sections) the constant holds** ⇒ the bound is ≈ **108 sections**; the guard refuses above
+  ≈ **90** (a margin).
+- ⭐ **A department over the bound is exported PER FACULTY** — a faculty ZIP (a handful of
+  sections, ≈ **300–600 KB**, ≈ **10–25 s**) always fits. ⭐ The faculty card's button is that
+  export (sub-spec 03).
 
 ## 22. The mechanics — the additions
 
@@ -617,8 +623,8 @@ traced (Part I's `loadLetterhead`).
 
 | Risk | Severity | Handling |
 |---|---|---|
-| ⭐ **the response is too big** | high | the **letterhead PNG is 47 KB and is in EVERY workbook**, and the workbook's own zip is store-only → the outer ZIP must **DEFLATE** (D28) ≈ **57 KB per workbook**. A department (≈75 subjects) ≈ **4.3 MB**; all departments (≈400–800) ≈ **23–45 MB** ❌ — ⚠️ Vercel's Serverless response limit is **~4.5 MB**. ⭐ The scope guard refuses loudly (§21); the escape hatch is re-encoding the logo (47 KB → ~12 KB → a department ≈ 1.7 MB) |
-| the export is **too slow** (N + 1 reads + N builds) | medium | bounded concurrency + `Promise.allSettled` (the CSV export's precedent) + `maxDuration = 60` + a loading button; the fallback is **one ZIP per faculty** — a loud fallback, not a silent one |
+| ⭐ **the response is too big** | high | ⭐ **MEASURED 2026-10-22** (three departments: **21 · 145 · 199** sections, 0 failures): a workbook ≈ **100 KB** (the **47 KB letterhead is 46% of it**), the **store** zip ≈ **103 KB/entry**, the **deflated** ≈ **41.4 KB/entry** — ⭐ **the constant holds**. GENED (199) ⇒ deflated **8.2 MB** ❌ · CTHM (145) ⇒ **6.0 MB** ❌ · CCA (21) ⇒ **0.82 MB** ✓ — the platform's ceiling is ≈ **4.5 MB** ⇒ the bound is ≈ **108 sections** (the guard refuses above ≈ **90**) → ⭐ **the DEFLATE outer zip (D28) is REQUIRED**, not an optimisation (the store zip for GENED is **19.6 MB** ❌❌) |
+| the export is **too slow** | high | ⭐ **MEASURED (sequential)**: a subject read is ≈ **1.7 s** (≈8 round trips) — GENED **347 s**, CTHM **249 s**, CCA **34 s**; the **builds are free** (5.6 ms per workbook) and the **department read** is 4.6–9.6 s. ⭐ The route **parallelises** the subject reads (a bounded pool) — ⭐ **the parallel speed-up is NOT measured**: the spike was sequential and the contention is unknown. ⭐ At the bound (≈90) the sequential cost is ≈ **157 s**, so **parallelisation is required, not optional** |
 | a subject **silently missing** from the ZIP | high | ⭐ `_INCOMPLETE.txt` **inside** the ZIP names every subject that failed to build — a silently missing row is a *wrong* artifact, not a missing one (Lesson 7b) |
 | the **shared builder** changes the shipping routes' bytes | high | the three routes' existing tests pin their output; the builder's own test carries the input assertions |
 | the workbook's figures vs the consolidated file's | low | the **subject read** vs the **department read** — they differ only in the live-eval case (§3.19) and the legacy NULL-period rows (D8), both pre-existing and documented |

@@ -14,21 +14,32 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
 one per session, or none),
 `specs/evaluation-results-cache.md` (the cache contract),
 `specs/evaluation-results-attribution.md` (the attribution contract — §1.10, §3.21, S6.1, D7–D9),
-`specs/evaluation-results-export.md` (the export contract — both grains, v5.0, 2026-10-22).
+`specs/evaluation-results-export.md` (the export contract — both grains, **v6.0**, 2026-10-22:
+Part I v4.0 done · Part II the **department ZIP**, D20–D29, spec'd + measured + half-built).
 
 ## NEXT (do first)
 
-- [ ] **The consolidated Excel export — the department-faculty grain. Spec'd 2026-10-22, not
-  built.**
-  Contract: **`specs/evaluation-results-export.md` Part II (v5.0, §15–26)** — the owner's
-  decisions **D20–D26**: one workbook per **department** (one button on the drill-down, admin +
-  the dean twin); the "Individual" sheet **stacked, one full form per subject-section** (Part
-  I's rows untouched); **no Comments sheet**; the "Overall" sheet is a **new summary model** —
-  one row per subject-section under a per-faculty band (Subject | Section | Avg Rating |
-  Highest | Lowest — the department page's cards as rows); the dept page's **coverage**
-  (unevaluated sections print "—"); Highest/Lowest print **every tie**.
+- [ ] **The consolidated Excel export — the department-faculty grain. The shape changed (a **ZIP**,
+  not a stacked workbook); the contract is written and measured and the pieces are built — but
+  ⭐ **no route serves it and no button exists**. Next: the two routes, then the surface, then the
+  Excel proof.**
+  Contract: **`specs/evaluation-results-export.md` Part II (v6.0, §15–26)** — the owner's decisions
+  **D20–D29**: the download is a **ZIP** — **department folder → faculty folder → subject (and
+  section)**; the workbooks are **Part I's, verbatim** (each keeps its Comments sheet and its
+  per-response Overall); **one consolidated XLSX per faculty** (the D25 model — the header block +
+  the band + `Subject | Section | Avg Rating | Highest | Lowest`; every tie; an unevaluated section
+  prints "—"); the scope is **one department or a few**, ⭐ **"all departments" is NOT one
+  download**; ⭐ a department over the size guard is exported **per faculty**.
+  Sub-specs (one per commit): **`specs/evaluation-results-export/`** — `00-spike.md` ·
+  `01-building-blocks.md` · `02-department-zip.md` · `03-surface.md` · `04-docs.md`.
+  ⭐ **The measurements** (the spike, 2026-10-22 — 0 failures in three runs): a workbook ≈ **100 KB**
+  (the **47 KB letterhead is 46%** of it) · the **deflated** ZIP ≈ **41.4 KB** per workbook — GENED
+  (199 sections) ⇒ **8.2 MB** ❌, CTHM (145) ⇒ **6.0 MB** ❌, CCA (21) ⇒ **0.82 MB** ✓ · a subject
+  read is ≈ **1.7 s**, so the reads **must** be pooled. ⇒ the guard's bound is ≈ **96**
+  subject-sections, and the two biggest departments need the **per-faculty** export.
   Entry point: **`docs/evaluation-export-department-handover.md`** — where the work stands, the
-  slice order (§24) and what not to redo.
+  measurements, the next session's order and what not to redo. Run file:
+  `.opencode/skills/plan-fix/runs/20261022-1742-dept-export-workbook.md`.
 
 - [x] **The Excel export — the workbook is GENERATED from scratch, and the routes serve it. Done
   2026-10-22 (the Excel proof is the owner's).**

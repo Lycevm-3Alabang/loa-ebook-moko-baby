@@ -37,7 +37,12 @@ not vanish).
 2. ⭐ **The guards do not move.** The admin's route is `requireAdmin`; the dean's is
    `hasRole(DEAN)` → `findByDeanId` → **their own department** (a foreign id → **403**) →
    `assertPeriodIsActive`. ⭐ The export must never become a way around a read route's 403.
-3. ⭐ **`maxDuration = 60`** on both routes (the read is live — rule 3 of the cache contract).
+3. ⭐ **`maxDuration = 60`** on both routes (the read is live — rule 3 of the cache contract)
+   — ⭐ and the **subject reads run in a bounded pool**: the measurement is ≈ **1.7 s per
+   subject** (≈8 sequential round trips), so 199 subjects cost **347 s** sequentially. ⭐
+   **Parallelisation is required, not optional** — ⭐ and its speed-up is **not measured** (the
+   spike was sequential; the contention is unknown), so the pool's size is the thing to watch in
+   production.
 4. ⭐ **The scope cannot exceed the response budget** — the guard refuses with a **message**,
    never a platform 500. ⭐ The refusal names the count, the estimate and the way out.
 5. ⭐ **A failed subject is recorded, never dropped** — `_INCOMPLETE.txt` inside the ZIP.
@@ -52,9 +57,10 @@ not vanish).
 
 | Scope | The parameter | The dean's route |
 |---|---|---|
-| **all departments** | no `departmentIds` | ⭐ **their own only** — the dean never gets a school-wide ZIP |
 | **one department** | `departmentIds=<id>` | their own only |
 | **a selected few** | `departmentIds=<id>,<id>,…` | their own only |
+| **one faculty** | `departmentIds=<id>&facultyId=<id>` | their own only |
+| ~~all departments~~ | — | ⭐ **not offered** — measured: GENED (199 sections) ⇒ **8.2 MB** deflated and **359 s**; the ceiling is ≈ **4.5 MB**. The school-wide **data** is the CSV ZIP that ships today |
 
 - The admin's route reads `departmentRepository.listAll()` and filters by the parameter;
   ⭐ an **unknown id** is skipped, not fatal — and the ZIP says what it carries.
@@ -64,11 +70,18 @@ not vanish).
 
 ## 5. The size guard
 
-- ⭐ **The threshold comes from the spike** (`00-spike.md`) — ⭐ the number below is **not yet
-  measured**:
+- ⭐ **The threshold is MEASURED** (`00-spike.md` §7 — three departments, 2026-10-22):
 
-  > **TBD — the spike's numbers.** The estimate is ≈ **4.3 MB** per department and ≈ **23–45 MB**
-  > for all departments; the platform's limit is ≈ **4.5 MB**.
+  > **≈ 41.4 KB per workbook** (deflated) · ≈ **103 KB** stored · a workbook ≈ **100 KB** (the
+  > **47 KB letterhead is 46% of it**) · **0 failures** in all three runs. ⭐ The constant holds
+  > across **21 · 145 · 199** sections.
+
+  So the estimate is `subjectSections × 41.4 KB` against the platform's ≈ **4.5 MB** ceiling ⇒
+  ≈ **108 sections**; ⭐ the guard refuses above ≈ **90** (a margin), with the count and the
+  estimate in the message.
+- ⭐ **A department over the bound is exported PER FACULTY** — a faculty ZIP (a handful of
+  sections, ≈ **300–600 KB**, ≈ **10–25 s**) always fits. ⭐ The faculty card's button is that
+  export (sub-spec 03).
 
 - **The refusal** is a **400** with a message that names: the number of subject-sections, the
   estimated size, and the way out ("select fewer departments" / "one department at a time").
