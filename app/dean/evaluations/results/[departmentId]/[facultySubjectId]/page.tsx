@@ -7,6 +7,7 @@ import { useApiGet } from "@/lib/api/client"
 import { useCrumb } from "@/lib/contexts/breadcrumb"
 import { getRemarkColor, sectionLabel, CATEGORY_KEYS, CATEGORY_LABELS } from "@/lib/evaluation-utils"
 import { DownloadEvalPdfButton } from "@/features/evaluations/components/DownloadEvalPdfButton"
+import { ExportXlsxButton } from "./ExportXlsxButton"
 
 interface EvaluationRow {
   evaluationId: string
@@ -103,16 +104,25 @@ export default function DeanGroupDetailPage() {
     <div className="w-full space-y-8 pb-12">
 
       <div className="flex items-center justify-between">
-        <DownloadEvalPdfButton
-          facultyName={facultyName}
-          facultyEmail={facultyEmail}
-          subjectCode={subjectCode}
-          subjectName={subjectName}
-          departmentName={departmentName}
-          departmentCode={departmentCode}
-          summary={data.summary}
-          evaluations={data.evaluations}
-        />
+        <div className="flex items-center gap-2">
+          <DownloadEvalPdfButton
+            facultyName={facultyName}
+            facultyEmail={facultyEmail}
+            subjectCode={subjectCode}
+            subjectName={subjectName}
+            departmentName={departmentName}
+            departmentCode={departmentCode}
+            summary={data.summary}
+            evaluations={data.evaluations}
+          />
+          <ExportXlsxButton
+            departmentId={departmentId}
+            facultySubjectId={facultySubjectId}
+            evaluationPeriodId={evaluationPeriodId}
+            subjectCode={subjectCode}
+            facultyName={facultyName}
+          />
+        </div>
       </div>
 
       <div className="card p-5 space-y-3">

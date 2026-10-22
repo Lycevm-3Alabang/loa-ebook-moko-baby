@@ -7,6 +7,7 @@ import ErrorState from "@/components/ui/ErrorState"
 import { useApiGet } from "@/lib/api/client"
 import { getRemarkColor, CATEGORY_KEYS, CATEGORY_LABELS } from "@/lib/evaluation-utils"
 import { DownloadEvalPdfButton } from "@/features/evaluations/components/DownloadEvalPdfButton"
+import { ExportXlsxButton } from "./ExportXlsxButton"
 
 interface EvaluationRow {
   evaluationId: string
@@ -78,16 +79,24 @@ export default function FacultySubjectDetailPage() {
         >
           &larr; Back to Evaluations
         </Link>
-        <DownloadEvalPdfButton
-          facultyName={data.faculty.name}
-          facultyEmail={data.faculty.email}
-          subjectCode={data.subject.code}
-          subjectName={data.subject.name}
-          departmentName={data.department?.name}
-          departmentCode={data.department?.code}
-          summary={data.summary}
-          evaluations={data.evaluations}
-        />
+        <div className="flex items-center gap-2">
+          <DownloadEvalPdfButton
+            facultyName={data.faculty.name}
+            facultyEmail={data.faculty.email}
+            subjectCode={data.subject.code}
+            subjectName={data.subject.name}
+            departmentName={data.department?.name}
+            departmentCode={data.department?.code}
+            summary={data.summary}
+            evaluations={data.evaluations}
+          />
+          <ExportXlsxButton
+            facultySubjectId={facultySubjectId}
+            evaluationPeriodId={evaluationPeriodId}
+            subjectCode={data.subject.code}
+            facultyName={data.faculty.name}
+          />
+        </div>
       </div>
 
       <div className="card p-5 space-y-3">
