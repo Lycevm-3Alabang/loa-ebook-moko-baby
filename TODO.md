@@ -18,94 +18,28 @@ session, or none),
 
 ## NEXT (do first)
 
-- [ ] **The Excel export — the legacy workbook, filled. Spec written 2026-10-22; slice 1 landed.**
-  Contract: **`specs/evaluation-results-export.md`** (v2.0). The school produces its results as a
-  spreadsheet — a per-faculty form (the "Individual" sheet), a comments sheet, and a flat
-  per-faculty table (the "Overall" sheet) — and that workbook (`docs/eval reports.xlsx`) is the
-  artifact they circulate. The app produces the same numbers on screen, but not the same artifact.
-  ⭐ **The decision (owner, 2026-10-22):** the Excel is the **legacy workbook filled as a
-  template** — all three sheets, the formulas replaced by their values. Not a writer library:
-  `exceljs` would have to rebuild 65 merged cells, the styles, the letterhead and the print setup
-  by hand and would only *approximate* the legacy file. **Proven**: the workbook was exploded,
-  patched and re-zipped store-only — a valid zip, 24 parts, the letterhead, 65 merges, the styles
-  and 3/3 printerSettings all intact.
-  ⭐ **The fields the legacy lacks, now filled:** Employee No (`users.employeeNo` — already in
-  `USER_SELECT`), **Program** and **Section** (`sections.program` / `sections.name` — the admin and
-  dean routes already return them; the **faculty route does not**, it never resolves the section),
-  **Semester** and **Evaluation Period** (`evaluation_periods.name` + `semesters.title` — one read,
-  `evaluationPeriodRepository.findById`, and the repository already joins `semesters!inner(title)`).
-  ⭐ **The letterhead is ours** — `public/logo-blk.png`, the same asset the PDF already places. The
-  workbook's embedded colour lockup is replaced (and **re-anchored**: the banner slot is 6.14:1 and
-  the logo is 2.18:1, so swapping the bytes into the old slot would stretch it).
-  ⭐ **The scope:** the drill-down's subject page — **admin, dean and the faculty's own** — at the
-  grain of one (faculty × subject × section). The Overall sheet carries **one row**. A faculty's
-  whole period is a different export.
-  ⭐ **The PDF is OUT of scope** (owner, 2026-10-22): it keeps its shape, its letterhead and its
-  30-comment truncation. Its four live defects are listed under "Open — evaluation results gaps".
-  **What landed (slice 1, `abcc919`):** the read now carries the rubric item's identity — it used
-  to select `itemId` and then drop it, because the criterion grain was enough until the form. The
-  new pure `computeItemAverages` is the statement grain, one below `computeCategoryAverages`. 14
-  cases, including the one that pins the export's foundation: a criterion's mean over its rating
-  rows **equals** the mean of its statement means, so the workbook reproduces the legacy's FINAL
-  RATING. (A submitted response rates every statement — the submit button is disabled until they
-  are all answered — so the two grains are the same number, not merely the same rule.)
-  **What landed (slice 2, `13ade13`):** the three routes the export reads now **deliver** the
-  identity block. The period **and** its semester come from ONE read
-  (`evaluationPeriodRepository.findById` joins `semesters!inner(title)`), so the header never
-  types a value it could have read. ⭐ **The faculty route never resolved its section** — the
-  admin and dean routes have carried the program and the section name all along — so it gained a
-  `sectionRepository.findById` for the row's OWN section, read **after** the ownership guard. The
-  `employeeNo` came free: `USER_SELECT` already carried it and the routes were dropping it. The
-  period is **optional**: a period that cannot be read leaves the figures intact and the header's
-  labels null. 9 cases (4 in the route test, 5 in a new file for the faculty route, which had no
-  test at all).
-  ⭐ **Superseded 2026-10-22 — the workbook is now GENERATED from scratch** (owner: *"let's do
-  B"*), so the slices below were re-cut. The generator is **built** (`lib/xlsx/`: the style table,
-  the writer, the form model, the Individual renderer, the workbook, the letterhead) and the
-  **donor** is still the live path. **What is left:** the **Comments** sheet (the donor writes the
-  text into a cell the `A:I` merge swallows — the *"it only shows the date"*), the **Overall**
-  sheet (**one row per student response** — its columns are the owner's to confirm), the **route
-  flip**, and the **legend** (the rating ladder must become data in `lib/evaluation-utils.ts`).
-  ⭐ The rubric is **data and it changes between periods** — the export reads the **live** rubric,
-  so nothing may assume a criterion count. The handover is
-  `docs/evaluation-export-handover.md` — ⭐ **one per session**; it replaced
-  `docs/evaluation-results-handover.md` (**deleted**, 2026-10-22).
-  **What landed (slice 3, `ef71931` + `bec0132`):** the template is **CUT, not hand-made** —
-  `scripts/cut-eval-template.mjs` takes `docs/eval reports.xlsx` and writes
-  `data/templates/eval-report.xlsx`. It is idempotent (re-runnable whenever the legacy changes),
-  deterministic (two runs are byte-identical), and never edits the legacy. Two things the cut
-  found that the plan had wrong: ⭐ **r3/r4/r5 were all `hidden`** — the legacy's **banner image**
-  carried the title and the term, so removing the image means the title block has to become
-  cells (r3 the title, r4 the semester, r5 the evaluation period, all un-hidden; r5 did not exist
-  as a row). ⭐ And the **"Interpretation of Data" legend disagreed with the app** — it printed
-  *"Fair"* and *"Needs improvement"* while `getRemark` says *"Unsatisfactory"* and *"Poor"*, so the
-  template would have printed a ladder the app does not use, right next to the app's own remark.
-  Corrected. The script **asserts the legacy's shape before cutting** and refuses to run if it
-  moved (a cut that lands in the wrong place would write a number against the wrong statement),
-  and **reads back what it wrote** to check every cell the export fills plus the anchor's
-  validity. `next.config.ts` gained `outputFileTracingIncludes` — without it the template is
-  absent in production and the export 500s there while working locally.
-  ⭐ **The legacy is now the owner's RE-SAVED file** (`bec0132`) — it had been re-saved by a
-  spreadsheet app, and the owner adopted it. ⭐ **The guard is now SEMANTIC** (it asserts the
-  cells' TEXT, the hidden rows, the merges and the picture, not the style ids — the re-save
-  renumbered them, and a spreadsheet app renumbers them whenever it re-saves), and the identity
-  block's styles are READ from r7/r8 rather than hard-coded. ⭐ **The letterhead is the owner's
-  own placement, normalised**: they had already put our logo in the sheet (340×156, re-encoded)
-  at 65.7 mm, left of centre, and stretched by 3.6 %; the cut keeps their asset and re-anchors
-  it to 50 mm, centred, at its own aspect, with the media replaced by the repo's exact bytes. ⭐
-  And the **picture's anchor is now found, not assumed** — the first anchor in the drawing is the
-  legend's textbox, and a lazy match spanning to the picture's would have deleted the legend.
-  ⚠️ **The re-save cost the workbook its print setup** (3 `printerSettings` parts), so the
-  exported form falls back to the reader's default page setup. The Overall sheet's near-empty
-  rows fell from 10,615 to 161 — the export clears row 7 down either way, so that is unchanged.
-  ⭐ **The guard (a hard rule):** the template's positions encode 34 statements in a fixed order, so
-  the export **verifies the live rubric's shape** and fails loudly if it moved. A wrong form is
-  worse than no form.
-  ⭐ **The arithmetic is settled for this slice:** the export writes the app's
-  `computeGeneralRating` into the template's FINAL RATING, and the legacy agrees with the app.
-  The open question — criterion-equal (1/8 each) vs pooled over the rating rows (1/34 each) — is
-  a **product** call that moves every surface at once, so it is its own slice and **not decided by
-  an export**.
+- [x] **The Excel export — the workbook is GENERATED from scratch, and the routes serve it. Done
+  2026-10-22 (the Excel proof is the owner's).**
+  Contract: **`specs/evaluation-results-export.md` (v4.0)** — the three sheets' shapes, the field
+  contract, the arithmetic, the routes and the proofs. Entry point:
+  **`docs/evaluation-export-handover.md`** — where the work stands, what changed for the school,
+  what is deferred and what not to redo.
+  ⭐ **What shipped:** the workbook is **generated** — `lib/xlsx/` (the style table, the writer, the
+  form model and one renderer per sheet) — and the three export routes (admin, dean, the faculty's
+  own) build from it. The donor (`lib/evaluation-form-xlsx.ts`) is **deleted**, `lib/xlsx-template.ts`
+  is pruned to the cut script's users, and the template is the **reference only**: nothing reads it
+  at runtime, and only the **letterhead** is traced.
+  ⭐ **The defects it fixed:** the Comments sheet shows the **text** (the donor wrote it into a cell
+  the `A:I` merge swallowed — the *"it only shows the date"*), and the Overall sheet is **one row
+  per student response**, with the **live rubric's** columns and the live values under them.
+  ⭐ **The response order is total** — the read orders by (`createdAt`, `id`), so two exports of
+  the same data print the same rows in the same order.
+  ⭐ **The rubric is data**: the form's layout, the numbering and the Overall's columns all follow
+  it, so a rubric that gains a statement simply makes a longer form — there is nothing to drift.
+  ⭐ **Still open (not this export):** the **Excel proof** (the owner's: open the workbook and print
+  it) · the **legend** (the rating ladder must become data in `lib/evaluation-utils.ts` — it is
+  duplicated in three places) · the **HTML preview** · the **PDF**'s four defects · the
+  subject-page routes onto the shared read (so the page and the export agree by construction).
 
 - [x] **The evaluation results endpoint — the direct connection is gone; the figures are read per
   department and per faculty, and cached. Done 2026-10-21.**
@@ -394,6 +328,17 @@ department; the section's department is no longer a fallback). All three are
      `summary.csv` uses it.
 
 ## Open — evaluation results gaps (2026-10-21)
+
+- [ ] **The legend ("Interpretation of Data") — the rating ladder must become data.** (Left by the
+  Excel export, 2026-10-22.) The legacy's legend is a DrawingML **textbox**, and the cut had to
+  correct its wording **by hand** because it disagreed with the app's `getRemark` ("Fair" /
+  "Needs improvement" against the app's "Unsatisfactory" / "Poor"). The new writer draws
+  **pictures only**, so the legend becomes a **block of cells** — and to do it properly the
+  ladder must stop being hard-coded inside `getRemark` (`lib/evaluation-utils.ts:57-64`) and
+  become data that **both** the remark and the legend read. ⭐ The ladder is duplicated in
+  **three** places (`lib/evaluation-utils.ts`, `features/evaluations/components/EvaluationDashboard.tsx`,
+  `app/api/faculty/evaluation-results/route.ts`) — the legend is the chance to converge them.
+  Contract: `specs/evaluation-results-export.md` §11 · the handover's §3.
 
 Tracked 2026-10-21 after the row-cap fix
 (`.opencode/skills/plan-fix/runs/20261021-0820-eval-ratings-row-cap.md`;
