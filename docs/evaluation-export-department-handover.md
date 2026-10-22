@@ -71,11 +71,13 @@ departments" is not one download**.
 
 ## Next (the new session's order)
 
-1. ⭐ **The surface (05)** — the results list page's button + the **scope picker** · the department
-   page's button · the **dean's twin** · ⭐ **the faculty card's button = the per-faculty ZIP** (the
-   measured answer to *"remove the export on faculty card levels?"* — **no**: it becomes the export
-   that gets CTHM and GENED to the school). ⭐ **One decision is still open in it** — whether the
-   per-subject "Export Excel" buttons stay (A) or retire (B/C) — `03-surface.md` §2.
+1. ⭐ **The surface (05)** — the admin's results list page (the button + the **scope picker**) ·
+   both **department pages** (the admin's and the dean's) · ⭐ **the faculty card's button = the
+   per-faculty ZIP** (the measured answer to *"remove the export on faculty card levels?"* —
+   **no**: it becomes the export that gets CTHM and GENED to the school). ⭐ **The decision is
+   TAKEN (owner, 2026-10-23) — option A**: the per-subject "Export Excel" buttons stay, and so
+   does every PDF; the dean's list page gets **no** button (it redirects to the department page).
+   `03-surface.md` is **v1.1** — Decided.
 2. **The owner's proofs (no code)** — **curl** the admin route (`?departmentIds=<one>`) and the
    dean's, **unzip**, check the tree against §17.1, print one subject workbook and one consolidated
    file; ⭐ and the **scope proof** — the dean's route answers **403** for another department (and
