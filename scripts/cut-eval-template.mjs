@@ -181,10 +181,9 @@ function locateColumn(edges, emu) {
 
 // ── the sheet's xml ────────────────────────────────────────────────────────
 //
-// The cell and row rules live in lib/xlsx-template.ts, which the EXPORT also
-// uses - so the cut and the fill cannot disagree about how a cell is edited.
-// (Node 24 imports a .ts from a .mjs directly, so the script and the app share
-// one implementation.)
+// The cell and row rules live in lib/xlsx-template.ts, so the cut has ONE
+// implementation of them - and the writer's tests read the zip with the same
+// reader. (Node 24 imports a .ts from a .mjs directly.)
 
 import {
   readRow,
