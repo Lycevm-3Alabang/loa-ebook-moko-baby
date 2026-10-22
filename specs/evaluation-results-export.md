@@ -1,91 +1,123 @@
 # Evaluation results — the export (the Excel workbook)
 
 **Status:** Draft
-**Version:** 2.0
+**Version:** 3.0
 **Last Updated:** 2026-10-22
 **Scope:** exporting one evaluation result set as an **Excel workbook**, at the grain of one
 (faculty × subject × section) — the drill-down's subject page
 (`/admin/evaluations/results/[departmentId]/[facultySubjectId]`) and the faculty's own page
 (`/faculty/evaluations/results/[facultySubjectId]`).
 
-> **v2.0 (2026-10-22):** the scope narrowed. The **PDF is out of scope** — it is not reshaped,
-> not re-letterheaded, and its comment truncation stays. The letterhead is the repo's own
-> `public/logo-blk.png` (which the PDF already uses). The Overall sheet carries **one row**.
-> The faculty's page is included. The PDF work returns as its own spec when it is taken up.
+> **v3.0 (2026-10-22) — the design changed: the template is a STYLE DONOR, not the piece to
+> fill in.** v2 filled the legacy's own cells. v3 copies the template's **header rows and its
+> styling** and **generates the criterion blocks from the data**. Two consequences:
+> the **position map, the formula-reading and the rubric-drift guard are all gone** — the layout
+> now follows the rubric instead of being matched against a fixed template — and the
+> **statement texts and the criterion names are the app's**, not the legacy's typed wording.
+> The **PDF is out of scope** (it is not reshaped, and it keeps its 30-comment truncation).
 
 ---
 
-## Why it exists
+## 1. Why it exists
 
 The school produces its evaluation results as a **spreadsheet**: a per-faculty evaluation form
 (the "Individual" sheet), a comments sheet, and a flat per-faculty table (the "Overall" sheet).
-That workbook — `docs/eval reports.xlsx` — is the artifact the results are read from and
-handed around. The app produces the same *numbers* on screen, but not the same *artifact*.
+That workbook — `docs/eval reports.xlsx` — is the artifact they circulate. The app produces the
+same *numbers* on screen, but not the same *artifact*.
 
-This spec makes the app produce that artifact: the **whole workbook**, filled from the app's
-own figures.
-
-Two things the legacy workbook has and the app does not:
-
-- **the per-statement view.** The form's column I holds one value per rubric **statement**
-  (34 of them). The app aggregates per **criterion** (8). The statement-level numbers are not
-  computed anywhere today.
-- **the identity block.** `Employee No`, `Program`, `Section`, `Semester`, `Evaluation Period`.
-  The app has every one of them (§5); the workbook does not print them.
+The legacy form's column I holds one value per rubric **statement** (34 of them). The app
+aggregates per **criterion** (8). The statement-level numbers are not computed anywhere today
+— and they are what the form prints.
 
 ---
 
-## 1. The decisions this spec records
+## 2. The decisions
 
 | # | Decision | Owner |
 |---|---|---|
-| D1 | The Excel is produced by **filling the legacy workbook as a template** — not by a library, not by hand-writing OOXML | 2026-10-22 |
-| D2 | The output is the **entire workbook** — all three sheets — with the **formulas replaced by values** | 2026-10-22 |
-| D3 | The **PDF is not touched.** It keeps its current shape, its current letterhead and its 30-comment truncation | 2026-10-22 |
-| D4 | The **letterhead is the repo's own** `public/logo-blk.png` — the same asset the PDF already places. The workbook's embedded colour lockup is **replaced** | 2026-10-22 |
-| D5 | The **Overall sheet carries one row** — the exported faculty × subject × section. A faculty's whole period is a different export | 2026-10-22 |
+| D1 | The Excel is produced by **filling the legacy workbook as a template** | 2026-10-22 |
+| D2 | The output is the **entire workbook** — all three sheets — with the **formulas replaced by their values** | 2026-10-22 |
+| D3 | The **PDF is not touched.** It keeps its shape, its letterhead and its 30-comment truncation | 2026-10-22 |
+| D4 | The letterhead is the repo's own `public/logo-blk.png` | 2026-10-22 |
+| D5 | The **Overall sheet carries one row** — the exported faculty × subject × section | 2026-10-22 |
 | D6 | The pilot is the **subject page** — admin, dean **and** the faculty's own page | 2026-10-22 |
 | D7 | The export is a **server route** that returns the workbook as a download | 2026-10-22 |
+| D8 | ⭐ **The template is a STYLE DONOR, not the piece to fill in.** Its **header rows** and its **styling for each rubric** are copied; the criterion blocks are **generated from the data** | 2026-10-22 |
+| D9 | ⭐ **The criterion names and the statement texts are the app's** — the rubric's wording, not the legacy's typed wording | 2026-10-22 |
 
-**Why D1 (the template) over a writer library.** A writer library (`exceljs`) would have to
-re-create the workbook's 65 merged cells, its styles, its letterhead and its print setup by
-hand, and the result would only *approximate* the legacy file. Filling the template produces
-the legacy file **exactly** — the same layout, the same pagination — with the numbers in it.
-The workbook is already in the repo (`docs/eval reports.xlsx`); it becomes a curated asset.
-The proof is in §8.
+### 2.1 Why D8 (and what it removes)
 
-**Why D3 (the PDF waits).** The PDF is a separate document with its own two live defects
-(§11) and its own pagination risk. Mixing it into the same slice doubles the review surface
-for no gain in the Excel. The Excel is the artifact the school actually circulates; the PDF
-is a reading copy. **The PDF's defects are recorded in §11 and are not fixed by this slice.**
+The legacy's form is a **fixed set of cells**: criterion I's three statements are at `I12`,
+`I13`, `I14`, and so on. Filling it in place means the layout is a constant in the code, and
+the rubric can outgrow it.
 
----
+Copying the template's **styling** and **generating the rows** instead means:
 
-## 2. What the export produces
+- ⭐ **The position map is gone.** There is no list of cell references to keep in step with the
+  template — the rows are written where they belong.
+- ⭐ **The formula-reading is gone.** The template's `AVERAGE` cells are not read for anything.
+- ⭐ **The rubric-drift guard is gone.** The layout follows the rubric, so a rubric that gains a
+  statement simply produces a longer form. There is nothing to drift.
+- ⭐ **The legacy's typos and its singular headings go with it.** The form says what the
+  students rated, and the headings say the rubric's own names (D9).
 
-One `.xlsx` download, containing the legacy workbook filled for the chosen scope:
-
-| Sheet | Content |
-|---|---|
-| **Individual** | the form — the identity block, then the 8 criteria with their statements and ratings, the criterion averages, TOTAL RESPONDENTS and FINAL RATING |
-| **Comments** | the same identity block, then **every** comment the responses left, one per row |
-| **Overall** | the flat view: **one row** — `NO · NAME · <8 criteria> · GENERAL RATING · REMARKS · NO OF RES. · DEPARTMENT` — for the exported faculty × subject × section |
-
-The download's filename follows the shape `<subjectCode>_<facultyName>_evaluation.xlsx`.
+The template still supplies everything that is *design*: the column widths, the fonts, the
+borders, the number formats, the row heights, the `A:H` merges, the letterhead and its
+position.
 
 ---
 
-## 3. The template
+## 3. The output's shape
 
-### 3.1 It is a repo asset, and we own it
+This is the legacy's layout, as the template carries it. The **rows in bold are generated**;
+the rest is copied.
 
-The template lives at **`data/templates/eval-report.xlsx`** (committed). It is the legacy
-workbook, **edited once** to carry the fields the legacy lacks (§3.2) and the repo's own
-letterhead (§3.3). The export never generates a layout — it only writes values into a layout
-that already exists.
+**Sheet 1 — "Individual"** (the form)
 
-> The `data/` directory already exists at the repo root (`data/sentiment/`), so the template
-> has a home that is neither `app/` nor `features/`.
+| Row | | Where it comes from |
+|---|---|---|
+| 1 | the letterhead band (the image) | **copied** — the template's drawing |
+| 2 | blank | copied |
+| 3 | `FACULTY PERFORMANCE EVALUATION — STUDENTS POST-EVALUATION` | copied (the value is written) |
+| 4 | `Semester: …` | copied (the value is written) |
+| 5 | `Evaluation Period: …` | copied (the value is written) |
+| 6 | *(hidden)* | copied |
+| 7 | `Employee No` │ … │ `Rating` │ … | copied (the values are written) |
+| 8 | `Employee Name` │ … │ `Remarks` │ … | copied (the values are written) |
+| 9 | `Program` │ … | copied (the value is written) |
+| 10 | `Section` │ … | copied (the value is written) |
+| **11+** | **the criterion blocks** | **generated** |
+| **77** | `TOTAL RESPONDENTS` │ … | **generated** |
+| **78** | `FINAL RATING` │ … │ … | **generated** |
+
+**A criterion block**, per criterion of the rubric:
+
+```
+  [criterion header]   I. <the rubric's name>            │ RATING
+  [statement]          1. <the rubric's statement>        │ 4.40
+  [statement]          2. …                              │ 4.30
+  [AVERAGE]            AVERAGE                            │ 4.35
+  [spacer]                                              (blank)
+```
+
+**Sheet 2 — "Comments"** — the same header block (rows 1–10), then the `COMMENTS AND
+SUGGESTIONS` banner, then **one comment per row**, each on a row 40.5 pt tall.
+
+**Sheet 3 — "Overall"** — the header row (`NO · NAME · <8 criteria> · GENERAL RATING ·
+REMARKS · NO OF RES. · DEPARTMENT`), then **one row**.
+
+> The legacy's page-2 header repeat (rows 46–49) is **hidden** — it never printed, so the
+> generated form has no page-2 header either. That is the legacy's own behaviour.
+
+---
+
+## 4. The template
+
+### 4.1 Where it lives
+
+**`data/templates/eval-report.xlsx`** — committed, and cut from `docs/eval reports.xlsx` by
+**`scripts/cut-eval-template.mjs`**. The script is idempotent (it always starts from the
+legacy), deterministic (two runs are byte-identical), and it **never edits the legacy**.
 
 **Deployment.** The route reads the file from the filesystem, so it must be traced into the
 serverless bundle. `next.config.ts` gets:
@@ -95,157 +127,66 @@ outputFileTracingIncludes: { "/api/**/*": ["./data/templates/**/*"] }
 ```
 
 Without it the file is absent in production and the export 500s there while working locally.
-This is the one config change in the slice.
 
-### 3.2 The template's edits (one-time, by hand, in Excel)
+### 4.2 The cut
 
-The legacy workbook's header block:
+The cut makes the legacy's header rows carry the fields the app has and the fields the school
+reads, and it puts our letterhead in place of the legacy's banner:
 
-| Row | A (label) | B:F (value) | G (label) | H:I (value) |
-|---|---|---|---|---|
-| 7 | `Employee No` | — | `Rating` | — |
-| 8 | `Employee Name` | — | `Remarks` | — |
-| 9 | — | — | — | — |
-| 10 | — | — | — | — |
-
-and its title block: `r1` (the letterhead image), `r3` = `Faculty Performance Evaluation`,
-`r4` = the term, `r5`/`r6` blank and unmerged.
-
-| Where | Change | Why |
-|---|---|---|
-| `A9:F9` | `Program` label + value cell | the app's `section.program`; the legacy has no program |
-| `A10:F10` | `Section` label + value cell | the app's `section.name` |
-| `r4` | `Semester: <semesters.title>` | the legacy's term line, now the semester |
-| `r5` (new, merged `A5:I5`) | `Evaluation Period: <evaluation_periods.name>` | the legacy has no period line |
-| `r3` | `Faculty Performance Evaluation` — keep | the legacy's own title |
-| `r1` | the letterhead — see §3.3 | |
-
-The legacy's `r2` is blank and unmerged; `r5`/`r6` are blank and unmerged. Both are free.
-
-### 3.3 The letterhead (D4)
-
-The legacy workbook embeds `xl/media/image1.png` — a 1563 × 278 colour lockup, and the lockup
-appears **twice** in it (left and right, with a rule along the bottom).
-
-**The template's image is replaced with the repo's own** `public/logo-blk.png` (340 × 156, a
-black lockup on a transparent background) — the same asset the PDF already places in its
-header (`lib/evaluation-pdf.ts:78`).
-
-⚠️ **The image must be re-anchored, not swapped in place.** The legacy's image occupies a
-6.14 : 1 banner slot; `logo-blk.png` is 2.18 : 1. Dropping the new bytes into the old
-`xl/media/` slot would **stretch** the logo. The template edit is: delete the banner image and
-insert `logo-blk.png` **centred at the top, at its own aspect ratio**.
-
-### 3.4 What the export writes, and where
-
-The template's cell positions are **fixed**. The export writes **by position**, and the
-position map comes from the template's own layout, not from the rubric (§3.5).
-
-**Sheet 1 — "Individual"** (the form)
-
-| Cells | Written |
+| Where | Change |
 |---|---|
-| `B7` | Employee No (`users.employeeNo`) |
-| `B8` | Employee Name |
-| `B9` | Program |
-| `B10` | Section |
-| `H7` | the general rating |
-| `H8` | the remark |
-| `r4` | `Semester: …` |
-| `r5` | `Evaluation Period: …` |
-| `I12`…`I74` | the **34 statement ratings** — one per rubric statement |
-| `I15`, `I24`, `I31`, `I38`, `I45`, `I60`, `I66`, `I75` | the **8 criterion averages** |
-| `H77` | TOTAL RESPONDENTS |
-| `I78` | FINAL RATING |
+| `r1` | the banner image is **replaced** by `public/logo-blk.png`, centred, at its own aspect |
+| `r3` | the title — was hidden, now visible (the banner image used to carry it) |
+| `r4` | `Semester: <semester>` — was hidden, now visible |
+| `r5` | `Evaluation Period: <evaluation period>` — a new row, was hidden |
+| `r9` | `Program` + its value cell |
+| `r10` | `Section` + its value cell |
+| sheet 2 | the same header block |
+| the legend | the two bands that disagreed with `getRemark` corrected |
 
-The legacy's `I15` … `I78` carry `<f>AVERAGE(…)</f>` formulas. **Every formula is replaced by
-its value** (D2) — the cell keeps its style and its number, and loses the `<f>` element. A
-filled workbook is a *report*, not a *worksheet*: the school can read it, print it and mail it,
-but it cannot retype a rating and watch the average recompute. That is the intended trade.
+⭐ **The legacy's criterion blocks (rows 11+) are left in the template as the STYLE DONOR.**
+The export reads their styles and their row heights, then replaces them with the generated
+blocks — so the template keeps one of each kind of row, and the output has none of the legacy's.
 
-**Sheet 2 — "Comments"**
+### 4.3 The script's discipline
 
-The legacy's sheet 2 is the same header block plus a `COMMENTS AND SUGGESTIONS` banner at
-`r10` and blank writing space from `r11`. The export writes the identity block (as sheet 1)
-and then **one comment per row from `r11` down**: the response's date, then the comment text.
-No cap.
-
-**Sheet 3 — "Overall"** (D5)
-
-The legacy's sheet 3 is a per-faculty table: `NO | NAME | <8 criteria> | GENERAL RATING |
-REMARKS | NO OF RES. | DEPARTMENT`, header at `r6`, data from `r7`. The export writes **one
-row** — the exported faculty × subject × section — carrying the same eight criterion figures
-the Individual sheet's AVERAGE rows carry. The legacy's 10,609 empty rows are dropped; the
-template keeps the header and its styling.
-
-> The Overall sheet has **no Subject/Section column**, so the row's identity lives on the
-> Individual sheet. A period-level export (every faculty, every subject) is a different export
-> and would need its own column set — out of scope (§10).
-
-### 3.5 The rubric-drift guard (a hard rule)
-
-The template's statement positions encode a rubric of **34 statements in a fixed order**
-(3 · 6 · 4 · 4 · 4 · 4 · 3 · 6). If the owner edits the rubric in the app — adds, removes or
-reorders a statement — the positions no longer line up, and the export would write **the wrong
-number against the wrong statement, silently**. A wrong form is worse than no form.
-
-**The export verifies the live rubric against the template before it writes anything.** The
-expected shape is a constant next to the template:
-
-```
-EXPECTED_ITEMS_PER_CATEGORY = [3, 6, 4, 4, 4, 4, 3, 6]   // 34 statements
-```
-
-If the live rubric's categories, item counts or item order do not match, the export **fails
-with a clear message** ("the rubric changed — the Excel template needs to be re-cut") and
-writes nothing. It does not degrade, and it does not guess.
-
----
-
-## 4. The three pages
-
-| Page | Route | Guard |
-|---|---|---|
-| admin | `app/api/admin/evaluation-results/departments/[departmentId]/groups/[facultySubjectId]/route.ts` | `requireAdmin` + `isSubjectInDepartment` (D9) |
-| dean | `app/api/dean/evaluation-results/departments/[departmentId]/groups/[facultySubjectId]/route.ts` | `hasRole(DEAN)` + the dean's own department + `assertPeriodIsActive` + `isSubjectInDepartment` |
-| faculty | `app/api/faculty/evaluation-results/subjects/[facultySubjectId]/route.ts` | `auth` + `assertPeriodIsActive` + **the visibility map** + `fsMatch.faculty_id === userId` |
-
-⭐ **The faculty's export must carry the same guards as the faculty's read** — including the
-**visibility map** (`getVisibilityMap`). A period whose results the dean has not enabled must
-not be exportable by a faculty member, or the export route becomes a way around the read
-route's 403.
+- ⭐ **It asserts the legacy's shape before cutting** — the cells' *text*, the hidden rows, the
+  merges, the picture — and **refuses to run** if the legacy moved. The assertions are
+  **semantic**, not style ids: a spreadsheet app renumbers the styles whenever it re-saves (the
+  legacy's `A1` went from style `67` to `3`), and a semantic guard survives that.
+- ⭐ **It reads back what it wrote** and checks every cell the export fills, the anchor's
+  validity (a negative offset, or one wider than its own column, is how a drawing silently
+  lands in the wrong place) and that the legend's textbox is still there.
+- ⭐ **The cut script and the export share the cell rules** — Node 24 imports a `.ts` from a
+  `.mjs` directly, so `scripts/cut-eval-template.mjs` imports `lib/xlsx-template.ts` and a cut
+  and a fill cannot disagree about how a cell is edited.
 
 ---
 
 ## 5. The field contract
 
-Every field the workbook prints, and where it comes from. **No field is typed by hand** — the
-legacy's term line was ("2nd Semester, School Year 2025-2026" in the banner, "2023-2024" in
-the sub-header, in the same file), which is exactly what this contract removes.
-
 | Field | Source | Rule |
 |---|---|---|
-| **Employee No** | `users.employeeNo` | already in `USER_SELECT` (`lib/db/common.ts:16`) → `userRepository.findById` returns it. The column exists (`supabase-schema.sql:806`). Empty is printed as an em dash, never as a fake value |
-| **Employee Name** | `users.name` | the faculty's name |
-| **Program** | `sections.program` | the row's own section, not the faculty's course |
+| **Employee No** | `users.employeeNo` | already in `USER_SELECT` (`lib/db/common.ts:16`), so `userRepository.findById` returns it. Empty is printed as an em dash, never as a fake value |
+| **Employee Name** | `users.name` | |
+| **Program** | `sections.program` | the row's own section |
 | **Section** | `sections.name` | the row's own section |
 | Subject Code / Name | `subjects.code` / `subjects.name` | |
 | Department | `departments.name` (+ code) | the **teacher's home** department (contract §3.1) |
-| **Semester** | `semesters.title` (via `evaluation_periods.semesterId`) | e.g. `SY 2026-2027 First Semester` |
+| **Semester** | `semesters.title` | e.g. `SY 2026-2027 First Semester` |
 | **Evaluation Period** | `evaluation_periods.name` | e.g. `SY 2026-2027 First Semester - Evaluation` |
 | Rating | the general rating | §6 |
 | Remarks | `getRemark(general)` | Outstanding / Very Satisfactory / Satisfactory / Unsatisfactory / Poor |
 | TOTAL RESPONDENTS | the number of counted responses | the responses the figures are computed over |
-| **34 statement ratings** | the statement's mean over the counted responses | §7.1 |
-| **8 criterion averages** | the criterion's mean over the counted responses | §6 |
+| **34 statement ratings** | each statement's mean over the counted responses | §7.1 |
+| **8 criterion averages** | each criterion's mean over the counted responses | §6 |
 | **FINAL RATING** | the general rating | §6 |
+| the criterion **names** | the rubric's category names | D9 |
+| the statement **texts** | the rubric's statement texts | D9 |
 
-### 5.1 Program and Section are printed as two fields
-
-The app's display helper `sectionLabel(program, name)` (`lib/evaluation-utils.ts:214-217`)
-joins them into `BSCS-A`. The workbook prints them **separately** — `Program: BSCS` and
-`Section: A` — because the two are different things and the school's own records treat them
-that way. The combined label stays where it already is (the drill-down's header card).
+**Program and Section are printed as two fields.** The app's display helper `sectionLabel`
+(`lib/evaluation-utils.ts:214-217`) joins them into `BSCS-A`; the workbook prints them
+separately, because they are different things.
 
 ---
 
@@ -254,282 +195,151 @@ that way. The combined label stays where it already is (the drill-down's header 
 ### 6.1 What the app does today
 
 `computeGeneralRating(catAverages)` (`lib/evaluation-utils.ts:148-156`) is the **unweighted
-mean of the eight criterion averages**:
-
-```ts
-const keys = Object.keys(catAverages).filter((k) => k !== UNMAPPED_CATEGORY_NAME)
-return Math.round(keys.reduce((sum, k) => catAverages[k], 0) / keys.length * 100) / 100
-```
-
-and each criterion average is the mean over that criterion's **rating rows**
-(`computeCategoryAverages`, `:84-96`).
+mean of the eight criterion averages**, and each criterion average is the mean over that
+criterion's **rating rows** (`computeCategoryAverages`, `:84-96`).
 
 ### 6.2 What the legacy workbook does
 
 `I78 = AVERAGE(I15,I24,I31,I38,I45,I60,I66,I75)` — the mean of the eight criterion averages,
 each of which is the mean of its statement cells.
 
-### 6.3 They agree — exactly, not approximately
+### 6.3 They agree — exactly
 
 A **submitted** evaluation has **every** statement rated: the submit button is
 `disabled={submitting || !allAnswered || !pledgeAgreed}`
 (`app/(eval)/evaluate/[id]/page.tsx:760`). So every counted response contributes exactly one
-rating to each of the 34 statements, which makes
-
-> the mean over a criterion's rating rows **==** the mean of that criterion's statement means
-
-for every criterion, and therefore the two whole formulas are the same number. The app and
-the legacy workbook do not merely use the same rule — **they compute the same value**, and
-the workbook reproduces the legacy's numbers exactly.
+rating to each of the 34 statements, which makes a criterion's mean over its rating rows
+**equal** to the mean of its statement means. The app and the legacy compute the same number.
 
 ### 6.4 What needs to be done: **nothing, for this export**
 
-The export writes the app's `computeGeneralRating` value into `I78`. Because the formulas are
-replaced by their values (D2), the workbook shows exactly what the app computed. **No decision
-is needed to ship this.**
+The export writes the app's own computed values. The workbook is a **report**, not a
+worksheet: the formulas are replaced by their values (D2), so the school can read it, print it
+and mail it, but cannot retype a rating and watch the average recompute.
 
 ### 6.5 The question that is *not* blocking
 
-The app weights each **criterion** at 1/8. A **pooled** mean over the rating rows would weight
-each **statement** at 1/34, and because the criteria carry unequal statement counts
-(3 · 6 · 4 · 4 · 4 · 4 · 3 · 6), the two differ.
+The app weights each **criterion** at 1/8; a **pooled** mean over the rating rows would
+weight each **statement** at 1/34, and because the criteria carry unequal statement counts
+(3 · 6 · 4 · 4 · 4 · 4 · 3 · 6) the two differ.
 
-*Worked example* — criterion II (6 statements) at 5.00, the other 28 statements at 4.00:
+*Worked example* — criterion II (6 statements) at 5.00, the other 28 at 4.00:
 
 | | value |
 |---|---|
 | criterion-equal (the app, and the legacy) | `(5.00 + 4.00 × 7) / 8` = **4.125** |
 | pooled over the rating rows | `(6 × 5.00 + 28 × 4.00) / 34` = **4.176** |
 
-Which is right is a **product** question — *"are the eight criteria what we are rating, or are
-the 34 statements?"* — and the **legacy agrees with the app**, so reproducing the legacy is
-not blocked by it.
+Which is right is a **product** question — *"are the eight criteria what we are rating, or the
+34 statements?"* The **legacy agrees with the app**, so reproducing the legacy is not blocked by
+it. If the owner ever wants the pooled mean it is **one function** and it moves every surface
+at once. It should be **its own slice, decided on its own** — and **not decided by an export**.
 
-If the owner ever wants the pooled mean, it is **one function** (`computeGeneralRating`) and
-it touches every surface at once: the results list, the drill-down, the report, the export
-CSVs, the PDF and this workbook. It should be **its own slice, decided on its own** — and
-not decided by an export.
-
-> ⚠️ A related imprecision to record, not to fix here: the comment at
+> ⚠️ A related imprecision, recorded not fixed: the comment at
 > `features/evaluations/evaluation-report.service.ts:134-135` ("this is the mean over the
 > rating rows") is true of the eight criterion columns and **not** of the general rating.
 
 ---
 
-## 7. What has to be built
+## 7. What the export reads
 
-### 7.1 The statement ratings (the one new capability)
+### 7.1 The statement ratings
 
 The form's column I is **per statement** (34). The app aggregates **per criterion** (8). The
-statement's identity is lost at the read boundary:
+statement's identity used to be lost at the read boundary — the read selected `itemId` and then
+dropped it. It now survives:
 
-```
-lib/db/common.ts:100   .select("evaluationId, rating, itemId")   ← selected
-lib/db/common.ts:183   return ratingRows.map((r) => ({            ← then dropped
-                       evaluationId, rating,
-                       rubric_items: { categoryId, rubric_categories: { name } } }))
-```
+- `lib/db/common.ts` — `RatingWithCategory` carries `itemId`, the item's `text` and
+  `displayOrder`, and the criterion's `displayOrder`.
+- `lib/types/evaluation.ts` — `EvaluationRatingRow` follows.
+- `lib/evaluation-utils.ts` — `computeItemAverages`, the statement grain, one below
+  `computeCategoryAverages`. The mean is left raw; the caller rounds.
 
-So:
+**Purely additive** — the four existing consumers of `fetchRatingsWithCategories` read
+`categoryId` and `name`, both unchanged.
 
-1. `lib/db/common.ts` — `RatingWithCategory` (`:54-58`) gains `itemId`, `itemText`,
-   `itemDisplayOrder`, `categoryDisplayOrder`; the `rubric_items` select (`:152`) becomes
-   `id, categoryId, text, displayOrder`; the `rubric_categories` select (`:172`) becomes
-   `id, name, displayOrder`; the mapping (`:183-190`) carries them.
-2. `lib/types/evaluation.ts:526` — `EvaluationRatingRow` gains the same fields (the cast at
-   `features/evaluations/evaluations.repository.ts:639` would otherwise be a lie).
-3. `lib/evaluation-utils.ts` — a new pure `computeItemAverages(ratings)` → the statements,
-   grouped by criterion and ordered by `displayOrder`, each with its mean and its count.
+### 7.2 The rubric — the source of truth for the LAYOUT
 
-**Ripple:** `fetchRatingsWithCategories` has four call sites
-(`features/evaluation-results/evaluation-results.repository.ts:542,601,916` and
-`features/evaluations/evaluations.repository.ts:639`). The change is **purely additive** — every
-existing consumer reads `categoryId` / `name`, both unchanged.
+The export reads the **rubric** (`rubricRepository.getCategoriesWithItems(groupId)`, the group
+coming from the period's `rubric_group_id`) and the **ratings** (for the numbers).
 
-**Caps:** adding columns adds no rows. The `rubric_items` read (`:150-154`) chunks at 37 ids
-→ 34 items is one chunk, 34 rows ≪ 1,000. The ratings read is untouched.
+⭐ That split is what makes D8 work: the rubric says **what the form is** — how many criteria,
+how many statements each, what they say — and the ratings say **what they scored**. So a
+criterion nobody rated still gets its block, with its value blank; a rubric that gains a
+statement simply makes a longer form.
 
-### 7.2 The routes
+### 7.3 One read for the page and the export
 
-Each of the three routes (§4) gains:
+`getSubjectResultSet(facultySubjectId, evaluationPeriodId)` in
+`features/evaluation-results/evaluation-results.service.ts` does the read **once**. The subject
+page renders it and the export fills the workbook with it, so **the page and the export can
+never show different numbers** — the same parity rule the surfaces live by (contract §3.18).
 
-- **the period and the semester** — one read, `evaluationPeriodRepository.findById`, which
-  already joins `semesters!inner(title)`
-  (`features/admin-data/evaluation-period.repository.ts:31`), so one read gives both labels;
-- **`employeeNo`** on the faculty object;
-- **the program and the section** — the admin and dean routes already return
-  `sectionProgram` / `sectionName`; ⭐ **the faculty route does not** — it resolves the
-  subject but never the section, so it gains a `sectionRepository` lookup.
-
-### 7.3 The Excel writer
-
-The export is a **server route** that returns the workbook:
-
-```
-GET /api/admin/evaluation-results/departments/[departmentId]/groups/[facultySubjectId]/export?format=xlsx
-```
-
-and the dean's and the faculty's twins. The route re-reads (as the existing export route does)
-and writes the template.
-
-**The mechanics.** A workbook is a ZIP of XML parts. The repo has a **store-only** ZIP writer
-(`lib/zip.ts:16`, `createZip`) and no reader. The route needs:
-
-- a **reader** — parse the central directory and inflate the parts. Node's built-in
-  `zlib.inflateRawSync` does the inflate, so this is ~60 lines and **no dependency**;
-- the **writer** — `createZip` already exists and is legal for a workbook (ZIP's *stored*
-  method is method 0, and workbook readers accept it). `[Content_Types].xml` is written first.
-
-**Proof (run 2026-10-22, `/tmp`, nothing in the repo):** the template was exploded, patched
-(cells written, `<f>` formulas stripped), and re-zipped store-only. The result: a **valid
-zip**, 24 parts, the letterhead image intact (50,912 bytes), **65 merged cells** on sheet 1
-intact, `styles.xml` intact, **3/3** `printerSettings` intact, **no formulas remaining** in
-the patched cells, and the Overall sheet's 10,615 rows reduced to the header plus one data
-row. The approach works.
-
-**Why not `exceljs`.** It would have to rebuild the 65 merges, the styles, the letterhead and
-the print setup by hand, and the output would only *approximate* the legacy file. D1 chooses
-the template. The consequence is accepted: the workbook's layout is a **snapshot**, and §3.5's
-guard is what keeps that honest.
-
-### 7.4 The template cut
-
-A one-time, manual step by the owner: open `docs/eval reports.xlsx`, make §3.2's edits, swap
-the letterhead (§3.3), and save it as `data/templates/eval-report.xlsx`. The export never
-edits the template — it only reads it.
-
-### 7.5 The button
-
-Each of the three pages gets the export affordance, using `components/ui/IosButton` — ⚠️
-**not** the hand-rolled `<button>` that `DownloadEvalPdfButton` uses today
-(`DownloadEvalPdfButton.tsx:69-77`), which drifts from the design system.
-
-> The existing PDF button's markup is **not** fixed in this slice. It is a separate, one-line
-> cleanup, and mixing it in would make this slice's diff hard to review.
+The **guards stay with the routes** — they are per role, and the dean and the admin do not see
+the same subjects.
 
 ---
 
-## 8. Risks
+## 8. The routes
+
+| Route | Guard |
+|---|---|
+| `app/api/admin/evaluation-results/departments/[departmentId]/groups/[facultySubjectId]/export/route.ts` | `requireAdmin` + `isSubjectInDepartment` (D9) |
+| `app/api/dean/evaluation-results/departments/[departmentId]/groups/[facultySubjectId]/export/route.ts` | `hasRole(DEAN)` + the dean's own department + `assertPeriodIsActive` + `isSubjectInDepartment` |
+| `app/api/faculty/evaluation-results/subjects/[facultySubjectId]/export/route.ts` | `auth` + `assertPeriodIsActive` + **the visibility map** + the assignment is the faculty's own |
+
+⭐ **The faculty's export must carry the same guards as the faculty's read**, including the
+**visibility map** (`getVisibilityMap`) — a period whose results the dean has not enabled must
+not be exportable, or the export route becomes a way around the read route's 403.
+
+Each route reads, builds the workbook and returns it as a download
+(`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`).
+
+---
+
+## 9. The mechanics
+
+- **The template is copied**, parts and all: `xl/styles.xml` (the fonts, the borders, the
+  number formats), `xl/media/` (the letterhead), `xl/drawings/` (its anchor), the theme.
+- **The three sheets' rows are replaced** with the generated ones.
+- **The zip**: the template is deflated; the app's *output* is store-only (`lib/zip.ts`'s
+  writer), and the reader handles both methods. `lib/xlsx-template.ts` holds the reader, the
+  cell and row rules (in **both** dialects — Excel writes `hidden="1"`, the other app writes
+  `hidden="true"`), and the shared-string helpers.
+- **No new dependency.** ⭐ The template supplies the styling, so a writer library would have
+  to re-state all of it in code.
+
+---
+
+## 10. Risks
 
 | Risk | Severity | Handling |
 |---|---|---|
-| **The rubric changes and the template no longer matches** | high — a *wrong* form, silently | §3.5's guard: verify the live rubric's shape, fail loudly, write nothing |
-| **The zip writer produces a workbook a reader rejects** | medium | proven in §7.3's PoC; a spreadsheet-app smoke test is part of the slice's verification |
-| **The template is absent in production** | medium | `outputFileTracingIncludes` (§3.1); the export must be smoke-tested **in production**, not only locally |
-| **The letterhead is stretched** if the new image is dropped into the old slot | low | §3.3 — re-anchor at the logo's own aspect, centred |
-| **The Overall sheet is one row at this grain** | low | D5; the period-level export is out of scope (§10) |
-| **The dean's route has no visibility map** while the faculty's does | low | the export mirrors each route's own guard exactly (§4) — the dean's is the dean's |
+| **The generated form is taller than the legacy's** — the header is bigger, and the statement wording is longer | medium | the page count is a **proof** before the Excel ships; the type size and the row heights are the levers |
+| **A statement's text is too long for its row** | medium | the statement rows' heights follow the text's length, as the legacy's own do (13.5 pt, 30 pt for a long one) |
+| **The template is absent in production** | medium | `outputFileTracingIncludes` (§4.1); smoke-test in production, not only locally |
+| **The re-save cost the workbook its print setup** | low | the exported form falls back to the reader's default page setup |
+| **The letterhead is stretched** if the new image is dropped into the old slot | low | the cut re-anchors it at the logo's own aspect, centred (§4.2) |
+| **The rubric is edited between the read and the fill** | very low | the rubric and the ratings are read together; a change between them is a stale form, not a wrong one |
 
 ---
 
-## 9. The slices
+## 11. What this slice does **not** do
 
-| # | Slice | Files | State |
-|---|---|---|---|
-| 1 | **The statement ratings** — the item identity through the read + `computeItemAverages` | `lib/db/common.ts`, `lib/types/evaluation.ts`, `lib/evaluation-utils.ts`, + tests | **done 2026-10-22** (`abcc919`) |
-| 2 | **The routes** — the period/semester read, `employeeNo`, the section on the faculty route | 3 route files + tests | **done 2026-10-22** (`13ade13`) |
-| 3 | **The template** — cut `data/templates/eval-report.xlsx` (§3.2, §3.3); the ZIP reader | `data/templates/eval-report.xlsx` (owner-cut), `lib/xlsx-template.ts` (new), `next.config.ts` | **done 2026-10-22** (`ef71931`) |
-| 4 | **The export route** — the fill, the rubric guard, the three routes | 3 new route files, `lib/evaluation-form-xlsx.ts` (new) | |
-| 5 | **The buttons** — the export affordance on the three pages | 3 page files | |
-
-⭐ **Slices 1 and 2 are data-only** — they change no output, so each can land on its own. Slice 1
-made the statement-level numbers exist; slice 2 made the header's fields **deliverable**.
-
-⭐ **What slice 2 settled that the plan had not:** the **faculty** route never resolved its
-section — the admin and dean routes have carried the program and the section name all along —
-so it gained a `sectionRepository.findById` for the row's OWN section, read **after** the
-ownership guard. The `employeeNo` came free: `USER_SELECT` already carried it, so
-`userRepository.findById` was returning it and the routes were dropping it. And the period is
-**optional**: a period that cannot be read leaves the figures intact and the header's labels
-null — the figures are the point, the labels are the header.
-
-⭐ **What slice 3 changed about the plan.** The template is **cut by a script**, not made by
-hand: `scripts/cut-eval-template.mjs` takes `docs/eval reports.xlsx` and writes
-`data/templates/eval-report.xlsx`. It is idempotent, so it can be re-run whenever the legacy
-changes, and it never edits the legacy. Two things the cut found that the plan had wrong:
-
-- **r3/r4/r5 were all `hidden`.** The legacy's **banner image** carried the title and the term,
-  so the cells that duplicate them were hidden. Removing the image therefore means the title
-  block has to become cells — r3 the title, r4 the semester, r5 the evaluation period, all
-  un-hidden. (r5 did not exist as a row; the cut makes it.)
-- **The "Interpretation of Data" legend disagreed with the app.** It printed *"Fair"* and
-  *"Needs improvement"*; `getRemark` says *"Unsatisfactory"* and *"Poor"*. The template would
-  have printed a ladder the app does not use, right next to the app's own remark. The cut
-  corrects the two bands.
-
-The script **asserts the legacy's shape before cutting** (the cells it touches, their styles,
-the hidden rows, the `A10:H10` merge, the picture's crop) and **refuses to run** if the legacy
-moved — a cut that lands in the wrong place would write a number against the wrong statement.
-It also **reads back what it wrote** and checks every cell the export fills, plus the anchor's
-validity: a negative offset, or one wider than its own column, is how a drawing silently lands
-in the wrong place. The first cut had both — a greedy regex reading `customHeight="1"` as the
-row height, and a column lookup that worked per col-range instead of per column — and the check
-caught them.
-
-> ⭐ **v2.1 (2026-10-22, later the same day): the legacy is the owner's RE-SAVED file.** It had
-> been re-saved by a spreadsheet application, and the owner adopted that file rather than
-> restoring the previous one. Three things changed with it:
->
-> - ⭐ **The guard is now SEMANTIC.** It asserted style ids — an implementation detail of
->   whichever app wrote the file — and the re-save renumbered them (`A1` went from style `67` to
->   `3`), so the guard fired on a workbook that had not really moved. It now asserts what the
->   workbook **says**: the cells' text, the hidden rows, the merges, the picture. The identity
->   block's styles are **read from r7/r8** rather than hard-coded.
-> - ⭐ **The letterhead is the owner's, normalised.** They had already put our logo in the sheet
->   (`image1.png` is 340 × 156 — the repo logo, re-encoded by their app) at **65.7 mm, left of
->   centre, and stretched by 3.6 %** (2.258 against the logo's native 2.179). The cut keeps their
->   asset and re-anchors it to the contract's geometry: **50 mm** (the width the PDF's letterhead
->   uses), **centred**, at its own aspect, with the media replaced by the repo's exact bytes.
-> - ⭐ **The picture's anchor is now FOUND, not assumed.** The first anchor in the drawing is
->   the legend's textbox, and a lazy match that had to contain a `<xdr:pic>` spanned from the
->   textbox's anchor to the picture's — so replacing it **deleted the legend**. The anchors are
->   matched one at a time now, and the read-back check asserts the textbox is still there.
->
-> ⚠️ **The re-save also cost the workbook its PRINT SETUP** (3 `printerSettings` parts). The
-> exported workbook therefore has no print setup, and the printed form falls back to the
-> reader's default page setup. ⚠️ And the Overall sheet's near-empty rows fell from **10,615 to
-> 161** — the export clears row 7 and down either way, so that is unchanged.
-
-`next.config.ts` gained `outputFileTracingIncludes`, so the template is traced into the
-serverless bundle: without it the file is absent in production and the export 500s there while
-working locally. The template is **307 KB** (deflated); the app's *output* stays store-only —
-that is `lib/zip.ts`'s writer, and the export's reader handles both methods.
-
-**Gate (the owner's run):**
-
-```powershell
-npx tsc --noEmit; if ($?) { npm run lint }; if ($?) { npx vitest run }; if ($?) { npm run build }
-```
-
-Baseline: 62 files · 687 tests (2026-10-21).
-
----
-
-## 10. What this slice does **not** do
-
-- **The PDF.** It is not reshaped, not re-letterheaded, and its comment truncation stays (D3).
-  See §11 for what it is carrying.
+- **The PDF.** It is not reshaped, not re-letterheaded, and its 30-comment truncation stays (D3).
+  Its four live defects are recorded in §12.
 - **The period-level export** — every department, every faculty, every subject, in one
-  download. The existing CSV export (`app/api/admin/evaluation-results/export/route.ts`)
-  stays as it is. The Overall sheet's column set for that scope is a separate decision.
-- **The general rating's arithmetic** (§6.5) — one function, every surface, a product
-  decision. **Not decided by an export.**
-- **The `RATINGS_IN_CHUNK_SIZE` staleness — FIXED 2026-10-22.** `lib/db/common.ts` sized a chunk
-  of 37 evaluations at 37 × **27** = 999 rows, but the rubric has **34** statements (migrations
-  28/29 took it from 24 to 34; the "27" was the *seed's* count), so every chunk spilled into two
-  pages and its first 1,000 rows were read twice. Correctness was never affected — the page loop
-  pages until a page comes back short. The chunk is now **derived**
-  (`Math.floor(RATINGS_PAGE_SIZE / RUBRIC_STATEMENT_COUNT)` = 29), with the count exported and the
-  invariant asserted by the paging test. AGENTS.md **Lesson 7b** carries the corollary. ⭐ The
-  schema's two "27"s were left alone — `supabase-schema.sql` is the owner's file (H4) and the
-  rubric group's description is seeded data.
+  download. The existing CSV export stays as it is.
+- **The general rating's arithmetic** (§6.5) — one function, every surface, a product decision.
+- **`RATINGS_IN_CHUNK_SIZE`** — the chunk was sized for 27 statements and the rubric has 34, so
+  every chunk spills into a second page and its first 1,000 rows are read twice. Correctness is
+  fine; performance is not. The fix is `37 → 29` — but only after the live rubric is confirmed
+  to be 34 statements, which is a read-only check for the owner.
 - **`downloadDeptPdf` (`lib/evaluation-pdf.ts:279`)** — no callers. A cleanup, not this slice.
 
 ---
 
-## 11. What the PDF is carrying (for the slice that takes it)
-
-Recorded so it is not lost, not fixed here:
+## 12. What the PDF is carrying (for the slice that takes it)
 
 | Defect | Where |
 |---|---|
@@ -540,10 +350,36 @@ Recorded so it is not lost, not fixed here:
 
 ---
 
-## 12. The open questions
+## 13. The slices
 
-1. **The statement ratings and the school** — the legacy's item cells are typed by hand. The
-   app's are computed. The export writes the app's (§6.3 proves they agree). ⭐ Is there any
-   expectation that the school *edits* the workbook's ratings before circulating it? If so,
-   that is the one thing the "formulas → values" trade (D2) costs.
-2. **The filename** — `<subjectCode>_<facultyName>_evaluation.xlsx` is a proposal.
+| # | Slice | Files | State |
+|---|---|---|---|
+| 1 | **The statement ratings** — the item identity through the read + `computeItemAverages` | `lib/db/common.ts`, `lib/types/evaluation.ts`, `lib/evaluation-utils.ts` | **done** (`abcc919`) |
+| 2 | **The routes** — the period/semester read, `employeeNo`, the section on the faculty route | 3 route files | **done** (`13ade13`) |
+| 3 | **The template** — cut, letterhead, tracing | `data/templates/eval-report.xlsx`, `scripts/cut-eval-template.mjs`, `next.config.ts` | **done** (`ef71931`, `bec0132`) |
+| 4 | **The workbook builder** — the generated blocks, wearing the template's styles | `lib/xlsx-template.ts`, `lib/evaluation-form-xlsx.ts` | **to rewrite** (v3) |
+| 5 | **The shared read** — `getSubjectResultSet`, and the three read routes onto it | `features/evaluation-results/evaluation-results.service.ts`, 3 route files | to do |
+| 6 | **The export routes** — the three routes, the download | 3 new route files | to do |
+| 7 | **The buttons** — the export affordance on the three pages | 3 page files | to do |
+
+Slice 4 is a **rewrite** of the v2 builder: the position map, the formula-reading and the
+rubric-drift guard are replaced by the generator, and the statement texts and the criterion
+names become the app's (D9).
+
+**Gate (the owner's run):**
+
+```powershell
+npx tsc --noEmit; if ($?) { npm run lint }; if ($?) { npx vitest run }; if ($?) { npm run build }
+```
+
+---
+
+## 14. The open questions
+
+1. **The filename** — `<subjectCode>_<facultyName>_evaluation.xlsx` is a proposal.
+2. **The page count** — the generated form's height against the legacy's two pages is a
+   **proof**, not a decision. If it runs to three, the target is two and the type size moves.
+3. ⭐ **The statement ratings and the school** — the legacy's item cells are typed by hand; the
+   app's are computed (D2, §6.4). Is there any expectation that the school *edits* the
+   workbook's ratings before circulating it? That is the one thing the "formulas → values" trade
+   costs.
