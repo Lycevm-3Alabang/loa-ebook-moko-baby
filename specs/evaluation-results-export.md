@@ -1,15 +1,15 @@
 # Evaluation results — the export (the Excel workbook)
 
-**Status:** Final (Part I) · **Part II (v5.0) Final**
-**Version:** 5.0
+**Status:** Final (Part I) · **Part II (v6.0) Final**
+**Version:** 6.0
 **Last Updated:** 2026-10-22
 **Scope:** exporting one evaluation result set as an **Excel workbook**, at the grain of one
 (faculty × subject × section) — the drill-down's subject page
 (`/admin/evaluations/results/[departmentId]/[facultySubjectId]`) and the faculty's own page
 (`/faculty/evaluations/results/[facultySubjectId]`).
-⭐ **v5.0 carries a second grain — Part II:** the **consolidated department-faculty workbook**,
-served from the faculty cards
-(`app/admin/evaluations/results/[departmentId]` and the dean twin). Part I is untouched.
+⭐ **v6.0 carries a second grain — Part II:** the **department ZIP** — one download that holds
+**every member's every subject-section workbook** (the files the school already receives, one
+per subject-section) plus **one consolidated file per faculty**. Part I is untouched.
 
 > ⭐ **v4.0 (2026-10-22) — the workbook is GENERATED FROM SCRATCH.** v3 made the legacy a
 > *style donor*; v4 does not read it at all. The template file and the cut script stay in the
@@ -22,12 +22,16 @@ served from the faculty cards
 > **The mechanics live in this file** — §9 (Part I) and §22 (Part II); the work's tracking is
 > `docs/evaluation-export-department-handover.md`. This file is the **contract**.
 >
-> ⭐ **v5.0 (2026-10-22) — a SECOND grain, not a change to the first.** The department drill-down
-> gains an **Export Excel** button that serves one workbook covering **every member and every
-> subject-section of the department** — the "Individual" sheet stacked one full form per
-> subject-section, and an **Overall sheet that is a new SUMMARY model** (one row per
-> subject-section under a per-faculty band), not the per-response sheet. **No Comments sheet at
-> this grain.** The subject-grain workbook (§1–14) is untouched. Part II is **§15–26**.
+> ⭐ **v6.0 (2026-10-22) — the department download is a ZIP, not a new workbook.** The second
+> grain's shape changed: instead of ONE workbook per department (the "Individual" sheet stacked
+> one full form per subject-section, plus a new Overall summary sheet), the department drill-down
+> serves a **ZIP** that holds **the workbooks that already ship** — one per subject-section,
+> verbatim — plus **one consolidated file per faculty** (the summary the faculty cards show).
+> ⭐ The reason is not difficulty: **the school already receives the artifact**, so a second
+> renderer for the same form would be a second implementation of a shipped artifact — and a
+> rendering defect in it would reach the school. **No Comments sheet is dropped** (v5.0 dropped
+> them at this grain; v6.0 **reverses** that — each subject workbook keeps its own). The
+> subject-grain workbook (§1–14) is untouched. Part II is **§15–26**.
 
 ---
 
@@ -417,7 +421,7 @@ npx tsc --noEmit  →  npm run lint  →  npx vitest run  →  npm run build
 
 ---
 
-# Part II — the department-faculty grain (the consolidated workbook) ⭐ v5.0
+# Part II — the department-faculty grain (the department ZIP) ⭐ v6.0
 
 ## 15. Why a second grain
 
@@ -426,78 +430,95 @@ asks for the opposite: **one download that covers everything the faculty cards s
 *"a summary of ALL evaluations (subject-section)"* (the owner, 2026-10-22) — department →
 faculty → subject-section, in one file.
 
-The parts are **reused, not re-invented**: the Individual sheet is stacked, one full form block
-per subject-section, byte-for-byte the Part I form; the Overall sheet is a **new summarized
-model** at this grain (per subject-section rows), not the per-response sheet. The subject-grain
-export (§1–14) is untouched.
+⭐ **v6.0 — the department download is a ZIP, not a new workbook (owner, 2026-10-22).** The
+first shape for this grain was ONE workbook per department: the Individual sheet **stacked**,
+one full form per subject-section, plus a new Overall summary sheet. It is **dropped** — and
+not for difficulty. ⭐ **The school already receives the artifact:** Part I's workbook IS the
+per-subject evaluation form (the letterhead, the 34 statements, the Comments, the per-response
+Overall), and the drill-down already serves it, one subject-section at a time. A second
+renderer for the same form is a **second implementation of a shipped artifact** — and a
+rendering defect in it (a letterhead on the wrong row, a sheet Excel offers to *repair*) would
+be invisible to every assertion and would reach the school.
+
+⭐ So the department download **bundles the files that already ship**: the same workbooks, one
+per subject-section, inside a ZIP, plus **one consolidated file per faculty** — the summary the
+faculty cards show. The subject-grain export (§1–14) is untouched.
 
 ## 16. The decisions
 
 | # | Decision | Owner |
 |---|---|---|
-| D20 | The download covers the **whole department** — one workbook, one button on the department page | 2026-10-22 |
-| D21 | The Individual sheet **stacks the full form** — one block per subject-section, Part I's own rows (§4.1) | 2026-10-22 |
-| D22 | **No Comments sheet** — the consolidated workbook is **Individual, Overall** (comments stay on the subject-grain export) | 2026-10-22 |
+| D20 | The download is a **ZIP** — one workbook per subject-section (the file that already ships, **verbatim**) + one consolidated file per faculty | 2026-10-22 |
+| D21 | ⭐ **The stacked Individual is dropped** — each subject-section keeps **its own** workbook; nothing is re-rendered | 2026-10-22 |
+| D22 | ⭐ **Reversed** — each subject workbook **keeps** its Comments sheet and its per-response Overall (v5.0 dropped them at this grain) | 2026-10-22 |
 | D23 | The coverage **follows the department page**: every member (each a band, with or without results — §3.15), every subject-section the drill-down shows (teaching this term ∪ the assignments the counted responses point at — §3.16); an unevaluated section prints **"—"** and blank Highest/Lowest | 2026-10-22 |
 | D24 | The routes are **admin + the dean twin**; the faculty role does not apply at this grain | 2026-10-22 |
-| D25 | ⭐ The Overall sheet at this grain is a **new SUMMARY model** — one row per subject-section under a **per-faculty band** (name, email, pooled average + remark); it does **not** replace the per-response Overall | 2026-10-22 |
+| D25 | ⭐ The consolidated file is **one XLSX per faculty** — the **new SUMMARY model** (one row per subject-section under a per-faculty band: name, email, pooled average + remark), in **its own file** | 2026-10-22 |
 | D26 | Highest/Lowest print **every tie**, comma-joined (`"Professional Manner 3.60, Student Engagement 3.60"`) — the 2026-10-21 rule ("all, not just the first"). ⭐ The owner's example printed one per column because one tie happened to exist; veto this decision if the columns should carry the first tie only | 2026-10-22 |
+| D27 | ⭐ The **scope**: **all departments / one department / a selected few**; the unit is **per department** (a department folder in the ZIP) | 2026-10-22 |
+| D28 | ⭐ The **outer** ZIP is **DEFLATE** — the workbook's own bytes do not move, but the ZIP's size does (§23) | 2026-10-22 |
+| D29 | ⭐ The **structure**: **department folder → faculty folder → subject (and section)** | 2026-10-22 |
 
 ## 17. The output's shape
 
-### 17.1 Sheet 1 — "Individual" (stacked)
+### 17.1 The ZIP's tree
 
-**One block per subject-section**, in the workbook's order (below). Each block is
-`buildFormModel(form)` **exactly as Part I builds it** (§4.1): the letterhead band, the title,
-the period's two lines, the teacher's fields (`Employee No │ Rating`, `Employee Name │ Remarks`),
-the program, the section, the subject, **one block per criterion of the live rubric** (the
-statement values per subject-section), the footer (`TOTAL RESPONDENTS`, `FINAL RATING`). A
-subject-section nobody evaluated gets its block with **"—"** for every statement value and a
-blank criterion average (§4.1's rule).
+```
+evaluation-results-<periodId>.zip
+├── CCS/                                       ← the department folder (the code)
+│   ├── Alamo, Nino Francisco/                 ← the faculty folder
+│   │   ├── 1815-ITELEC009_BSIT-31E1_evaluation.xlsx   ← per subject (and section)
+│   │   ├── 1815-ITELEC009_BSIT-31E2_evaluation.xlsx
+│   │   └── Alamo_Nino_Francisco_summary.xlsx          ← the consolidated file
+│   └── Dela Cruz, Juan/
+│       └── 1815-ITELEC009_BSIT-31E1_evaluation.xlsx
+└── CBA/ …                                     ← only when the scope is "all" or "selected"
+```
 
-- ⭐ **The letterhead hangs per block** — every form block prints complete, as the legacy's
-  single-subject form does. The media is **one image**, drawn once per block's band: the writer
-  learns **multiple picture anchors per sheet** (`picture → pictures`), joining one
-  `oneCellAnchor` per block into the drawing part (§22).
-- ⭐ **A manual page break is authored before every block** — each form starts on its own page.
-- ⭐ **No print titles on this sheet.** A sheet-top repeated header would print block 1's faculty
-  over block 50's form — mislabeled pages. (Part I's sheet keeps its `printTitles`; the block is
-  short enough that a block spanning two pages prints its overflow without a header — a
-  **known trade-off** recorded in §23.)
-- ⭐ **The workbook's order is stated and total**: members by **name ascending**
-  (`localeCompare`, the account id as the tiebreak), their subject-sections by **subject code
-  ascending**, then **section label ascending**. Two exports of the same data print the same
-  rows (§7.4's rule at this grain). The blocks of the Other sheet follow the same order.
+- **The department folder** is the department's **code** (`CCS`) — the CSV export's own convention
+  (`<code>_results.csv`).
+- **The faculty folder** is the member's **name** (`Alamo, Nino Francisco`) — the card's name.
+- **The subject file** is `${subjectCode}_${sectionLabel}_evaluation.xlsx` — ⭐ the **section**
+  is in the name because the faculty's folder already carries the teacher, and two sections of
+  the same subject are two files (`sectionLabel(program, name)` — `lib/evaluation-utils.ts`).
+- **The consolidated file** is `<facultyName>_summary.xlsx`, in the faculty's folder.
+- ⭐ These are **ZIP entry names** — the workbook **inside** is Part I's, byte for byte.
 
-### 17.2 Sheet 2 — "Overall" (the summary)
+### 17.2 The subject workbook — Part I's, verbatim
 
-The **summary of every subject-section, grouped by faculty** — the department page's
-faculty cards, as rows:
+Each file is built by the **same** `buildEvaluationWorkbook` the subject-grain route serves
+(§9): the form (the letterhead band, the title, the period's two lines, the teacher's fields,
+the program, the section, the subject, one block per criterion of the live rubric, the footer),
+the **Comments** sheet (the comment's text) and the **Overall** sheet (one row per response).
+⭐ **Nothing about it is re-invented** — which is why D22 can be *reversed*: the Comments and the
+per-response rows come along for free, and a defect in the form cannot be introduced here.
+
+### 17.3 The faculty consolidated file
+
+**One XLSX per faculty** — the summary the faculty cards show, as a file:
 
 ```
   Faculty Performance Evaluation Result (Post-evaluation)
   Semester: …
   Evaluation Period: …
   Department: Computer Studies (CCS)
-                                                          (per member:)
   Alamo, Nino Francisco
   nf.alamo@lyceumalabang.edu.ph
   Average: 3.67 — Very Satisfactory
-  SUBJECТ            SECTION      AVG RATING   HIGHEST                LOWEST
+  SUBJECHT            SECTION      AVG RATING   HIGHEST                LOWEST
   1815-ITELEC009 …   BSIT-31E1     3.38        Professional Manner 3.60   Assessment & Feedback 3.25
   1815-ITELEC009 …   BSIT-31E2     3.87        …                      …
   1815-ITELEC009 …   BSIT-31E3     4.02        …                      …
-  (next member's band, then theirs)
 ```
 
 - The **header block** carries the workbook's constants: the result title, the term, the
   evaluation period, and **the department** (`name (code)`) — at this grain the department is
   the scope, so it is printed here (Part I's Overall does not print it; §4.3's reason does not
   apply).
-- **The per-faculty band is three rows**: the name, the email, and the pooled average + remark
+- **The band is three rows**: the name, the email, and the pooled average + remark
   (`Average: 3.67 — Very Satisfactory`; a member with no counted responses prints `—` and no
-  remark). A member with **no subject-sections at all** still prints their band — nothing after
-  it (a member with nothing to show is still a member).
+  remark). A member with **no subject-sections at all** still gets a file — an empty band (a
+  member with nothing to show is still a member).
 - **The table is five columns**: `SUBJECT │ SECTION │ AVG RATING │ HIGHEST │ LOWEST`.
   - **Subject** = `${code} ${name}`; **Section** = the joined display label
     (`sectionLabel(program, name)` — the summary table is a display artifact; the FORM keeps
@@ -505,25 +526,29 @@ faculty cards, as rows:
   - **Avg Rating** = the subject-section's general rating (2 dp).
   - **Highest / Lowest** = `findHighestLowestRubrics` over that subject-section's criterion
     averages, **every tie**, comma-joined as `"Label score"`.
-  - ⭐ **Respondents are not a column** — the card does not show one, and the Individual block's
-    footer carries the count for its own subject-section.
-- **Landscape** (the legacy's Overall sheet is wide; the Highest/Lowest cells are long), the
-  print area is its own columns, fit one page wide.
+  - ⭐ **Respondents are not a column** — the card does not show one, and the subject
+    workbook's footer carries the count for its own subject-section.
+- **Landscape** (the Highest/Lowest cells are long), the print area is its own columns, fit one
+  page wide.
 - ⭐ **A section with no evaluations prints a row**, not nothing: `—` for the rating, blank
   Highest/Lowest (D23).
+- ⭐ The file is **reused**, not re-invented: the existing writer (`lib/xlsx/writer.ts`) and the
+  existing style tokens — **no new writer feature**.
 
 ## 18. The field contract
 
-The **Individual blocks' fields are §5's**, unchanged, once per subject-section. What this grain
-adds:
+The **subject workbooks' fields are §5's**, unchanged — they are Part I's files. What this grain
+adds is the **consolidated file's**:
 
 | Field | Source | Rule |
 |---|---|---|
+| the header's **semester / period / department** | the period read + the department | as the card shows them |
 | the band's **name / email** | the department's members (`listFacultyByDepartment`) | as the card shows them |
-| the band's **employeeNo** (the Individual's `Employee No`) | the members read already carries it (`USER_SELECT_INNER` — no new read) | §5's rule (empty → em dash) |
-| the band's **average + remark** | `facultyAggregates` — the pool of the member's subject totals (`aggregateFacultyResults`) | ⭐ **the card's figure, not a mean of the card's subject averages** — a mean cannot be un-meaned (§3.14/§3.18); the pooled figure over that member's counted responses |
-| Overall's **Avg Rating** | the subject-section's general rating | §6.1's arithmetic on that subject-section's ratings |
-| Overall's **Highest / Lowest** | `findHighestLowestRubrics` | the card's own values — §3.18 by construction |
+| the band's **average + remark** | `facultyAggregates` — the pool of the member's subject totals (`aggregateFacultyResults`) | ⭐ **the card's figure, not a mean of the card's subject averages** — a mean cannot be un-meaned (§3.14/§3.18) |
+| a row's **subject / section** | the department read's rows | the card's own values |
+| a row's **Avg Rating** | the row's general rating | §6.1's arithmetic on that subject-section's ratings |
+| a row's **Highest / Lowest** | the row's `highestRubrics` / `lowestRubrics` (`findHighestLowestRubrics`) | the card's own values — §3.18 by construction |
+| a row's **"—"** | a subject-section nobody evaluated | D23 — the rating is `—`, Highest/Lowest blank |
 
 ## 19. The arithmetic — inherited
 
@@ -534,105 +559,105 @@ adds:
 - a **band's** average is the **pool of the member's subject totals** — the mean over the
   member's rating rows (`aggregateFacultyResults`), **not** the mean of the band's subject
   averages (the same pooling rule the card lives by);
-- ⭐ the parity is **by construction**: the export's rows and bands are computed from the same
+- ⭐ the parity is **by construction**: the consolidated file's rows and bands come from the same
   response set by the same helpers as the cards — a row **must equal** the card's row for the
   same subject-section (§3.18).
 
-## 20. What it reads — one read, extended
+## 20. What it reads
 
-`getDepartmentSubjectResults(evaluationPeriodId, departmentId, { statementAverages: true })`
-in `features/evaluation-results/evaluation-results.service.ts`:
+The export adds **no new query** — it reads what the drill-down already reads:
 
-- ⭐ **The response set stays `listDepartmentResponseSet`** (§3.21) — the read the page uses,
-  with the `evaluateeId` lesson already carried. **No new report of the set exists.**
-- ⭐ The extension adds **what the page ignores**: per subject-section — the statement averages
-  (`computeItemAverages` over that subject-section's ratings — the ratings read already carries
-  `itemId`, the item's text and the display order) and the **live** criterion averages keyed by
-  the rubric's category name; and the member's `employeeNo`. The **flag defaults to false and
-  the page's payload does not change** (no statement averages across an admin API payload the
-  page never renders).
-- The **rubric** is read the same way the subject route reads it:
-  `rubricRepository.getCategoriesWithItems(period.rubricGroupId)` by `displayOrder` — the form's
-  layout (§7.2). **Nothing may assume a criterion count** (§3.2).
-- ⭐ **No new queries**: the ratings read is the drill-down's own (`fetchRatingsWithCategories`,
-  chunked and paged — Lessons 7 / 7b), and the comments are not read **at this grain** (D22 —
-  the comments read is one fewer than the page's).
+- ⭐ **the department read** — `getDepartmentSubjectResults(evaluationPeriodId, departmentId)`
+  (`features/evaluation-results/evaluation-results.service.ts`): the page's own read, unchanged.
+  It carries the **rows** (one per subject-section: the figures, the section, the rubric
+  columns), the **bands** (`facultyAggregates` — the pooled figures) and the **members**.
+- ⭐ **the subject read, per subject-section** — `getSubjectResultSet(facultySubjectId,
+  evaluationPeriodId)`: the **shipping** read (the subject page's own). It carries the
+  evaluation's rows, its comments, its per-response averages and its **statement averages**
+  (`itemAverages`) — everything Part I's workbook needs, so the workbook needs no extra work.
+- ⭐ **the rubric** — `rubricRepository.getCategoriesWithItems(period.rubricGroupId)`, read
+  **ONCE** for the whole export (the rubric is the same for every subject). It is the form's
+  layout (§7.2) — ⭐ **nothing may assume a criterion count** (§3.2).
+- ⚠️ **The cost is N + 1 reads, not one** — the department's subject-sections each cost a
+  subject read. That is the price of reusing the shipping path, and it is why the **scope** is
+  a choice (D27) and why the numbers are **measured** before the guard is written (§23).
 
 ## 21. The routes
 
 | Route | Guard |
 |---|---|
-| `app/api/admin/evaluation-results/departments/[departmentId]/export/route.ts` | `requireAdmin` + the department exists |
-| `app/api/dean/evaluation-results/departments/[departmentId]/export/route.ts` | `hasRole(DEAN)` + **the dean's own department** + `assertPeriodIsActive` |
+| `app/api/admin/evaluation-results/export/excel/route.ts` | `requireAdmin` + the period id + the **scope** (`departmentIds`, optional → all) |
+| `app/api/dean/evaluation-results/export/excel/route.ts` | `hasRole(DEAN)` + **the dean's own department** (a foreign id → 403) + `assertPeriodIsActive` |
 
 - ⭐ **The export must never become a way around a read route's 403** (the same rule as §8):
-  the dean's export answers for **their department only**; the admin needs nothing beyond
-  `requireAdmin` at this grain (the department is the parameter itself).
+  the dean's export answers for **their department only**; the admin's scope is the parameter
+  itself.
 - Both carry **`maxDuration = 60`** (the read is live — rule 3 of the cache contract: a
-  department drill-down is opened for a reason) and return the workbook as a download with the
-  same Content-Type as Part I.
-- The **filename** is `${departmentCode}_evaluation.xlsx` (the subject grain's
-  `${subjectCode}_${facultyName}_evaluation.xlsx` carries its scope the same way; no period in
-  the name, matching Part I).
+  department drill-down is opened for a reason) and return the ZIP as a download
+  (`application/zip`).
+- The **filename** is `evaluation-results-<periodId>.zip` — the CSV export's own convention.
+- ⭐ **The scope guard** — when the selection would exceed what one response can carry (§23),
+  the route **refuses loudly** (the count, the estimate and the suggestion) instead of failing
+  on the platform. ⭐ The threshold is **measured**, not guessed (the spike).
 
 ## 22. The mechanics — the additions
 
 | Piece | Where |
 |---|---|
-| the writer's **multi-picture anchors** (`picture → pictures`, one `oneCellAnchor` per block, ONE media entry) and **row breaks** (`rowBreaks`) | `lib/xlsx/writer.ts` — **backward compatible**; Part I's sheet keeps a single picture (as a one-element list) and carries no breaks |
-| the stacked Individual's **model + renderer** | `lib/xlsx/individual-stacked.ts` — new; consumes the same `buildFormModel` rows |
-| the Overall **summary** model + renderer | `lib/xlsx/overall-summary.ts` — new, the same tokens |
-| the workbook (Individual-stacked + Overall-summary, **no Comments**) | `lib/xlsx/workbook.ts` — a **second** build function; `buildEvaluationWorkbook` is untouched |
-| the client download | `lib/eval-export.ts` — a second function beside the subject-grain one |
-| the button | the department summary card's button cluster (next to `Download PDF`), `IosButton variant="tinted" size="sm"`, **loading** — on **both** the admin and the dean twin pages |
+| the **DEFLATE** zip writer (server-only) | `lib/zip-deflate.ts` — ⭐ **new**; the browser's `lib/zip.ts` stays store-only and client-safe (the client's `downloadBlob` imports it) |
+| the **shared workbook builder** | `lib/xlsx/subject-workbook.ts` — ⭐ **new**; the subject route's assembly, extracted. The **three** shipping routes call it (one line each) and their output **does not move** |
+| the consolidated file's **model + renderer** | `lib/xlsx/overall-summary.ts` — ⭐ **new**; the existing writer and the existing style tokens |
+| the client's download | `lib/eval-export.ts` — a second function beside the subject-grain one |
+| the buttons | the results **list** page (the scope picker) and the **department** page (one department) — the placement is decided in sub-spec 03 |
 
-⭐ No new dependency. Same tracing rule as Part I (§9) — the letterhead is already traced.
+⭐ **No new dependency.** The workbook's bytes are **Part I's** — the letterhead is already
+traced (Part I's `loadLetterhead`).
 
 ## 23. The risks
 
 | Risk | Severity | Handling |
 |---|---|---|
-| A whole-department Individual is **long** — a department with 15 faculty × 5 subjects is 75 form blocks, ~150 printed pages | medium | the page break per block (§17.1) keeps every form printable; the fit is one page **wide**, by design |
-| A block longer than one page prints its **overflow without a header** | low | the known trade-off §17.1 guards for — Excel repeats sheet-top titles, not per-block headers; the Part I grain keeps its `printTitles` and is untouched |
-| The **multi-anchor letterhead** lands wrong | medium | the anchor arithmetic is `letterheadPicture` per block with the block's start row offset; assertions in the writer's tests |
-| The department read is **live and slow** (2–4 s for GENED) | medium | `maxDuration = 60`, a loading button — the same handling as the subject export (§8's download rule) |
-| The file's **order differs from the card's row order** | low | the workbook states a total order (§17.1); §3.18 compares **figures**, not row order — if the card should sort the same way, it is a separate one-line change, not this export's |
-| A **tie** renders long in Highest/Lowest | low | the header/row heights follow the text (§10's handling, the same rule) |
-| The export **drifts from the page** | very low | both read `getDepartmentSubjectResults` — one response set, one computation (§20) |
+| ⭐ **the response is too big** | high | the **letterhead PNG is 47 KB and is in EVERY workbook**, and the workbook's own zip is store-only → the outer ZIP must **DEFLATE** (D28) ≈ **57 KB per workbook**. A department (≈75 subjects) ≈ **4.3 MB**; all departments (≈400–800) ≈ **23–45 MB** ❌ — ⚠️ Vercel's Serverless response limit is **~4.5 MB**. ⭐ The scope guard refuses loudly (§21); the escape hatch is re-encoding the logo (47 KB → ~12 KB → a department ≈ 1.7 MB) |
+| the export is **too slow** (N + 1 reads + N builds) | medium | bounded concurrency + `Promise.allSettled` (the CSV export's precedent) + `maxDuration = 60` + a loading button; the fallback is **one ZIP per faculty** — a loud fallback, not a silent one |
+| a subject **silently missing** from the ZIP | high | ⭐ `_INCOMPLETE.txt` **inside** the ZIP names every subject that failed to build — a silently missing row is a *wrong* artifact, not a missing one (Lesson 7b) |
+| the **shared builder** changes the shipping routes' bytes | high | the three routes' existing tests pin their output; the builder's own test carries the input assertions |
+| the workbook's figures vs the consolidated file's | low | the **subject read** vs the **department read** — they differ only in the live-eval case (§3.19) and the legacy NULL-period rows (D8), both pre-existing and documented |
+| the ZIP's **order** differs from the card's row order | low | the ZIP states a total order (§17.1); §3.18 compares **figures**, not row order |
 
 ## 24. The slices
 
-| # | Slice | State |
+The work is **six sub-specs** — the contracts, then a **spike**, then the build. ⭐ Each is one
+commit, independently reviewable and revertible. The contracts live in
+`specs/evaluation-results-export/`.
+
+| # | Sub-spec | State |
 |---|---|---|
-| 1 | **The writer** — multi-picture anchors + row breaks, backward compatible | pending |
-| 2 | **The read** — the `statementAverages` option (+ the member's `employeeNo`), the page's payload unchanged | pending |
-| 3 | **The Overall summary** model + renderer | pending |
-| 4 | **The stacked Individual** model + renderer | pending |
-| 5 | **The workbook** — the two-sheet variant + the glue | pending |
-| 6 | **The routes** — admin + dean, the guards, `maxDuration`, the filename | pending |
-| 7 | **The button** — the client helper + the two pages wired | pending |
-| 8 | ⭐ **The Excel proof** — the owner's | pending |
+| 01 | **the contracts** — this file (v6.0) + the sub-spec folder | pending |
+| 02 | **the spike** — measure the bytes, the time and the request count (`00-spike.md`) | pending |
+| 03 | **the building blocks** — the DEFLATE zip · the shared builder · the consolidated file (`01-building-blocks.md`) | pending |
+| 04 | **the department ZIP route** (`02-department-zip.md`) | pending |
+| 05 | **the surface** — the buttons, the scope picker, the faculty-card decision (`03-surface.md`) | pending |
+| 06 | **the docs** — the handover, the TODO row, the specs index (`04-docs.md`) | pending |
 
 ## 25. The proofs
 
 1. **The gate** (the owner's run): `npx tsc --noEmit` → `npm run lint` → `npx vitest run` → `npm run build`.
-2. ⭐ **The Excel proof** — open a department workbook and **print it**. What to look for: **two
-   tabs** (Individual, Overall — **no Comments**); the letterhead **once per form block**; **each
-   form starting on its own page**; the Overall's **per-faculty band then its rows**, and a
-   thumb-against-the-card check — the band equals the card's pooled figure, a row equals the
-   card's row for the same subject-section (§3.18); an unevaluated section prints `—`; the
-   header block repeats the department on the Overall's pages.
-3. ⭐ **The scope proof** — the dean's route answers **404/403 for a department that is not
+2. ⭐ **The spike's numbers** — the bytes, the time and the request count, measured on the real
+   data (`00-spike.md`). ⭐ The size guard's threshold comes from here — **not** from an estimate.
+3. ⭐ **The Excel proof** — unzip the department ZIP and **print** one subject workbook and one
+   consolidated file. What to look for: the workbook is **the one that already ships** (the
+   letterhead, the form, the Comments, the per-response Overall); the consolidated file's band
+   equals the card's pooled figure and its rows equal the card's rows for the same
+   subject-section (§3.18); an unevaluated section prints `—`.
+4. ⭐ **The scope proof** — the dean's route answers **404/403 for a department that is not
    theirs**; the faculty role has no route at this grain.
 
 ## 26. What Part II does **not** do
 
-- **The period-level export** (every department in one download) — untouched; the existing CSVs
-  stay as they are (§11).
-- **The Comments at this grain** — deliberately absent (D22); the subject grain keeps its
-  Comments sheet.
+- **The one-workbook department file** — **dropped** (D21); the ZIP replaces it.
+- **The period-level CSV** export — untouched (it ships; §11).
+- **A change to the subject-grain workbook** — Part I's three sheets, its guards and its routes
+  are untouched by everything above; the ZIP serves **the same file**.
 - **The PDF** — not touched (D3 carries; §12's four defects stay the PDF slice's).
 - **The dean twin's duplicated summary card** — a separate CLEANUP (decide) item in `TODO.md`;
   this export adds a button to both pages, it does **not** extract the card.
-- ⭐ **A change to the subject-grain workbook** — Part I's three sheets, its guards and its
-  routes are untouched by everything above.
