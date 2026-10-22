@@ -218,6 +218,29 @@ export function replaceRow(xml: string, n: number, cells: string): string {
   return xml.replace(rowRe(n), `${open}${cells}</row>`)
 }
 
+/**
+ * Put a row at a row number, with a GIVEN opening tag.
+ *
+ * A generated row wears the DONOR's opening tag - its height and its row style
+ * - and not whatever the template happens to have at that row number. That is
+ * the whole point of the donor: the layout follows the DATA, so the template's
+ * row numbers are not the layout's row numbers.
+ */
+export function putRow(xml: string, n: number, open: string, cells: string): string {
+  const row = `${open}${cells}</row>`
+  if (rowRe(n).test(xml)) return xml.replace(rowRe(n), row)
+  // insert in order - before the first row with a higher number
+  for (const m of xml.matchAll(/<row r="(\d+)"/g)) {
+    if (Number(m[1]) > n) {
+      const at = m.index ?? 0
+      return xml.slice(0, at) + row + xml.slice(at)
+    }
+  }
+  const end = xml.indexOf("</sheetData>")
+  if (end < 0) throw new Error("the sheet has no sheetData")
+  return xml.slice(0, end) + row + xml.slice(end)
+}
+
 /** Remove every row from `firstRow` down. The sheet's data starts again. */
 export function clearRowsFrom(xml: string, firstRow: number): string {
   return xml.replace(/<row r="(\d+)"[^>]*(?:\/>|>[\s\S]*?<\/row>)/g, (m, n) =>

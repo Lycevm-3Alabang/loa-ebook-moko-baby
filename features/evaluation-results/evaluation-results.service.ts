@@ -3,6 +3,7 @@ import {
   userRepository,
   evaluationRepository,
   evaluationPeriodRepository,
+  facultySubjectRepository,
   subjectRepository,
   sectionRepository,
   semesterRepository,
@@ -17,8 +18,10 @@ import {
   getRemark,
   aggregateFacultyResults,
   aggregateDepartmentResults,
+  computeItemAverages,
   type FacultyAggregate,
   type DepartmentAggregate,
+  type ItemAverage,
 } from "@/lib/evaluation-utils"
 import type { IntegrityWarnings, EvaluationAssignment, UserData } from "@/lib/types"
 import { getFacultyCountsByDepartment } from "@/features/users/users.service"
@@ -284,5 +287,162 @@ export async function getDepartmentSubjectResults(
     facultyAggregates: aggregateFacultyResults(set.evaluations, ratings, commentsRaw),
     departmentAggregate: aggregateDepartmentResults(out, ratings, commentsRaw),
     members,
+  }
+}
+
+// ── the subject page's result set ──────────────────────────────────────────
+
+/** One evaluation of a subject, as the subject page and the export both show it. */
+export interface SubjectEvaluationRow {
+  evaluationId: string
+  submittedAt: string | null
+  generalRating: number | null
+  professionalManner: number | null
+  communicationWithStudent: number | null
+  studentEngagement: number | null
+  learningMaterials: number | null
+  timeManagement: number | null
+  experientialLearning: number | null
+  respectUniqueness: number | null
+  assessmentAndFeedback: number | null
+  comment: string | null
+  sentimentLabel: string | null
+  sentimentScore: number | null
+}
+
+/**
+ * One subject's result set: everything the subject page shows AND everything
+ * the Excel export writes.
+ *
+ * The page and the export read the SAME set, so they cannot disagree - the
+ * export is not a second implementation of the figures, it is a second
+ * RENDERING of one read. (That is the same parity rule the surfaces live by:
+ * contract §3.18.)
+ */
+export interface SubjectResultSet {
+  facultySubjectId: string
+  faculty: { id: string; name: string; email: string; employeeNo: string | null } | null
+  subject: { id: string; code: string; name: string } | null
+  section: { program: string | null; name: string | null }
+  period: { name: string | null; semesterTitle: string | null; rubricGroupId: string | null }
+  /** the counted responses, one row each */
+  evaluations: SubjectEvaluationRow[]
+  /** the comments the responses left, with their dates */
+  comments: { submittedAt: string | null; comment: string }[]
+  summary: {
+    totalRespondents: number
+    avgRating: number | null
+    remarks: string | null
+    /** the criterion averages, keyed by the rubric's category name */
+    categoryAverages: Record<string, number>
+    highestRubrics: { key: string; label: string; score: number }[]
+    lowestRubrics: { key: string; label: string; score: number }[]
+  }
+  /** the per-statement averages, in the rubric's order */
+  itemAverages: ItemAverage[]
+}
+
+/**
+ * One subject's result set.
+ *
+ * The GUARDS stay with the caller - they are per role, and the dean and the
+ * admin do not see the same subjects. What is shared is the READ, so the
+ * page and the export can never show different numbers.
+ *
+ * Null when the assignment does not exist.
+ */
+export async function getSubjectResultSet(
+  facultySubjectId: string,
+  evaluationPeriodId: string,
+): Promise<SubjectResultSet | null> {  const fsData = await facultySubjectRepository.findById(facultySubjectId)
+  if (!fsData) return null
+
+  const [faculty, subject, section, period] = await Promise.all([
+    userRepository.findById(fsData.faculty_id),
+    subjectRepository.findById(fsData.subject_id),
+    fsData.section_id ? sectionRepository.findById(fsData.section_id) : Promise.resolve(null),
+    evaluationPeriodRepository.findById(evaluationPeriodId),
+  ])
+
+  const evals = await evaluationRepository.listSubmittedByPeriodAndEvaluateeAndFS(
+    evaluationPeriodId,
+    fsData.faculty_id,
+    facultySubjectId,
+  )
+  const evaluationIds = evals.map((e) => e.id)
+
+  const [ratings, comments] = await Promise.all([
+    evaluationRepository.listRatingsByEvaluationIds(evaluationIds),
+    evaluationRepository.listFullCommentsByEvaluationIds(evaluationIds),
+  ])
+
+  const commentsByEval = new Map<string, typeof comments>()
+  for (const c of comments) {
+    if (!commentsByEval.has(c.evaluationId)) commentsByEval.set(c.evaluationId, [])
+    commentsByEval.get(c.evaluationId)!.push(c)
+  }
+
+  const catAverages = computeCategoryAverages(ratings)
+  const general = computeGeneralRating(catAverages)
+  const catColumns = mapCategoryAveragesToColumns(catAverages)
+  const rubrics = findHighestLowestRubrics(catColumns)
+
+  const evaluations: SubjectEvaluationRow[] = evals.map((ev) => {
+    const evalRatings = ratings.filter((r) => r.evaluationId === ev.id)
+    const evalCatAverages = computeCategoryAverages(evalRatings)
+    const evalGeneral = computeGeneralRating(evalCatAverages)
+    const evalCatColumns = mapCategoryAveragesToColumns(evalCatAverages)
+    const evalComments = commentsByEval.get(ev.id) ?? []
+    return {
+      evaluationId: ev.id,
+      submittedAt: ev.submittedAt,
+      generalRating: evalGeneral,
+      professionalManner: evalCatColumns.professionalManner,
+      communicationWithStudent: evalCatColumns.communicationWithStudent,
+      studentEngagement: evalCatColumns.studentEngagement,
+      learningMaterials: evalCatColumns.learningMaterials,
+      timeManagement: evalCatColumns.timeManagement,
+      experientialLearning: evalCatColumns.experientialLearning,
+      respectUniqueness: evalCatColumns.respectUniqueness,
+      assessmentAndFeedback: evalCatColumns.assessmentAndFeedback,
+      comment: evalComments.length > 0 ? evalComments[0].comment : null,
+      sentimentLabel: evalComments.length > 0 ? evalComments[0].sentimentLabel : null,
+      sentimentScore: evalComments.length > 0 ? evalComments[0].sentimentScore : null,
+    }
+  })
+
+  return {
+    facultySubjectId,
+    faculty: faculty
+      ? {
+          id: faculty.id,
+          name: faculty.name,
+          email: faculty.email,
+          employeeNo: faculty.employeeNo,
+        }
+      : null,
+    subject: subject ? { id: subject.id, code: subject.code, name: subject.name } : null,
+    section: { program: section?.program ?? null, name: section?.name ?? null },
+    period: {
+      name: period?.name ?? null,
+      semesterTitle: period?.semesterTitle ?? null,
+      rubricGroupId: period?.rubricGroupId ?? null,
+    },
+    evaluations,
+    comments: evals
+      .filter((ev) => (commentsByEval.get(ev.id) ?? []).length > 0)
+      .map((ev) => ({
+        submittedAt: ev.submittedAt,
+        comment: (commentsByEval.get(ev.id) ?? [])[0].comment,
+      })),
+    summary: {
+      totalRespondents: evaluations.length,
+      avgRating: general,
+      remarks: getRemark(general),
+      categoryAverages: catAverages,
+      highestRubrics: rubrics.highest,
+      lowestRubrics: rubrics.lowest,
+    },
+    itemAverages: computeItemAverages(ratings),
   }
 }

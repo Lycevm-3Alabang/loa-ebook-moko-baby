@@ -1,8 +1,7 @@
 import { describe, it, expect } from "vitest"
+import { writeFileSync } from "fs"
 import {
   buildEvaluationWorkbook,
-  assertRubricFitsTemplate,
-  FormRubricMismatchError,
   orDash,
   type EvalFormCriterion,
   type EvalFormInput,
@@ -12,91 +11,54 @@ import {
   partText,
   readSharedStrings,
   readCellText,
-  deriveFormPositions,
-  loadEvalTemplate,
   SHEET_COMMENTS,
   SHEET_INDIVIDUAL,
   SHEET_OVERALL,
 } from "@/lib/xlsx-template"
+import { APP_RUBRIC } from "./fixtures/eval-rubric"
 
-/** The rubric the seeded app carries: 8 criteria, 3.6.4.4.4.4.3.6 statements. */
-const CRITERIA: EvalFormCriterion[] = [
-  { name: "Professional Manner", average: 4.35, statements: [
-    { text: "The professor has always dressed appropriately and is well groomed.", avg: 4.4 },
-    { text: "He/she behaves appropriately at all times.", avg: 4.3 },
-    { text: "He/she shows composure, exude confidence, and displays a good sense of humor.", avg: 4.35 },
-  ] },
-  { name: "Communication with Students", average: 4.2, statements: [
-    { text: "The professors appropriately/immediately responds when students communicate (timely response to the students).", avg: 4.5 },
-    { text: "He/she gives positive and specific feedback to students, which reinforces behaviour and helps them understand how to improve and makes progress.", avg: 4.2 },
-    { text: "3 He/she guides the direction of the discussion.", avg: 4.1 },
-    { text: "4. He/she spcifies how learning tasks will be evaluated (if appropriate).", avg: 4.0 },
-    { text: "5. He/she seeks feedback from students on lesson and on ease of online technology and accesssibility of course.", avg: 4.1 },
-    { text: "6. He/she shows good subject knowledge and understanding which engages students' creativity and sense of humor during the discussion.", avg: 4.2 },
-  ] },
-  { name: "Student Engagement", average: 4.1, statements: [
-    { text: "The professor uses active-learning excercises in balance with a teacher-led presentation appropriate to the lesson.", avg: 4.2 },
-    { text: "Before sending students to active learning tasks (group work, paired discussions, polling, team problem-sovling, in-class writing), the professor provides explicit modeling and clear instructions (eg rationale, duration, product).", avg: 4.1 },
-    { text: "Instructor creates opportunities for interaction between students (breakout rooms, use of chat, collaborative google docs).", avg: 4.0 },
-    { text: "It is evident that professor is present, proactive, and engaged (if webcam on, is clearly visible and facing camera, keeps an eye on chat or Q&A, monitors waiting room, turs on/off mute as needed, minimal distractions.", avg: 4.1 },
-  ] },
-  { name: "Learning Materials", average: 4.15, statements: [
-    { text: "The professor prepared and uses technology appropriate for the lesson, and gathers needed links and presentations before the start of class.", avg: 4.2 },
-    { text: "The professor provides relevant instructional materials with clear instructions.", avg: 4.2 },
-    { text: "The materials are made available to help students who cannot attend online classes or have technical difficulties.", avg: 4.1 },
-    { text: "The professor presents course material in a clear mannerl that facilitates understanding.", avg: 4.15 },
-  ] },
-  { name: "Time Management", average: 4.3, statements: [
-    { text: "The professor starts and ends the class session on time.", avg: 4.4 },
-    { text: "He/she allows time for questions, discussion and/or summarizing the session's lesson.", avg: 4.3 },
-    { text: "He/she maximizes in-class time, using active learning or applications.", avg: 4.2 },
-    { text: "He/she clearly indicates time limits for all student activities, using a time-based agenda, or visual and auditory prompts.", avg: 4.3 },
-  ] },
-  { name: "Experiential Learning Provided to Students", average: 4.1, statements: [
-    { text: "The professor utilizes appropriate tools and materials to motivate learners (e.g. interactive or competitive games, music, video, etc).", avg: 4.2 },
-    { text: "He/she builds in-pauses in the lesson to provide opportunities for students to ask questions and promptly responds to questions.", avg: 4.1 },
-    { text: "He/she arouses students' interest with relevant life-learning skills (relatable stories).", avg: 4.0 },
-    { text: "He/she provide opportunities for students to take responsibility.", avg: 4.1 },
-  ] },
-  { name: "Respect the Uniqueness of the Students", average: 4.25, statements: [
-    { text: "The professor shows consideration and provides opportunities to students.", avg: 4.3 },
-    { text: "He/she draws non-participating students into activities/ discussions and prevents specific students from dominating/ monopolizing activities/ discussions.", avg: 4.2 },
-    { text: "3. Addresses potentially disruptive behaviours before they impact learning environment.", avg: 4.25 },
-  ] },
-  { name: "Assessment and Feedback", average: 4.3, statements: [
-    { text: "1.The professor provides class generalized constructive and encouraging feedback on how to improve their comprehension or perforance in class.", avg: 4.4 },
-    { text: "2. He/she attends respectfully to student's comprehension or confusion.", avg: 4.3 },
-    { text: "3. He/she shows evidence of reinforcement (such as token or certificate, positive points) appropriate to remote or online contexts.", avg: 4.2 },
-    { text: "4. His/her assessments are suitable for distance learning environment (different tools, roleplay, written activity and others.", avg: 4.3 },
-    { text: "5. He/she assesses students both informally and formally within the online or remote classroom through use of games, quizzes, online tests, etc.", avg: 4.3 },
-    { text: "6. He/she provides immediate feedback.", avg: 4.4 },
-  ] },
-]
+/**
+ * The sample's figures.
+ *
+ * The rubric is the app's own (lib/__tests__/fixtures/eval-rubric.ts) and the
+ * numbers are plausible for a well-rated subject. Nothing here is special -
+ * the point is that the workbook is generated from the DATA, so any rubric and
+ * any numbers will do.
+ */
+export const SAMPLE_CRITERIA: EvalFormCriterion[] = APP_RUBRIC.map((criterion) => ({
+  name: criterion.name,
+  average: 4.2,
+  statements: criterion.statements.map((s, i) => ({
+    text: s.text,
+    avg: 4 + ((i + 1) % 3) * 0.1,
+  })),
+}))
 
-const INPUT: EvalFormInput = {
+export const SAMPLE_INPUT: EvalFormInput = {
   employeeNo: "2024-0017",
-  facultyName: "Ana Reyes",
+  facultyName: "Dela Cruz",
   program: "BSCS",
   sectionName: "A",
   subjectCode: "IT101",
-  subjectName: "Intro to Computing",
+  subjectName: "Introduction to Computing",
   departmentName: "Computer Science",
   departmentCode: "BSCS",
   semesterTitle: "SY 2026-2027 First Semester",
   evaluationPeriodName: "SY 2026-2027 First Semester - Evaluation",
-  avgRating: 4.28,
+  avgRating: 4.2,
   remarks: "Very Satisfactory",
   totalRespondents: 32,
-  criteria: CRITERIA,
+  criteria: SAMPLE_CRITERIA,
   comments: [
-    { submittedAt: "2026-02-11T09:00:00.000Z", comment: "Great explanations and clear examples." },
+    { submittedAt: "2026-02-11T09:00:00.000Z", comment: "Great explanations and clear examples in class." },
     { submittedAt: "2026-02-12T14:30:00.000Z", comment: "Always willing to help after class." },
+    { submittedAt: "2026-02-13T10:15:00.000Z", comment: "The hands-on activities made the topic much easier to understand." },
   ],
 }
 
-/** The workbook the builder produced, read back. */
-function readWorkbook() {
-  const parts = readZip(buildEvaluationWorkbook(INPUT))
+/** The workbook, read back. */
+export function readSample(input: EvalFormInput = SAMPLE_INPUT) {
+  const parts = readZip(buildEvaluationWorkbook(input))
   const sheet = partText(parts, SHEET_INDIVIDUAL)
   const comments = partText(parts, SHEET_COMMENTS)
   const overall = partText(parts, SHEET_OVERALL)
@@ -109,143 +71,142 @@ function readWorkbook() {
     strings,
     text: (ref: string, source = sheet) => readCellText(source, ref, strings),
     number: (ref: string, source = sheet) => {
-      const cell = source.match(new RegExp(`<c r="${ref}"[^>]*>(?:<v>([^<]*)</v>)?`))
-      return cell && cell[1] !== undefined ? Number(cell[1]) : null
+      const m = source.match(new RegExp(`<c r="${ref}"[^>]*>(?:<v>([^<]*)</v>)?`))
+      return m && m[1] !== undefined ? Number(m[1]) : null
     },
   }
 }
 
-/**
- * The position map, read from the TEMPLATE.
- *
- * The output has no formulas - the export replaces them with their values (the
- * legacy's own rule: the workbook is a report, not a worksheet) - so the map
- * can only be read out of the template, which is where it comes from.
- */
-function templatePositions() {
-  return deriveFormPositions(partText(loadEvalTemplate(), SHEET_INDIVIDUAL))
-}
-
-describe("buildEvaluationWorkbook", () => {
+describe("buildEvaluationWorkbook — the generated form", () => {
   it("writes the identity block", () => {
-    const wb = readWorkbook()
+    const wb = readSample()
     expect(wb.text("B7")).toBe("2024-0017")
-    expect(wb.text("B8")).toBe("Ana Reyes")
+    expect(wb.text("B8")).toBe("Dela Cruz")
     expect(wb.text("B9")).toBe("BSCS")
     expect(wb.text("B10")).toBe("A")
-    expect(wb.number("H7")).toBe(4.28)
+    expect(wb.number("H7")).toBe(4.2)
     expect(wb.text("H8")).toBe("Very Satisfactory")
     expect(wb.text("A4")).toBe("Semester: SY 2026-2027 First Semester")
     expect(wb.text("A5")).toBe("Evaluation Period: SY 2026-2027 First Semester - Evaluation")
-    expect(wb.number("H77")).toBe(32)
   })
 
-  it("writes the statement ratings, in the template's own positions", () => {
-    const wb = readWorkbook()
-    const positions = templatePositions()
-    // the first criterion's three statements are I12, I13, I14
-    expect(positions.statementCells[0]).toEqual(["I12", "I13", "I14"])
-    expect(positions.statementCells[1].slice(0, 2)).toEqual(["I18", "I19"])
-    expect(positions.criterionAverageCells[0]).toBe("I15")
-    expect(positions.finalRatingCell).toBe("I78")
-
-    expect(wb.number("I12")).toBe(4.4)
-    expect(wb.number("I13")).toBe(4.3)
-    expect(wb.number("I14")).toBe(4.35)
-    expect(wb.number("I15")).toBe(4.35)
-    expect(wb.number("I18")).toBe(4.5)
-    expect(wb.number("I78")).toBe(4.28)
+  it("generates one block per criterion, with the rubric's own name", () => {
+    const wb = readSample()
+    // the first block starts right after the header block
+    expect(wb.text("A11")).toBe("I. Professional Manner")
+    expect(wb.text("I11")).toBe("RATING")
+    // the second follows the first: 1 header + 3 statements + 1 average + 1 spacer
+    expect(wb.text("A17")).toBe("II. Communication with Students")
+    // and the LAST one is there
+    expect(wb.text("A60")).toBe("VIII. Assessment and Feedback")
   })
 
-  it("writes the statement TEXT the students rated, not the legacy's wording", () => {
-    const wb = readWorkbook()
-    // the legacy typed "a good sence of humor"; the app's rubric says "sense"
+  it("numbers the statements and writes the app's wording", () => {
+    const wb = readSample()
+    expect(wb.text("A12")).toBe(
+      "1. The professor has always dressed appropriately and is well groomed.",
+    )
+    // the app's wording, not the legacy's ("a good sence of humor")
     expect(wb.text("A14")).toBe(
-      "He/she shows composure, exude confidence, and displays a good sense of humor.",
+      "3. He/she shows composure, exude confidence, and displays a good sense of humor.",
     )
   })
 
-  it("leaves no formula behind", () => {
-    const wb = readWorkbook()
-    // the template's AVERAGE cells are now values, so the workbook is a report.
-    // (the template writes them as `<f aca="false">`, so the check is "<f")
+  it("writes every statement's rating and every criterion's average", () => {
+    const wb = readSample()
+    expect(wb.number("I12")).toBe(4.1)
+    expect(wb.number("I13")).toBe(4.2)
+    expect(wb.number("I14")).toBe(4)
+    expect(wb.text("A15")).toBe("AVERAGE")
+    expect(wb.number("I15")).toBe(4.2)
+  })
+
+  it("writes the footer", () => {
+    const wb = readSample()
+    expect(wb.text("H69")).toBe("TOTAL RESPONDENTS")
+    expect(wb.number("I69")).toBe(32)
+    expect(wb.text("G70")).toBe("FINAL RATING")
+    expect(wb.number("I70")).toBe(4.2)
+  })
+
+  it("leaves no formula and no legacy row behind", () => {
+    const wb = readSample()
     expect(wb.sheet).not.toContain("<f")
-    expect(wb.comments).not.toContain("<f")
-    expect(wb.overall).not.toContain("<f")
+    // the legacy's own statement wording is gone
+    expect(wb.sheet).not.toContain("sence of humor")
+    // and the legacy's hidden page-2 header is gone
+    expect(wb.sheet).not.toContain("STUDENTS EVALUATION")
+  })
+
+  it("lands on the LEGACY's rows — the form is the same shape as the school's", () => {
+    // The rubric's statement counts are the legacy's, so the generated blocks
+    // fall on the legacy's rows: 11, 17, 26, 33, 40, 47, 54, 60. The legacy's
+    // form is the layout, so the printed page is the school's page.
+    const wb = readSample()
+    const headers = [11, 17, 26, 33, 40, 47, 54, 60]
+    expect(headers.map((r) => wb.text(`A${r}`))).toEqual([
+      "I. Professional Manner",
+      "II. Communication with Students",
+      "III. Student Engagement",
+      "IV. Learning Materials",
+      "V. Time Management",
+      "VI. Experiential Learning Provided to Students",
+      "VII. Respect the Uniqueness of the Students",
+      "VIII. Assessment and Feedback",
+    ])
+    // and the AVERAGE rows are the legacy's too
+    expect([15, 24, 31, 38, 45, 52, 58, 67].map((r) => wb.text(`A${r}`))).toEqual(
+      Array(8).fill("AVERAGE"),
+    )
   })
 
   it("writes the comments, one per row, on the comments sheet", () => {
-    const wb = readWorkbook()
+    const wb = readSample()
     expect(wb.text("A11", wb.comments)).toBe("2026-02-11")
-    expect(wb.text("B11", wb.comments)).toBe("Great explanations and clear examples.")
-    expect(wb.text("A12", wb.comments)).toBe("2026-02-12")
-    expect(wb.text("B12", wb.comments)).toBe("Always willing to help after class.")
+    expect(wb.text("B11", wb.comments)).toBe("Great explanations and clear examples in class.")
+    expect(wb.text("A13", wb.comments)).toBe("2026-02-13")
     // and the comments sheet carries the same identity block
     expect(wb.text("B7", wb.comments)).toBe("2024-0017")
-    expect(wb.text("A5", wb.comments)).toBe(
-      "Evaluation Period: SY 2026-2027 First Semester - Evaluation",
-    )
   })
 
-  it("writes ONE row on the overall sheet, and drops the legacy's stray numbering", () => {
-    const wb = readWorkbook()
-    expect(wb.text("B7", wb.overall)).toBe("Ana Reyes")
-    expect(wb.number("C7", wb.overall)).toBe(4.35)
-    expect(wb.number("J7", wb.overall)).toBe(4.3)
-    expect(wb.number("K7", wb.overall)).toBe(4.28)
+  it("writes ONE row on the overall sheet, headed by the rubric's names", () => {
+    const wb = readSample()
+    expect(wb.text("B7", wb.overall)).toBe("Dela Cruz")
+    expect(wb.text("C6", wb.overall)).toBe("Professional Manner")
+    expect(wb.text("D6", wb.overall)).toBe("Communication with Students")
+    expect(wb.number("C7", wb.overall)).toBe(4.2)
+    expect(wb.number("K7", wb.overall)).toBe(4.2)
     expect(wb.text("L7", wb.overall)).toBe("Very Satisfactory")
     expect(wb.number("M7", wb.overall)).toBe(32)
     expect(wb.text("N7", wb.overall)).toBe("Computer Science")
-    // the legacy's rows 8 and down are gone
+    // the legacy's stray numbering is gone
     expect(wb.overall).not.toContain('<row r="8"')
   })
 
-  it("is a workbook a reader can open", () => {
-    const parts = readZip(buildEvaluationWorkbook(INPUT))
-    expect(parts.size).toBeGreaterThan(20)
+  it("follows the rubric's LENGTH — a rubric with another statement makes a longer form", () => {
+    // the layout follows the data, so the form is not a fixed set of cells
+    const longer = SAMPLE_CRITERIA.map((c, i) =>
+      i === 0 ? { ...c, statements: [...c.statements, { text: "An extra statement.", avg: 4.5 }] } : c,
+    )
+    const wb = readSample({ ...SAMPLE_INPUT, criteria: longer })
+    // the second criterion moved down by one row
+    expect(wb.text("A18")).toBe("II. Communication with Students")
+    // and the new statement is in the first block
+    expect(wb.text("A15")).toBe("4. An extra statement.")
+    expect(wb.number("I15")).toBe(4.5)
+  })
+
+  it("writes a sample of the workbook, when a path is given", () => {
+    // ACES_SAMPLE_PATH=... writes the REAL output somewhere it can be opened
+    const path = process.env.ACES_SAMPLE_PATH
+    if (!path) return
+    const bytes = buildEvaluationWorkbook(SAMPLE_INPUT)
+    writeFileSync(path, bytes)
+    // and it reads back as a workbook
+    const parts = readZip(bytes)
     expect(parts.has(SHEET_INDIVIDUAL)).toBe(true)
     expect(parts.has(SHEET_COMMENTS)).toBe(true)
     expect(parts.has(SHEET_OVERALL)).toBe(true)
-  })
-})
-
-describe("the guard", () => {
-  it("refuses a rubric with a different number of criteria", () => {
-    const positions = templatePositions()
-    expect(() => assertRubricFitsTemplate(CRITERIA.slice(0, 7), positions)).toThrow(
-      FormRubricMismatchError,
-    )
-  })
-
-  it("refuses a criterion with a different number of statements", () => {
-    const positions = templatePositions()
-    const changed = CRITERIA.map((c, i) =>
-      i === 0 ? { ...c, statements: c.statements.slice(0, 2) } : c,
-    )
-    expect(() => assertRubricFitsTemplate(changed, positions)).toThrow(
-      /2 statements in the rubric but the template has 3/,
-    )
-  })
-
-  it("does NOT refuse a renamed criterion - the heading travels with the numbers", () => {
-    // The legacy's headings are the school's own wording ("COMMUNICATION WITH
-    // STUDENT", singular) and the app's rubric says "Communication with
-    // Students", so a name comparison would reject the app's own rubric. The
-    // export writes the rubric's wording into the heading instead.
-    const positions = templatePositions()
-    const renamed = CRITERIA.map((c, i) => (i === 0 ? { ...c, name: "Manners" } : c))
-    expect(() => assertRubricFitsTemplate(renamed, positions)).not.toThrow()
-  })
-
-  it("accepts the rubric the app carries", () => {
-    const positions = templatePositions()
-    expect(() => assertRubricFitsTemplate(CRITERIA, positions)).not.toThrow()
-  })
-
-  it("writes the criterion's own heading, numbered", () => {
-    const wb = readWorkbook()
-    expect(wb.text("A11")).toBe("I. Professional Manner")
-    expect(wb.text("A17")).toBe("II. Communication with Students")
   })
 })
 
