@@ -19,6 +19,7 @@ import {
   aggregateFacultyResults,
   aggregateDepartmentResults,
   computeItemAverages,
+  type CategoryAverages,
   type FacultyAggregate,
   type DepartmentAggregate,
   type ItemAverage,
@@ -297,6 +298,14 @@ export interface SubjectEvaluationRow {
   evaluationId: string
   submittedAt: string | null
   generalRating: number | null
+  /**
+   * ⭐ The LIVE per-response averages — the rubric's category names to this
+   * response's average for each. The eight columns below are the APP's fixed
+   * model; this map is the rubric's own, so an export whose columns follow the
+   * rubric has the values to put under them. It is computed from the ratings
+   * the read already has, so carrying it costs nothing and adds no query.
+   */
+  categoryAverages: CategoryAverages
   professionalManner: number | null
   communicationWithStudent: number | null
   studentEngagement: number | null
@@ -397,6 +406,9 @@ export async function getSubjectResultSet(
       evaluationId: ev.id,
       submittedAt: ev.submittedAt,
       generalRating: evalGeneral,
+      // ⭐ the LIVE map, not the eight columns - the rubric's own criteria and
+      // what this response scored against each of them
+      categoryAverages: evalCatAverages,
       professionalManner: evalCatColumns.professionalManner,
       communicationWithStudent: evalCatColumns.communicationWithStudent,
       studentEngagement: evalCatColumns.studentEngagement,
