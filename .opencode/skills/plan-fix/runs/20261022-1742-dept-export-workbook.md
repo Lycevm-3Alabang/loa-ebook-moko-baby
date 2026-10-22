@@ -230,7 +230,7 @@ three shipping subject-grain routes produce **byte-identical** workbooks ✓.
 | Invariant | How |
 |---|---|
 | API routes stay thin | the ZIP route reads, assembles the entries, returns the bytes — the CSV-ZIP route's own shape |
-| proxy.ts is the access-enforcement point | **n/a** — the matcher excludes `api/`; the route's own guard is the point |
+| proxy.ts is the access-enforcement point | ⭐ **the matcher does NOT exclude `api/`** (corrected 2026-10-22 — this table said it did). The middleware runs on the API and the API is **closed by default**; both ZIP paths sit under existing prefix grants (`/api/dean/evaluation-results` · the ADMIN fallback) ⇒ **no access change** — but a new top-level path would be a silent 403 for every dean |
 | All Supabase access goes through repositories wired by DI | **no new query** — the department read, the subject read, the rubric read, all existing |
 | Double-click prevention via SubmitButton | **n/a** — a download with a `loading` state |
 | Role is pipe-delimited; priority ADMIN > DEAN > FACULTY > STUDENT | the dean's guard: `hasRole(…, "DEAN")` → `findByDeanId` → own-department 403 |

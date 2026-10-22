@@ -1,9 +1,9 @@
 # The Excel export — the handover
 
 **Date:** 2026-10-22
-**Status:** the subject grain is **done and shipping**; the department grain is **spec'd, measured
-and half-built** — the contract and the pieces are on disk; ⭐ **no route serves it and no button
-exists**, so nothing the school sees has changed.
+**Status:** the subject grain is **done and shipping**; the department grain's **API is built** —
+the assembly and ⭐ **the two routes** — and ⭐ **no button exists**, so nothing the school sees
+has changed.
 **Scope:** tracking the export's open work. ⭐ **The decisions are the spec's** —
 `specs/evaluation-results-export.md` — and this file does not repeat them.
 
@@ -22,7 +22,7 @@ exists**, so nothing the school sees has changed.
 | Grain | State |
 |---|---|
 | **Part I** — the subject workbook, served by the three `…/export` routes | ✅ **done 2026-10-22** — generated from scratch by `lib/xlsx/`. ⭐ **The Excel proof is the owner's** (§14, hook below) |
-| **Part II** — the department **ZIP** | 📐 **spec'd + measured + the pieces built; not wired** — no route, no button |
+| **Part II** — the department **ZIP** | 🟡 **the API is built (05a + 05b)** — the assembly, ⭐ **the two routes** and their cases; ⬜ **the surface is next** — ⭐ **no button exists** |
 
 ⭐ **Part II's shape changed (2026-10-22, owner):** it is **not** one stacked workbook per
 department. ⭐ It is **one ZIP** that holds **the workbooks the school already receives** — one per
@@ -53,9 +53,9 @@ departments" is not one download**.
 | 01 | **the contracts** — the spec (v6.0) + the sub-spec folder | ✅ done |
 | 02 | **the spike** — the measurement | ✅ done — the numbers above |
 | 03 | **the building blocks** — the DEFLATE zip · the shared builder · the consolidated file | ✅ done |
-| 04 | **the department ZIP route** | 🟡 **05a done** (the assembly) · ⭐ **05b next** (the two routes) |
-| 05 | **the surface** — the buttons · the scope picker | ⬜ not started |
-| 06 | **the docs** | ✅ this file + `TODO.md` (2026-10-22) |
+| 04 | **the department ZIP route** | ✅ **done 2026-10-22** — **05a** the assembly · **05b** the two routes (+ the spec amendments: the scope is required, an unknown id is **refused**) |
+| 05 | **the surface** — the buttons · the scope picker | ⬜ **next** |
+| 06 | **the docs** | ✅ this file + `TODO.md` — updated after 05a/05b |
 
 ## What is on disk (the pieces — each with its own test)
 
@@ -64,23 +64,25 @@ departments" is not one download**.
 | `lib/zip-deflate.ts` | the **server-only** DEFLATE zip (`createDeflatedZip`) — ⭐ `lib/zip.ts` is **untouched** (the client's `downloadBlob` imports it) |
 | `lib/xlsx/subject-workbook.ts` | the **shared builder** — the three shipping routes and the ZIP route use it; the input is **structural** (`lib/` never imports `features/`) |
 | `lib/xlsx/overall-summary.ts` | the **faculty's consolidated file** — the model, the renderer, the file (one sheet, landscape) |
-| `features/evaluation-results/department-zip.ts` | the **assembly** — the pool · the guard · the tree · `_INCOMPLETE.txt` |
+| `features/evaluation-results/department-zip.ts` | the **assembly + the verdict** — the pool · the guard · the tree · `_INCOMPLETE.txt` · `verdictForDepartmentZip` (the refusals' statuses and messages — one home) |
+| `app/api/admin/evaluation-results/export/excel/route.ts` | ⭐ **the admin's ZIP route** — `requireAdmin` · the period · ⭐ **`departmentIds` required** · `facultyId?` · `maxDuration = 60` |
+| `app/api/dean/evaluation-results/export/excel/route.ts` | ⭐ **the dean's ZIP route** — `hasRole(DEAN)` · their own department · a foreign id → **403** · `assertPeriodIsActive` |
 | `lib/__tests__/spike-department-zip.test.ts` | the **measurement** — gated by `ACES_SPIKE=1`, so it is **skipped by default** and CI is unaffected |
 
 ## Next (the new session's order)
 
-1. **05b — the two routes.** The admin's (`departmentIds` **required**) + the dean's (their own
-   department; a foreign id → **403**) · `maxDuration = 60` · the filename
-   `evaluation-results-<periodId>.zip` · the **refusal's message** (the count + the estimate) · the
-   route cases · ⭐ **the two spec amendments** (the scope is required; an unknown department id is
-   **refused**, not skipped — a typo must not quietly shrink the download).
-2. **The surface (05)** — the results list page's button + the **scope picker** · the department
+1. ⭐ **The surface (05)** — the results list page's button + the **scope picker** · the department
    page's button · the **dean's twin** · ⭐ **the faculty card's button = the per-faculty ZIP** (the
    measured answer to *"remove the export on faculty card levels?"* — **no**: it becomes the export
-   that gets CTHM and GENED to the school).
-3. **The Excel proof (the owner's)** — unzip a department ZIP, print one subject workbook and one
-   consolidated file; ⭐ and the **scope proof** — the dean's route answers 403 for another
-   department.
+   that gets CTHM and GENED to the school). ⭐ **One decision is still open in it** — whether the
+   per-subject "Export Excel" buttons stay (A) or retire (B/C) — `03-surface.md` §2.
+2. **The owner's proofs (no code)** — **curl** the admin route (`?departmentIds=<one>`) and the
+   dean's, **unzip**, check the tree against §17.1, print one subject workbook and one consolidated
+   file; ⭐ and the **scope proof** — the dean's route answers **403** for another department (and
+   **400** for an id that is not there). ⚠️ **The time is still unmeasured** — the guard bounds the
+   *size*, not the *time*: 96 sections ≈ 157 s sequentially against `maxDuration = 60`, so the
+   8-way pool's speed-up is the number to watch.
+3. **The Excel proof for Part I** (the owner's, §14 hook below) — unchanged.
 
 Gate: `npx tsc --noEmit` → `npm run lint` → `npx vitest run` → `npm run build` (**the owner's run**).
 
@@ -100,6 +102,14 @@ Gate: `npx tsc --noEmit` → `npm run lint` → `npx vitest run` → `npm run bu
   the code). **Do not** re-inline the assembly.
 - **§3.18 parity is figures, not row order** — the ZIP's stated order is its own; making the card
   sort the same way is a separate change.
+- ⭐ **The scope is REQUIRED on the admin's route, and an unknown id is REFUSED** — "all
+  departments" is not one download (D27, measured), and a typo must not quietly shrink the file.
+  ⭐ The refusals are **one verdict** (`verdictForDepartmentZip`) — **do not** re-inline a status
+  or a message in a route.
+- ⭐ **`/api/` is NOT excluded by `proxy.ts`'s matcher** — the middleware runs on the API and the
+  API is **closed by default**. Both ZIP paths sit under existing prefix grants
+  (`/api/dean/evaluation-results` · the ADMIN fallback); ⭐ **a new top-level path would lock every
+  dean out with a silent 403**.
 
 ## Still open, older (tracked in TODO.md)
 

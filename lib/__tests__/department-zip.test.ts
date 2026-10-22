@@ -25,6 +25,7 @@ vi.mock("@/lib/xlsx/letterhead", () => ({ loadLetterhead: () => new Uint8Array([
 
 import {
   buildDepartmentZip,
+  verdictForDepartmentZip,
   MAX_SUBJECT_SECTIONS,
 } from "@/features/evaluation-results/department-zip"
 import { readZip } from "@/lib/xlsx-template"
@@ -125,6 +126,22 @@ describe("the department ZIP", () => {
     expect(result).toMatchObject({ ok: false, reason: "unknown-department", departmentId: "d1" })
   })
 
+  it("refuses a faculty that is not a member — it must not quietly shrink", async () => {
+    const result = await buildDepartmentZip({
+      evaluationPeriodId: "p1",
+      departmentIds: ["d1"],
+      facultyId: "someone-else",
+    })
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "unknown-faculty",
+      facultyId: "someone-else",
+      departmentId: "d1",
+    })
+    // ⭐ the refusal costs no subject read
+    expect(mockGetSubjectResultSet).not.toHaveBeenCalled()
+  })
+
   it("names a subject it could not build — in _INCOMPLETE.txt, inside the ZIP", async () => {
     mockGetSubjectResultSet.mockRejectedValue(new Error("boom"))
     const result = await buildDepartmentZip({ evaluationPeriodId: "p1", departmentIds: ["d1"] })
@@ -148,5 +165,69 @@ describe("the department ZIP", () => {
       "CCS/Alamo, Nino Francisco/1815-ITELEC009_BSIT-31E1_evaluation.xlsx",
       "CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_summary.xlsx",
     ])
+  })
+})
+
+// ⭐ the verdict — what the ROUTE answers. One place, so the admin's route
+// and the dean's twin cannot disagree about a refusal.
+describe("the verdict", () => {
+  it("the zip", async () => {
+    const result = await buildDepartmentZip({ evaluationPeriodId: "p1", departmentIds: ["d1"] })
+    expect(verdictForDepartmentZip(result)).toMatchObject({ kind: "zip" })
+  })
+
+  it("the size refusal names the count, the estimate, the limit and the way out", async () => {
+    const many = Array.from({ length: MAX_SUBJECT_SECTIONS + 1 }, (_, i) => ({
+      ...ROW,
+      facultySubjectId: `fs${i}`,
+    }))
+    mockGetDepartmentResults.mockResolvedValue({
+      subjects: many,
+      facultyAggregates: {},
+      members: [{ id: "f1", name: "Alamo", email: "a@x.edu.ph" }],
+      departmentAggregate: null,
+    })
+    const result = await buildDepartmentZip({ evaluationPeriodId: "p1", departmentIds: ["d1"] })
+    const verdict = verdictForDepartmentZip(result)
+    expect(verdict.kind).toBe("refusal")
+    if (verdict.kind !== "refusal") return
+    expect(verdict.status).toBe(400)
+    expect(verdict.error).toContain(`${MAX_SUBJECT_SECTIONS + 1} subject-sections`)
+    // ⭐ the estimate is rounded UP, so it never reads smaller than it is
+    expect(verdict.error).toContain("4.1 MB")
+    expect(verdict.error).toContain("the limit is 4.0 MB")
+    expect(verdict.error).toContain("one department at a time")
+  })
+
+  it("an unknown department is a 400 that names it", async () => {
+    mockDepartmentRepo.findById.mockResolvedValue(null)
+    const result = await buildDepartmentZip({ evaluationPeriodId: "p1", departmentIds: ["d1"] })
+    const verdict = verdictForDepartmentZip(result)
+    expect(verdict).toMatchObject({ kind: "refusal", status: 400 })
+    if (verdict.kind !== "refusal") return
+    expect(verdict.error).toContain("d1")
+  })
+
+  it("an unknown faculty is a 400 that names it and its department", async () => {
+    const result = await buildDepartmentZip({
+      evaluationPeriodId: "p1",
+      departmentIds: ["d1"],
+      facultyId: "someone-else",
+    })
+    const verdict = verdictForDepartmentZip(result)
+    expect(verdict).toMatchObject({ kind: "refusal", status: 400 })
+    if (verdict.kind !== "refusal") return
+    expect(verdict.error).toContain("someone-else")
+    expect(verdict.error).toContain("d1")
+  })
+
+  it("a period that is not there is a 404", async () => {
+    mockPeriodRepo.findById.mockResolvedValue(null)
+    const result = await buildDepartmentZip({ evaluationPeriodId: "p1", departmentIds: ["d1"] })
+    expect(verdictForDepartmentZip(result)).toMatchObject({
+      kind: "refusal",
+      status: 404,
+      error: "Evaluation period not found",
+    })
   })
 })

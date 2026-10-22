@@ -61,7 +61,7 @@ lib/                    # Global utilities & infrastructure
 ├── auth.ts, supabase.ts, types/, services/, workflows/, …
 ```
 
-- Middleware at `proxy.ts` (exported as `proxy`, matched via `config.matcher` excluding `api/`, `_next/`, static files)
+- Middleware at `proxy.ts` (exported as `proxy`, matched via `config.matcher` excluding `_next/`, `favicon.ico` and static images — ⭐ **not `api/`**: the middleware runs on the API, and the API is **closed by default**, so a new top-level path needs its prefix in the `group_access` pages or every request to it is a silent 403)
 - Route groups: `app/(auth)/`, `app/admin/`, `app/dean/`, `app/faculty/`, `app/student/`
 - Mobile companion pages under `app/{role}/m/` (book, meetings, departments, upload)
 - Path alias `@/*` → project root (tsconfig paths)

@@ -29,12 +29,12 @@ Specs must be Final before code is written (per loa-apache-server-apps conventio
 | [student-import-stepper/step-02-student-users.md](student-import-stepper/step-02-student-users.md) | Draft | Step 2 — the only `create` in this importer; department resolved client-side at preview time, not per chunk |
 | [student-import-stepper/step-03-enrollments.md](student-import-stepper/step-03-enrollments.md) | Draft | Step 3 — terminal `O(rows)` step; batched resolution; `semesterId` in the dedupe key; per-row skip attribution |
 | [student-import-stepper/ledger-reason-codes.md](student-import-stepper/ledger-reason-codes.md) | Draft | One CSV in which every input row appears exactly once, with status + reason code + remark |
-| [chunked-import-failure-ux.md](chunked-import-failure-ux.md) | Draft | Failure UX and timeout policy for the shared chunk driver `useChunkedImport` — status→message mapping, no raw response bodies, retry policy, correlation key. Sub-spec of both importer families |
+| [chunked-import-failure-ux.md](chunked-import-failure-ux.md) | Final (2026-10-10) | Failure UX and timeout policy for the shared chunk driver `useChunkedImport` — status→message mapping, no raw response bodies, retry policy, correlation key. Sub-spec of both importer families. ⭐ **Built U1–U4** (owner-reported green); verification remains in `TODO.md` |
 | [breadcrumb-friendly-labels.md](breadcrumb-friendly-labels.md) | Final | Replace GUID path segments in the desktop breadcrumb with names/codes on the admin + dean evaluation-results routes — page-driven crumb registry, no new fetch |
 | [evaluation-surfaces-verification.md](../docs/evaluation-surfaces-verification.md) | — | The manual checks for the evaluation surfaces (dean's coverage, admin's coverage, the results pages) and the **home-less teachers** check — the one number no test can give you: how much coverage the home-only attribution rule moved |
 | [evaluation-results-attribution.md](evaluation-results-attribution.md) | Final (2026-10-21) | Why users go missing from the evaluation results — one department attribution rule across the admin/dean/coverage surfaces, the dean's duplicated route retired, an integrity warning, and a visible zero-response count. **Built and green 2026-10-20** (S1–S4 + F5: resolver, service, repository, dean route, visibility guard, coverage, null-safe rendering, integrity warning row, per-department "No responses" count, reconciled faculty counts, the dean's dashboard and evaluations page on the teaching roster; the pseudo-department row and its dead-end link are gone; both visibility routes now require `evaluationPeriodId`). **v1.2: the rule is faculty-driven** — the teacher's own department owns the result, with the section's department as the fallback for a teacher based somewhere that cannot own coverage; the coverage and the results surfaces now share one resolver. **v1.3 (2026-10-20, later the same day): one headcount, one membership** — every surface counts the faculty **homed in** a department (the school-wide headcount), the drill-downs' faculty lists are that same set, the results drill-down's subject tab is the members' subjects (evaluated or not), the no-response roster is gone from the results surfaces, and the dean's guards read the same set. **v1.4: the home is the only rule** — the section's department is no longer a fallback; a teacher with no home is unattributed. **v1.6–v1.14 (2026-10-21): the membership gate is closed** — the period scopes the responses (the term scopes the subject list only), the response set is decided in one read, the dean's guards read the members and the subject page's department guard (D9) is built, the results list's offSemester banner is retired, the surfaces show the ratings rather than the counts, every department is a row, and a tie is shown as a tie everywhere. Next: the data check — the home-less teachers |
 | [evaluation-results-summary-card.md](evaluation-results-summary-card.md) | Final (2026-10-21) | The department drill-down's header card — a summary, not a dashboard: the average is the headline with the verdict beside it, the rubric read-out is full-width rows (the alarm first, the ties joined on one line), the counts are the coverage page's, and the card's shape does not change with the data. **Built 2026-10-21** (Option A) |
-| [evaluation-results-export.md](evaluation-results-export.md) | Final (Part I) · Part II spec'd | The evaluation results as the school's legacy workbook, **generated from scratch** (the template is the reference, read by nothing at runtime). **Part I (§1–14, v4.0)** — the subject-grain workbook, three sheets (Individual, Comments, Overall one-row-per-response), everything follows the live rubric; **done 2026-10-22**, three routes (admin, dean, faculty). **Part II (§15–26, v5.0)** — the consolidated **department-faculty workbook** served off the faculty cards: the Individual sheet stacked (one full form per subject-section), no Comments sheet, the Overall sheet a NEW summary model (one row per subject-section under a per-faculty band); owner decisions D20–D26; **spec'd 2026-10-22, not built** |
+| [evaluation-results-export.md](evaluation-results-export.md) | Final (Part I) · Part II built, surface pending | The evaluation results as the school's legacy workbook, **generated from scratch** (the template is the reference, read by nothing at runtime). **Part I (§1–14, v4.0)** — the subject-grain workbook, three sheets (Individual, Comments, Overall one-row-per-response), everything follows the live rubric; **done 2026-10-22**, three routes (admin, dean, faculty). **Part II (§15–26, v6.0)** — the department download is a **ZIP**, not a stacked workbook: the **shipping per-subject workbook verbatim**, one per subject-section, plus **one consolidated file per faculty** (owner decisions **D20–D29**); ⭐ **the API is built** (the DEFLATE zip · the shared builder · the consolidated file · the assembly with its size guard · the two routes), ⭐ **no button exists yet** — the surface (the buttons, the scope picker) is the next slice |
 | [coverage-parity.md](coverage-parity.md) | Final (2026-10-20) | Bring the evaluation coverage pages onto the results surfaces' footing — the dean's coverage page was non-functional (400 on the list, 403 on every detail), its scope unscoped, the detail guard asking the wrong question, and the dummy inflating the counts. **Built in 9 slices** (the dean's list exists and is scoped, the detail guard uses the list's resolver with 404 vs 403, the dummy is out of the counts, the integrity warning is carried and scoped, the Unresolved group counts its faculty, and the dean always loads their own department with no back link) |
 | [coverage-faculty-grouping.md](coverage-faculty-grouping.md) | Final (2026-10-20) | Give the coverage page's department drill-down the results page's two groupings — "By Subject & Section" and "By Faculty" — with a per-department faculty aggregate on distinct students. **Built**: the rows carry faculty + section, the service returns per-department faculty aggregates, the drill-down gains the switch and the faculty cards (one shared `components/ui/Tabs.tsx` for both pages). **v1.2: the coverage page is faculty-driven** — a teacher's coverage belongs to their own department, with the section's department as the fallback for a teacher based somewhere that cannot own coverage (no home, or a home with no courses — the "Unassigned"/"Admin" buckets). **v1.3: the results surfaces adopted the same rule** — one resolver, one rule, every surface. **v1.4 (2026-10-20): the home is the only rule** — no section fallback; a department's teaching is its members' teaching, and a teacher with no home is unattributed (the "Unresolved" group) |
 | *(unfiled)* | Done (2026-10-20) | Closed an authorization hole on `/api/dean/evaluation-results/details` — it resolved the dean's department and then ignored it, so any `facultyId` returned another department's per-student breakdown. Now scoped with the same membership the results page and the visibility toggle use (a new test file covers it). Also fixed the "anonymised" student id, which the object spread had been restoring to the real id |
@@ -118,11 +118,32 @@ genuinely unpersisted. The file was always the deduplicated count.
 
 # Next Session — Start Here
 
-The student CSV importer had three live production failures (504 timeout, 23505 duplicate key,
-silent cross-term loss). **All three are closed.** 280 tests / 20 files green. The remaining work
-is containment and reporting, not correctness.
+⭐ **Two threads — the export is the active one.**
 
-## Read in this order
+## Thread 1 — the Excel export (active, 2026-10-22)
+
+- **Where it stands:** the **subject workbook ships**; the department **ZIP's API is built** — the
+  assembly + ⭐ **the two routes** + their cases — and ⭐ **no button exists**, so nothing the
+  school sees has changed.
+- **Read in this order:** `docs/evaluation-export-department-handover.md` (the entry point) →
+  `evaluation-results-export.md` **§21** (what the routes promise) + **§24–25** (the slices and
+  the proofs) → `evaluation-results-export/03-surface.md` (**the next slice**).
+- ⭐ **Next slice: the surface (05)** — the results list's button + the **scope picker** · the
+  department page's button · the **dean's twin** · the **faculty card's per-faculty ZIP**. ⭐ One
+  decision is **OPEN** there: whether the per-subject "Export Excel" buttons stay (**A**) or
+  retire (**B/C**) — `03-surface.md` §2.
+- ⭐ **The proofs are the owner's:** curl + unzip (the tree against §17.1) · the dean's
+  **403/400** · the Excel print · ⚠️ the **timing** (the 8-way pool's speed-up is unmeasured —
+  the guard bounds the size, not the time).
+
+## Thread 2 — the student CSV importer (older; all incidents closed)
+
+The student CSV importer had three live production failures (504 timeout, 23505 duplicate key,
+silent cross-term loss). **All three are closed.** The remaining work is containment and
+reporting, not correctness (the baseline is **65 test files**, 2026-10-22 — the case count is the
+owner's run).
+
+## Read in this order (the importer)
 
 1. **`student-import-stepper.md`** — the general spec. §3 step registry, §4.2 why `semesterId` is
    load-bearing, §4.3 the dedupe key, §5 the state machine. §7's defect table and §9's C1/C2/C3
@@ -136,8 +157,9 @@ is containment and reporting, not correctness.
    pure module to read first) in `import-ledger.ts`, and the closure assert replaced
    the old `unaccounted` arithmetic. `DEPARTMENT_FROM_FIRST_ROW` is deliberately
    unbuilt — it is C3's first-instance rule and lands there.
-4. **`chunked-import-failure-ux.md`** — new, spec'd, **not built**. U1–U4. U1 (status→message
-   mapping, no raw response bodies) is the one that stops platform HTML reaching the admin.
+4. **`chunked-import-failure-ux.md`** — ⭐ **built 2026-10-10 (U1–U4)**, Final. U1 (status→message
+   mapping, no raw response bodies) is the one that stops platform HTML reaching the admin; U2
+   adds the 504's fail-fast + halve-once, U3 the 70 s timer, U4 the invariant + `Reference: {fileId}`.
 5. **`.opencode/skills/plan-fix/runs/20261009-1743-student-import-c1.md`** — the authoritative
    defect ledger and the D8/D9/D10/D11 discovery notes. Read the ledger table first; it is now
   accurate.
@@ -156,21 +178,21 @@ is containment and reporting, not correctness.
 
 | Trap | Why it bites |
 |---|---|
-| `useChunkedImport` defaults `chunkTimeoutMs` to 120s while both routes cap at `maxDuration = 60` | A 504 is decided by the platform, not the client timer |
+| `chunkTimeoutMs` is **70 s**, just above the routes' `maxDuration = 60` (U3) | The platform's 504 is authoritative; ⭐ the client timer must **never** go below the ceiling, or it aborts requests that would have succeeded |
 | `isRetryableChunkError` now rejects any error carrying a Postgres SQLSTATE | Before that, a `23505` was retried — 46s to fail deterministically three times |
 | `resolveSlot` refuses to substitute another term's mapping | Correct, but makes a term mismatch look like 22,000 rows of bad data. Now surfaced |
 | `PostgREST` caps responses at ~1000 rows by default | Both DB sample exports came back at 100. `users.repository.ts:215-233` pages for this reason; any new wide read must too |
 | `BulkStudentImport.tsx` carries its own `ImportResult` shape, separate from the service's | Adding a field to the service result does not reach the client unless added here too |
 
-## Next slice to take
+## Next slice to take — per thread
 
-**C3 S2** (`student-import-stepper.md` §3, §5): department grid + panels — S1's derived grouping made visible. Per-department panels grouped by the row's own code (§3.2), Unassigned rows in their own panel, global running guard. No new writes — panels drive the per-department chunk runs C1/C2 already made safe. C3 S1 done 2026-10-10 (user-reported green).
-Tracked as NEXT in root `TODO.md`. After: S3 (Unassigned polish) → S4 (`userMap` merge).
-
-After U2–U4, proposed order (reorder freely): D3 → D6 → C3 S1–S4 → deferred
-course-payload cleanup. S1 remains the zero-UI-risk C3 entry point — department grouping,
-computed client-side at preview, stamped onto every row — with 176 multi-department students
-already measured and first-instance-wins already accepted.
+- ⭐ **The export:** the **surface (05)** — see Thread 1 above.
+- **The importer:** ⭐ **no slice left** — C3 S1–S4 and the table-first work all landed
+  (2026-10-10, user-reported green). What remains is **verification**, tracked in root `TODO.md`:
+  the **S2 + S3 browser pass**, **Run gate vs Needs Review**, the **F1 invalid-details modal
+  proof**, and the **drift alarm's live fire**. ⭐ The only code item is the **deferred course
+  payload** cleanup — **blocked**, because the ledger's `DEPARTMENT_MISMATCH` consumes the dataset
+  (see `TODO.md`).
 
 ---
 

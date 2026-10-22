@@ -584,19 +584,31 @@ The export adds **no new query** — it reads what the drill-down already reads:
 
 ## 21. The routes
 
-| Route | Guard |
-|---|---|
-| `app/api/admin/evaluation-results/export/excel/route.ts` | `requireAdmin` + the period id + the **scope** (`departmentIds`, optional → all) |
-| `app/api/dean/evaluation-results/export/excel/route.ts` | `hasRole(DEAN)` + **the dean's own department** (a foreign id → 403) + `assertPeriodIsActive` |
+| Route | Guard | Parameters |
+|---|---|---|
+| `app/api/admin/evaluation-results/export/excel/route.ts` | `requireAdmin` | `evaluationPeriodId` (or `semesterId`) · ⭐ **`departmentIds`** (comma-separated) · `facultyId?` |
+| `app/api/dean/evaluation-results/export/excel/route.ts` | `hasRole(DEAN)` + **the dean's own department** (a foreign id → **403**) + `assertPeriodIsActive` | `evaluationPeriodId` (or `semesterId`) · `departmentIds?` (their own only) · `facultyId?` |
 
-- ⭐ **The export must never become a way around a read route's 403** (the same rule as §8):
-  the dean's export answers for **their department only**; the admin's scope is the parameter
-  itself.
+- ⭐ **The scope is REQUIRED** (the admin's route) — ⭐ **"all departments" is not offered**
+  (D27, measured): GENED ⇒ **8.2 MB** against the platform's ≈ **4.5 MB** ceiling. The scope
+  picker offers **one department or a few** (sub-spec 03). A missing `departmentIds` is a **400**.
+- ⭐ **The dean's route does not IGNORE `departmentIds` — it REFUSES a foreign one** (**403**):
+  an ignored id would quietly shrink the download, and the export must never become a way around
+  a read route's 403. With no `departmentIds`, it answers for **their own department**.
+- ⭐ **An unknown department id is REFUSED, not skipped** — a **400** naming it. ⭐ A typo must
+  not quietly shrink the download (the repo's lesson: a silent loss is a *wrong* artifact).
+- ⭐ **A `facultyId` that is not a member of the scope is REFUSED** — a **400** naming the
+  faculty and the department. ⭐ The per-faculty export (D27) is how a department over the bound
+  reaches the school; a scope that matches nobody must not answer with an empty ZIP.
 - Both carry **`maxDuration = 60`** (the read is live — rule 3 of the cache contract: a
   department drill-down is opened for a reason) and return the ZIP as a download
   (`application/zip`).
 - The **filename** is `evaluation-results-<periodId>.zip` — the CSV export's own convention.
-- ⭐ **The scope guard** — the route estimates the ZIP's size from the **measured** bytes per
+- ⭐ **The refusals are ONE verdict** (`verdictForDepartmentZip` — the feature decides the status
+  and the message; the route decides the `NextResponse`), so the two routes cannot disagree
+  about one: **400** (too large · unknown department · unknown faculty) · **404** (the period is
+  not there) · **500** (the error names itself — Lesson 8).
+- ⭐ The **scope guard** — the route estimates the ZIP's size from the **measured** bytes per
   workbook (≈ **41.4 KB** deflated — the spike) × the selection's subject-section count, and
   **refuses loudly** (the count, the estimate, the way out) when that would exceed the
   platform's ≈ **4.5 MB** ceiling. ⭐ **Measured across three departments (21 · 145 · 199
@@ -605,6 +617,11 @@ The export adds **no new query** — it reads what the drill-down already reads:
 - ⭐ **A department over the bound is exported PER FACULTY** — a faculty ZIP (a handful of
   sections, ≈ **300–600 KB**, ≈ **10–25 s**) always fits. ⭐ The faculty card's button is that
   export (sub-spec 03).
+- ⭐ **The middleware runs on `/api/`** — `proxy.ts`'s matcher does **not** exclude it — and the
+  API is **closed by default**: an unconfigured path is refused **before** the route's own guard.
+  ⭐ Both paths sit under the existing prefix grants (`/api/dean/evaluation-results` for the
+  dean; the ADMIN fallback for an admin) ⇒ **no access-configuration change is needed**; a new
+  top-level path would have locked every dean out with a silent 403.
 
 ## 22. The mechanics — the additions
 
@@ -638,12 +655,12 @@ commit, independently reviewable and revertible. The contracts live in
 
 | # | Sub-spec | State |
 |---|---|---|
-| 01 | **the contracts** — this file (v6.0) + the sub-spec folder | pending |
-| 02 | **the spike** — measure the bytes, the time and the request count (`00-spike.md`) | pending |
-| 03 | **the building blocks** — the DEFLATE zip · the shared builder · the consolidated file (`01-building-blocks.md`) | pending |
-| 04 | **the department ZIP route** (`02-department-zip.md`) | pending |
-| 05 | **the surface** — the buttons, the scope picker, the faculty-card decision (`03-surface.md`) | pending |
-| 06 | **the docs** — the handover, the TODO row, the specs index (`04-docs.md`) | pending |
+| 01 | **the contracts** — this file (v6.0) + the sub-spec folder | ✅ done 2026-10-22 |
+| 02 | **the spike** — measure the bytes, the time and the request count (`00-spike.md`) | ✅ done 2026-10-22 — the numbers (21 · 145 · 199 sections, 0 failures) |
+| 03 | **the building blocks** — the DEFLATE zip · the shared builder · the consolidated file (`01-building-blocks.md`) | ✅ done 2026-10-22 |
+| 04 | **the department ZIP route** (`02-department-zip.md`) | ✅ done 2026-10-22 — **05a** the assembly · **05b** the two routes |
+| 05 | **the surface** — the buttons, the scope picker, the faculty-card decision (`03-surface.md`) | ⬜ **not started** — ⭐ no button exists, so nothing the school sees has changed |
+| 06 | **the docs** — the handover, the TODO row, the specs index (`04-docs.md`) | ✅ the handover + the TODO row (2026-10-22) · the specs index (this file's status row) |
 
 ## 25. The proofs
 
@@ -655,8 +672,11 @@ commit, independently reviewable and revertible. The contracts live in
    letterhead, the form, the Comments, the per-response Overall); the consolidated file's band
    equals the card's pooled figure and its rows equal the card's rows for the same
    subject-section (§3.18); an unevaluated section prints `—`.
-4. ⭐ **The scope proof** — the dean's route answers **404/403 for a department that is not
-   theirs**; the faculty role has no route at this grain.
+4. ⭐ **The scope proof** — the dean's route answers **403 for a department that is not
+   theirs** (and **400** for an id that is not there); the faculty role has no route at this
+   grain.
+5. ⭐ **The refusal proof** — a selection over the guard's bound answers **400** naming the
+   count, the estimate and the way out; a scope that matches nobody answers **400** naming it.
 
 ## 26. What Part II does **not** do
 

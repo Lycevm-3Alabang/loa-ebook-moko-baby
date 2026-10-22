@@ -1,17 +1,25 @@
 # Chunked Import — Failure UX and Timeout Policy
 
-**Version:** 1.0
-**Status:** Draft
-**Last Updated:** 2026-10-09
+**Version:** 1.1
+**Status:** Final (built 2026-10-10 — U1–U4, owner-reported green)
+**Last Updated:** 2026-10-22
 
 Sub-spec of both importer families. Covers the shared chunk driver
 (`useChunkedImport`) and the two callers that drive it, so the fix lands once rather than twice.
+
+> ⭐ **Built 2026-10-10 — all four slices (U1 → U4), owner-reported green.** The message mapper
+> (`getChunkFailureMessage`) and the typed `postChunk` errors · the 504's fail-fast and
+> halve-once · `CHUNK_TIMEOUT_MS = 70000` · the invariant plus `Reference: {fileId}`. Tests:
+> `lib/__tests__/chunk-failure-message.test.ts`. Run files:
+> `.opencode/skills/plan-fix/runs/20261010-1100-u1.md` → `20261010-1500-u4-invariant-fileid.md`.
+> ⭐ What the spec left open is **verification**, not code — tracked in `TODO.md` (the browser
+> passes and the drift alarm's live fire).
 
 ---
 
 # 1. Purpose
 
-A failed import chunk currently tells the admin a status code and nothing else. The only way to
+A failed import chunk **used to** tell the admin a status code and nothing else. The only way to
 learn *why* is to open Vercel's runtime logs and read a 62 KB HTML error page keyed by an opaque
 request id. This spec makes the failure legible in the product, and makes the platform's two
 timeout knobs (`maxDuration` and the client's own timer) agree with each other.

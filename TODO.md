@@ -15,14 +15,20 @@ one per session, or none),
 `specs/evaluation-results-cache.md` (the cache contract),
 `specs/evaluation-results-attribution.md` (the attribution contract — §1.10, §3.21, S6.1, D7–D9),
 `specs/evaluation-results-export.md` (the export contract — both grains, **v6.0**, 2026-10-22:
-Part I v4.0 done · Part II the **department ZIP**, D20–D29, spec'd + measured + half-built).
+Part I v4.0 done · Part II the **department ZIP**, D20–D29, ⭐ **the API built — no button yet**).
 
 ## NEXT (do first)
 
 - [ ] **The consolidated Excel export — the department-faculty grain. The shape changed (a **ZIP**,
-  not a stacked workbook); the contract is written and measured and the pieces are built — but
-  ⭐ **no route serves it and no button exists**. Next: the two routes, then the surface, then the
-  Excel proof.**
+  not a stacked workbook); the contract is written and measured and ⭐ **the API is built** (the
+  assembly + the two routes + their cases) — but ⭐ **no button exists**. Next: the surface (the
+  buttons + the scope picker), then the owner's curl/unzip proof, and the timing is still
+  unmeasured (the guard bounds the size, not the time).**
+  ⭐ **The API (05a + 05b, 2026-10-22):** `GET /api/admin/evaluation-results/export/excel`
+  (⭐ `departmentIds` **required**; `facultyId?`) and
+  `GET /api/dean/evaluation-results/export/excel` (their own department; a foreign id → **403**) —
+  a ZIP, or a loud refusal (**400** too large / unknown id · **403** foreign department / inactive
+  period · **404** period).
   Contract: **`specs/evaluation-results-export.md` Part II (v6.0, §15–26)** — the owner's decisions
   **D20–D29**: the download is a **ZIP** — **department folder → faculty folder → subject (and
   section)**; the workbooks are **Part I's, verbatim** (each keeps its Comments sheet and its

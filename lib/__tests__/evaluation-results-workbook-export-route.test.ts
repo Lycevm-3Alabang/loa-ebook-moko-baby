@@ -6,6 +6,7 @@ const mockHasRole = vi.hoisted(() => vi.fn())
 const mockLogServerError = vi.hoisted(() => vi.fn())
 const mockBuildSubjectWorkbook = vi.hoisted(() => vi.fn())
 const mockGetSubjectResultSet = vi.hoisted(() => vi.fn())
+const mockGetDepartmentResults = vi.hoisted(() => vi.fn())
 const mockDeptRepo = vi.hoisted(() => ({ findByDeanId: vi.fn(), findById: vi.fn() }))
 const mockFsRepo = vi.hoisted(() => ({ findById: vi.fn() }))
 const mockUserRepo = vi.hoisted(() => ({ findById: vi.fn() }))
@@ -31,10 +32,17 @@ vi.mock("@/lib/repositories/factory", () => ({
 }))
 vi.mock("@/features/evaluation-results/evaluation-results.service", () => ({
   getSubjectResultSet: mockGetSubjectResultSet,
+  getDepartmentSubjectResults: mockGetDepartmentResults,
 }))
+// ⭐ the mock mirrors the real class: the status comes from the throw site,
+// and the route answers with it
 vi.mock("@/features/evaluation-results/evaluation-results.repository", () => ({
   EvaluationPeriodInactiveError: class extends Error {
-    status = 409
+    status: number
+    constructor(message: string, status: number) {
+      super(message)
+      this.status = status
+    }
   },
 }))
 // The BUILDER is mocked: the ROUTE's job is to hand it the result set, the
@@ -46,6 +54,10 @@ vi.mock("@/lib/xlsx/letterhead", () => ({ loadLetterhead: () => new Uint8Array([
 import { GET as adminGET } from "@/app/api/admin/evaluation-results/departments/[departmentId]/groups/[facultySubjectId]/export/route"
 import { GET as deanGET } from "@/app/api/dean/evaluation-results/departments/[departmentId]/groups/[facultySubjectId]/export/route"
 import { GET as facultyGET } from "@/app/api/faculty/evaluation-results/subjects/[facultySubjectId]/export/route"
+import { GET as adminDeptZipGET } from "@/app/api/admin/evaluation-results/export/excel/route"
+import { GET as deanDeptZipGET } from "@/app/api/dean/evaluation-results/export/excel/route"
+import { EvaluationPeriodInactiveError } from "@/features/evaluation-results/evaluation-results.repository"
+import { readZip } from "@/lib/xlsx-template"
 
 const FACULTY = {
   id: "f1",
@@ -109,6 +121,22 @@ function facultyParams(facultySubjectId: string) {
   return { params: Promise.resolve({ facultySubjectId }) }
 }
 
+/** One subject-section of the department — the drill-down's own row. */
+const DEPT_ROW = {
+  facultySubjectId: "fs1",
+  facultyId: "f1",
+  facultyName: "Dela Cruz",
+  facultyEmail: "d@x.com",
+  subjectCode: "IT101",
+  subjectName: "Introduction to Computing",
+  sectionProgram: "BSCS",
+  sectionName: "A",
+  avgRating: 4.25,
+  remarks: "Very Satisfactory",
+  highestRubrics: [{ key: "professionalManner", label: "Professional Manner", score: 4.5 }],
+  lowestRubrics: [{ key: "assessmentAndFeedback", label: "Assessment & Feedback", score: 4 }],
+}
+
 beforeEach(() => {
   vi.resetAllMocks()
   mockBuildSubjectWorkbook.mockImplementation(() => new Uint8Array([80, 75, 3, 4]))
@@ -146,6 +174,12 @@ beforeEach(() => {
   mockEvalResultRepo.assertPeriodIsActive.mockResolvedValue(undefined)
   mockEvalResultRepo.getVisibilityMap.mockResolvedValue(new Map([["f1", true]]))
   mockGetSubjectResultSet.mockResolvedValue(RESULT_SET)
+  mockGetDepartmentResults.mockResolvedValue({
+    subjects: [DEPT_ROW],
+    facultyAggregates: { f1: { avgRating: 4.25, remarks: "Very Satisfactory" } },
+    members: [{ id: "f1", name: "Dela Cruz", email: "d@x.com" }],
+    departmentAggregate: null,
+  })
 })
 
 describe("the workbook export routes", () => {
@@ -199,5 +233,92 @@ describe("the workbook export routes", () => {
     const res = await facultyGET(req("?evaluationPeriodId=p1"), facultyParams("fs1"))
     expect(res.status).toBe(403)
     expect(mockBuildSubjectWorkbook).not.toHaveBeenCalled()
+  })
+})
+
+// ⭐ the department ZIP — the two routes that serve it. An API, not a button:
+// the surface is its own slice.
+describe("the department ZIP routes", () => {
+  it("the admin gets the ZIP for the scope", async () => {
+    const res = await adminDeptZipGET(req("?evaluationPeriodId=p1&departmentIds=d1"))
+    expect(res.status).toBe(200)
+    expect(res.headers.get("content-type")).toBe("application/zip")
+    expect(res.headers.get("content-disposition")).toContain("evaluation-results-p1.zip")
+    // ⭐ the entries are the tree — the department folder → the member → the
+    // subject workbook, and the member's consolidated file
+    const parts = readZip(new Uint8Array(await res.arrayBuffer()))
+    expect([...parts.keys()]).toEqual([
+      "CCS/Dela Cruz/IT101_BSCS-A_evaluation.xlsx",
+      "CCS/Dela Cruz/Dela Cruz_summary.xlsx",
+    ])
+  })
+
+  it("the scope is required — 'all departments' is not one download", async () => {
+    const res = await adminDeptZipGET(req("?evaluationPeriodId=p1"))
+    expect(res.status).toBe(400)
+    expect(mockGetDepartmentResults).not.toHaveBeenCalled()
+  })
+
+  it("the period is required", async () => {
+    const res = await adminDeptZipGET(req("?departmentIds=d1"))
+    expect(res.status).toBe(400)
+  })
+
+  it("a non-admin is refused", async () => {
+    mockRequireAdmin.mockResolvedValue(new Response("Forbidden", { status: 403 }))
+    const res = await adminDeptZipGET(req("?evaluationPeriodId=p1&departmentIds=d1"))
+    expect(res.status).toBe(403)
+    expect(mockGetDepartmentResults).not.toHaveBeenCalled()
+  })
+
+  it("an unknown department is refused — the download must not quietly shrink", async () => {
+    mockDeptRepo.findById.mockResolvedValue(null)
+    const res = await adminDeptZipGET(req("?evaluationPeriodId=p1&departmentIds=d1"))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toContain("d1")
+  })
+
+  it("the size guard refuses loudly, with the count and the estimate", async () => {
+    const many = Array.from({ length: 97 }, (_, i) => ({ ...DEPT_ROW, facultySubjectId: `fs${i}` }))
+    mockGetDepartmentResults.mockResolvedValue({
+      subjects: many,
+      facultyAggregates: {},
+      members: [{ id: "f1", name: "Dela Cruz", email: "d@x.com" }],
+      departmentAggregate: null,
+    })
+    const res = await adminDeptZipGET(req("?evaluationPeriodId=p1&departmentIds=d1"))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toContain("97 subject-sections")
+    expect(body.error).toContain("4.1 MB")
+  })
+
+  it("the dean gets their own department", async () => {
+    const res = await deanDeptZipGET(req("?evaluationPeriodId=p1"))
+    expect(res.status).toBe(200)
+    const parts = readZip(new Uint8Array(await res.arrayBuffer()))
+    expect([...parts.keys()]).toContain("CCS/Dela Cruz/IT101_BSCS-A_evaluation.xlsx")
+  })
+
+  it("a foreign department is a 403 — the export is not a way around the read route's", async () => {
+    const res = await deanDeptZipGET(req("?evaluationPeriodId=p1&departmentIds=d2"))
+    expect(res.status).toBe(403)
+    expect(mockGetDepartmentResults).not.toHaveBeenCalled()
+  })
+
+  it("the dean's period must be the active one", async () => {
+    mockEvalResultRepo.assertPeriodIsActive.mockRejectedValue(
+      new EvaluationPeriodInactiveError("Results for this period are not available", 403),
+    )
+    const res = await deanDeptZipGET(req("?evaluationPeriodId=p1"))
+    expect(res.status).toBe(403)
+    expect(mockGetDepartmentResults).not.toHaveBeenCalled()
+  })
+
+  it("a dean without a department gets nothing", async () => {
+    mockDeptRepo.findByDeanId.mockResolvedValue(null)
+    const res = await deanDeptZipGET(req("?evaluationPeriodId=p1"))
+    expect(res.status).toBe(404)
   })
 })

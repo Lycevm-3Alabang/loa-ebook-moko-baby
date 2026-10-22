@@ -45,6 +45,7 @@ export type DepartmentZipResult =
   | { ok: true; bytes: Uint8Array; failures: string[]; count: number }
   | { ok: false; reason: "too-large"; count: number; estimateBytes: number; limitBytes: number }
   | { ok: false; reason: "unknown-department"; departmentId: string }
+  | { ok: false; reason: "unknown-faculty"; facultyId: string; departmentId: string }
   | { ok: false; reason: "nothing-to-export"; count: number }
 
 /** A name a ZIP entry can carry. */
@@ -108,6 +109,19 @@ export async function buildDepartmentZip(
   for (const department of departments) {
     const results = await getDepartmentSubjectResults(period.id, department.id)
     loaded.push({ department, results })
+  }
+
+  // ⭐ a faculty that is not a member of the scope is REFUSED, not skipped —
+  // an empty ZIP would be a quiet wrong artifact (the same rule as the unknown
+  // department). ⭐ The members come from the read above, so the check costs
+  // no round trip.
+  if (options.facultyId) {
+    const facultyId = options.facultyId
+    for (const { department, results } of loaded) {
+      if (!results.members.some((member) => member.id === facultyId)) {
+        return { ok: false, reason: "unknown-faculty", facultyId, departmentId: department.id }
+      }
+    }
   }
 
   const count = loaded.reduce((sum, entry) => {
@@ -205,4 +219,62 @@ export async function buildDepartmentZip(
   }
 
   return { ok: true, bytes: createDeflatedZip(entries), failures, count }
+}
+
+/**
+ * ⭐ The verdict — what the route should answer.
+ *
+ * ⭐ The feature decides WHAT (the status, the message); the route decides HOW
+ * (the NextResponse). ⭐ The two routes cannot disagree about a refusal,
+ * because there is only one verdict.
+ */
+export type DepartmentZipVerdict =
+  | { kind: "zip"; bytes: Uint8Array }
+  | { kind: "refusal"; status: number; error: string }
+
+/**
+ * How a byte count reads to a human — rounded UP, so an estimate never reads
+ * smaller than it is.
+ */
+function megabytes(bytes: number): string {
+  return `${(Math.ceil(bytes / 100_000) / 10).toFixed(1)} MB`
+}
+
+/**
+ * The verdict for a result.
+ *
+ * ⭐ A refusal is LOUD: it names the count, the estimate and the way out.
+ * ⭐ A silent refusal is a wrong artifact — the school would read a smaller
+ * download as the whole truth (Lesson 7b).
+ */
+export function verdictForDepartmentZip(result: DepartmentZipResult): DepartmentZipVerdict {
+  if (result.ok) return { kind: "zip", bytes: result.bytes }
+
+  switch (result.reason) {
+    case "too-large":
+      return {
+        kind: "refusal",
+        status: 400,
+        error:
+          `This export is too large — ${result.count} subject-sections ≈ ` +
+          `${megabytes(result.estimateBytes)} (the limit is ${megabytes(result.limitBytes)}). ` +
+          "Export one department at a time, or one faculty.",
+      }
+    case "unknown-department":
+      return {
+        kind: "refusal",
+        status: 400,
+        error: `Unknown department: ${result.departmentId} — nothing was exported.`,
+      }
+    case "unknown-faculty":
+      return {
+        kind: "refusal",
+        status: 400,
+        error:
+          `Unknown faculty: ${result.facultyId} is not a member of ${result.departmentId} — ` +
+          "nothing was exported.",
+      }
+    case "nothing-to-export":
+      return { kind: "refusal", status: 404, error: "Evaluation period not found" }
+  }
 }
