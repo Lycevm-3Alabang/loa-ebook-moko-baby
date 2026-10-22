@@ -531,7 +531,12 @@ export const evaluationRepository: IEvaluationRepository = {
       .eq("evaluateeId", evaluateeId)
       .eq("facultySubjectId", facultySubjectId)
       .eq("status", "SUBMITTED")
-      .order("submittedAt", { ascending: true })
+      // ⭐ a TOTAL order: "createdAt" is NOT NULL and id is the primary key,
+      // so the pair orders every row. The old ("submittedAt") left the NULL
+      // submittedAt's unordered — so two exports of the same data could print
+      // the responses in a different order, and nothing ever failed.
+      .order("createdAt", { ascending: true })
+      .order("id", { ascending: true })
     if (error) throw error
     return (data || []) as EvaluationDetailItem[]
   },
