@@ -1,4 +1,5 @@
 import { createZip } from "./zip"
+import { orDash } from "./xlsx/form-model"
 import {
   SHEET_COMMENTS,
   SHEET_INDIVIDUAL,
@@ -385,8 +386,4 @@ export function buildEvaluationWorkbook(input: EvalFormInput): Uint8Array {
   return createZip(entries)
 }
 
-/** A dash for a value that is not there - never a blank, never a guess. */
-export function orDash(value: string | null | undefined): string {
-  const text = (value ?? "").trim()
-  return text === "" ? "—" : text
-}
+export { orDash }
