@@ -10,20 +10,32 @@ Gate for every item: `npx tsc --noEmit` → `npm run lint` → `npx vitest run`
 
 Context: `specs/README.md` ("Next Session — Start Here" + status table),
 `.opencode/skills/plan-fix/runs/20261009-1743-student-import-c1.md` (defect ledger),
-`docs/evaluation-export-handover.md` (the Excel export's handover — **current**; one per
-session, or none),
+`docs/evaluation-export-department-handover.md` (the Excel export's handover — **current**;
+one per session, or none),
 `specs/evaluation-results-cache.md` (the cache contract),
 `specs/evaluation-results-attribution.md` (the attribution contract — §1.10, §3.21, S6.1, D7–D9),
-`specs/evaluation-results-export.md` (the export contract — the Excel workbook, 2026-10-22).
+`specs/evaluation-results-export.md` (the export contract — both grains, v5.0, 2026-10-22).
 
 ## NEXT (do first)
 
+- [ ] **The consolidated Excel export — the department-faculty grain. Spec'd 2026-10-22, not
+  built.**
+  Contract: **`specs/evaluation-results-export.md` Part II (v5.0, §15–26)** — the owner's
+  decisions **D20–D26**: one workbook per **department** (one button on the drill-down, admin +
+  the dean twin); the "Individual" sheet **stacked, one full form per subject-section** (Part
+  I's rows untouched); **no Comments sheet**; the "Overall" sheet is a **new summary model** —
+  one row per subject-section under a per-faculty band (Subject | Section | Avg Rating |
+  Highest | Lowest — the department page's cards as rows); the dept page's **coverage**
+  (unevaluated sections print "—"); Highest/Lowest print **every tie**.
+  Entry point: **`docs/evaluation-export-department-handover.md`** — where the work stands, the
+  slice order (§24) and what not to redo.
+
 - [x] **The Excel export — the workbook is GENERATED from scratch, and the routes serve it. Done
   2026-10-22 (the Excel proof is the owner's).**
-  Contract: **`specs/evaluation-results-export.md` (v4.0)** — the three sheets' shapes, the field
-  contract, the arithmetic, the routes and the proofs. Entry point:
-  **`docs/evaluation-export-handover.md`** — where the work stands, what changed for the school,
-  what is deferred and what not to redo.
+  Contract: **`specs/evaluation-results-export.md` (Part I, v4.0; v5.0 adds Part II)** — the
+  three sheets' shapes, the field contract, the arithmetic, the routes and the proofs. Entry
+  point: **`docs/evaluation-export-department-handover.md`** (the single handover; the old
+  subject-grain note was deleted 2026-10-22).
   ⭐ **What shipped:** the workbook is **generated** — `lib/xlsx/` (the style table, the writer, the
   form model and one renderer per sheet) — and the three export routes (admin, dean, the faculty's
   own) build from it. The donor (`lib/evaluation-form-xlsx.ts`) is **deleted**, `lib/xlsx-template.ts`
