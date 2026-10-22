@@ -12,7 +12,7 @@
 
 ## Commands
 
-> **Note (H1):** These are for the **user to run** — never execute them yourself. Present them copy-paste ready in PowerShell-compatible form.
+> **Note (H1):** These are for the **user to run** — never execute them yourself. Present them copy-paste ready, in **the user's platform's** shell syntax (see H1). The **`gate-and-commit` skill** is the one exception: it runs the gate and commits.
 
 | Command | Action |
 |---------|--------|
@@ -237,16 +237,21 @@ Renaming DB columns cascade through the full TypeScript stack:
 
 ## Hard Rules
 
-### H1. NEVER run CLI commands
+### H1. NEVER run CLI commands — except the `gate-and-commit` skill
 
 - **Absolute rule:** Do NOT execute shell/CLI commands (build, test, lint, npm, git, etc.). Do not run them "just to verify."
 - Instead, **provide copy-paste-ready commands** the user can paste into their terminal.
-- All provided commands must be **PowerShell-compatible** (Windows). Avoid bash-only syntax (`&&`, `export VAR=...`, `cp`, `sed`, etc.). Use PowerShell equivalents:
-  - Chaining: `cmd1; if ($?) { cmd2 }`
-  - Env vars: `$env:NAME = "value"`
-  - Copy: `Copy-Item`
-  - Replace: `-replace` operator or no inline sed
-- Format them in a fenced code block so the user can copy them verbatim.
+- ⭐ **Determine the platform first** — it decides the syntax, and guessing wrong makes the commands
+  unrunnable. The environment states it; if it is unknown, ask. **Never mix two shells' syntax.**
+  | Platform | Chaining | Env var | Copy | Replace |
+  |---|---|---|---|---|
+  | **bash / zsh** (Linux, macOS) | `cmd1 && cmd2` | `NAME="value" cmd` | `cp` | `sed` |
+  | **PowerShell** (Windows) | `cmd1; if ($?) { cmd2 }` | `$env:NAME = "value"` | `Copy-Item` | `-replace` operator |
+- Give the commands in **the user's** shell's syntax, in a fenced code block so they can copy them verbatim.
+- ⭐ **The one exception:** the **`gate-and-commit` skill** (`.opencode/skills/gate-and-commit/SKILL.md`)
+  is the owner's sanctioned exception — it runs the gate (`tsc` → `lint` → `vitest`) and commits when
+  everything is green, **without pushing**. It exists because the owner asked for a workflow that
+  verifies and commits in one go. Every other rule here still applies to it.
 
 ### H2. Calibrate, don't overthink
 
@@ -309,6 +314,6 @@ Renaming DB columns cascade through the full TypeScript stack:
 - **No autopilot** — prohibited unless requested: refactoring, renaming, restructuring, file movement/deletion, dependency install, arch changes, DB changes, API redesign, new features, cleanup, optimization, test gen, docs updates.
 - **Code review first** — point to files, methods, root causes. Do not rewrite code immediately.
 - **Proposal format** — for changes >20 lines: Understanding, Questions, Recommendation, Files Affected, Risks, then await approval.
-- **Implementation checklist** — no unused imports, no `console.log`, no `any`, no `ts-ignore`, error handling present. Provide the user copy-paste PowerShell commands to verify TypeScript/build/lint themselves (per H1 — do not run them).
+- **Implementation checklist** — no unused imports, no `console.log`, no `any`, no `ts-ignore`, error handling present. Provide the user copy-paste commands to verify TypeScript/build/lint themselves, in their platform's shell syntax (per H1 — do not run them).
 
 
