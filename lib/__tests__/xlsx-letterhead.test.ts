@@ -15,6 +15,7 @@ describe("the letterhead", () => {
   it("is traced into the serverless bundle", () => {
     // ⭐ a file the server reads BY PATH is invisible to Next's tracing
     const includes = nextConfig.outputFileTracingIncludes?.["/api/**/*"] ?? []
-    expect(includes).toContain("./public/logo-blk.png")
+    // and the trace and the loader must name the SAME file
+    expect(includes).toContain(`./${LETTERHEAD_PATH}`)
   })
 })
