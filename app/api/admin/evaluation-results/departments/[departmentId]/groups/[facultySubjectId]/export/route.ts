@@ -5,7 +5,6 @@ import {
   facultySubjectRepository,
   userRepository,
   subjectRepository,
-  departmentRepository,
   evaluationPeriodRepository,
   sectionRepository,
   rubricRepository,
@@ -14,7 +13,8 @@ import {
   isSubjectInDepartment,
 } from "@/lib/evaluation-utils"
 import { getSubjectResultSet } from "@/features/evaluation-results/evaluation-results.service"
-import { buildEvaluationWorkbook } from "@/lib/evaluation-form-xlsx"
+import { buildEvaluationWorkbook } from "@/lib/xlsx/workbook"
+import { loadLetterhead } from "@/lib/xlsx/letterhead"
 
 export const maxDuration = 60
 
@@ -35,10 +35,9 @@ export async function GET(
     const fsData = await facultySubjectRepository.findById(facultySubjectId)
     if (!fsData) return NextResponse.json({ error: "Faculty-subject not found" }, { status: 404 })
 
-    const [faculty, subject, dept, section, period] = await Promise.all([
+    const [faculty, subject, section, period] = await Promise.all([
       userRepository.findById(fsData.faculty_id),
       subjectRepository.findById(fsData.subject_id),
-      departmentRepository.findById(departmentId),
       fsData.section_id ? sectionRepository.findById(fsData.section_id) : Promise.resolve(null),
       evaluationPeriodRepository.findById(evaluationPeriodId),
     ])
@@ -69,21 +68,26 @@ export async function GET(
     }))
 
     const bytes = buildEvaluationWorkbook({
-      employeeNo: faculty?.employeeNo ?? null,
-      facultyName: faculty?.name ?? "Unknown",
-      program: section?.program ?? null,
-      sectionName: section?.name ?? null,
-      subjectCode: subject?.code ?? "",
-      subjectName: subject?.name ?? "",
-      departmentName: dept?.name ?? "Department",
-      departmentCode: dept?.code ?? "",
-      semesterTitle: period?.semesterTitle ?? null,
-      evaluationPeriodName: period?.name ?? null,
-      avgRating: resultSet.summary.avgRating,
-      remarks: resultSet.summary.remarks,
-      totalRespondents: resultSet.summary.totalRespondents,
-      criteria,
-      comments: resultSet.comments,
+      form: {
+        semesterTitle: period.semesterTitle ?? null,
+        evaluationPeriodName: period.name ?? null,
+        employeeNo: faculty?.employeeNo ?? null,
+        facultyName: faculty?.name ?? "Unknown",
+        program: section?.program ?? null,
+        sectionName: section?.name ?? null,
+        subject: subject ? { code: subject.code, name: subject.name } : null,
+        avgRating: resultSet.summary.avgRating,
+        remarks: resultSet.summary.remarks,
+        totalRespondents: resultSet.summary.totalRespondents,
+        criteria,
+      },
+      // ⭐ the letterhead is decoration — a missing logo must not fail the export
+      logo: loadLetterhead(),
+      // the Comments sheet: the texts only (no date, by the owner's decision)
+      comments: resultSet.comments.map((comment) => comment.comment),
+      // ⭐ the rows carry the LIVE per-response map, so the Overall sheet's
+      // columns follow the rubric with the values under them — no second query
+      responses: resultSet.evaluations,
     })
 
     return new NextResponse(bytes as unknown as BodyInit, {

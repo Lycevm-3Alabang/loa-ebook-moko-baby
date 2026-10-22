@@ -5,7 +5,6 @@ import {
   facultySubjectRepository,
   userRepository,
   subjectRepository,
-  departmentRepository,
   evaluationPeriodRepository,
   sectionRepository,
   rubricRepository,
@@ -13,7 +12,8 @@ import {
 } from "@/lib/repositories/factory"
 import { EvaluationPeriodInactiveError } from "@/features/evaluation-results/evaluation-results.repository"
 import { getSubjectResultSet } from "@/features/evaluation-results/evaluation-results.service"
-import { buildEvaluationWorkbook } from "@/lib/evaluation-form-xlsx"
+import { buildEvaluationWorkbook } from "@/lib/xlsx/workbook"
+import { loadLetterhead } from "@/lib/xlsx/letterhead"
 
 export const maxDuration = 60
 
@@ -54,12 +54,6 @@ export async function GET(
       fsData.section_id ? sectionRepository.findById(fsData.section_id) : Promise.resolve(null),
     ])
 
-    let deptInfo = { id: "", name: "", code: "" }
-    if (facultyUser.departmentId) {
-      const dept = await departmentRepository.findById(facultyUser.departmentId)
-      if (dept) deptInfo = dept
-    }
-
     if (!period) return NextResponse.json({ error: "periodId is required" }, { status: 400 })
 
     const rubricCategories = period.rubricGroupId
@@ -82,21 +76,26 @@ export async function GET(
     }))
 
     const bytes = buildEvaluationWorkbook({
-      employeeNo: facultyUser.employeeNo,
-      facultyName: facultyUser.name,
-      program: section?.program ?? null,
-      sectionName: section?.name ?? null,
-      subjectCode: subject?.code ?? "",
-      subjectName: subject?.name ?? "",
-      departmentName: deptInfo.name || "Department",
-      departmentCode: deptInfo.code,
-      semesterTitle: period.semesterTitle ?? null,
-      evaluationPeriodName: period.name ?? null,
-      avgRating: resultSet.summary.avgRating,
-      remarks: resultSet.summary.remarks,
-      totalRespondents: resultSet.summary.totalRespondents,
-      criteria,
-      comments: resultSet.comments,
+      form: {
+        semesterTitle: period.semesterTitle ?? null,
+        evaluationPeriodName: period.name ?? null,
+        employeeNo: facultyUser.employeeNo,
+        facultyName: facultyUser.name,
+        program: section?.program ?? null,
+        sectionName: section?.name ?? null,
+        subject: subject ? { code: subject.code, name: subject.name } : null,
+        avgRating: resultSet.summary.avgRating,
+        remarks: resultSet.summary.remarks,
+        totalRespondents: resultSet.summary.totalRespondents,
+        criteria,
+      },
+      // ⭐ the letterhead is decoration — a missing logo must not fail the export
+      logo: loadLetterhead(),
+      // the Comments sheet: the texts only (no date, by the owner's decision)
+      comments: resultSet.comments.map((comment) => comment.comment),
+      // ⭐ the rows carry the LIVE per-response map, so the Overall sheet's
+      // columns follow the rubric with the values under them — no second query
+      responses: resultSet.evaluations,
     })
 
     return new NextResponse(bytes as unknown as BodyInit, {
