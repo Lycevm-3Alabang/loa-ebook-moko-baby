@@ -81,6 +81,8 @@ export type StyleToken =
   | "totalValue"
   | "finalLabel"
   | "finalValue"
+  | "banner"
+  | "comment"
 
 const GOTHIC = "Century Gothic"
 const TEXT = "FF000000"
@@ -114,6 +116,8 @@ const FORMATS: Record<StyleToken, FormatSpec> = {
   totalValue:      { font: { name: GOTHIC, size: 11, bold: true }, align: { horizontal: "center", vertical: "center" }, numFmt: "accounting" },
   finalLabel:      { font: { name: GOTHIC, size: 11, bold: true }, border: { right: true }, align: { horizontal: "right", vertical: "center" } },
   finalValue:      { font: { name: GOTHIC, size: 12, bold: true }, border: BOX, align: { horizontal: "center", vertical: "center" }, numFmt: "accounting" },
+  banner:          { font: { name: GOTHIC, size: 9, bold: true }, border: { top: true }, align: { horizontal: "center" } },
+  comment:         { font: { name: GOTHIC, size: 8 }, align: { horizontal: "left", vertical: "center", wrap: true } },
 }
 
 /** The tokens, in the order their cell formats appear in styles.xml. */

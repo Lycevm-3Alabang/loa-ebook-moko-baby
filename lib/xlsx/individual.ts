@@ -1,6 +1,7 @@
-import { EMU_PER_MM, type CellSpec, type PictureSpec, type RowSpec, type SheetSpec } from "./writer"
+import { EMU_PER_MM, type PictureSpec, type RowSpec, type SheetSpec } from "./writer"
 import { ROW_ONE_LINE, type FormRow } from "./form-model"
 import type { StyleToken } from "./styles"
+import { COLUMNS, cell, fieldCells, fieldMerges, spread } from "./rows"
 
 /**
  * The Individual sheet's RENDERER — the model drawn as the sheet.
@@ -16,8 +17,6 @@ import type { StyleToken } from "./styles"
  * from the cells themselves, which is why an empty cell in a styled row still
  * carries the row's style.
  */
-
-const COLUMNS = ["A", "B", "C", "D", "E", "F", "G", "H", "I"]
 
 /** The columns' widths — the legacy's own. */
 const COLUMN_SPECS = [
@@ -100,67 +99,36 @@ export function renderIndividualSheet(input: IndividualSheetInput): SheetSpec {
 
   input.rows.forEach((model, index) => {
     const row = index + 1
-    const cell = (col: string, style: StyleToken, value?: string | number | null): CellSpec => ({
-      ref: `${col}${row}`,
-      style,
-      value: value ?? null,
-    })
-    /** A row of cells in one style; the value goes in the first of them. */
-    const spread = (
-      style: StyleToken,
-      value: string | number | null,
-      columns: string[] = COLUMNS,
-    ): CellSpec[] => columns.map((col, i) => cell(col, style, i === 0 ? value : null))
 
     switch (model.kind) {
       case "band":
-        rows.push({ row, height: model.height, cells: spread("band", null) })
+        rows.push({ row, height: model.height, cells: spread(row, "band", null) })
         merges.push(`A${row}:I${row}`)
         break
 
       case "title":
-        rows.push({ row, height: ROW_ONE_LINE, cells: spread("title", model.text) })
+        rows.push({ row, height: ROW_ONE_LINE, cells: spread(row, "title", model.text) })
         merges.push(`A${row}:I${row}`)
         break
 
       case "subtitle":
-        rows.push({ row, height: ROW_ONE_LINE, cells: spread("subtitle", model.text) })
+        rows.push({ row, height: ROW_ONE_LINE, cells: spread(row, "subtitle", model.text) })
         merges.push(`A${row}:I${row}`)
         break
 
       case "field":
-      case "fieldPair": {
-        const left = model.kind === "field" ? model : model.left
-        const right = model.kind === "fieldPair" ? model.right : null
-        // a number prints with the rating's two-decimal format; a text does not
-        const rightStyle: StyleToken = right && typeof right.value === "number" ? "ratingValue" : "remarksValue"
-        rows.push({
-          row,
-          height: ROW_ONE_LINE,
-          cells: [
-            cell("A", "fieldLabel", left.label),
-            cell("B", "fieldValue", left.value),
-            cell("C", "fieldValue"),
-            cell("D", "fieldValue"),
-            cell("E", "fieldValue"),
-            cell("F", "fieldValue"),
-            cell("G", "fieldValueRight", right ? right.label : null),
-            cell("H", right ? rightStyle : "fieldValue", right ? right.value : null),
-            cell("I", right ? rightStyle : "fieldValue"),
-          ],
-        })
-        merges.push(`B${row}:F${row}`)
-        if (right) merges.push(`H${row}:I${row}`)
+      case "fieldPair":
+        rows.push({ row, height: ROW_ONE_LINE, cells: fieldCells(row, model) })
+        merges.push(...fieldMerges(row, model))
         break
-      }
 
       case "criterion":
         rows.push({
           row,
           height: ROW_ONE_LINE,
           cells: [
-            ...spread("criterion", model.heading, COLUMNS.slice(0, 8)),
-            cell("I", "criterionRating", "RATING"),
+            ...spread(row, "criterion", model.heading, COLUMNS.slice(0, 8)),
+            cell(row, "I", "criterionRating", "RATING"),
           ],
         })
         merges.push(`A${row}:H${row}`)
@@ -172,8 +140,8 @@ export function renderIndividualSheet(input: IndividualSheetInput): SheetSpec {
           row,
           height: model.height,
           cells: [
-            ...spread(style, model.text, COLUMNS.slice(0, 8)),
-            cell("I", "statementRating", model.value),
+            ...spread(row, style, model.text, COLUMNS.slice(0, 8)),
+            cell(row, "I", "statementRating", model.value),
           ],
         })
         merges.push(`A${row}:H${row}`)
@@ -185,15 +153,15 @@ export function renderIndividualSheet(input: IndividualSheetInput): SheetSpec {
           row,
           height: ROW_ONE_LINE,
           cells: [
-            ...spread("averageLabel", model.label, COLUMNS.slice(0, 8)),
-            cell("I", "averageValue", model.value),
+            ...spread(row, "averageLabel", model.label, COLUMNS.slice(0, 8)),
+            cell(row, "I", "averageValue", model.value),
           ],
         })
         merges.push(`A${row}:H${row}`)
         break
 
       case "spacer":
-        rows.push({ row, height: ROW_ONE_LINE, cells: spread("spacer", null) })
+        rows.push({ row, height: ROW_ONE_LINE, cells: spread(row, "spacer", null) })
         break
 
       case "total":
@@ -201,9 +169,9 @@ export function renderIndividualSheet(input: IndividualSheetInput): SheetSpec {
           row,
           height: ROW_ONE_LINE,
           cells: [
-            ...spread("totalLabel", null, COLUMNS.slice(0, 7)),
-            cell("H", "totalLabel", model.label),
-            cell("I", "totalValue", model.value),
+            ...spread(row, "totalLabel", null, COLUMNS.slice(0, 7)),
+            cell(row, "H", "totalLabel", model.label),
+            cell(row, "I", "totalValue", model.value),
           ],
         })
         break
@@ -213,14 +181,17 @@ export function renderIndividualSheet(input: IndividualSheetInput): SheetSpec {
           row,
           height: ROW_ONE_LINE,
           cells: [
-            ...spread("finalLabel", null, COLUMNS.slice(0, 6)),
-            cell("G", "finalLabel", model.label),
-            cell("H", "finalLabel"),
-            cell("I", "finalValue", model.value),
+            ...spread(row, "finalLabel", null, COLUMNS.slice(0, 6)),
+            cell(row, "G", "finalLabel", model.label),
+            cell(row, "H", "finalLabel"),
+            cell(row, "I", "finalValue", model.value),
           ],
         })
         merges.push(`G${row}:H${row}`)
         break
+
+      default:
+        throw new Error(`the Individual sheet has no "${model.kind}" row`)
     }
   })
 

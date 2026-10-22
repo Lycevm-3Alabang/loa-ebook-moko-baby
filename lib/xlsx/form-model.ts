@@ -23,8 +23,16 @@ export interface FormCriterion {
   statements: { text: string; avg: number | null }[]
 }
 
-/** What the form shows about the teacher and the teaching. */
-export interface FormInput {
+/**
+ * What the form says about the teacher and the teaching — the IDENTITY BLOCK.
+ *
+ * ⭐ It is stated once, because the sheets differ in what they add: the
+ * Individual form adds the program, the section and the subject; the Comments
+ * sheet adds the banner. The legacy's own comments sheet had no program or
+ * section, and the cut's attempt to add them put the SECTION on the banner's
+ * row — where the banner's merge swallowed it.
+ */
+export interface Identity {
   /** the semester's title, e.g. "SY 2026-2027 First Semester" */
   semesterTitle: string | null
   /** the evaluation period's name */
@@ -33,16 +41,20 @@ export interface FormInput {
   employeeNo: string | null
   /** the teacher's name */
   facultyName: string | null
+  /** the general rating — the mean of the criterion averages */
+  avgRating: number | null
+  /** the general rating's remark */
+  remarks: string | null
+}
+
+/** What the form shows about the teacher and the teaching. */
+export interface FormInput extends Identity {
   /** the program the row's section belongs to */
   program: string | null
   /** the row's section */
   sectionName: string | null
   /** the subject this form is about */
   subject: { code: string; name: string } | null
-  /** the general rating — the mean of the criterion averages */
-  avgRating: number | null
-  /** the general rating's remark */
-  remarks: string | null
   /** how many responses were counted */
   totalRespondents: number
   /** the criteria, in the rubric's order */
@@ -58,11 +70,17 @@ export type FormRow =
   | { kind: "title"; text: string }
   | { kind: "subtitle"; text: string }
   | { kind: "field"; label: string; value: FieldValue }
-  | { kind: "fieldPair"; left: { label: string; value: FieldValue }; right: { label: string; value: FieldValue } }
+  | {
+      kind: "fieldPair"
+      left: { label: string; value: FieldValue }
+      right: { label: string; value: FieldValue }
+    }
   | { kind: "criterion"; heading: string }
   | { kind: "statement"; text: string; value: number | null; first: boolean; height: number }
   | { kind: "average"; label: string; value: number | null }
   | { kind: "spacer" }
+  | { kind: "banner"; text: string }
+  | { kind: "comment"; text: string; height: number }
   | { kind: "total"; label: string; value: number | null }
   | { kind: "final"; label: string; value: number | null }
 
@@ -107,24 +125,42 @@ function statementHeight(text: string): number {
   return ROW_TWO_LINES + (lines - 2) * (ROW_TWO_LINES / 2)
 }
 
+/** The band — the row the letterhead hangs in. */
+export function bandRow(): FormRow {
+  return { kind: "band", height: BAND_HEIGHT }
+}
+
+/**
+ * The identity block — the title, the period's two lines and the teacher's two
+ * fields. The Comments sheet takes exactly these rows.
+ */
+export function identityRows(identity: Identity): FormRow[] {
+  return [
+    { kind: "title", text: FORM_TITLE },
+    { kind: "subtitle", text: `Semester: ${orDash(identity.semesterTitle)}` },
+    { kind: "subtitle", text: `Evaluation Period: ${orDash(identity.evaluationPeriodName)}` },
+    {
+      kind: "fieldPair",
+      left: { label: "Employee No", value: orDash(identity.employeeNo) },
+      right: { label: "Rating", value: identity.avgRating === null ? "—" : identity.avgRating },
+    },
+    {
+      kind: "fieldPair",
+      left: { label: "Employee Name", value: orDash(identity.facultyName) },
+      right: { label: "Remarks", value: identity.remarks === null ? "—" : identity.remarks },
+    },
+  ]
+}
+
+/** The identity block with the band above it — the Individual form's header. */
+export function headerRows(identity: Identity): FormRow[] {
+  return [bandRow(), ...identityRows(identity)]
+}
+
 /** The form, as a list of rows. */
 export function buildFormModel(input: FormInput): FormRow[] {
-  const rows: FormRow[] = []
+  const rows: FormRow[] = [...headerRows(input)]
 
-  rows.push({ kind: "band", height: BAND_HEIGHT })
-  rows.push({ kind: "title", text: FORM_TITLE })
-  rows.push({ kind: "subtitle", text: `Semester: ${orDash(input.semesterTitle)}` })
-  rows.push({ kind: "subtitle", text: `Evaluation Period: ${orDash(input.evaluationPeriodName)}` })
-  rows.push({
-    kind: "fieldPair",
-    left: { label: "Employee No", value: orDash(input.employeeNo) },
-    right: { label: "Rating", value: input.avgRating === null ? "—" : input.avgRating },
-  })
-  rows.push({
-    kind: "fieldPair",
-    left: { label: "Employee Name", value: orDash(input.facultyName) },
-    right: { label: "Remarks", value: input.remarks === null ? "—" : input.remarks },
-  })
   rows.push({ kind: "field", label: "Program", value: orDash(input.program) })
   rows.push({ kind: "field", label: "Section", value: orDash(input.sectionName) })
   if (input.subject) {
