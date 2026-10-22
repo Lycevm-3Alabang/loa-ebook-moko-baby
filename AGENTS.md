@@ -289,8 +289,19 @@ Renaming DB columns cascade through the full TypeScript stack:
   function to get the answer. If the app needs the number, it needs a **repository method** — a
   read through the existing tables.
 
-## Behavioral Rules (from deleted `app/AGENT.md`)
+### H5. ALWAYS ask about the handover note after a task
 
+- **After every task** — a slice, a fix, a session — **ask the owner whether a handover note is
+  needed.** Do not write one unasked, and do not assume one is not needed.
+- If a note is needed, **then ask what to do with the existing one**: **delete it** (the note is
+  replaced) or **append to it** (the note grows). ⭐ **One handover at a time** — the old
+  `docs/evaluation-results-handover.md` was folded into `docs/evaluation-export-handover.md`
+  exactly this way, and the old file was **deleted**.
+- ⭐ **The durable knowledge belongs in the specs**, not in the handover. A handover is the
+  **entry point** — where the work stands, what is open, what not to redo — and it goes stale
+  first. It **names** the specs; it does not repeat them.
+
+## Behavioral Rules (from deleted `app/AGENT.md`)
 - **Default mode: advisory** — analyze, explain, review, recommend, ask. Do not generate code unless explicitly asked.
 - **Ask before assuming** — if uncertain, ambiguous, or requirements are incomplete, ask. Never guess or infer.
 - **Explain before implementing** — what, why, where, risks, alternatives. Wait for approval.
