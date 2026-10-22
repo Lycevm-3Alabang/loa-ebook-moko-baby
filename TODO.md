@@ -420,7 +420,8 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
 > Supabase dashboard access, so the direct connection could never be opened and the list answered
 > **500**. The list's figures are now read **per department** through the app's own repositories
 > and **cached for five minutes** (`features/evaluation-results/figure-cache.ts`); the page fills a
-> row as its numbers arrive. Handover: `docs/evaluation-results-handover.md`; contract:
+> row as its numbers arrive. Handover: `docs/evaluation-results-handover.md` (deleted 2026-10-22 —
+> folded into `docs/evaluation-export-handover.md`); contract:
 > `specs/evaluation-results-cache.md`. ⭐ **The aggregate is gone from the app entirely** (the
 > report was its last consumer) — see "NEXT" above. What that does to the items below: the list and the drill-down now use
 > the **raw-row** path, so the `""` bucket **counts** toward Avg. Rating (the aggregate dropped it)
@@ -494,7 +495,8 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   route's `departmentAggregate.avgRating` + `totalResponses` (**before**) against the figures
   route's `avgRating` + `totalRespondents` (**after**, already on screen). If the two averages are
   equal, the gap is zero there and the slice is insurance rather than a fix.
-  The working note is `docs/evaluation-results-handover.md` §2; the run file is
+  The working note was `docs/evaluation-results-handover.md` §2 (deleted 2026-10-22 — folded into
+  `docs/evaluation-export-handover.md`); the run file is
   `.opencode/skills/plan-fix/runs/20261021-1800-open-gaps.md`.
   ⭐ **What landed (five steps, one commit each):** **(1)** the response set is decided in **one**
   read — `listDepartmentResponseSet` (the members, the period's submitted and enabled evaluations,
@@ -520,7 +522,8 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   dashboard access), so the choice is between a live read and a cached one. **Decided: live** — a
   detail page is opened for a reason and its numbers are read on demand, every time. Rule 3 of
   `specs/evaluation-results-cache.md`; the handover
-  (`docs/evaluation-results-handover.md` §2) records the consequence: the drill-down does not
+  (`docs/evaluation-results-handover.md` §2 — deleted 2026-10-22, folded into
+  `docs/evaluation-export-handover.md`) records the consequence: the drill-down does not
   filter `isDisabled` and is scoped to the term's assignments, so it — and the export's `summary.csv`,
   which shares its read — can differ from the results list in exactly those two cases (items 1 and
   2 below).
