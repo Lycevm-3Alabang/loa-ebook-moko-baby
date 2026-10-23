@@ -56,6 +56,7 @@ export default function AdminEvaluationResultsPage() {
   const [selectedPeriod, setSelectedPeriod] = useState("")
   const [sortKey, setSortKey] = useState<SortKey>("avgRating")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+  const [selectedDepartmentIds, setSelectedDepartmentIds] = useState<string[]>([])
 
   const { data: periodsData } = useApiGet<{ periods: Period[] }>("/api/evaluation-periods")
   const periods = useMemo(() => periodsData?.periods ?? [], [periodsData])
@@ -225,6 +226,22 @@ export default function AdminEvaluationResultsPage() {
     }
   }
 
+  const handleExportZip = async () => {
+    if (selectedDepartmentIds.length === 0) {
+      dispatchToast("Select at least one department before exporting.")
+      return
+    }
+    setExporting(true)
+    try {
+      await downloadFromApi(
+        `/api/admin/evaluation-results/export/excel?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}&departmentIds=${selectedDepartmentIds.join(",")}`,
+        `evaluation-results-${selectedPeriod}.zip`,
+      )
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const formatScore = (v: number | null) => (v !== null ? v.toFixed(2) : "\u2014")
 
   return (
@@ -260,6 +277,15 @@ export default function AdminEvaluationResultsPage() {
           </svg>
           Export
         </IosButton>
+        <IosButton
+          variant="tinted"
+          size="sm"
+          onClick={() => handleExportZip()}
+          loading={exporting}
+          title="Download Excel (ZIP)"
+        >
+          Download Excel (ZIP)
+        </IosButton>
       </div>
 
       {/* How fresh the numbers are, and how to refresh them. */}
@@ -280,6 +306,16 @@ export default function AdminEvaluationResultsPage() {
           >
             Refresh
           </IosButton>
+          {selectedDepartmentIds.length > 0 && (
+            <IosButton
+              variant="plain"
+              size="xs"
+              onClick={() => setSelectedDepartmentIds([])}
+              title="Clear selection"
+            >
+              Clear
+            </IosButton>
+          )}
           {!allLoaded && (
             <span className="text-[11px] text-tertiary">
               some rows are still loading — sorting by a column header is paused until they land
@@ -324,6 +360,21 @@ export default function AdminEvaluationResultsPage() {
                 <th className="pb-3 pr-4 cursor-pointer hover:text-secondary" onClick={() => toggleSort("departmentName")}>
                   Department{sortArrow("departmentName")}
                 </th>
+                <th className="pb-3 text-center cursor-pointer hover:text-secondary">
+                  <input
+                    type="checkbox"
+                    checked={selectedDepartmentIds.length === departments.length && departments.length > 0}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedDepartmentIds(departments.map((d) => d.departmentId))
+                      } else {
+                        setSelectedDepartmentIds([])
+                      }
+                    }}
+                    aria-label={`Select all departments`}
+                    style={{ margin: 0 }}
+                  />
+                </th>
                 <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("avgRating")}>
                   Avg Rating{sortArrow("avgRating")}
                 </th>
@@ -345,7 +396,27 @@ export default function AdminEvaluationResultsPage() {
                 >
                   <td className="py-3 pr-4">
                     <div>
-                      <span className="text-sm font-semibold text-primary">{departmentLabel(dept.departmentName, dept.departmentCode)}</span>
+                      <input
+                        type="checkbox"
+                        checked={selectedDepartmentIds.includes(dept.departmentId)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedDepartmentIds(
+                              selectedDepartmentIds.includes(dept.departmentId)
+                                ? selectedDepartmentIds.filter((id) => id !== dept.departmentId)
+                                : [...selectedDepartmentIds, dept.departmentId]
+                            )
+                          } else {
+                            setSelectedDepartmentIds(
+                              selectedDepartmentIds.filter((id) => id !== dept.departmentId)
+                            )
+                          }
+                          // Stop propagation to prevent row navigation
+                          e.stopPropagation()
+                        }}
+                        aria-label={`Select department ${departmentLabel(dept.departmentName, dept.departmentCode)}`}
+                        style={{ margin: 0 }}
+                      />&nbsp;{departmentLabel(dept.departmentName, dept.departmentCode)}
                     </div>
                   </td>
                   <td className="py-3 pr-4 text-right">
