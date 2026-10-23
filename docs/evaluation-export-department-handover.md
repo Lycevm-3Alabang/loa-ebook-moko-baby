@@ -20,8 +20,8 @@
 | Grain | State |
 |---|---|
 | **Part I** — the subject workbook, served by the three `…/export` routes | ✅ **done 2026-10-22** — generated from scratch by `lib/xlsx/`. ⭐ **The Excel proof is the owner's** (§14, hook below) |
-| **Part II** — the department **ZIP** | 🟡 **04a-prep + 04a done 2026-10-23** (D32 the `RESPONDENTS` column · D30/D34 the department summary — code + tests on disk, gate not yet run) ·
-⭐ **05** the surface: **05.1 on disk**; **05.2-fix on disk** (the seam is wired, the forbidden "all" checkbox is gone, the page test exists); **05.3 / 05.4 pending** |
+| **Part II** — the department **ZIP** | ✅ **04a done 2026-10-23** (D32 the `RESPONDENTS` column · D30/D34 the department summary) ·
+⭐ **05** the surface: **05.1 done**; **05.2-fix done** (the seam is wired, the forbidden "all" checkbox is gone); ✅ **05.3 / 05.4 done 2026-10-23** (the two department pages and the faculty card) |
 
 ## ⭐ The measurements (the spike, 2026-10-22 — 0 failures in all three runs)
 
@@ -102,17 +102,11 @@ values of the details.*
 
 ## Next (the new session's order)
 
-1. ✅ **04a-prep — the RESPONDENTS column** (D32) — done 2026-10-23, code on disk.
-2. ✅ **04a — the department summary** (D30/D34) — done 2026-10-23, code + tests on disk;
-   the gate is the owner's.
-3. **05.2-fix — wire the seam** (surface's remaining slices: 05.2-fix, 05.3, 05.4) — the list
-   page uses `DepartmentZipButton`, the **"all departments" header checkbox comes off** (§5),
-   and `admin-results-export-button.test.tsx` is created; then the department pages and the
-   faculty card.
-4. **The owner's proofs** — curl the admin route (`?departmentIds=<one>`) and the dean's, unzip,
+1. **The owner's proofs** — curl the admin route (`?departmentIds=<one>`) and the dean's, unzip,
    check the tree against §17.1, print one subject workbook and one consolidated file; ⭐ and the
    **scope proof** — the dean's route answers **403** for another department and **400** for an
    unknown id. Timing is still unmeasured (the guard bounds size, not time).
+2. **Docs slice 06** — update the parent spec's §24 status row (currently reads "04a-prep/04a pending").
 
 Gate: `npx tsc --noEmit` → `npm run lint` → `npx vitest run` → `npm run build` (**the owner's run**).
 
@@ -321,14 +315,11 @@ results read cannot be confused. `vi.resetAllMocks()` in `beforeEach` (AGENTS.md
 
 ### Next (the new session's order)
 
-1. **05.3 — the two department pages** (`app/admin/evaluations/results/[departmentId]/page.tsx`
-   and the dean's twin): the button beside **Download PDF**, `departmentIds={[departmentId]}`,
-   the page's own base; new `lib/__tests__/department-page-export-button.test.tsx`.
-2. **05.4 — the faculty card** (`features/evaluations/components/DepartmentSubjectView.tsx`):
-   the **required** `exportApiBase` prop and the per-faculty ZIP for **every member**, next to
-   the consolidated PDF.
-3. The owner's proofs, then the docs slice **06** (the parent spec's §24 status row still reads
-   "04a-prep/04a pending").
+1. **The owner's proofs** — curl the admin route (`?departmentIds=<one>`) and the dean's, unzip,
+   check the tree against §17.1, print one subject workbook and one consolidated file; ⭐ and the
+   **scope proof** — the dean's route answers **403** for another department and **400** for an
+   unknown id.
+2. The docs slice **06** (the parent spec's §24 status row still reads "04a-prep/04a pending").
 
 ---
 

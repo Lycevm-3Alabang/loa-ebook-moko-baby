@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import IosButton from "@/components/ui/IosButton"
 import { getRemarkColor, sectionLabel, formatFacultyName, type FacultyAggregate } from "@/lib/evaluation-utils"
 import { downloadEvalDetailPdf } from "@/lib/evaluation-pdf"
+import DepartmentZipButton from "@/features/evaluation-results/components/DepartmentZipButton"
 
 interface SubjectRow {
   facultySubjectId: string
@@ -49,11 +50,12 @@ interface Props {
   onVisibilityChange?: (facultyId: string, visible: boolean) => void
   onBulkVisibilityChange?: (visible: boolean) => void
   facultyAggregates?: Record<string, FacultyAggregate>
+  exportApiBase?: string
 }
 
 type SortDir = "asc" | "desc"
 
-export default function DepartmentSubjectView({ subjects, members = [], departmentId, evaluationPeriodId, search, onSearchChange, basePath = "/admin/evaluations/results", visibilityMap = {}, onVisibilityChange, onBulkVisibilityChange, facultyAggregates = {} }: Props) {
+export default function DepartmentSubjectView({ subjects, members = [], departmentId, evaluationPeriodId, search, onSearchChange, basePath = "/admin/evaluations/results", visibilityMap = {}, onVisibilityChange, onBulkVisibilityChange, facultyAggregates = {}, exportApiBase }: Props) {
   const router = useRouter()
   const [sortDir, setSortDir] = useState<SortDir>("asc")
   const [expandedFaculty, setExpandedFaculty] = useState<Set<string>>(new Set())
@@ -265,6 +267,16 @@ export default function DepartmentSubjectView({ subjects, members = [], departme
                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                     </button>
+                  )}
+                  {exportApiBase && (
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <DepartmentZipButton
+                        evaluationPeriodId={evaluationPeriodId}
+                        departmentIds={[departmentId]}
+                        facultyId={group.facultyId}
+                        exportApiBase={exportApiBase}
+                      />
+                    </div>
                   )}
                   {onVisibilityChange && (
                     <button

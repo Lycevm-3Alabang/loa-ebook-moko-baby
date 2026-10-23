@@ -16,7 +16,7 @@ one per session, or none),
 `specs/evaluation-results-attribution.md` (the attribution contract — §1.10, §3.21, S6.1, D7–D9),
 `specs/evaluation-results-export.md` (the export contract — both grains, **v6.2**, 2026-10-23:
 Part I v4.0 done · Part II the **department ZIP**, D20–D34, ⭐ **04a done; 05.2-fix done; 05.3
-next**).
+done; 05.4 done; owner proofs next**).
 
 ## NEXT (do first)
 
@@ -30,8 +30,9 @@ next**).
   seam (`page.tsx:265-269`), the **"all departments" header checkbox is gone** (§5 — D27 refuses
   that scope), the row checkbox stops `onClick` propagation, and
   `lib/__tests__/admin-results-export-button.test.tsx` exists (9 cases: 2 CSV + 7 ZIP/picker).
-  ⭐ **Next: 05.3** (the two department pages, beside Download PDF) → **05.4** (the faculty card,
-  the required `exportApiBase` + the per-faculty ZIP) → the owner's curl/unzip proof. The timing
+    ⭐ **05.3 done; 05.4 done; owner proofs next** (the two department pages, beside Download PDF; the faculty card,
+  the required `exportApiBase` + the per-faculty ZIP) → the owner's curl/unzip proof.
+ The timing
   is still unmeasured (the guard bounds the size, not the time).**
   ⭐ **The API (05a + 05b, 2026-10-22):** `GET /api/admin/evaluation-results/export/excel`
   (⭐ `departmentIds` **required**; `facultyId?`) and

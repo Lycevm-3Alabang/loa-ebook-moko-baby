@@ -10,6 +10,7 @@ import { useCrumb } from "@/lib/contexts/breadcrumb"
 import { getRemarkColor, departmentLabel, findAttentionRubrics, type FacultyAggregate, type DepartmentAggregate } from "@/lib/evaluation-utils"
 import { downloadDeptPdf } from "@/lib/evaluation-pdf"
 import DepartmentSubjectView from "@/features/evaluations/components/DepartmentSubjectView"
+import DepartmentZipButton from "@/features/evaluation-results/components/DepartmentZipButton"
 
 interface SubjectRow {
   facultySubjectId: string
@@ -218,6 +219,11 @@ export default function DeanDepartmentDetailPage() {
                   </svg>
                   Download PDF
                 </IosButton>
+                <DepartmentZipButton
+                  evaluationPeriodId={evaluationPeriodId}
+                  departmentIds={[departmentId]}
+                  exportApiBase="/api/dean/evaluation-results/export/excel"
+                />
               </div>
             </div>
 
@@ -254,6 +260,7 @@ export default function DeanDepartmentDetailPage() {
             onVisibilityChange={toggleVisibility}
             onBulkVisibilityChange={bulkSetVisibility}
             facultyAggregates={resultsData?.facultyAggregates ?? {}}
+            exportApiBase="/api/dean/evaluation-results/export/excel"
           />
         </>
       )}
