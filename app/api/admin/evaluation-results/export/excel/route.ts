@@ -48,10 +48,9 @@ export async function GET(request: NextRequest) {
       .split(",")
       .map((id) => id.trim())
       .filter(Boolean)
-    // ⭐ the bridge: the per-card button still sends `facultyId` until E3.
-    // Delete these two lines in E3, not before — they keep the old button truthful.
-    const legacyFacultyId = searchParams.get("facultyId")
-    if (facultyIds.length === 0 && legacyFacultyId) facultyIds.push(legacyFacultyId)
+    // ⭐ deleted in E3: the per-card bridge that auto-pushed facultyId into facultyIds.
+    // Removed: const legacyFacultyId = searchParams.get("facultyId")
+    // Removed: if (facultyIds.length === 0 && legacyFacultyId) facultyIds.push(legacyFacultyId)
 
     const result = await buildDepartmentZip({
       evaluationPeriodId,

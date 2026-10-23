@@ -4,7 +4,6 @@ import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import IosButton from "@/components/ui/IosButton"
 import { getRemarkColor, sectionLabel, formatFacultyName, type FacultyAggregate } from "@/lib/evaluation-utils"
-import DepartmentZipButton from "@/features/evaluation-results/components/DepartmentZipButton"
 
 interface SubjectRow {
   facultySubjectId: string
@@ -49,12 +48,13 @@ interface Props {
   onVisibilityChange?: (facultyId: string, visible: boolean) => void
   onBulkVisibilityChange?: (visible: boolean) => void
   facultyAggregates?: Record<string, FacultyAggregate>
-  exportApiBase?: string
+  selectedFacultyIds?: string[]
+  onFacultySelectionChange?: (facultyId: string, selected: boolean) => void
 }
 
 type SortDir = "asc" | "desc"
 
-export default function DepartmentSubjectView({ subjects, members = [], departmentId, evaluationPeriodId, search, onSearchChange, basePath = "/admin/evaluations/results", visibilityMap = {}, onVisibilityChange, onBulkVisibilityChange, facultyAggregates = {}, exportApiBase }: Props) {
+export default function DepartmentSubjectView({ subjects, members = [], departmentId, evaluationPeriodId, search, onSearchChange, basePath = "/admin/evaluations/results", visibilityMap = {}, onVisibilityChange, onBulkVisibilityChange, facultyAggregates = {}, selectedFacultyIds = [], onFacultySelectionChange }: Props) {
   const router = useRouter()
   const [sortDir, setSortDir] = useState<SortDir>("asc")
   const [expandedFaculty, setExpandedFaculty] = useState<Set<string>>(new Set())
@@ -206,14 +206,30 @@ export default function DepartmentSubjectView({ subjects, members = [], departme
             <div key={group.facultyId} className="card p-4 space-y-2">
               <div
                 onClick={() => toggleExpanded(group.facultyId)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleExpanded(group.facultyId) } }}
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return
+                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleExpanded(group.facultyId) }
+                }}
                 role="button"
                 tabIndex={0}
                 className="w-full flex items-center justify-between text-left cursor-pointer"
               >
-                <div className="flex flex-col">
-                  <span className="text-sm font-semibold text-primary">{formatFacultyName(group.facultyName)}</span>
-                  <span className="text-[10px] text-tertiary">{group.facultyEmail}</span>
+                <div className="flex items-center gap-3">
+                  {onFacultySelectionChange && (
+                    <input
+                      type="checkbox"
+                      checked={selectedFacultyIds.includes(group.facultyId)}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => onFacultySelectionChange(group.facultyId, e.target.checked)}
+                      aria-label={`Include ${formatFacultyName(group.facultyName)} in the export`}
+                      className="w-4 h-4 accent-amber-600"
+                      style={{ margin: 0 }}
+                    />
+                  )}
+                  <div className="flex flex-col">
+                    <span className="text-sm font-semibold text-primary">{formatFacultyName(group.facultyName)}</span>
+                    <span className="text-[10px] text-tertiary">{group.facultyEmail}</span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="text-right">
@@ -224,17 +240,6 @@ export default function DepartmentSubjectView({ subjects, members = [], departme
                       </span>
                     )}
                   </div>
-                  {exportApiBase && (
-
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <DepartmentZipButton
-                        evaluationPeriodId={evaluationPeriodId}
-                        departmentIds={[departmentId]}
-                        facultyId={group.facultyId}
-                        exportApiBase={exportApiBase}
-                      />
-                    </div>
-                  )}
                   {onVisibilityChange && (
                     <button
                       type="button"

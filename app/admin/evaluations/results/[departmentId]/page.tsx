@@ -50,6 +50,7 @@ export default function DepartmentDetailPage() {
   const evaluationPeriodId = searchParams.get("evaluationPeriodId") || searchParams.get("semesterId") || ""
 
   const [search, setSearch] = useState("")
+  const [selectedFacultyIds, setSelectedFacultyIds] = useState<string[]>([])
   const [visibilityMap, setVisibilityMap] = useState<Record<string, boolean>>({})
   const [toggling, setToggling] = useState(false)
 
@@ -61,6 +62,13 @@ export default function DepartmentDetailPage() {
   const departmentAggregate = resultsData?.departmentAggregate ?? null
   // The department's own faculty - the members, with or without results.
   const members = useMemo(() => resultsData?.members ?? [], [resultsData])
+  const selectedFacultySet = useMemo(() => new Set(selectedFacultyIds), [selectedFacultyIds])
+  const allFacultyIds = useMemo(
+    () => (members.length > 0 ? members.map((m) => m.id) : [...new Set(subjects.map((s) => s.facultyId))]),
+    [members, subjects],
+  )
+  const allFacultySelected =
+    allFacultyIds.length > 0 && allFacultyIds.every((id) => selectedFacultySet.has(id))
   // The weakest rubric, and only when it is critically low.
   const attentionRubrics = useMemo(
     () => findAttentionRubrics(departmentAggregate?.lowestRubrics ?? []),
@@ -80,6 +88,11 @@ export default function DepartmentDetailPage() {
       Promise.resolve().then(() => setVisibilityMap(map))
     }
   }, [resultsData, visibilityMap])
+
+  // A new scope starts with nothing ticked (D36).
+  useEffect(() => {
+    Promise.resolve().then(() => setSelectedFacultyIds([]))
+  }, [evaluationPeriodId, departmentId])
 
   const toggleVisibility = useCallback(async (facultyId: string, visible: boolean) => {
     if (toggling) return
@@ -121,6 +134,14 @@ export default function DepartmentDetailPage() {
       setToggling(false)
     }
   }, [evaluationPeriodId, subjects, toggling, visibilityMap])
+
+  const toggleFacultySelection = useCallback((facultyId: string, selected: boolean) => {
+    setSelectedFacultyIds((prev) =>
+      selected
+        ? prev.includes(facultyId) ? prev : [...prev, facultyId]
+        : prev.filter((id) => id !== facultyId),
+    )
+  }, [])
 
   return (
     <div className="w-full space-y-6 pb-12">
@@ -182,6 +203,8 @@ export default function DepartmentDetailPage() {
                 <DepartmentZipButton
                   evaluationPeriodId={evaluationPeriodId}
                   departmentIds={[departmentId]}
+                  facultyIds={allFacultySelected ? [] : selectedFacultyIds}
+                  disabled={selectedFacultyIds.length === 0}
                   exportApiBase="/api/admin/evaluation-results/export/excel"
                 />
               </div>
@@ -220,7 +243,8 @@ export default function DepartmentDetailPage() {
             onVisibilityChange={toggleVisibility}
             onBulkVisibilityChange={bulkSetVisibility}
             facultyAggregates={resultsData?.facultyAggregates ?? {}}
-            exportApiBase="/api/admin/evaluation-results/export/excel"
+            selectedFacultyIds={selectedFacultyIds}
+            onFacultySelectionChange={toggleFacultySelection}
           />
         </>
       )}

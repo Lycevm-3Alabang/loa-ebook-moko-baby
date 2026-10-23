@@ -3,10 +3,13 @@
 **Date:** 2026-10-23
 **Status:** **04a-prep + 04a** (the summary tier, D30–D34) and **05.2-fix** (the list page's ZIP
   button is on the seam; the "all departments" checkbox is gone) are on disk — code and tests;
-  ⭐ **the gate has NOT been run and nothing is committed.** Next: **05.3** (both department
-  pages) → **05.4** (the faculty card) → the owner's curl/unzip proofs → docs slice 06. Gap 1
-  (`.eq("isDisabled", false)` on `listSubmittedByPeriodAndEvaluateeAndFS`) was applied
-  uncommitted in a prior session.
+  ⭐ **the gate has NOT been run and nothing is committed.** E3 progress:
+  - **05.3** (both department pages with ZIP button + gated modal) code + tests on disk;
+  - **05.4** (faculty card checkboxes + per-department ZIP) code on disk;
+  - **Test fix**: `toBeFalsy()` replaces `toBeNull()` in `department-page-export-button.test.tsx`,
+    resolving the original `AssertionError: expected '' to be null` failures (3 tests);
+  - **Route fixes**: `legacyFacultyId` bridge deleted from both admin and dean export routes;
+  - **Next**: docs slice 06 (parent spec §24 status row), owner's curl/unzip proofs
 
 ⭐ **One handover at a time.** This file replaces `docs/evaluation-export-handover.md`
 (**deleted**) — the subject grain's tracking folded in here; what is still live from it
@@ -666,6 +669,8 @@ wording beyond what the type already gives.
 faculty card; the per-card ZIP gone. ⭐ **This is the one large task**: the prop contract and its
 call sites cannot be split without either a red TypeScript build or a button that lies — so they
 land in **one** commit (D35–D39).
+
+**Who implements:** agent (`Code it`) — recorded 2026-10-23.
 
 **Files.**
 - `features/evaluation-results/components/DepartmentZipButton.tsx`

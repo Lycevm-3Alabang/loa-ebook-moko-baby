@@ -8,23 +8,25 @@ import ExportConfirmationModal from "./ExportConfirmationModal"
 interface DepartmentZipButtonProps {
   evaluationPeriodId: string
   departmentIds: string[]
-  totalDepartments?: number
-  facultyId?: string
+  /** the selected members; empty = the whole department */
+  facultyIds?: string[]
+  /** the go button is off until a member is selected (D36) */
+  disabled?: boolean
   exportApiBase: string
   label?: string
 }
 
 /**
- * One seam for every department-ZIP call site: the list page, both department
- * pages and the faculty card. Owns the URL build, the filename, the
- * downloadFromApi call, the loading state and the local guards. Never assembles
- * anything on the client — the route does all the work.
+ * One seam for every department-ZIP call site: both department pages. Owns the
+ * URL build, the filename, the downloadFromApi call, the loading state and the
+ * local guards. Never assembles anything on the client — the route does all the
+ * work.
  */
 export default function DepartmentZipButton({
   evaluationPeriodId,
   departmentIds,
-  totalDepartments,
-  facultyId,
+  facultyIds,
+  disabled = false,
   exportApiBase,
   label = "Download Excel (ZIP)",
 }: DepartmentZipButtonProps) {
@@ -40,36 +42,35 @@ export default function DepartmentZipButton({
       if (departmentIds.length > 0) {
         params.set("departmentIds", departmentIds.join(","))
       }
-      if (facultyId) params.set("facultyId", facultyId)
+      if (facultyIds && facultyIds.length > 0) params.set("facultyIds", facultyIds.join(","))
       const url = `${exportApiBase}?${params.toString()}`
       const filename = `evaluation-results-excel-${evaluationPeriodId}.zip`
       await downloadFromApi(url, filename)
     } finally {
       setLoading(false)
     }
-  }, [evaluationPeriodId, departmentIds, facultyId, exportApiBase])
+  }, [evaluationPeriodId, departmentIds, facultyIds, exportApiBase])
 
   const handleClick = useCallback(() => {
+    if (disabled) return
     if (!evaluationPeriodId) {
       dispatchToast("Select an evaluation period before exporting.")
       return
     }
 
     setIsModalOpen(true)
-  }, [evaluationPeriodId])
+  }, [disabled, evaluationPeriodId])
 
   return (
     <>
-      <IosButton variant="tinted" size="sm" onClick={handleClick} loading={loading}>
+      <IosButton variant="tinted" size="sm" onClick={handleClick} loading={loading} disabled={disabled}>
         {label}
       </IosButton>
       <ExportConfirmationModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onConfirm={startExport}
-        departmentCount={departmentIds.length}
-        totalDepartments={totalDepartments}
-        isFacultyExport={!!facultyId}
+        facultyCount={facultyIds?.length ?? 0}
       />
     </>
   )

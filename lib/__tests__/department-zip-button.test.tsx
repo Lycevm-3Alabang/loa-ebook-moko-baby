@@ -49,35 +49,34 @@ describe("DepartmentZipButton", () => {
     expect(mockDownloadFromApi).not.toHaveBeenCalled()
   })
 
-  it("treats an empty department list as all departments", async () => {
+  it("names the selected faculty and sends the set as facultyIds", async () => {
     mockDownloadFromApi.mockResolvedValue(undefined)
-    renderButton({ departmentIds: [], totalDepartments: 3 })
+    renderButton({ facultyIds: ["f1", "f2"] })
     fireEvent.click(screen.getByRole("button", { name: /download excel/i }))
-    expect(screen.getByText(/all 3 departments/)).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: /start export/i }))
-    await waitFor(() => expect(mockDownloadFromApi).toHaveBeenCalled())
-    expect(mockDownloadFromApi.mock.calls[0][0]).toBe(
-      "/api/admin/evaluation-results/export/excel?evaluationPeriodId=p1",
-    )
-  })
-
-  it("calls downloadFromApi with correct URL when facultyId provided", async () => {
-    mockDownloadFromApi.mockResolvedValue(undefined)
-    renderButton({ facultyId: "f1" })
-    fireEvent.click(screen.getByRole("button", { name: /download excel/i }))
+    expect(screen.getByText(/2 selected faculty members/)).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: /start export/i }))
     await waitFor(() => expect(mockDownloadFromApi).toHaveBeenCalled())
     const url = mockDownloadFromApi.mock.calls[0][0] as string
-    expect(url).toContain("&facultyId=f1")
+    expect(url).toContain("&facultyIds=f1%2Cf2")
   })
 
-  it("calls downloadFromApi with correct URL without facultyId", async () => {
+  it("exports the whole department when no faculty is selected", async () => {
     mockDownloadFromApi.mockResolvedValue(undefined)
     renderButton()
     fireEvent.click(screen.getByRole("button", { name: /download excel/i }))
+    expect(screen.getByText(/whole department/)).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: /start export/i }))
     await waitFor(() => expect(mockDownloadFromApi).toHaveBeenCalled())
-    const url = mockDownloadFromApi.mock.calls[0][0] as string
-    expect(url).toBe("/api/admin/evaluation-results/export/excel?evaluationPeriodId=p1&departmentIds=d1")
+    expect(mockDownloadFromApi.mock.calls[0][0]).toBe(
+      "/api/admin/evaluation-results/export/excel?evaluationPeriodId=p1&departmentIds=d1",
+    )
+  })
+
+  it("does nothing while disabled", () => {
+    renderButton({ disabled: true, facultyIds: ["f1"] })
+    fireEvent.click(screen.getByRole("button", { name: /download excel/i }))
+    expect(screen.queryByText("Confirm Export")).toBeNull()
+    expect(mockDownloadFromApi).not.toHaveBeenCalled()
+    expect(mockDispatchToast).not.toHaveBeenCalled()
   })
 })

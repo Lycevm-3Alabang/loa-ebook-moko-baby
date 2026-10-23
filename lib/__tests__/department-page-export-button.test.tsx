@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import React from "react"
 
 const mockUseApiGet = vi.hoisted(() => vi.fn())
@@ -75,16 +75,26 @@ describe("Department Results Page - Excel Export integration", () => {
     it("renders the ZIP button and calls the admin export route after confirmation", async () => {
       render(<AdminDepartmentDetailPage />)
       
-      await waitFor(() => expect(zipButton()).toBeTruthy())
+      // Select faculty member f1 first to enable the ZIP button
+      // The checkbox has aria-label "Include Doe, John in the export"
+      const facultyCheckbox = screen.getByRole("checkbox", { 
+        name: /Include Doe, John in the export/i 
+      })
+      fireEvent.change(facultyCheckbox, { target: { checked: true } })
+      
+      // Wait for the ZIP button to be enabled (disabled={false} renders disabled="")
+      await waitFor(() => expect(zipButton().getAttribute("disabled")).toBeFalsy())
       
       fireEvent.click(zipButton())
-      // Use getAll and pick one, or better, look within the modal
-      const confirmButtons = await screen.findAllByRole("button", { name: /start export/i })
-      fireEvent.click(confirmButtons[0])
+      
+      // Wait for any modal to appear and click the first Start Export button found in the whole document
+      await waitFor(() => screen.findAllByText(/start export/i))
+      const confirmButtons = screen.findAllByText(/start export/i)
+      fireEvent.click(confirmButtons[0].closest("button")!)
       
       await waitFor(() =>
         expect(mockDownloadFromApi).toHaveBeenCalledWith(
-          "/api/admin/evaluation-results/export/excel?evaluationPeriodId=p1&departmentIds=d1",
+          "/api/admin/evaluation-results/export/excel?evaluationPeriodId=p1&departmentIds=d1&facultyIds=f1",
           "evaluation-results-excel-p1.zip",
         ),
       )
@@ -111,42 +121,56 @@ describe("Department Results Page - Excel Export integration", () => {
     it("renders the ZIP button and calls the dean export route after confirmation", async () => {
       render(<DeanDepartmentDetailPage />)
       
-      await waitFor(() => expect(zipButton()).toBeTruthy())
+      // Select faculty member f1 first to enable the ZIP button
+      // The checkbox has aria-label "Include Doe, John in the export"
+      const facultyCheckbox = screen.getByRole("checkbox", { 
+        name: /Include Doe, John in the export/i 
+      })
+      fireEvent.change(facultyCheckbox, { target: { checked: true } })
+      
+      // Wait for the ZIP button to be enabled (disabled={false} renders disabled="")
+      await waitFor(() => expect(zipButton().getAttribute("disabled")).toBeFalsy())
       
       fireEvent.click(zipButton())
-      const confirmButtons = await screen.findAllByRole("button", { name: /start export/i })
-      fireEvent.click(confirmButtons[0])
+      
+      // Wait for any modal to appear and click the first Start Export button found in the whole document
+      await waitFor(() => screen.findAllByText(/start export/i))
+      const confirmButtons = screen.findAllByText(/start export/i)
+      fireEvent.click(confirmButtons[0].closest("button")!)
       
       await waitFor(() =>
         expect(mockDownloadFromApi).toHaveBeenCalledWith(
-          "/api/dean/evaluation-results/export/excel?evaluationPeriodId=p1&departmentIds=d1",
+          "/api/dean/evaluation-results/export/excel?evaluationPeriodId=p1&departmentIds=d1&facultyIds=f1",
           "evaluation-results-excel-p1.zip",
         ),
       )
     })
   })
 
-    it("renders the ZIP button on the faculty card and calls the correct route with facultyId after confirmation", async () => {
-      render(<AdminDepartmentDetailPage />)
-      
-      await waitFor(() => expect(screen.getByText("Doe, John")).toBeTruthy())
-      
-      // Find the card for John Doe
-      const facultyCard = screen.getByText("Doe, John").closest(".card")!
-      const facultyZipButton = within(facultyCard as HTMLElement).getAllByRole("button", { name: /download excel \(zip\)/i })
-        .find(el => el.tagName === "BUTTON")!
-      
-      fireEvent.click(facultyZipButton)
+  it("renders the ZIP button and calls the correct route with facultyId after confirmation", async () => {
+    render(<AdminDepartmentDetailPage />)
+    
+    // Select faculty member f1 first to enable the ZIP button
+    // The checkbox has aria-label "Include Doe, John in the export"
+    const facultyCheckbox = screen.getByRole("checkbox", { 
+      name: /Include Doe, John in the export/i 
+    })
+    fireEvent.change(facultyCheckbox, { target: { checked: true } })
+    
+    await waitFor(() => expect(zipButton().getAttribute("disabled")).toBeFalsy())
+    
+fireEvent.click(zipButton())
       
       // Wait for any modal to appear and click the first Start Export button found in the whole document
-      const confirmButtons = await screen.findAllByText(/start export/i)
-      fireEvent.click(confirmButtons[0].closest("button")!)
-      
-      await waitFor(() =>
-        expect(mockDownloadFromApi).toHaveBeenCalledWith(
-          "/api/admin/evaluation-results/export/excel?evaluationPeriodId=p1&departmentIds=d1&facultyId=f1",
-          "evaluation-results-excel-p1.zip",
-        ),
-      )
-    })
+      await waitFor(() => screen.findAllByText(/start export/i))
+      const confirmButtons = screen.findAllByText(/start export/i)
+    fireEvent.click(confirmButtons[0].closest("button")!)
+    
+    await waitFor(() =>
+      expect(mockDownloadFromApi).toHaveBeenCalledWith(
+        "/api/admin/evaluation-results/export/excel?evaluationPeriodId=p1&departmentIds=d1&facultyIds=f1",
+        "evaluation-results-excel-p1.zip",
+      ),
+    )
+  })
 })

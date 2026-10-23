@@ -7,18 +7,15 @@ interface ExportConfirmationModalProps {
   isOpen: boolean
   onClose: () => void
   onConfirm: () => void
-  departmentCount: number
-  totalDepartments?: number
-  isFacultyExport?: boolean
+  /** how many faculty the export is limited to; 0 = the whole department */
+  facultyCount?: number
 }
 
 export default function ExportConfirmationModal({
   isOpen,
   onClose,
   onConfirm,
-  departmentCount,
-  totalDepartments,
-  isFacultyExport = false,
+  facultyCount = 0,
 }: ExportConfirmationModalProps) {
   const handleKey = useCallback((e: KeyboardEvent) => {
     if (e.key === "Escape") onClose()
@@ -37,9 +34,6 @@ export default function ExportConfirmationModal({
 
   if (!isOpen) return null
 
-  const isAll = departmentCount === 0 || (totalDepartments && departmentCount === totalDepartments)
-  const displayCount = departmentCount === 0 ? totalDepartments ?? 0 : departmentCount
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
@@ -52,16 +46,19 @@ export default function ExportConfirmationModal({
           </div>
           <h3 className="text-xl font-bold text-primary mb-2">Confirm Export</h3>
           <p className="text-sm text-secondary leading-relaxed">
-            {isFacultyExport ? (
-              "You are about to export all subjects and evaluations for this faculty member as a ZIP file."
-            ) : isAll ? (
+            {facultyCount && facultyCount > 0 ? (
               <>
-                You are about to export results for <span className="font-bold text-primary">all {displayCount > 0 ? displayCount : ""} departments</span>. 
-                Large exports may take a few minutes to process.
+                You are about to export results for{" "}
+                <span className="font-bold text-primary">
+                  {facultyCount} selected faculty member{facultyCount !== 1 ? "s" : ""}
+                </span>
+                . The download contains their subject workbooks and one summary each.
               </>
             ) : (
               <>
-                You are about to export results for <span className="font-bold text-primary">{departmentCount} selected department(s)</span>.
+                You are about to export the{" "}
+                <span className="font-bold text-primary">whole department</span> — every faculty member
+                and every subject section.
               </>
             )}
           </p>
