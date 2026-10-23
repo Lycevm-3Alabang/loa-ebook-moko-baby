@@ -5,10 +5,15 @@ import type { DepartmentFigures, FacultyFigures } from "@/lib/types"
  * The cache for the figures.
  *
  * Reading figures is expensive: a department's or a faculty's ratings are tens
- * of thousands of rows, and the read has to walk them. The list asks for every
- * department, the export asks for them again, and the report asks for the
- * faculty — so the figures are kept for five minutes and every surface reads
- * the same numbers.
+ * of thousands of rows, and the read has to walk them. The results list asks
+ * for each department's figures, and the report asks for the faculty's — so
+ * those figures are kept for five minutes and their surfaces read the same
+ * numbers.
+ *
+ * ⭐ The exports do NOT read this cache. A ZIP is a download, and a workbook
+ * needs the raw ratings, comments and statement averages — not the pooled
+ * figures. Both export routes re-read their departments live; this cache is
+ * the list's and the report's.
  *
  * The cache lives in the module, so it belongs to the warm instance: a cold
  * instance reads once and then serves from its own copy. The five minutes are
