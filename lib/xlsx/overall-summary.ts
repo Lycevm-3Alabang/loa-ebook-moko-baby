@@ -24,6 +24,8 @@ export interface FacultySummaryRow {
   subject: { code: string; name: string } | null
   /** the section — the program and the name */
   section: { program: string | null; name: string | null }
+  /** ⭐ the counted responses — the weight the band is pooled with (D32) */
+  totalRespondents: number
   /** the subject-section's general rating */
   avgRating: number | null
   /** the highest rubrics — every tie */
@@ -65,7 +67,7 @@ export interface FacultySummaryModel {
 }
 
 /** The table's columns — their widths decide the row heights. */
-const COLUMN_WIDTHS = [34, 14, 10, 26, 26]
+const COLUMN_WIDTHS = [34, 14, 11, 10, 26, 26]
 
 /** The columns' specs. */
 const COLUMN_SPECS: ColumnSpec[] = [
@@ -74,6 +76,7 @@ const COLUMN_SPECS: ColumnSpec[] = [
   { from: "C", to: "C", width: COLUMN_WIDTHS[2] },
   { from: "D", to: "D", width: COLUMN_WIDTHS[3] },
   { from: "E", to: "E", width: COLUMN_WIDTHS[4] },
+  { from: "F", to: "F", width: COLUMN_WIDTHS[5] },
 ]
 
 /** One line of a 9pt cell, in points. */
@@ -152,6 +155,7 @@ export function buildFacultySummaryModel(
       const cells: (string | number | null)[] = [
         subjectLabel(row.subject),
         sectionLabel(row.section.program, row.section.name),
+        row.totalRespondents,
         row.avgRating === null ? "—" : row.avgRating,
         rubricsLabel(row.highest),
         rubricsLabel(row.lowest),
@@ -162,14 +166,14 @@ export function buildFacultySummaryModel(
   return {
     header,
     band,
-    headings: ["SUBJECT", "SECTION", "AVG RATING", "HIGHEST", "LOWEST"],
+    headings: ["SUBJECT", "SECTION", "RESPONDENTS", "AVG RATING", "HIGHEST", "LOWEST"],
     rows,
   }
 }
 
 /** The sheet, drawn from its model. */
 export function renderFacultySummarySheet(model: FacultySummaryModel): SheetSpec {
-  const letters = ["A", "B", "C", "D", "E"]
+  const letters = ["A", "B", "C", "D", "E", "F"]
   const last = letters[letters.length - 1]
   const rows: RowSpec[] = []
   const merges: string[] = []
@@ -216,7 +220,11 @@ export function renderFacultySummarySheet(model: FacultySummaryModel): SheetSpec
       row,
       height: data.height,
       cells: data.cells.map((value, index) =>
-        cell(row, letters[index], index === 2 ? "tableNumber" : "tableText", value),
+        cell(row, letters[index],
+          index === 2 ? "tableCell"
+            : index === 3 ? "tableNumber"
+            : "tableText",
+          value),
       ),
     })
   }

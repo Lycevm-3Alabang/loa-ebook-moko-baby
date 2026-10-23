@@ -5,6 +5,7 @@ import {
   rubricRepository,
 } from "@/lib/repositories/factory"
 import { buildSubjectWorkbook, type RubricCategoryInput } from "@/lib/xlsx/subject-workbook"
+import { buildDepartmentSummaryWorkbook } from "@/lib/xlsx/department-summary"
 import { buildFacultySummaryWorkbook } from "@/lib/xlsx/overall-summary"
 import { loadLetterhead } from "@/lib/xlsx/letterhead"
 import { createDeflatedZip } from "@/lib/zip-deflate"
@@ -148,6 +149,29 @@ export async function buildDepartmentZip(
 
   for (const { department, results } of loaded) {
     const folder = entryName(department.code ?? department.id)
+
+    // ⭐ D30: the DEPARTMENT summary sits at the folder's root, first in the
+    // tree. ⭐ It is the card's figure — the members' count and the pooled
+    // aggregate — NOT a mean of the faculty bands.
+    // ⭐ D34: a per-faculty export omits it — that ZIP's details are one
+    // faculty's, so a whole-department row would read as the scope's figure.
+    if (!options.facultyId) {
+      const aggregate = results.departmentAggregate
+      entries.push({
+        name: `${folder}/${folder}_summary.xlsx`,
+        data: buildDepartmentSummaryWorkbook({
+          semesterTitle: period.semesterTitle ?? null,
+          evaluationPeriodName: period.name ?? null,
+          department: { name: department.name ?? "", code: department.code ?? "" },
+          // ⭐ the headcount is the members — not `aggregate.uniqueFaculty`
+          facultyCount: results.members.length,
+          totalRespondents: aggregate?.totalResponses ?? 0,
+          avgRating: aggregate?.avgRating ?? null,
+          remarks: aggregate?.remarks ?? null,
+        }),
+      })
+    }
+
     const members = options.facultyId
       ? results.members.filter((member) => member.id === options.facultyId)
       : results.members
@@ -197,6 +221,7 @@ export async function buildDepartmentZip(
           rows: rowsOf(member.id).map((row) => ({
             subject: { code: row.subjectCode, name: row.subjectName },
             section: { program: row.sectionProgram, name: row.sectionName },
+            totalRespondents: row.totalRespondents,
             avgRating: row.avgRating,
             highest: row.highestRubrics,
             lowest: row.lowestRubrics,

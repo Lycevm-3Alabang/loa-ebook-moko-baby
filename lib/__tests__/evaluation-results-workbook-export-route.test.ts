@@ -244,10 +244,12 @@ describe("the department ZIP routes", () => {
     expect(res.status).toBe(200)
     expect(res.headers.get("content-type")).toBe("application/zip")
     expect(res.headers.get("content-disposition")).toContain("evaluation-results-p1.zip")
-    // ⭐ the entries are the tree — the department folder → the member → the
-    // subject workbook, and the member's consolidated file
+    // ⭐ the entries are the tree — the department summary, then the member →
+    // the subject workbook, and the member's consolidated file
     const parts = readZip(new Uint8Array(await res.arrayBuffer()))
     expect([...parts.keys()]).toEqual([
+      // ⭐ D30: the department summary is FIRST, at the folder's root
+      "CCS/CCS_summary.xlsx",
       "CCS/Dela Cruz/IT101_BSCS-A_evaluation.xlsx",
       "CCS/Dela Cruz/Dela Cruz_summary.xlsx",
     ])

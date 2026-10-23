@@ -19,6 +19,7 @@ const INPUT = {
     {
       subject: { code: "1815-ITELEC009", name: "Introduction to Computing" },
       section: { program: "BSIT", name: "31E1" },
+      totalRespondents: 20,
       avgRating: 3.38,
       highest: [{ label: "Professional Manner", score: 3.6 }],
       lowest: [{ label: "Assessment & Feedback", score: 3.25 }],
@@ -55,12 +56,13 @@ describe("the faculty's consolidated file", () => {
   it("prints a row for a subject-section nobody evaluated", () => {
     const model = buildFacultySummaryModel({
       ...INPUT,
-      rows: [{ ...INPUT.rows[0], avgRating: null, highest: [], lowest: [] }],
+      rows: [{ ...INPUT.rows[0], totalRespondents: 0, avgRating: null, highest: [], lowest: [] }],
     })
     expect(model.rows).toHaveLength(1)
-    expect(model.rows[0].cells[2]).toBe("—")
-    expect(model.rows[0].cells[3]).toBe("")
+    expect(model.rows[0].cells[2]).toBe(0)
+    expect(model.rows[0].cells[3]).toBe("—")
     expect(model.rows[0].cells[4]).toBe("")
+    expect(model.rows[0].cells[5]).toBe("")
   })
 
   it("prints EVERY tie, comma-joined", () => {
@@ -76,7 +78,7 @@ describe("the faculty's consolidated file", () => {
         },
       ],
     })
-    expect(model.rows[0].cells[3]).toBe("Professional Manner 3.60, Student Engagement 3.60")
+    expect(model.rows[0].cells[4]).toBe("Professional Manner 3.60, Student Engagement 3.60")
   })
 
   it("orders the rows — the subject code, then the section label", () => {
@@ -123,5 +125,31 @@ describe("the faculty's consolidated file", () => {
     const parts = readZip(buildFacultySummaryWorkbook(INPUT))
     expect(partText(parts, "xl/workbook.xml")).toContain('<sheet name="Faculty Summary"')
     expect(partText(parts, "xl/worksheets/sheet1.xml")).toContain('orientation="landscape"')
+  })
+
+  it("prints the six columns, with the respondents as the weight", () => {
+    const model = buildFacultySummaryModel(INPUT)
+    expect(model.headings).toEqual([
+      "SUBJECT", "SECTION", "RESPONDENTS", "AVG RATING", "HIGHEST", "LOWEST",
+    ])
+    expect(model.rows[0].cells[2]).toBe(20)
+  })
+
+  it("makes the band recomputable from its rows — weighted, not a plain mean", () => {
+    const model = buildFacultySummaryModel({
+      ...INPUT,
+      rows: [
+        { ...INPUT.rows[0], avgRating: 3.6, totalRespondents: 20 },
+        { ...INPUT.rows[0], avgRating: 3.75, totalRespondents: 10, section: { program: "BSIT", name: "31E2" } },
+        { ...INPUT.rows[0], avgRating: 3.8, totalRespondents: 4, section: { program: "BSIT", name: "31E3" } },
+      ],
+    })
+    const total = model.rows.reduce((sum, row) => sum + Number(row.cells[2]), 0)
+    const weighted = model.rows.reduce(
+      (sum, row) => sum + Number(row.cells[3]) * Number(row.cells[2]),
+      0,
+    ) / total
+    expect(weighted).toBeCloseTo(3.67, 2) // (20·3.60 + 10·3.75 + 4·3.80) / 34
+    expect(weighted).not.toBeCloseTo(3.72, 2) // the naive mean of the rows
   })
 })

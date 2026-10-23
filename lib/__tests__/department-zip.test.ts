@@ -28,7 +28,13 @@ import {
   verdictForDepartmentZip,
   MAX_SUBJECT_SECTIONS,
 } from "@/features/evaluation-results/department-zip"
-import { readZip } from "@/lib/xlsx-template"
+import { readZip, partText } from "@/lib/xlsx-template"
+
+/** The XML inside one cell — the summary's figures are asserted by position. */
+function cellOf(sheet: string, ref: string): string {
+  const match = sheet.match(new RegExp(`<c r="${ref}"[^>]*>([\\s\\S]*?)</c>`))
+  return match?.[1] ?? ""
+}
 
 const ROW = {
   facultySubjectId: "fs1",
@@ -43,6 +49,7 @@ const ROW = {
   remarks: "Very Satisfactory",
   highestRubrics: [{ key: "professionalManner", label: "Professional Manner", score: 3.6 }],
   lowestRubrics: [{ key: "assessmentAndFeedback", label: "Assessment & Feedback", score: 3.25 }],
+  totalRespondents: 1,
 }
 
 beforeEach(() => {
@@ -86,7 +93,7 @@ beforeEach(() => {
 })
 
 describe("the department ZIP", () => {
-  it("writes the tree — a department, a member, a workbook and the summary", async () => {
+  it("writes the tree — the department summary, then a member's workbook and summary", async () => {
     const result = await buildDepartmentZip({ evaluationPeriodId: "p1", departmentIds: ["d1"] })
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -94,6 +101,8 @@ describe("the department ZIP", () => {
     expect(result.failures).toEqual([])
     const parts = readZip(result.bytes)
     expect([...parts.keys()]).toEqual([
+      // ⭐ D30: the department summary is FIRST, at the folder's root
+      "CCS/CCS_summary.xlsx",
       "CCS/Alamo, Nino Francisco/1815-ITELEC009_BSIT-31E1_evaluation.xlsx",
       "CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_summary.xlsx",
     ])
@@ -165,6 +174,89 @@ describe("the department ZIP", () => {
       "CCS/Alamo, Nino Francisco/1815-ITELEC009_BSIT-31E1_evaluation.xlsx",
       "CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_summary.xlsx",
     ])
+    // ⭐ D34: a per-faculty export carries NO department summary — that ZIP's
+    // details are one faculty's, so a whole-department row would read as the
+    // scope's figure.
+    expect(parts.has("CCS/CCS_summary.xlsx")).toBe(false)
+  })
+
+  it("builds the department summary from the members and the aggregate — not a mean of the bands", async () => {
+    mockGetDepartmentResults.mockResolvedValue({
+      subjects: [ROW],
+      // ⭐ the bands' plain mean is 3.00 — the row must NOT be 3.00
+      facultyAggregates: {
+        f1: { avgRating: 4, remarks: "Very Satisfactory" },
+        f2: { avgRating: 2, remarks: "Unsatisfactory" },
+      },
+      members: [
+        { id: "f1", name: "Alamo, Nino Francisco", email: "nf@x.edu.ph" },
+        { id: "f2", name: "Dela Cruz, Juan", email: "jd@x.edu.ph" },
+      ],
+      departmentAggregate: {
+        totalSubjects: 1,
+        // ⭐ deliberately NOT the members' count (2) — the file must ignore it
+        uniqueFaculty: 1,
+        totalResponses: 34,
+        avgRating: 3.42,
+        remarks: "Very Satisfactory",
+        professionalManner: null,
+        communicationWithStudent: null,
+        studentEngagement: null,
+        learningMaterials: null,
+        timeManagement: null,
+        experientialLearning: null,
+        respectUniqueness: null,
+        assessmentAndFeedback: null,
+        highestRubrics: [],
+        lowestRubrics: [],
+        sentimentScore: null,
+      },
+    })
+
+    const result = await buildDepartmentZip({ evaluationPeriodId: "p1", departmentIds: ["d1"] })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const parts = readZip(result.bytes)
+    const summary = readZip(parts.get("CCS/CCS_summary.xlsx")!)
+    const sheet = partText(summary, "xl/worksheets/sheet1.xml")
+
+    // ⭐ the card's row: 2 members (not uniqueFaculty's 1), 34 responses,
+    // 3.42 (not the bands' 3.00)
+    expect(cellOf(sheet, "A6")).toContain("Computer Studies")
+    expect(cellOf(sheet, "B6")).toContain("CCS")
+    expect(cellOf(sheet, "C6")).toContain(">2<")
+    expect(cellOf(sheet, "D6")).toContain(">34<")
+    expect(cellOf(sheet, "E6")).toContain(">3.42<")
+    expect(cellOf(sheet, "F6")).toContain("Very Satisfactory")
+  })
+
+  it("still writes the department summary with no responses — 0 and dashes", async () => {
+    mockGetDepartmentResults.mockResolvedValue({
+      subjects: [ROW],
+      facultyAggregates: {},
+      members: [
+        { id: "f1", name: "Alamo, Nino Francisco", email: "nf@x.edu.ph" },
+        { id: "f2", name: "Dela Cruz, Juan", email: "jd@x.edu.ph" },
+        { id: "f3", name: "Reyes, Ana", email: "ar@x.edu.ph" },
+      ],
+      departmentAggregate: null,
+    })
+
+    const result = await buildDepartmentZip({ evaluationPeriodId: "p1", departmentIds: ["d1"] })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const parts = readZip(result.bytes)
+    expect(parts.has("CCS/CCS_summary.xlsx")).toBe(true)
+    const summary = readZip(parts.get("CCS/CCS_summary.xlsx")!)
+    const sheet = partText(summary, "xl/worksheets/sheet1.xml")
+
+    // ⭐ a missing file would read as a missing department — 0 and dashes
+    expect(cellOf(sheet, "C6")).toContain(">3<")
+    expect(cellOf(sheet, "D6")).toContain(">0<")
+    expect(cellOf(sheet, "E6")).toContain("—")
+    expect(cellOf(sheet, "F6")).toContain("—")
   })
 })
 
