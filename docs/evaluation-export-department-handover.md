@@ -368,12 +368,675 @@ download. Removed from: both department pages (the `Per Subject` / `Per Faculty`
 
 ### Open
 
-- ⭐ **The owner's gate:** `npx tsc --noEmit` → `npm run lint` → `npx vitest run` →
-  `npm run build`.
+- ⭐ **The gate ran green on 2026-10-23** — `npx tsc --noEmit`, `npm run lint`, `npx vitest run`
+  (**844 passed / 1 skipped**, 84 files + 1 skipped) — and the change is committed as
+  **`4febad9`** (`feat(evaluation-results): remove evaluation PDF downloads`, 19 files,
+  +161/−360). ⭐ **`npm run build` is still the owner's step.**
 - ⭐ **The proofs** (§25.3): one department, two selected, **none selected (= all)** — confirm the
   modal's wording, unzip, check the tree against §17.1; the dean's **403/400**; the Excel print.
 - ⚠️ **The size guard fired on a real selection:** **179 subject-sections ≈ 7.5 MB** against the
   **4.0 MB** limit. The answer is one department or one faculty, not a bigger guard.
+
+---
+
+## Next work — the faculty picker on the department export (E1–E5)
+
+**Status:** specified 2026-10-23 · **not started** · owner decisions **D35–D41**.
+
+⭐ **This section supersedes the list-page parts of the 05.1/05.2 notes above.** The export
+leaves the results list (D40) and becomes a **faculty picker on the department page** (D35–D39).
+It is the plan, not the contract: E5 folds the final shapes into `03-surface.md`, then this
+section is ticked and kept as the record.
+
+**Why.** The list page's picker chose **departments**; the real question is asked one level down —
+*which teachers go in this department's ZIP?* ⭐ A department ZIP is also the artifact that trips
+the size guard (GENED 8.2 MB, CTHM 6.0 MB), so the picker is the guard's escape hatch made
+visible: choose the teachers, not a second export surface.
+
+**The shape — after**
+
+```
+/admin/evaluations/results              (no picker, no Export, no row checkboxes)
+  └─ click a department ───────────────▶ /admin/evaluations/results/<dept>
+                                          Department summary card
+                                            [ Select all ]   [ Download Excel (ZIP) ]  ← off until ≥1 tick
+                                          ☑ Doe, John      4.50  Very Satisfactory   (no card ZIP)
+                                          ☐ Cruz, Ana      4.10  Satisfactory
+                                          ☑ Reyes, Mia     3.80  Satisfactory
+```
+
+```
+the request       ...departmentIds=<dept>&facultyIds=f1,f3     ← a subset
+                  ...departmentIds=<dept>                      ← no selection, or ALL selected
+```
+
+**Decisions**
+
+| # | Decision |
+|---|---|
+| **D35** | The picker ships on **both** department pages (admin **and** dean). One shared view, two thin pages — a dean page with checkboxes but an ungated button would be the same defect in a second place. |
+| **D36** | **Nothing is selected by default.** The top button is `disabled` until at least one faculty is ticked. |
+| **D37** | **Select all acts on the cards the search shows**, not the whole roster: hidden selections **persist**. With no search it is select-all/unselect-all; with a search the label says **"Select shown" / "Unselect shown"** (an honest label beats a convenient lie). |
+| **D38** | **All faculty selected ⇒ send no `facultyIds`** — the whole-department export, **with** `<DEPT>_summary.xlsx`. A **proper subset omits the department summary** (D34, unchanged). |
+| **D39** | `facultyId?: string` is replaced by **`facultyIds?: string[]`** (comma-separated on the wire). An id that is not a member is **400**, never skipped. No legacy alias: `?facultyId=` is deleted once the last caller moves (E3). |
+| **D40** | The **admin list page loses the export entirely** — button, row checkboxes and **Clear**. They existed only to feed the picker; the routes and the "empty scope = all departments" contract **stay**. |
+| **D41** | ⭐ D27's "no select-all" was about the **department** scope (a school-wide ZIP that the guard refuses). Select-all **within the one department already in scope** is new and allowed — it cannot widen the scope. It can still trip the size guard; that 400 is the designed answer, not a defect. |
+
+**How to work this**
+
+- **One task per commit.** Run the task's **Verify** before starting the next; a red task is
+  fixed before moving on.
+- ⭐ **Anchor by exact text, never by line number** — a local model must not invent `:NNN` anchors.
+  The line numbers below are today's map, not the contract.
+- Nothing here needs a database change (H4) or a new route.
+- **Do not touch** anything not named in the task. In particular: the CSV route, the Reports
+  module, the subject-grain exports, `proxy.ts`, or the PDF orphans.
+
+**Tracker**
+
+| # | Task | Depends on | Files touched | Status |
+|---|---|---|---|---|
+| **E1** | Remove the results-list export | — | `app/admin/evaluations/results/page.tsx` · delete `lib/__tests__/admin-results-export-button.test.tsx` | `todo` |
+| **E2** | The export contract takes a **set** (`facultyIds`) | E1 | `department-zip.ts` · both export routes · `department-zip.test.ts` · `evaluation-results-workbook-export-route.test.ts` | `todo` |
+| **E3** | The picker: seam, modal, view, both pages | E2 | `DepartmentZipButton.tsx` · `ExportConfirmationModal.tsx` · `DepartmentSubjectView.tsx` · both department pages · both routes (drop the bridge) · 3 tests | `todo` |
+| **E4** | Select / unselect all | E3 | `DepartmentSubjectView.tsx` · both department pages · `department-subject-view.test.tsx` · `department-page-export-button.test.tsx` | `todo` |
+| **E5** | Docs | E1–E4 | `03-surface.md` · `evaluation-results-export.md` §24 · `evaluation-results-summary-card.md` · `TODO.md` · `specs/README.md` · this file | `todo` |
+
+---
+
+### E1 — remove the results-list export
+
+**Goal.** The admin results list is a **navigation table** again: no Export button, no row
+checkboxes, no Clear. The routes are untouched (D40).
+
+**Files.**
+- `app/admin/evaluations/results/page.tsx`
+- `lib/__tests__/admin-results-export-button.test.tsx` — **delete**
+
+**Steps.**
+
+1. Delete the import:
+   ```tsx
+   import DepartmentZipButton from "@/features/evaluation-results/components/DepartmentZipButton"
+   ```
+2. Delete the selection state:
+   ```tsx
+   const [selectedDepartmentIds, setSelectedDepartmentIds] = useState<string[]>([])
+   ```
+3. Delete the button block in the period row:
+   ```tsx
+   <DepartmentZipButton
+     evaluationPeriodId={selectedPeriod}
+     departmentIds={selectedDepartmentIds}
+     totalDepartments={departments.length}
+     exportApiBase="/api/admin/evaluation-results/export/excel"
+     label="Export"
+   />
+   ```
+4. Delete the **Clear** block inside the freshness banner:
+   ```tsx
+   {selectedDepartmentIds.length > 0 && (
+     <IosButton variant="plain" size="xs" onClick={() => setSelectedDepartmentIds([])} title="Clear selection">
+       Clear
+     </IosButton>
+   )}
+   ```
+5. Replace the first `<td>` of every row — the one that holds the checkbox — with the plain label:
+   ```tsx
+   <td className="py-3 pr-4">
+     <div>{departmentLabel(dept.departmentName, dept.departmentCode)}</div>
+   </td>
+   ```
+   ⭐ Do **not** keep the `<input>` "for later". The row's `onClick` navigation stays; only the
+   checkbox, its `stopPropagation` and its `aria-label` go.
+6. Delete the test file:
+   ```powershell
+   Remove-Item -LiteralPath "lib\__tests__\admin-results-export-button.test.tsx"
+   ```
+   ⭐ Grep after deleting: no test may import `AdminEvaluationResultsPage` any more.
+7. ⭐ **Do not remove** `app/api/admin/evaluation-results/export/excel/route.ts` or its
+   "empty scope resolves all departments" branch. It is the route contract, and the route's own
+   tests pin it.
+
+**Acceptance.**
+- The list page renders no export control, no checkbox, no Clear.
+- Clicking a row still pushes `/admin/evaluations/results/<dept>?evaluationPeriodId=…`.
+- `departmentLabel` is still used (the label), `IosButton` is still used (Refresh) — no unused
+  imports remain.
+- The admin export route and its tests are byte-for-byte untouched.
+
+**Verify.**
+```powershell
+npx tsc --noEmit
+npm run lint
+npx vitest run
+```
+
+**Commit.**
+```
+refactor(evaluation-results): remove the results-list export
+```
+
+**Do not.** Re-introduce a department checkbox elsewhere; rename `selectedPeriod`; touch the
+`/api/admin/evaluation-results/export` (CSV) route.
+
+---
+
+### E2 — the export contract takes a set
+
+**Goal.** `buildDepartmentZip` accepts `facultyIds?: string[]` and exports the **intersection** of
+that set with the department's members — all-or-nothing (an unknown id refuses the whole export).
+Both routes read `?facultyIds=f1,f2`.
+
+**Files.**
+- `features/evaluation-results/department-zip.ts`
+- `app/api/admin/evaluation-results/export/excel/route.ts`
+- `app/api/dean/evaluation-results/export/excel/route.ts`
+- `lib/__tests__/department-zip.test.ts`
+- `lib/__tests__/evaluation-results-workbook-export-route.test.ts`
+
+**Steps.**
+
+1. **The options type.** Replace:
+   ```ts
+   /** one member only — the per-faculty export */
+   facultyId?: string
+   ```
+   with:
+   ```ts
+   /** the selected members; absent or empty = the whole department */
+   facultyIds?: string[]
+   ```
+2. **The filter, once.** Just before the membership check (after `loaded` is built) add:
+   ```ts
+   const selected = new Set(options.facultyIds ?? [])
+   const isFiltered = selected.size > 0
+   ```
+   ⭐ One `Set` for the three places below. Do **not** use `Array.includes` inside the loops.
+3. **The membership check.** Replace the whole `if (options.facultyId) { … }` block with:
+   ```ts
+   if (isFiltered) {
+     for (const { department, results } of loaded) {
+       for (const facultyId of selected) {
+         if (!results.members.some((member) => member.id === facultyId)) {
+           return { ok: false, reason: "unknown-faculty", facultyId, departmentId: department.id }
+         }
+       }
+     }
+   }
+   ```
+   ⭐ Return on the **first** missing id — `Set` iterates in insertion order, so the answer is
+   deterministic. The result type keeps `facultyId: string` (singular); the verdict already names it.
+4. **The count.**
+   ```ts
+   const count = loaded.reduce((sum, entry) => {
+     if (!isFiltered) return sum + entry.results.subjects.length
+     return sum + entry.results.subjects.filter((row) => selected.has(row.facultyId)).length
+   }, 0)
+   ```
+5. **The department summary — only when unfiltered.** Change the guard `if (!options.facultyId)` to
+   `if (!isFiltered)`. ⭐ This is D38/D34: a subset ZIP must not carry the department summary.
+6. **The members and the rows.**
+   ```ts
+   const members = isFiltered
+     ? results.members.filter((member) => selected.has(member.id))
+     : results.members
+   ```
+   ```ts
+   const subjects = isFiltered
+     ? results.subjects.filter((row) => selected.has(row.facultyId))
+     : results.subjects
+   ```
+   Keep `rowsOf(facultyId)` — it still builds each selected member's consolidated file.
+7. **Purge the old name.** `grep -n "options.facultyId" features/evaluation-results/department-zip.ts`
+   must return nothing. The remaining `facultyId` occurrences are `row.facultyId`, `member.id`, and
+   the refusal type's field.
+8. **The admin route.** Replace:
+   ```ts
+   // the per-faculty export (D27) — one member of the scope
+   const facultyId = searchParams.get("facultyId") || undefined
+
+   const result = await buildDepartmentZip({ evaluationPeriodId, departmentIds, facultyId })
+   ```
+   with:
+   ```ts
+   // the selected faculty (D39) — empty = the whole department
+   const facultyIds = (searchParams.get("facultyIds") ?? "")
+     .split(",")
+     .map((id) => id.trim())
+     .filter(Boolean)
+   // ⭐ the bridge: the per-card button still sends `facultyId` until E3.
+   // Delete these two lines in E3, not before — they keep the old button truthful.
+   const legacyFacultyId = searchParams.get("facultyId")
+   if (facultyIds.length === 0 && legacyFacultyId) facultyIds.push(legacyFacultyId)
+
+   const result = await buildDepartmentZip({
+     evaluationPeriodId,
+     departmentIds,
+     facultyIds: facultyIds.length > 0 ? facultyIds : undefined,
+   })
+   ```
+9. **The dean route.** The same, inside the existing `buildDepartmentZip({ departmentIds: [dept.id], … })`
+   call. ⭐ The `departmentIds` ownership check comes **first** — do not move it.
+10. **`department-zip.test.ts`.**
+    - Replace the one-member case with `facultyIds: ["f1"]`; keep "no summary" and "no other
+      member" assertions.
+    - Replace `facultyId: "someone-else"` with `facultyIds: ["someone-else"]`; keep "refuses before
+      any subject read".
+    - **Add** a two-member case: in that test, `mockGetDepartmentResults` resolves two members
+      (`f1`, `f2`) and two rows; build `facultyIds: ["f1", "f2"]`; assert both folders exist,
+      a third member's folder does **not**, and `CCS/CCS_summary.xlsx` is **absent**.
+    - **Add** `facultyIds: []` → the whole department, including `CCS/CCS_summary.xlsx`.
+    - Keep the 97-section guard test unchanged.
+11. **`evaluation-results-workbook-export-route.test.ts`.**
+    - Add: `?evaluationPeriodId=p1&departmentIds=d1&facultyIds=f1` → 200, the tree is f1 only.
+    - Add: `?evaluationPeriodId=p1&departmentIds=d1&facultyIds=f1,ghost` → **400** with
+      `Unknown faculty`, and `mockGetSubjectResultSet` **not** called (the refusal precedes pass 2).
+    - Add the **bridge** case: `?evaluationPeriodId=p1&departmentIds=d1&facultyId=f1` → f1 only
+      (marked `// deleted in E3`).
+    - Keep the empty-scope 404 and the "all departments" branch untouched.
+
+**Acceptance.**
+- `facultyIds: ["f1","f2"]` exports exactly those two, no department summary.
+- `facultyIds: []` and omitted both export the whole department **with** the summary.
+- Any unknown id → 400 before a single workbook is built.
+- One id still works (the per-card path, until E3).
+- No `options.facultyId` remains in the builder.
+
+**Verify.**
+```powershell
+npx tsc --noEmit
+npx vitest run lib/__tests__/department-zip.test.ts lib/__tests__/evaluation-results-workbook-export-route.test.ts
+npm run lint
+```
+
+**Commit.**
+```
+feat(evaluation-results): export a selected set of faculty
+```
+
+**Do not.** Chunk the ids, add a route, rename `unknown-faculty`, or change `verdictForDepartmentZip`'s
+wording beyond what the type already gives.
+
+---
+
+### E3 — the picker (seam + modal + view + both pages)
+
+**Goal.** One gated **Download Excel (ZIP)** at the top of each department page; a checkbox on every
+faculty card; the per-card ZIP gone. ⭐ **This is the one large task**: the prop contract and its
+call sites cannot be split without either a red TypeScript build or a button that lies — so they
+land in **one** commit (D35–D39).
+
+**Files.**
+- `features/evaluation-results/components/DepartmentZipButton.tsx`
+- `features/evaluation-results/components/ExportConfirmationModal.tsx`
+- `features/evaluations/components/DepartmentSubjectView.tsx`
+- `app/admin/evaluations/results/[departmentId]/page.tsx`
+- `app/dean/evaluations/results/[departmentId]/page.tsx`
+- `app/api/admin/evaluation-results/export/excel/route.ts` — delete the bridge
+- `app/api/dean/evaluation-results/export/excel/route.ts` — delete the bridge
+- `lib/__tests__/department-zip-button.test.tsx`
+- `lib/__tests__/department-page-export-button.test.tsx`
+- `lib/__tests__/department-subject-view.test.tsx`
+- `lib/__tests__/evaluation-results-workbook-export-route.test.ts` — delete the bridge case
+
+**Steps.**
+
+1. **`DepartmentZipButton` — the props.**
+   ```tsx
+   interface DepartmentZipButtonProps {
+     evaluationPeriodId: string
+     departmentIds: string[]
+     /** the selected members; empty = the whole department */
+     facultyIds?: string[]
+     /** the go button is off until a member is selected (D36) */
+     disabled?: boolean
+     exportApiBase: string
+     label?: string
+   }
+   ```
+   Delete `totalDepartments` (no caller after E1) and `facultyId`.
+2. **The URL.** Replace `if (facultyId) params.set("facultyId", facultyId)` with:
+   ```tsx
+   if (facultyIds && facultyIds.length > 0) params.set("facultyIds", facultyIds.join(","))
+   ```
+   ⭐ `URLSearchParams` encodes the comma as `%2C`; the routes decode it back before splitting —
+   the test must expect `f1%2Cf2`.
+3. **The click guard and the button.**
+   ```tsx
+   const handleClick = useCallback(() => {
+     if (disabled) return
+     if (!evaluationPeriodId) { dispatchToast("Select an evaluation period before exporting."); return }
+     setIsModalOpen(true)
+   }, [disabled, evaluationPeriodId])
+   ```
+   ```tsx
+   <IosButton variant="tinted" size="sm" onClick={handleClick} loading={loading} disabled={disabled}>
+   ```
+   The modal call: `facultyCount={facultyIds?.length ?? 0}`.
+4. **`ExportConfirmationModal` — the props.**
+   ```tsx
+   interface ExportConfirmationModalProps {
+     isOpen: boolean
+     onClose: () => void
+     onConfirm: () => void
+     /** how many faculty the export is limited to; 0 = the whole department */
+     facultyCount?: number
+   }
+   ```
+   Delete `departmentCount`, `totalDepartments`, `isFacultyExport`, and the `isAll`/`displayCount`
+   lines. ⭐ They have no call site after E1.
+5. **The modal copy.**
+   ```tsx
+   <p className="text-sm text-secondary leading-relaxed">
+     {facultyCount && facultyCount > 0 ? (
+       <>
+         You are about to export results for{" "}
+         <span className="font-bold text-primary">
+           {facultyCount} selected faculty member{facultyCount !== 1 ? "s" : ""}
+         </span>
+         . The download contains their subject workbooks and one summary each.
+       </>
+     ) : (
+       <>
+         You are about to export the{" "}
+         <span className="font-bold text-primary">whole department</span> — every faculty member
+         and every subject section.
+       </>
+     )}
+   </p>
+   ```
+   Keep the title, the note and the Cancel / **Start Export** buttons exactly as they are.
+6. **`DepartmentSubjectView` — the props.** Remove `exportApiBase`; add:
+   ```tsx
+   selectedFacultyIds?: string[]
+   onFacultySelectionChange?: (facultyId: string, selected: boolean) => void
+   ```
+   Destructure `selectedFacultyIds = []`. Delete the `DepartmentZipButton` import.
+7. **The card header.** Change the left side from:
+   ```tsx
+   <div className="flex flex-col">
+     <span …>{formatFacultyName(group.facultyName)}</span>
+     <span …>{group.facultyEmail}</span>
+   </div>
+   ```
+   to:
+   ```tsx
+   <div className="flex items-center gap-3">
+     {onFacultySelectionChange && (
+       <input
+         type="checkbox"
+         checked={selectedFacultyIds.includes(group.facultyId)}
+         onClick={(e) => e.stopPropagation()}
+         onChange={(e) => onFacultySelectionChange(group.facultyId, e.target.checked)}
+         aria-label={`Include ${formatFacultyName(group.facultyName)} in the export`}
+         className="w-4 h-4 accent-amber-600"
+         style={{ margin: 0 }}
+       />
+     )}
+     <div className="flex flex-col">…unchanged…</div>
+   </div>
+   ```
+8. **The keyboard guard.** The header is `role="button"` and toggles on Space/Enter. Add the first
+   line of its `onKeyDown`:
+   ```tsx
+   if (e.target !== e.currentTarget) return
+   ```
+   ⭐ Without it, pressing Space on the checkbox also expands the card.
+9. **Delete the per-card ZIP.** Remove the whole `{exportApiBase && ( … <DepartmentZipButton facultyId={group.facultyId} /> … )}` block.
+10. **Both pages — state.** After `const [search, setSearch] = useState("")`:
+    ```tsx
+    const [selectedFacultyIds, setSelectedFacultyIds] = useState<string[]>([])
+    ```
+    Reset it when the scope changes (Lesson 4 — the effect must not call `setState` synchronously):
+    ```tsx
+    useEffect(() => {
+      Promise.resolve().then(() => setSelectedFacultyIds([]))
+    }, [evaluationPeriodId, departmentId])
+    ```
+11. **Both pages — the derivation** (next to `members`):
+    ```tsx
+    const selectedFacultySet = useMemo(() => new Set(selectedFacultyIds), [selectedFacultyIds])
+    const allFacultyIds = useMemo(
+      () => (members.length > 0 ? members.map((m) => m.id) : [...new Set(subjects.map((s) => s.facultyId))]),
+      [members, subjects],
+    )
+    const allFacultySelected =
+      allFacultyIds.length > 0 && allFacultyIds.every((id) => selectedFacultySet.has(id))
+    ```
+    ⭐ D38: all selected sends **no** `facultyIds` — so the summary comes back.
+12. **Both pages — the handler.**
+    ```tsx
+    const toggleFacultySelection = useCallback((facultyId: string, selected: boolean) => {
+      setSelectedFacultyIds((prev) =>
+        selected
+          ? prev.includes(facultyId) ? prev : [...prev, facultyId]
+          : prev.filter((id) => id !== facultyId),
+      )
+    }, [])
+    ```
+13. **Both pages — the top button.**
+    ```tsx
+    <DepartmentZipButton
+      evaluationPeriodId={evaluationPeriodId}
+      departmentIds={[departmentId]}
+      facultyIds={allFacultySelected ? [] : selectedFacultyIds}
+      disabled={selectedFacultyIds.length === 0}
+      exportApiBase="/api/admin/evaluation-results/export/excel"
+    />
+    ```
+    Dean: the dean base. ⭐ Do not move the button out of the summary card.
+14. **Both pages — the view.**
+    ```tsx
+    <DepartmentSubjectView
+      …unchanged props…
+      selectedFacultyIds={selectedFacultyIds}
+      onFacultySelectionChange={toggleFacultySelection}
+    />
+    ```
+    Delete `exportApiBase` from the view's props.
+15. **The routes — delete the bridge.** In both, remove the `legacyFacultyId` lines and their
+    comment. `?facultyId=` is now unread (D39).
+16. **`department-zip-button.test.tsx`.**
+    - `facultyIds: ["f1","f2"]` → URL contains `&facultyIds=f1%2Cf2`; the modal says "2 selected
+      faculty members".
+    - No `facultyIds` → the modal says "whole department"; the URL has no `facultyIds`.
+    - `disabled: true` → a click opens **no** modal and calls nothing.
+    - Delete the `totalDepartments` empty-list case (the prop is gone).
+17. **`department-page-export-button.test.tsx`.**
+    - Delete the per-card case (lines 129-151).
+    - The top button is now gated: assert `(button as HTMLButtonElement).disabled === true`
+      initially; tick `Include Doe, John in the export`; assert enabled; then modal → Start Export
+      → `…?evaluationPeriodId=p1&departmentIds=d1&facultyIds=f1`.
+    - Dean case: same, with the dean base.
+    - Keep the "no period → no button" case unchanged.
+18. **`department-subject-view.test.tsx`.**
+    - The default `renderView` passes no selection props → assert `queryAllByRole("checkbox")` is
+      empty (the export is off by default).
+    - Add one case with `onFacultySelectionChange` + `selectedFacultyIds: ["f1"]` → the f1 checkbox
+      is checked; clicking it calls the handler with `("f1", false)`; the card does **not** expand.
+19. **`evaluation-results-workbook-export-route.test.ts`.** Delete the bridge case. Add:
+    `?facultyIds=f1` → f1 only; `?facultyIds=f1,ghost` → 400 (this may already exist from E2 —
+    keep one, not two).
+
+**Acceptance.**
+- Both department pages show one top button, disabled with nothing ticked.
+- Ticking one card enables it; the modal names the count; the URL carries `facultyIds`.
+- Ticking **every** card sends no `facultyIds` and the modal says "whole department" (D38).
+- No faculty card has its own ZIP; no `exportApiBase` reaches the view.
+- Space on a checkbox does not collapse/expand the card.
+
+**Verify.**
+```powershell
+npx tsc --noEmit
+npx vitest run lib/__tests__/department-zip-button.test.tsx lib/__tests__/department-page-export-button.test.tsx lib/__tests__/department-subject-view.test.tsx lib/__tests__/evaluation-results-workbook-export-route.test.ts
+npm run lint
+```
+
+**Commit.**
+```
+feat(evaluation-results): pick the faculty to export on the department page
+```
+
+**Do not.** Add a second top button; keep `facultyId` as an alias; move the picker to the dean's
+list page (there is none); touch `ExportConfirmationModal`'s Escape/overflow behavior.
+
+---
+
+### E4 — select / unselect all
+
+**Goal.** One toggle in the card toolbar: it applies to **the cards the search shows** (D37).
+Hidden selections survive.
+
+**Files.**
+- `features/evaluations/components/DepartmentSubjectView.tsx`
+- `app/admin/evaluations/results/[departmentId]/page.tsx`
+- `app/dean/evaluations/results/[departmentId]/page.tsx`
+- `lib/__tests__/department-subject-view.test.tsx`
+- `lib/__tests__/department-page-export-button.test.tsx`
+
+**Steps.**
+
+1. **The view's props** — add:
+   ```tsx
+   onFacultySelectionBulkChange?: (facultyIds: string[], selected: boolean) => void
+   ```
+2. **The derived state** (inside the component, after `sortedGroups`):
+   ```tsx
+   const selectedFacultySet = useMemo(() => new Set(selectedFacultyIds), [selectedFacultyIds])
+   const visibleFacultyIds = sortedGroups.map((g) => g.facultyId)
+   const allVisibleSelected =
+     visibleFacultyIds.length > 0 && visibleFacultyIds.every((id) => selectedFacultySet.has(id))
+   ```
+3. **The toggle** — in the toolbar's right group, after **Expand all**:
+   ```tsx
+   {onFacultySelectionBulkChange && sortedGroups.length > 0 && (
+     <IosButton
+       variant="gray"
+       size="sm"
+       onClick={() => onFacultySelectionBulkChange(visibleFacultyIds, !allVisibleSelected)}
+       title={search.trim() ? "Applies to the faculty shown" : undefined}
+     >
+       {allVisibleSelected
+         ? search.trim() ? "Unselect shown" : "Unselect all"
+         : search.trim() ? "Select shown" : "Select all"}
+     </IosButton>
+   )}
+   ```
+4. **Both pages — the merge handler.**
+   ```tsx
+   const setManyFacultySelected = useCallback((facultyIds: string[], selected: boolean) => {
+     setSelectedFacultyIds((prev) => {
+       if (selected) return [...new Set([...prev, ...facultyIds])]
+       const drop = new Set(facultyIds)
+       return prev.filter((id) => !drop.has(id))
+     })
+   }, [])
+   ```
+   Pass `onFacultySelectionBulkChange={setManyFacultySelected}` to the view on both pages.
+5. **`department-subject-view.test.tsx`.** With two members (`f1`, `f2`):
+   - no search, nothing selected → the label is **Select all**; click → `(["f1","f2"], true)`.
+   - nothing selected, `search: "Advanced"` (f2's subject only) → **Select shown**; click →
+     `(["f2"], true)`.
+   - `selectedFacultyIds: ["f1","f2"]`, no search → **Unselect all**; click → `(["f1","f2"], false)`.
+6. **`department-page-export-button.test.tsx`.** Add a second fixture next to `resultsFor` —
+   `resultsForTwo` — with two members (`f1` "John Doe", `f2` "Jane Cruz") and one row each. In the
+   new test, `mockUseApiGet.mockImplementation(resultsForTwo)`; `beforeEach` restores the old
+   fixture for the other cases:
+   - tick **Include Doe, John in the export**;
+   - type `Cruz` in the search (`screen.getByPlaceholderText("Search faculty, subject...")`);
+   - tick **Include Cruz, Jane in the export** → the toggle reads **Unselect shown**;
+   - click it → the f2 checkbox unticked;
+   - clear the search → f1 is **still** ticked, f2 is not;
+   - click the top button → Start Export → the URL ends `&facultyIds=f1`.
+   ⭐ That last assertion is D37: the hidden tick survived the unselect-shown.
+7. ⭐ Do **not** change the default selection: E3's `onFacultySelectionChange` remains the only
+   per-card path; the bulk callback is additive.
+
+**Acceptance.**
+- No search: the toggle selects/clears every card; the top button enables on the first selection.
+- With a search: only the shown cards change; hidden ticks survive and still reach the URL.
+- The label never claims "all" while a search is narrowing the list.
+- Select-all on a large department can still hit the size guard — that is D41, not a bug.
+
+**Verify.**
+```powershell
+npx tsc --noEmit
+npx vitest run lib/__tests__/department-subject-view.test.tsx lib/__tests__/department-page-export-button.test.tsx
+npm run lint
+```
+
+**Commit.**
+```
+feat(evaluation-results): select or unselect all faculty in the export
+```
+
+**Do not.** Make the toggle select the whole roster while a search is active; add a second
+checkbox column; clear hidden selections.
+
+---
+
+### E5 — docs (the contract catches up)
+
+**Goal.** The exported contract, the specs and the entry points describe the picker — and the
+tracker above is ticked.
+
+**Files.**
+- `specs/evaluation-results-export/03-surface.md` → **v1.3**
+- `specs/evaluation-results-export.md` → §24 status row (+ the D27 note if it names the list page)
+- `specs/evaluation-results-summary-card.md` → the card's control paragraph
+- `TODO.md` → the NEXT block
+- `specs/README.md` → status row 37 / Thread 1
+- this file → the tracker + Open
+
+**Steps.**
+
+1. **`03-surface.md`.** Rewrite the surface table and §4:
+   - the **list page** — no export, no selection (D40);
+   - the **department page** — one picker + one gated button (D35–D38);
+   - the **faculty card** — no ZIP (the row is the selection, not a download);
+   - the **subject page** — unchanged;
+   - the request shape: `?evaluationPeriodId=&departmentIds=&facultyIds=f1,f2` (omitted = whole
+     department);
+   - ⭐ **contract 8**: `exportApiBase` moves from the card to the page's top button — the two
+     pages still cannot call each other's route;
+   - ⭐ replace the "no 'all' control" bullet with D41's distinction: **no department-scope
+     select-all**; a **faculty** select-all inside the current department is allowed and can still
+     trip the guard;
+   - bump the version to **1.3** and date it.
+2. **`evaluation-results-export.md` §24.** Add the faculty-picker row (E1–E4) and mark D27 as
+   **amended by D40/D41** — the list-page picker is gone; "all departments" stays a route contract,
+   not a UI one.
+3. **`evaluation-results-summary-card.md`.** The card's control sentence becomes: *one
+   **Download Excel (ZIP)**, off until a faculty is ticked; the selection is made on the cards
+   below.* ⭐ Keep the historical note about the PDF removal.
+4. **`TODO.md`.** Replace the "Next: the owner's proofs" sentence with: the picker is specified
+   (E1–E5, this handover) and the owner's proofs wait for it; the build is still the owner's step.
+5. **`specs/README.md`.** Status row 37 + Thread 1: **next = the faculty picker (E1–E5)**, then the
+   owner's proofs.
+6. **This file.** Tick the tracker, add the commit SHAs, and rewrite **Open** to: the owner's
+   `npm run build`, the picker proofs (tick one / tick all / search+select), and the size guard.
+
+**Acceptance.**
+- No spec says the list page exports, that the faculty card has a ZIP, or that `facultyId` is the
+  wire contract.
+- `specs/README.md` and `TODO.md` name E1–E5; a reader lands here without asking.
+- The tracker shows all five tasks `done` with SHAs.
+
+**Verify.**
+```powershell
+npx tsc --noEmit
+npm run lint
+npx vitest run
+```
+
+**Commit.**
+```
+docs(evaluation-results): record the faculty picker
+```
+
+**Do not.** Rewrite the PDF history; touch the Reports module; add a new spec file — this handover
+is the plan, `03-surface.md` is the contract.
 
 ---
 
