@@ -80,66 +80,40 @@ const renderPage = async () => {
   await waitFor(() => expect(screen.getByText(/figures as of/i)).toBeTruthy())
 }
 
-const zipButton = () => screen.getByRole("button", { name: /download excel/i }) as HTMLButtonElement
-const csvButton = () => screen.getByRole("button", { name: /^export$/i }) as HTMLButtonElement
+const exportButton = () => screen.getByRole("button", { name: /^export$/i }) as HTMLButtonElement
 
-// The CSV "Export" is the school-wide, flat-data download. It stays on its
-// own route and its own filename while the ZIP button uses the export seam.
-describe("Admin evaluation results page - CSV export (unchanged)", () => {
-  it("calls the CSV route and saves the CSV filename", async () => {
+describe("Admin evaluation results page - Export integration", () => {
+  it("renders the Export button", async () => {
+    await renderPage()
+    expect(exportButton()).toBeTruthy()
+  })
+
+  it("calls the ZIP route with no departments (all) when none selected after confirmation", async () => {
     await renderPage()
 
-    fireEvent.click(csvButton())
+    fireEvent.click(exportButton())
+    
+    // Confirm in modal
+    const confirmButton = screen.getByRole("button", { name: /start export/i })
+    fireEvent.click(confirmButton)
 
     await waitFor(() =>
       expect(mockDownloadFromApi).toHaveBeenCalledWith(
-        "/api/admin/evaluation-results/export?evaluationPeriodId=p1",
-        "evaluation-results-p1.zip",
+        "/api/admin/evaluation-results/export/excel?evaluationPeriodId=p1",
+        "evaluation-results-excel-p1.zip",
       ),
     )
   })
 
-  it("refuses locally when there is no period at all", async () => {
-    mockUseApiGet.mockImplementation((url: string | null) =>
-      url === "/api/evaluation-periods"
-        ? { data: { periods: [] }, error: undefined }
-        : { data: undefined, error: undefined },
-    )
-
-    render(<AdminEvaluationResultsPage />)
-    fireEvent.click(csvButton())
-
-    await waitFor(() =>
-      expect(mockDispatchToast).toHaveBeenCalledWith("Select an evaluation period before exporting."),
-    )
-    expect(mockDownloadFromApi).not.toHaveBeenCalled()
-  })
-})
-
-describe("Admin evaluation results page - department ZIP export", () => {
-  it("renders the ZIP button with its own accessible name", async () => {
-    await renderPage()
-    expect(zipButton()).toBeTruthy()
-    // Two buttons, two names: the label is never a shared /export/i.
-    expect(csvButton()).toBeTruthy()
-  })
-
-  it("refuses locally when no department is selected and calls no route", async () => {
-    await renderPage()
-
-    fireEvent.click(zipButton())
-
-    await waitFor(() =>
-      expect(mockDispatchToast).toHaveBeenCalledWith("Select at least one department before exporting."),
-    )
-    expect(mockDownloadFromApi).not.toHaveBeenCalled()
-  })
-
-  it("calls the ZIP route with the selected department and the Excel filename", async () => {
+  it("calls the ZIP route with the selected department after confirmation", async () => {
     await renderPage()
 
     fireEvent.click(screen.getByLabelText(/select department college of computer studies \(ccs\)/i))
-    fireEvent.click(zipButton())
+    fireEvent.click(exportButton())
+    
+    // Confirm in modal
+    const confirmButton = screen.getByRole("button", { name: /start export/i })
+    fireEvent.click(confirmButton)
 
     await waitFor(() =>
       expect(mockDownloadFromApi).toHaveBeenCalledWith(
@@ -149,15 +123,16 @@ describe("Admin evaluation results page - department ZIP export", () => {
     )
   })
 
-  it("shows loading on the ZIP button only - the CSV button does not spin", async () => {
+  it("shows loading on the Export button while downloading (after modal closes)", async () => {
     mockDownloadFromApi.mockReturnValue(new Promise(() => {}))
     await renderPage()
 
-    fireEvent.click(screen.getByLabelText(/select department college of computer studies \(ccs\)/i))
-    fireEvent.click(zipButton())
+    fireEvent.click(exportButton())
+    fireEvent.click(screen.getByRole("button", { name: /start export/i }))
 
-    await waitFor(() => expect(zipButton().disabled).toBe(true))
-    expect(csvButton().disabled).toBe(false)
+    await waitFor(() => expect(exportButton().disabled).toBe(true))
+    // Modal should be gone
+    expect(screen.queryByRole("button", { name: /start export/i })).toBeNull()
   })
 
   it("does not navigate when a department checkbox is ticked", async () => {
@@ -168,12 +143,12 @@ describe("Admin evaluation results page - department ZIP export", () => {
     expect(mockPush).not.toHaveBeenCalled()
   })
 
-  it("offers no select-all control - that scope is refused by design", async () => {
+  it("offers no select-all control - that scope is refused by design in the UI", async () => {
     await renderPage()
     expect(screen.queryByLabelText(/select all departments/i)).toBeNull()
   })
 
-  it("clears the selection - the only bulk verb", async () => {
+  it("clears the selection", async () => {
     await renderPage()
 
     fireEvent.click(screen.getByLabelText(/select department college of computer studies \(ccs\)/i))
@@ -183,10 +158,13 @@ describe("Admin evaluation results page - department ZIP export", () => {
 
     await waitFor(() => expect(screen.queryByRole("button", { name: /^clear$/i })).toBeNull())
 
-    fireEvent.click(zipButton())
+    fireEvent.click(exportButton())
+    fireEvent.click(screen.getByRole("button", { name: /start export/i }))
     await waitFor(() =>
-      expect(mockDispatchToast).toHaveBeenCalledWith("Select at least one department before exporting."),
+      expect(mockDownloadFromApi).toHaveBeenCalledWith(
+        "/api/admin/evaluation-results/export/excel?evaluationPeriodId=p1",
+        "evaluation-results-excel-p1.zip",
+      ),
     )
-    expect(mockDownloadFromApi).not.toHaveBeenCalled()
   })
 })

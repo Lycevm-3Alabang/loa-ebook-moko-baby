@@ -3,12 +3,15 @@
 import { useCallback, useState } from "react"
 import IosButton from "@/components/ui/IosButton"
 import { downloadFromApi, dispatchToast } from "@/lib/api/client"
+import ExportConfirmationModal from "./ExportConfirmationModal"
 
 interface DepartmentZipButtonProps {
   evaluationPeriodId: string
   departmentIds: string[]
+  totalDepartments?: number
   facultyId?: string
   exportApiBase: string
+  label?: string
 }
 
 /**
@@ -20,26 +23,23 @@ interface DepartmentZipButtonProps {
 export default function DepartmentZipButton({
   evaluationPeriodId,
   departmentIds,
+  totalDepartments,
   facultyId,
   exportApiBase,
+  label = "Download Excel (ZIP)",
 }: DepartmentZipButtonProps) {
   const [loading, setLoading] = useState(false)
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
-  const handleClick = useCallback(async () => {
-    if (!evaluationPeriodId) {
-      dispatchToast("Select an evaluation period before exporting.")
-      return
-    }
-    if (departmentIds.length === 0) {
-      dispatchToast("Select at least one department before exporting.")
-      return
-    }
-
+  const startExport = useCallback(async () => {
     setLoading(true)
+    setIsModalOpen(false)
     try {
       const params = new URLSearchParams()
       params.set("evaluationPeriodId", evaluationPeriodId)
-      params.set("departmentIds", departmentIds.join(","))
+      if (departmentIds.length > 0) {
+        params.set("departmentIds", departmentIds.join(","))
+      }
       if (facultyId) params.set("facultyId", facultyId)
       const url = `${exportApiBase}?${params.toString()}`
       const filename = `evaluation-results-excel-${evaluationPeriodId}.zip`
@@ -49,9 +49,28 @@ export default function DepartmentZipButton({
     }
   }, [evaluationPeriodId, departmentIds, facultyId, exportApiBase])
 
+  const handleClick = useCallback(() => {
+    if (!evaluationPeriodId) {
+      dispatchToast("Select an evaluation period before exporting.")
+      return
+    }
+
+    setIsModalOpen(true)
+  }, [evaluationPeriodId])
+
   return (
-    <IosButton variant="tinted" size="sm" onClick={handleClick} loading={loading}>
-      Download Excel (ZIP)
-    </IosButton>
+    <>
+      <IosButton variant="tinted" size="sm" onClick={handleClick} loading={loading}>
+        {label}
+      </IosButton>
+      <ExportConfirmationModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onConfirm={startExport}
+        departmentCount={departmentIds.length}
+        totalDepartments={totalDepartments}
+        isFacultyExport={!!facultyId}
+      />
+    </>
   )
 }

@@ -72,12 +72,15 @@ const zipButton = () => screen.getAllByRole("button", { name: /download excel \(
 
 describe("Department Results Page - Excel Export integration", () => {
   describe("Admin Department Page", () => {
-    it("renders the ZIP button and calls the admin export route", async () => {
+    it("renders the ZIP button and calls the admin export route after confirmation", async () => {
       render(<AdminDepartmentDetailPage />)
       
       await waitFor(() => expect(zipButton()).toBeTruthy())
       
       fireEvent.click(zipButton())
+      // Use getAll and pick one, or better, look within the modal
+      const confirmButtons = await screen.findAllByRole("button", { name: /start export/i })
+      fireEvent.click(confirmButtons[0])
       
       await waitFor(() =>
         expect(mockDownloadFromApi).toHaveBeenCalledWith(
@@ -105,12 +108,14 @@ describe("Department Results Page - Excel Export integration", () => {
   })
 
   describe("Dean Department Page", () => {
-    it("renders the ZIP button and calls the dean export route", async () => {
+    it("renders the ZIP button and calls the dean export route after confirmation", async () => {
       render(<DeanDepartmentDetailPage />)
       
       await waitFor(() => expect(zipButton()).toBeTruthy())
       
       fireEvent.click(zipButton())
+      const confirmButtons = await screen.findAllByRole("button", { name: /start export/i })
+      fireEvent.click(confirmButtons[0])
       
       await waitFor(() =>
         expect(mockDownloadFromApi).toHaveBeenCalledWith(
@@ -121,19 +126,21 @@ describe("Department Results Page - Excel Export integration", () => {
     })
   })
 
-  describe("Faculty Card Export", () => {
-    it("renders the ZIP button on the faculty card and calls the correct route with facultyId", async () => {
+    it("renders the ZIP button on the faculty card and calls the correct route with facultyId after confirmation", async () => {
       render(<AdminDepartmentDetailPage />)
       
       await waitFor(() => expect(screen.getByText("Doe, John")).toBeTruthy())
       
       // Find the card for John Doe
       const facultyCard = screen.getByText("Doe, John").closest(".card")!
-      // There are multiple "buttons" because the toggle div has role="button"
       const facultyZipButton = within(facultyCard as HTMLElement).getAllByRole("button", { name: /download excel \(zip\)/i })
         .find(el => el.tagName === "BUTTON")!
       
       fireEvent.click(facultyZipButton)
+      
+      // Wait for any modal to appear and click the first Start Export button found in the whole document
+      const confirmButtons = await screen.findAllByText(/start export/i)
+      fireEvent.click(confirmButtons[0].closest("button")!)
       
       await waitFor(() =>
         expect(mockDownloadFromApi).toHaveBeenCalledWith(
@@ -142,5 +149,4 @@ describe("Department Results Page - Excel Export integration", () => {
         ),
       )
     })
-  })
 })

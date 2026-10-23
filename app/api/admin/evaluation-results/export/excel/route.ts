@@ -5,6 +5,7 @@ import {
   buildDepartmentZip,
   verdictForDepartmentZip,
 } from "@/features/evaluation-results/department-zip"
+import { getDepartmentResults } from "@/features/evaluation-results/evaluation-results.service"
 
 // The export reads the department and then every subject-section in it: it is
 // a download, and the budget is the import routes' one.
@@ -22,17 +23,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "evaluationPeriodId is required" }, { status: 400 })
     }
 
-    // ⭐ the scope is REQUIRED — "all departments" is not one download (D27:
-    // GENED ⇒ 8.2 MB against the platform's ≈4.5 MB ceiling). The scope
-    // picker offers one department or a few (the surface's slice).
-    const departmentIds = (searchParams.get("departmentIds") ?? "")
+    // ⭐ the scope: "all departments" when empty (D27: GENED ⇒ 8.2 MB against
+    // the platform's ≈4.5 MB ceiling, so "all" will likely trip the guard
+    // and return a helpful 400).
+    let departmentIds = (searchParams.get("departmentIds") ?? "")
       .split(",")
       .map((id) => id.trim())
       .filter(Boolean)
+
+    if (departmentIds.length === 0) {
+      const { departments } = await getDepartmentResults(evaluationPeriodId)
+      departmentIds = departments.map((d) => d.departmentId)
+    }
+
     if (departmentIds.length === 0) {
       return NextResponse.json(
-        { error: "departmentIds is required — pick one or more departments" },
-        { status: 400 },
+        { error: "No departments found for this period" },
+        { status: 404 },
       )
     }
 
