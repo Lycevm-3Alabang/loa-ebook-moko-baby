@@ -15,8 +15,8 @@ one per session, or none),
 `specs/evaluation-results-cache.md` (the cache contract),
 `specs/evaluation-results-attribution.md` (the attribution contract — §1.10, §3.21, S6.1, D7–D9),
 `specs/evaluation-results-export.md` (the export contract — both grains, **v6.2**, 2026-10-23:
-Part I v4.0 done · Part II the **department ZIP**, D20–D34, ⭐ **04a done; the surface is partly
-on disk (05.1 + 05.2) and 05.2-fix is next**).
+Part I v4.0 done · Part II the **department ZIP**, D20–D34, ⭐ **04a done; 05.2-fix done; 05.3
+next**).
 
 ## NEXT (do first)
 
@@ -25,13 +25,14 @@ on disk (05.1 + 05.2) and 05.2-fix is next**).
   disk (2026-10-23 — code + tests; ⚠️ gate not run, not committed):** the faculty summary carries
   `RESPONDENTS` (D32); each department folder carries `<DEPT-CODE>_summary.xlsx` first (D30/D34 —
   `members.length` + `departmentAggregate`, omitted when `facultyId` is set).
-  ⭐ **The surface (05):** 05.1's seam is on disk (`DepartmentZipButton` + 5 cases); **05.2's
-  picker + button are on disk but the list page bypasses the seam** (`page.tsx:229-243` hand-rolls
-  `downloadFromApi`) and its picker has an **"all departments" header checkbox** the spec forbids
-  (§5 — D27 refuses that scope). ⭐ **Next: 05.2-fix** (use the seam · remove the "all" checkbox ·
-  add `admin-results-export-button.test.tsx`, which does not exist) → **05.3** (the two department
-  pages) → **05.4** (the faculty card) → the owner's curl/unzip proof. The timing is still
-  unmeasured (the guard bounds the size, not the time).**
+  ⭐ **The surface (05):** 05.1's seam is on disk (`DepartmentZipButton` + 5 cases); ⭐ **05.2-fix
+  is on disk (2026-10-23 — code + tests; ⚠️ gate not run, not committed):** the list page uses the
+  seam (`page.tsx:265-269`), the **"all departments" header checkbox is gone** (§5 — D27 refuses
+  that scope), the row checkbox stops `onClick` propagation, and
+  `lib/__tests__/admin-results-export-button.test.tsx` exists (9 cases: 2 CSV + 7 ZIP/picker).
+  ⭐ **Next: 05.3** (the two department pages, beside Download PDF) → **05.4** (the faculty card,
+  the required `exportApiBase` + the per-faculty ZIP) → the owner's curl/unzip proof. The timing
+  is still unmeasured (the guard bounds the size, not the time).**
   ⭐ **The API (05a + 05b, 2026-10-22):** `GET /api/admin/evaluation-results/export/excel`
   (⭐ `departmentIds` **required**; `facultyId?`) and
   `GET /api/dean/evaluation-results/export/excel` (their own department; a foreign id → **403**) —

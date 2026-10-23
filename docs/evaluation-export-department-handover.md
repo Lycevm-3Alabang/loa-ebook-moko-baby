@@ -1,11 +1,12 @@
 # The Excel export — the handover
 
 **Date:** 2026-10-23
-**Status:** **04a-prep** (D32) and **04a** (the department summary, D30/D34) are on disk —
-  code and tests; ⭐ **the gate has NOT been run and nothing is committed.** Next: **05.2-fix**
-  (the list page bypasses the seam and its picker has an "all" checkbox §5 forbids — see the
-  last session section) → **05.3** → **05.4**. Gap 1 (`.eq("isDisabled", false)` on
-  `listSubmittedByPeriodAndEvaluateeAndFS`) was applied uncommitted in a prior session.
+**Status:** **04a-prep + 04a** (the summary tier, D30–D34) and **05.2-fix** (the list page's ZIP
+  button is on the seam; the "all departments" checkbox is gone) are on disk — code and tests;
+  ⭐ **the gate has NOT been run and nothing is committed.** Next: **05.3** (both department
+  pages) → **05.4** (the faculty card) → the owner's curl/unzip proofs → docs slice 06. Gap 1
+  (`.eq("isDisabled", false)` on `listSubmittedByPeriodAndEvaluateeAndFS`) was applied
+  uncommitted in a prior session.
 
 ⭐ **One handover at a time.** This file replaces `docs/evaluation-export-handover.md`
 (**deleted**) — the subject grain's tracking folded in here; what is still live from it
@@ -20,7 +21,7 @@
 |---|---|
 | **Part I** — the subject workbook, served by the three `…/export` routes | ✅ **done 2026-10-22** — generated from scratch by `lib/xlsx/`. ⭐ **The Excel proof is the owner's** (§14, hook below) |
 | **Part II** — the department **ZIP** | 🟡 **04a-prep + 04a done 2026-10-23** (D32 the `RESPONDENTS` column · D30/D34 the department summary — code + tests on disk, gate not yet run) ·
-⭐ **05** the surface: **05.1 on disk**; **05.2 on disk but bypasses the seam** and has an **"all departments" checkbox the spec forbids**; **05.3 / 05.4 pending** |
+⭐ **05** the surface: **05.1 on disk**; **05.2-fix on disk** (the seam is wired, the forbidden "all" checkbox is gone, the page test exists); **05.3 / 05.4 pending** |
 
 ## ⭐ The measurements (the spike, 2026-10-22 — 0 failures in all three runs)
 
@@ -234,6 +235,100 @@ gate has NOT been run and nothing is committed.**
 - ⭐ **Next:** **05.2-fix** — use the seam, remove the header checkbox, add the page's test file;
   then **05.3** (both pages, beside Download PDF) → **05.4** (the required `exportApiBase` and the
   per-faculty button) → the owner's proofs (§25.3) → docs slice 06.
+
+## Session 2026-10-23 — 05.2-fix built (the seam is wired · the "all" checkbox is gone)
+
+**Status:** code + tests on disk. ⭐ **The gate has NOT been run and nothing is committed;
+nothing has been rendered in a browser.** ⭐ This section supersedes the earlier `Next` order:
+**05.3** and **05.4** are what remain.
+
+The contract is `specs/evaluation-results-export/03-surface.md` v1.1 — §3.4 (the house button),
+§3.5 (the error verbatim), §4 (where the button sits), §5 (one or a few departments · no "all" ·
+nothing selected by default · the checkbox cell stops propagation), §7 (two accessible names and
+the list's cases). No spec change this slice. Option **A** (three surfaces) is unchanged.
+
+### The three defects the seam fixes
+
+| # | Before (`app/admin/evaluations/results/page.tsx:229-243`) | After |
+|---|---|---|
+| 1 | no period guard: sent `evaluationPeriodId=` → route **400** | the seam refuses locally ("Select an evaluation period before exporting.") |
+| 2 | filename `evaluation-results-<period>.zip` — collides with the CSV on the same page | `evaluation-results-excel-<period>.zip` (`DepartmentZipButton.tsx:45`) |
+| 3 | one `exporting` state spun both buttons | the seam owns its own `loading`; the CSV's `exporting` now drives the CSV only |
+
+### Files
+
+| File | What landed |
+|---|---|
+| `app/admin/evaluations/results/page.tsx` | import `DepartmentZipButton` (`:9`) · `handleExportZip` deleted · the inline ZIP `<IosButton>` replaced by the seam (`:265-269`, `exportApiBase="/api/admin/evaluation-results/export/excel"`) · the select-all header `<th>` deleted · the row checkbox gains `onClick={(e) => e.stopPropagation()}` |
+| `lib/__tests__/admin-results-export-button.test.tsx` | **new** — 9 cases: 2 CSV regression + 7 ZIP/picker |
+
+⭐ The run file's claim that `lib/__tests__/admin-results-export-button.test.tsx` was "the
+existing file with four CSV cases" was **false** — the file did not exist. It is created here;
+its two CSV cases are new regression pins, not recovered history.
+
+### The sweep's two findings (beyond the previous handover's list)
+
+1. ⭐ **The header already had one more `<th>` than the body had `<td>`.** The "select all" cell
+   was a column the rows never had, so the columns were misaligned by one; deleting it fixes the
+   alignment as a side-effect.
+2. ⭐ **`stopPropagation` was only on `onChange`.** The row's navigation is an `onClick`, and §5
+   says *the checkbox cell* must stop propagation — an `onClick` on the input makes it
+   independent of click/change ordering. ⭐ The test pins that a tick never navigates.
+
+### What the test pins (and what it mocks)
+
+`next/navigation` and `@/lib/api/client` (`useApiGet`, `fetcher`, `downloadFromApi`,
+`dispatchToast`) are module-mocked; ⭐ `useApiGet` is **URL-aware**, so the periods read and the
+results read cannot be confused. `vi.resetAllMocks()` in `beforeEach` (AGENTS.md Lesson 5).
+
+- the CSV button keeps `/api/admin/evaluation-results/export?…` and `evaluation-results-<period>.zip`
+- no period → the CSV toasts locally and sends nothing
+- two accessible names: `/^export$/i` vs `/download excel/i` — never a shared `/export/i`
+- no department selected → toast, **no** `downloadFromApi`
+- one selected → `…/export/excel?evaluationPeriodId=p1&departmentIds=d1` +
+  `evaluation-results-excel-p1.zip`
+- while the ZIP runs, **only** the ZIP is disabled (defect 3)
+- ticking a checkbox does **not** `router.push`
+- no "select all departments" control exists (D27)
+- **Clear** empties the selection (the only bulk verb); the ZIP then refuses locally
+
+### What not to redo
+
+- ⭐ **Do not re-introduce a select-all** — D27 refuses the scope; the CSV is the school-wide
+  download.
+- ⭐ **Do not re-implement the fetch on the page** — the seam owns the guard, the URL, the
+  filename and the loading state (§4, contract 7).
+- ⭐ **Do not rename `exporting`** — the owner decided to leave it (2026-10-23); it now means
+  the CSV only.
+- ⭐ **Do not "fix" the seam's filename back to the CSV's** — the collision is real:
+  `downloadFromApi` ignores `Content-Disposition`.
+
+### Open
+
+- ⭐ **The owner's gate:** `npx tsc --noEmit` → `npm run lint` → `npx vitest run` →
+  `npm run build`.
+- ⭐ **The browser proof (§7 / §25.3):** render the list, tick a row (no navigation), select one
+  and a few departments, download, **unzip**, check the tree against §17.1; then the **scope
+  proof** — the dean's route answers **403** for a foreign department and **400** for an unknown
+  id.
+- The seam's own test still does not pin the **verbatim `body.error`** path; the page test now
+  pins the filename and the loading separation. ⭐ Flagged, **not** expanded here (one-change
+  rule).
+- The run file `20261023-0721-sub-spec-05-surface.md` still says `status: complete`; it should
+  read **`partial`** (05.1 + 05.2-fix done · 05.3/05.4 open). Not edited in this slice.
+- ⭐ The entry-point pointers were advanced with this handover: `TODO.md`'s NEXT block and
+  `specs/README.md`'s "Next Session — Start Here" now name **05.3**.
+
+### Next (the new session's order)
+
+1. **05.3 — the two department pages** (`app/admin/evaluations/results/[departmentId]/page.tsx`
+   and the dean's twin): the button beside **Download PDF**, `departmentIds={[departmentId]}`,
+   the page's own base; new `lib/__tests__/department-page-export-button.test.tsx`.
+2. **05.4 — the faculty card** (`features/evaluations/components/DepartmentSubjectView.tsx`):
+   the **required** `exportApiBase` prop and the per-faculty ZIP for **every member**, next to
+   the consolidated PDF.
+3. The owner's proofs, then the docs slice **06** (the parent spec's §24 status row still reads
+   "04a-prep/04a pending").
 
 ---
 

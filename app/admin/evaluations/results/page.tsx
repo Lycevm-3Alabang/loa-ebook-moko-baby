@@ -6,6 +6,7 @@ import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import { useApiGet, dispatchToast, downloadFromApi, fetcher } from "@/lib/api/client"
 import IosButton from "@/components/ui/IosButton"
+import DepartmentZipButton from "@/features/evaluation-results/components/DepartmentZipButton"
 import { getRemarkColor, formatPeriodLabel, departmentLabel, findAttentionRubrics } from "@/lib/evaluation-utils"
 
 interface DepartmentRow {
@@ -226,22 +227,6 @@ export default function AdminEvaluationResultsPage() {
     }
   }
 
-  const handleExportZip = async () => {
-    if (selectedDepartmentIds.length === 0) {
-      dispatchToast("Select at least one department before exporting.")
-      return
-    }
-    setExporting(true)
-    try {
-      await downloadFromApi(
-        `/api/admin/evaluation-results/export/excel?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}&departmentIds=${selectedDepartmentIds.join(",")}`,
-        `evaluation-results-${selectedPeriod}.zip`,
-      )
-    } finally {
-      setExporting(false)
-    }
-  }
-
   const formatScore = (v: number | null) => (v !== null ? v.toFixed(2) : "\u2014")
 
   return (
@@ -277,15 +262,11 @@ export default function AdminEvaluationResultsPage() {
           </svg>
           Export
         </IosButton>
-        <IosButton
-          variant="tinted"
-          size="sm"
-          onClick={() => handleExportZip()}
-          loading={exporting}
-          title="Download Excel (ZIP)"
-        >
-          Download Excel (ZIP)
-        </IosButton>
+        <DepartmentZipButton
+          evaluationPeriodId={selectedPeriod}
+          departmentIds={selectedDepartmentIds}
+          exportApiBase="/api/admin/evaluation-results/export/excel"
+        />
       </div>
 
       {/* How fresh the numbers are, and how to refresh them. */}
@@ -360,21 +341,6 @@ export default function AdminEvaluationResultsPage() {
                 <th className="pb-3 pr-4 cursor-pointer hover:text-secondary" onClick={() => toggleSort("departmentName")}>
                   Department{sortArrow("departmentName")}
                 </th>
-                <th className="pb-3 text-center cursor-pointer hover:text-secondary">
-                  <input
-                    type="checkbox"
-                    checked={selectedDepartmentIds.length === departments.length && departments.length > 0}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedDepartmentIds(departments.map((d) => d.departmentId))
-                      } else {
-                        setSelectedDepartmentIds([])
-                      }
-                    }}
-                    aria-label={`Select all departments`}
-                    style={{ margin: 0 }}
-                  />
-                </th>
                 <th className="pb-3 pr-4 cursor-pointer hover:text-secondary text-right" onClick={() => toggleSort("avgRating")}>
                   Avg Rating{sortArrow("avgRating")}
                 </th>
@@ -399,6 +365,7 @@ export default function AdminEvaluationResultsPage() {
                       <input
                         type="checkbox"
                         checked={selectedDepartmentIds.includes(dept.departmentId)}
+                        onClick={(e) => e.stopPropagation()}
                         onChange={(e) => {
                           if (e.target.checked) {
                             setSelectedDepartmentIds(
