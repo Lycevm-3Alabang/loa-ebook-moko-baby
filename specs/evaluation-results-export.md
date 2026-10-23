@@ -1,8 +1,8 @@
 # Evaluation results — the export (the Excel workbook)
 
-**Status:** Final (Part I) · **Part II (v6.0) Final**
-**Version:** 6.0
-**Last Updated:** 2026-10-22
+**Status:** Final (Part I) · **Part II (v6.2) Final**
+**Version:** 6.2
+**Last Updated:** 2026-10-23
 **Scope:** exporting one evaluation result set as an **Excel workbook**, at the grain of one
 (faculty × subject × section) — the drill-down's subject page
 (`/admin/evaluations/results/[departmentId]/[facultySubjectId]`) and the faculty's own page
@@ -32,6 +32,24 @@ per subject-section) plus **one consolidated file per faculty**. Part I is untou
 > rendering defect in it would reach the school. **No Comments sheet is dropped** (v5.0 dropped
 > them at this grain; v6.0 **reverses** that — each subject workbook keeps its own). The
 > subject-grain workbook (§1–14) is untouched. Part II is **§15–26**.
+>
+> ⭐ **v6.1 (2026-10-23) — the ZIP also carries a DEPARTMENT summary (owner: option B).** Each
+> department folder now holds `<DEPT-CODE>_summary.xlsx` beside its faculty folders: the
+> `summary.csv` row (Department · Code · Faculty Count · Respondents · Avg Rating · Remark) as an
+> XLSX. ⭐ The per-faculty summaries stay exactly as D25 states. The file reads **nothing new** —
+> the department read already carries the members and the aggregate. **D30** · §17.1, §17.4,
+> §18, §22, §24.
+>
+> ⭐ **v6.2 (2026-10-23) — the hierarchy's PARITY RULE (owner).** *Details make up the summary;
+> the summary is the generalization of the filtered values of the details.* Three consequences:
+> **the subject read excludes disabled responses** (`isDisabled = false` — the same predicate the
+> department read applies), so the Individual and its faculty row count the same responses;
+> **the faculty summary gains a `RESPONDENTS` column** — the weight the band is pooled with, and
+> the same number the Individual's `TOTAL RESPONDENTS` prints; and **the per-faculty ZIP omits the
+> department summary** — a whole-department row is not the generalization of one faculty's
+> details. ⭐ The department summary is titled
+> `DEPARTMENT PERFORMANCE EVALUATION RESULT (POST-EVALUATION)`. **D31–D34** · §17.3, §17.4,
+> §18, §19, §20, §22, §23, §24, §25, §26.
 
 ---
 
@@ -458,6 +476,11 @@ faculty cards show. The subject-grain export (§1–14) is untouched.
 | D27 | ⭐ The **scope**: **one department or a selected few**, **bounded by the size guard** (≈ **90** subject-sections — measured). ⭐ **"all departments" is NOT one download of workbooks** (GENED: 199 sections ⇒ **8.2 MB** deflated, **359 s**; the ceiling is ≈ **4.5 MB**). ⭐ **A department over the bound is exported PER FACULTY** (a faculty ZIP always fits). The school-wide **data** stays the CSV ZIP that ships today. The unit is **per department** (a department folder in the ZIP) | 2026-10-22, amended by the spike |
 | D28 | ⭐ The **outer** ZIP is **DEFLATE** — the workbook's own bytes do not move, but the ZIP's size does (§23) | 2026-10-22 |
 | D29 | ⭐ The **structure**: **department folder → faculty folder → subject (and section)** | 2026-10-22 |
+| D30 | ⭐ **The ZIP carries a DEPARTMENT summary too** — `<DEPT-CODE>_summary.xlsx` at each department folder's root, the `summary.csv` columns (Department · Code · Faculty Count · Respondents · Avg Rating · Remark), one row. ⭐ Built from the department read's `members` and `departmentAggregate` — **no new query** | 2026-10-23 |
+| D31 | ⭐ **The hierarchy's PARITY RULE** — *details make up the summary; the summary is the generalization of the filtered values of the details.* One filter at every tier (submitted · **enabled** · live assignment · in scope); the weight travels with the detail; the parent is the **weighted** generalization (`Σ(detail × its respondents) / Σ respondents`) | 2026-10-23 |
+| D32 | ⭐ **The faculty summary carries `RESPONDENTS`** — one column per subject-section, `row.totalRespondents` (the Individual's `TOTAL RESPONDENTS`), so the band is recomputable from its own rows. ⭐ Supersedes §17.3's "Respondents are not a column" | 2026-10-23 |
+| D33 | ⭐ **The subject read excludes disabled responses** — `listSubmittedByPeriodAndEvaluateeAndFS` adds `.eq("isDisabled", false)`, the same predicate `loadDepartmentResponseSet` applies. ⭐ The Individual and its faculty row count the same responses | 2026-10-23 |
+| D34 | ⭐ **The department summary** — title `DEPARTMENT PERFORMANCE EVALUATION RESULT (POST-EVALUATION)`; **omitted when `facultyId` is set** (the per-faculty ZIP is one faculty's details) | 2026-10-23 |
 
 ## 17. The output's shape
 
@@ -466,13 +489,14 @@ faculty cards show. The subject-grain export (§1–14) is untouched.
 ```
 evaluation-results-<periodId>.zip
 ├── CCS/                                       ← the department folder (the code)
+│   ├── CCS_summary.xlsx                       ← ⭐ the DEPARTMENT summary (D30)
 │   ├── Alamo, Nino Francisco/                 ← the faculty folder
 │   │   ├── 1815-ITELEC009_BSIT-31E1_evaluation.xlsx   ← per subject (and section)
 │   │   ├── 1815-ITELEC009_BSIT-31E2_evaluation.xlsx
 │   │   └── Alamo_Nino_Francisco_summary.xlsx          ← the consolidated file
 │   └── Dela Cruz, Juan/
 │       └── 1815-ITELEC009_BSIT-31E1_evaluation.xlsx
-└── CBA/ …                                     ← only when the scope is "all" or "selected"
+└── CBA/ …                                     ← a second department in the selected scope
 ```
 
 - **The department folder** is the department's **code** (`CCS`) — the CSV export's own convention
@@ -482,6 +506,8 @@ evaluation-results-<periodId>.zip
   is in the name because the faculty's folder already carries the teacher, and two sections of
   the same subject are two files (`sectionLabel(program, name)` — `lib/evaluation-utils.ts`).
 - **The consolidated file** is `<facultyName>_summary.xlsx`, in the faculty's folder.
+- ⭐ **The department summary** is `<DEPT-CODE>_summary.xlsx`, at the department folder's root
+  (D30 — §17.4).
 - ⭐ These are **ZIP entry names** — the workbook **inside** is Part I's, byte for byte.
 
 ### 17.2 The subject workbook — Part I's, verbatim
@@ -505,11 +531,14 @@ per-response rows come along for free, and a defect in the form cannot be introd
   Alamo, Nino Francisco
   nf.alamo@lyceumalabang.edu.ph
   Average: 3.67 — Very Satisfactory
-  SUBJECHT            SECTION      AVG RATING   HIGHEST                LOWEST
-  1815-ITELEC009 …   BSIT-31E1     3.38        Professional Manner 3.60   Assessment & Feedback 3.25
-  1815-ITELEC009 …   BSIT-31E2     3.87        …                      …
-  1815-ITELEC009 …   BSIT-31E3     4.02        …                      …
+  SUBJECT             SECTION      RESPONDENTS   AVG RATING   HIGHEST                LOWEST
+  1815-ITELEC009 …   BSIT-31E1     20           3.60        Professional Manner 3.60   Assessment & Feedback 3.25
+  1815-ITELEC009 …   BSIT-31E2     10           3.75        …                      …
+  1815-ITELEC009 …   BSIT-31E3      4           3.80        …                      …
 ```
+
+⭐ **The band tallies to the rows** — `(20·3.60 + 10·3.75 + 4·3.80) / 34 = 3.67` (a plain mean
+of the three rows would print **3.72** — the trap the weights exist to avoid).
 
 - The **header block** carries the workbook's constants: the result title, the term, the
   evaluation period, and **the department** (`name (code)`) — at this grain the department is
@@ -519,21 +548,60 @@ per-response rows come along for free, and a defect in the form cannot be introd
   (`Average: 3.67 — Very Satisfactory`; a member with no counted responses prints `—` and no
   remark). A member with **no subject-sections at all** still gets a file — an empty band (a
   member with nothing to show is still a member).
-- **The table is five columns**: `SUBJECT │ SECTION │ AVG RATING │ HIGHEST │ LOWEST`.
+- **The table is six columns**: `SUBJECT │ SECTION │ RESPONDENTS │ AVG RATING │ HIGHEST │ LOWEST`.
   - **Subject** = `${code} ${name}`; **Section** = the joined display label
     (`sectionLabel(program, name)` — the summary table is a display artifact; the FORM keeps
     Part I §5's two fields).
+  - **Respondents** = the row's `totalRespondents` — ⭐ **the same number the Individual's
+    `TOTAL RESPONDENTS` prints**, and the **weight** the band is pooled with (v6.2, D32). A
+    section nobody evaluated prints `0` and carries no weight.
   - **Avg Rating** = the subject-section's general rating (2 dp).
   - **Highest / Lowest** = `findHighestLowestRubrics` over that subject-section's criterion
     averages, **every tie**, comma-joined as `"Label score"`.
-  - ⭐ **Respondents are not a column** — the card does not show one, and the subject
-    workbook's footer carries the count for its own subject-section.
 - **Landscape** (the Highest/Lowest cells are long), the print area is its own columns, fit one
   page wide.
+- ⭐ **The band is the weighted generalization of the rows** — `Σ(row avg × row respondents) /
+  Σ respondents` — the same pooled figure the card shows, now recomputable from the file's own
+  columns (D31). ⭐ To display precision: the band is pooled from the raw rating rows, so a check
+  on the 2-dp rows can sit ±0.01 away at a rounding boundary.
 - ⭐ **A section with no evaluations prints a row**, not nothing: `—` for the rating, blank
   Highest/Lowest (D23).
 - ⭐ The file is **reused**, not re-invented: the existing writer (`lib/xlsx/writer.ts`) and the
   existing style tokens — **no new writer feature**.
+
+### 17.4 The department consolidated file (D30, v6.1 · D34, v6.2)
+
+**One XLSX per department**, at the department folder's root — the `summary.csv` row as a file:
+
+```
+  DEPARTMENT PERFORMANCE EVALUATION RESULT (POST-EVALUATION)
+  Semester: …
+  Evaluation Period: …
+  DEPARTMENT        CODE   FACULTY COUNT   RESPONDENTS   AVG RATING   REMARK
+  Computer Studies  CCS    12              318           3.42         Very Satisfactory
+```
+
+- The **header block** carries the artifact's identity: the title, then the same `Semester:` /
+  `Evaluation Period:` lines the faculty summary prints (`orDash`), then the table.
+- ⭐ **The title** is `DEPARTMENT PERFORMANCE EVALUATION RESULT (POST-EVALUATION)` — the mirror
+  of the faculty file's title (D34).
+- ⭐ **Omitted in a per-faculty export** (`facultyId` set, D34): that ZIP's details are one
+  faculty's, and a whole-department row would not be their generalization — it would read as the
+  scope's figure. The department file appears only when the export's scope is the department.
+- **The columns are `summary.csv`'s** — `DEPARTMENT │ CODE │ FACULTY COUNT │ RESPONDENTS │
+  AVG RATING │ REMARK` — one row: the department.
+  - **Faculty Count** = the department's **members** (`members.length` — the §3.14 headcount, the
+    number the department page prints), **not** `departmentAggregate.uniqueFaculty`.
+  - **Respondents** = `departmentAggregate.totalResponses` (`0` when the aggregate is null).
+  - **Avg Rating** = `departmentAggregate.avgRating` (2 dp) — ⭐ the department card's figure: the
+    pool of the department's rating rows, **not** a mean of the faculty bands.
+  - **Remark** = `departmentAggregate.remarks` (`—` when null).
+- ⭐ **Portrait**, the print area its own columns — six short columns.
+- ⭐ **The file is present even with no responses**: a member without results is still a member
+  (D23), and the row prints `0` respondents, `—` for the rating and the remark. A missing file
+  would read as a missing department.
+- ⭐ **No new read** — the department read already carries `members` and `departmentAggregate`
+  (§20); the file is built in the same pass as the faculty summaries.
 
 ## 18. The field contract
 
@@ -547,8 +615,14 @@ adds is the **consolidated file's**:
 | the band's **average + remark** | `facultyAggregates` — the pool of the member's subject totals (`aggregateFacultyResults`) | ⭐ **the card's figure, not a mean of the card's subject averages** — a mean cannot be un-meaned (§3.14/§3.18) |
 | a row's **subject / section** | the department read's rows | the card's own values |
 | a row's **Avg Rating** | the row's general rating | §6.1's arithmetic on that subject-section's ratings |
+| a row's **Respondents** | the department read's row (`totalRespondents`) | ⭐ the **same count** the Individual's `TOTAL RESPONDENTS` prints (D32) — the weight the band is pooled with |
 | a row's **Highest / Lowest** | the row's `highestRubrics` / `lowestRubrics` (`findHighestLowestRubrics`) | the card's own values — §3.18 by construction |
-| a row's **"—"** | a subject-section nobody evaluated | D23 — the rating is `—`, Highest/Lowest blank |
+| a row's **"—"** | a subject-section nobody evaluated | D23 — the rating is `—`, Highest/Lowest blank, respondents `0` |
+| the department summary's **title** | the artifact's own constant | `DEPARTMENT PERFORMANCE EVALUATION RESULT (POST-EVALUATION)` (D34) |
+| the department summary's **semester / period** | the period read | as the department card shows them |
+| its **Department / Code** | the scope's own department (`departmentRepository.findById`) | the folder's department |
+| its **Faculty Count** | `members.length` — the accounts homed in the department (§3.14) | ⭐ the card's headcount, **not** `uniqueFaculty` |
+| its **Respondents / Avg Rating / Remark** | `departmentAggregate` (`totalResponses` · `avgRating` · `remarks`) | the card's figures; `0` / `—` when the aggregate is null |
 
 ## 19. The arithmetic — inherited
 
@@ -562,6 +636,27 @@ adds is the **consolidated file's**:
 - ⭐ the parity is **by construction**: the consolidated file's rows and bands come from the same
   response set by the same helpers as the cards — a row **must equal** the card's row for the
   same subject-section (§3.18).
+- ⭐ **The hierarchy's parity rule (v6.2, D31)** — *details make up the summary; the summary is
+  the generalization of the filtered values of the details.*
+  - **One filter at every tier** — submitted · **enabled** (`isDisabled = false`) · live
+    assignment · in scope. ⭐ The subject read now applies the same `isDisabled` predicate as the
+    department read (D33), so the Individual's `TOTAL RESPONDENTS` and its row's respondents are
+    the same count.
+  - **The weight travels with the detail** — every subject row carries its respondents (D32).
+  - **The parent is the weighted generalization** — the faculty band is `Σ(row avg × row
+    respondents) / Σ respondents`; the department row is `Σ(faculty avg × faculty respondents) /
+    Σ respondents`. ⭐ The naive mean of the child averages is **not** the parent (3.72 ≠ 3.67 in
+    §17.3's sample) — a mean cannot be un-meaned.
+  - ⭐ **To display precision** — the parent is pooled from the raw rating rows, so a weighted
+    check on the 2-dp details can differ by ±0.01 at a rounding boundary. ⭐ Row-level equality
+    (the Individual's `FINAL RATING` = the faculty row's `AVG RATING`) is **exact**.
+- ⭐ the **department summary's row** is the **department card's** figure — `departmentAggregate`
+  pools the department's rating rows; it is **not** the mean of the faculty bands (the same rule
+  one grain up).
+- ⚠️ **The Highest/Lowest seam** — the Individual follows the **live rubric**, but
+  `findHighestLowestRubrics` maps the eight known category names (`CATEGORY_NAMES`). A rubric
+  that renames or adds a category makes the form and the Highest/Lowest disagree; that is a
+  **separate decision**, not fixed by this rule.
 
 ## 20. What it reads
 
@@ -570,11 +665,16 @@ The export adds **no new query** — it reads what the drill-down already reads:
 - ⭐ **the department read** — `getDepartmentSubjectResults(evaluationPeriodId, departmentId)`
   (`features/evaluation-results/evaluation-results.service.ts`): the page's own read, unchanged.
   It carries the **rows** (one per subject-section: the figures, the section, the rubric
-  columns), the **bands** (`facultyAggregates` — the pooled figures) and the **members**.
+  columns), the **bands** (`facultyAggregates` — the pooled figures), the **members** and the
+  **department aggregate** (the card's figures).
+- ⭐ **The department summary** (D30) adds no read either — it is built from that same
+  department read (`members` + `departmentAggregate`) in the same pass as the faculty summaries.
 - ⭐ **the subject read, per subject-section** — `getSubjectResultSet(facultySubjectId,
   evaluationPeriodId)`: the **shipping** read (the subject page's own). It carries the
   evaluation's rows, its comments, its per-response averages and its **statement averages**
   (`itemAverages`) — everything Part I's workbook needs, so the workbook needs no extra work.
+  ⭐ It applies the **same counted set** as the department read: submitted, **enabled**
+  (`isDisabled = false` — v6.2, D33), and the assignment's current teacher as the evaluatee.
 - ⭐ **the rubric** — `rubricRepository.getCategoriesWithItems(period.rubricGroupId)`, read
   **ONCE** for the whole export (the rubric is the same for every subject). It is the form's
   layout (§7.2) — ⭐ **nothing may assume a criterion count** (§3.2).
@@ -629,7 +729,9 @@ The export adds **no new query** — it reads what the drill-down already reads:
 |---|---|
 | the **DEFLATE** zip writer (server-only) | `lib/zip-deflate.ts` — ⭐ **new**; the browser's `lib/zip.ts` stays store-only and client-safe (the client's `downloadBlob` imports it) |
 | the **shared workbook builder** | `lib/xlsx/subject-workbook.ts` — ⭐ **new**; the subject route's assembly, extracted. The **three** shipping routes call it (one line each) and their output **does not move** |
-| the consolidated file's **model + renderer** | `lib/xlsx/overall-summary.ts` — ⭐ **new**; the existing writer and the existing style tokens |
+| the consolidated file's **model + renderer** | `lib/xlsx/overall-summary.ts` — ⭐ **new** (v6.2: the row carries `RESPONDENTS`); the existing writer and the existing style tokens |
+| the **counted set** | `features/evaluations/evaluations.repository.ts` — `listSubmittedByPeriodAndEvaluateeAndFS` gains `.eq("isDisabled", false)` (v6.2, D33) — the predicate the department read already applies |
+| the department summary's **model + renderer** | `lib/xlsx/department-summary.ts` — ⭐ **new** (v6.1, D30); the existing writer and the existing style tokens |
 | the client's download | `lib/eval-export.ts` — a second function beside the subject-grain one |
 | the buttons | the results **list** page (the scope picker) and the **department** page (one department) — the placement is decided in sub-spec 03 |
 
@@ -644,7 +746,8 @@ traced (Part I's `loadLetterhead`).
 | the export is **too slow** | high | ⭐ **MEASURED (sequential)**: a subject read is ≈ **1.7 s** (≈8 round trips) — GENED **347 s**, CTHM **249 s**, CCA **34 s**; the **builds are free** (5.6 ms per workbook) and the **department read** is 4.6–9.6 s. ⭐ The route **parallelises** the subject reads (a bounded pool) — ⭐ **the parallel speed-up is NOT measured**: the spike was sequential and the contention is unknown. ⭐ At the bound (≈90) the sequential cost is ≈ **157 s**, so **parallelisation is required, not optional** |
 | a subject **silently missing** from the ZIP | high | ⭐ `_INCOMPLETE.txt` **inside** the ZIP names every subject that failed to build — a silently missing row is a *wrong* artifact, not a missing one (Lesson 7b) |
 | the **shared builder** changes the shipping routes' bytes | high | the three routes' existing tests pin their output; the builder's own test carries the input assertions |
-| the workbook's figures vs the consolidated file's | low | the **subject read** vs the **department read** — they differ only in the live-eval case (§3.19) and the legacy NULL-period rows (D8), both pre-existing and documented |
+| the workbook's figures vs the consolidated file's | **medium** | ⭐ **v6.2 closes the `isDisabled` gap** — the subject read applies the same filter as the department read (D33), so the Individual and its row count the same responses. ⭐ What remains: the display-rounding tolerance (±0.01 on the weighted roll-up) and the legacy NULL-period rows (D8) |
+| the **Highest/Lowest** seam | medium | the Individual follows the live rubric; `findHighestLowestRubrics` maps the eight known names. A renamed/added rubric category can disagree — a **separate decision**, named in §19 |
 | the ZIP's **order** differs from the card's row order | low | the ZIP states a total order (§17.1); §3.18 compares **figures**, not row order |
 
 ## 24. The slices
@@ -655,23 +758,33 @@ commit, independently reviewable and revertible. The contracts live in
 
 | # | Sub-spec | State |
 |---|---|---|
-| 01 | **the contracts** — this file (v6.0) + the sub-spec folder | ✅ done 2026-10-22 |
+| 01 | **the contracts** — this file (v6.0 → **v6.2**) + the sub-spec folder | ✅ done 2026-10-22 · **v6.1 (2026-10-23)** · **v6.2 (2026-10-23)** |
 | 02 | **the spike** — measure the bytes, the time and the request count (`00-spike.md`) | ✅ done 2026-10-22 — the numbers (21 · 145 · 199 sections, 0 failures) |
 | 03 | **the building blocks** — the DEFLATE zip · the shared builder · the consolidated file (`01-building-blocks.md`) | ✅ done 2026-10-22 |
-| 04 | **the department ZIP route** (`02-department-zip.md`) | ✅ done 2026-10-22 — **05a** the assembly · **05b** the two routes |
-| 05 | **the surface** — the buttons, the scope picker, the faculty-card decision (`03-surface.md`) | ⬜ **not started** — ⭐ no button exists, so nothing the school sees has changed |
-| 06 | **the docs** — the handover, the TODO row, the specs index (`04-docs.md`) | ✅ the handover + the TODO row (2026-10-22) · the specs index (this file's status row) |
+| 04 | **the department ZIP route** (`02-department-zip.md`) | ✅ **05a** the assembly · **05b** the two routes (2026-10-22) · ⭐ **04a-prep pending — the parity fixes (v6.2, D31–D33)** · ⭐ **04a pending — the department summary (v6.1, D30; v6.2, D34)** |
+| 05 | **the surface** — the buttons, the scope picker, the faculty-card decision (`03-surface.md`) | 🟡 **partial** — 05.1 the seam + 05.2's picker are on disk (2026-10-23); ⭐ **05.2's seam wiring, 05.3 (the department pages) and 05.4 (the faculty card) are pending** |
+| 06 | **the docs** — the handover, the TODO row, the specs index (`04-docs.md`) | ✅ the handover + the TODO row (2026-10-22) · ⚠️ **the handover overstates 05 — a correction is owed** |
+
+⭐ **v6.2's order (owner, 2026-10-23):** **04a-prep — the two parity fixes (D31–D33)** first (the
+sub-spec is amended before the code), then **04a — the department summary (D30/D34)**; the
+surface's remaining slices (05.2-fix · 05.3 · 05.4) follow.
 
 ## 25. The proofs
 
 1. **The gate** (the owner's run): `npx tsc --noEmit` → `npm run lint` → `npx vitest run` → `npm run build`.
 2. ⭐ **The spike's numbers** — the bytes, the time and the request count, measured on the real
    data (`00-spike.md`). ⭐ The size guard's threshold comes from here — **not** from an estimate.
-3. ⭐ **The Excel proof** — unzip the department ZIP and **print** one subject workbook and one
-   consolidated file. What to look for: the workbook is **the one that already ships** (the
-   letterhead, the form, the Comments, the per-response Overall); the consolidated file's band
-   equals the card's pooled figure and its rows equal the card's rows for the same
-   subject-section (§3.18); an unevaluated section prints `—`.
+3. ⭐ **The Excel proof** — unzip the department ZIP and **print** one subject workbook, one
+   consolidated file ⭐ **and the department summary** (`<DEPT-CODE>_summary.xlsx`): its row must
+   equal the department card's figures (and `summary.csv`'s row for the same period). What to
+   look for: the workbook is **the one that already ships** (the letterhead, the form, the
+   Comments, the per-response Overall); the consolidated file's band equals the card's pooled
+   figure and its rows equal the card's rows for the same subject-section (§3.18); an unevaluated
+   section prints `—`. ⭐ **The tally proof (v6.2):** in one faculty folder, the Individual's
+   `FINAL RATING` and `TOTAL RESPONDENTS` equal the faculty summary row's `AVG RATING` and
+   `RESPONDENTS` for the same subject-section; the band equals `Σ(row avg × respondents) /
+   Σ respondents`; and across two faculty folders, the department row equals the weighted mean of
+   the bands. ⭐ A disabled response must appear in neither count.
 4. ⭐ **The scope proof** — the dean's route answers **403 for a department that is not
    theirs** (and **400** for an id that is not there); the faculty role has no route at this
    grain.
@@ -682,8 +795,11 @@ commit, independently reviewable and revertible. The contracts live in
 
 - **The one-workbook department file** — **dropped** (D21); the ZIP replaces it.
 - **The period-level CSV** export — untouched (it ships; §11).
-- **A change to the subject-grain workbook** — Part I's three sheets, its guards and its routes
-  are untouched by everything above; the ZIP serves **the same file**.
+- **A change to the subject-grain workbook's sheets** — Part I's three sheets, its guards and
+  its routes are untouched by everything above; the ZIP serves **the same file**. ⭐ The one
+  behavioural change is **which responses count** (D33: `isDisabled = false`), not how they are
+  drawn.
+- **The Highest/Lowest live-rubric seam** — not fixed here; it is a separate decision (§19).
 - **The PDF** — not touched (D3 carries; §12's four defects stay the PDF slice's).
 - **The dean twin's duplicated summary card** — a separate CLEANUP (decide) item in `TODO.md`;
   this export adds a button to both pages, it does **not** extract the card.

@@ -531,6 +531,10 @@ export const evaluationRepository: IEvaluationRepository = {
       .eq("evaluateeId", evaluateeId)
       .eq("facultySubjectId", facultySubjectId)
       .eq("status", "SUBMITTED")
+      // ⭐ v6.2 (D33): a disabled response does NOT count — the same predicate the
+      // department read applies (`loadDepartmentResponseSet`). Without it the
+      // Individual counted a response its faculty row did not.
+      .eq("isDisabled", false)
       // ⭐ a TOTAL order: "createdAt" is NOT NULL and id is the primary key,
       // so the pair orders every row. The old ("submittedAt") left the NULL
       // submittedAt's unordered — so two exports of the same data could print

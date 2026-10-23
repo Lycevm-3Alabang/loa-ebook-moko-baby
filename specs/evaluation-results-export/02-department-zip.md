@@ -1,8 +1,10 @@
 # The department ZIP route
 
-**Version:** 1.1
-**Status:** Applied 2026-10-22 (**05a** the assembly · **05b** the two routes)
-**Parent:** [evaluation-results-export.md](../evaluation-results-export.md) (Part II, v6.0)
+**Version:** 1.3
+**Status:** Applied 2026-10-22 (**05a** the assembly · **05b** the two routes) · **amended
+2026-10-23 (v6.1, D30)** — the department summary file · **amended 2026-10-23 (v6.2, D31–D34)**
+— the hierarchy's parity rule, the faculty summary's `RESPONDENTS`, the per-faculty omission.
+**Parent:** [evaluation-results-export.md](../evaluation-results-export.md) (Part II, v6.2)
 
 The API that assembles the department ZIP. ⭐ It ships an **API, not a button** — the surface
 is sub-spec 03, so this slice can be curled and unzipped before any UI depends on it.
@@ -29,6 +31,8 @@ not vanish).
 | R4 | ⭐ The **size guard** refuses loudly, with the count and the estimate — the threshold is **measured** (`00-spike.md`) |
 | R5 | ⭐ The **order is total** — the departments by name, the members by name (the id as the tiebreak), the rows by subject code then section label |
 | R6 | ⭐ **A scope that matches nobody is REFUSED** — an unknown department id, a `facultyId` that is not a member. ⭐ An empty ZIP would be a quiet wrong artifact |
+| R7 | ⭐ **The DEPARTMENT summary** — one `<DEPT-CODE>_summary.xlsx` at each department folder's root, the `summary.csv` columns (D30, v6.1) |
+| R8 | ⭐ **The hierarchy's PARITY RULE** (v6.2, D31) — *details make up the summary; the summary is the generalization of the filtered values of the details.* One filter at every tier; the weight travels with the detail; the parent is the **weighted** generalization. ⭐ The faculty row carries `RESPONDENTS`; the department summary is **omitted when `facultyId` is set** |
 
 ## 3. Pinned contracts
 
@@ -69,6 +73,11 @@ not vanish).
     the dean's twin cannot disagree about a refusal. **400** (too large · unknown department ·
     unknown faculty) · **404** (the period is not there) · **500** (the error names itself —
     Lesson 8).
+12. ⭐ **The tiers tally (v6.2, R8)** — the Individual's `FINAL RATING` / `TOTAL RESPONDENTS`
+    equal the faculty row's `AVG RATING` / `RESPONDENTS`; the band is `Σ(row avg × respondents) /
+    Σ respondents`; the department row is the weighted mean of the bands. ⭐ The subject read
+    applies the same `isDisabled = false` filter as the department read (D33). ⭐ A per-faculty
+    ZIP carries **no** department summary (D34).
 
 ## 4. The scope
 
@@ -118,6 +127,7 @@ not vanish).
 ```
 evaluation-results-<periodId>.zip
 ├── <DEPT-CODE>/
+│   ├── <DEPT-CODE>_summary.xlsx     ← ⭐ the DEPARTMENT summary (D30)
 │   ├── <Faculty Name>/
 │   │   ├── <subjectCode>_<sectionLabel>_evaluation.xlsx
 │   │   ├── …
@@ -128,6 +138,12 @@ evaluation-results-<periodId>.zip
 
 - The **department folder** is the code (`CCS`); the **faculty folder** is the member's name;
   the **subject file** carries the subject code and the section label (§17.1).
+- ⭐ **The department summary** is `<DEPT-CODE>_summary.xlsx` at the department folder's root
+  (D30) — the `summary.csv` row, read from the same department read.
+- ⭐ **The faculty summary's row carries `RESPONDENTS`** (v6.2, D32) — the weight the band is
+  pooled with; the band equals `Σ(row avg × respondents) / Σ respondents`.
+- ⭐ **The department summary is OMITTED when `facultyId` is set** (v6.2, D34): a per-faculty
+  ZIP's details are one faculty's, so a whole-department row would not be their generalization.
 - ⭐ The names are **ZIP entry names** — the workbook inside is unchanged.
 - ⭐ **`_INCOMPLETE.txt`** lives at the ZIP's root and names every subject that failed, with
   the error. ⭐ Its presence is the signal: a ZIP without it is complete.
@@ -150,7 +166,11 @@ evaluation-results-<periodId>.zip
 
 - ⭐ **The assembly's test** (`lib/__tests__/department-zip.test.ts`) owns the **tree** (the
   entries and their names) · the **guard's refusal** (the count and the estimate) · the
-  **failures** (`_INCOMPLETE.txt`) · the **scope** (one / a faculty / an unknown id).
+  **failures** (`_INCOMPLETE.txt`) · the **scope** (one / a faculty / an unknown id) · ⭐ **the
+  department summary** (its entry exists and its row carries the members' count and the
+  aggregate's figures; `—` when the aggregate is null) · ⭐ **the faculty summary's
+  `RESPONDENTS`** (the row's count equals the Individual's footer) · ⭐ **the per-faculty
+  omission** (no `<DEPT-CODE>_summary.xlsx` when `facultyId` is set).
 - ⭐ **The routes' test** (`lib/__tests__/evaluation-results-workbook-export-route.test.ts` — the
   subject-grain routes' file, extended) owns the **hand-off** (the scope parsed → the assembly
   called with it) and the **guards**: the non-admin's **403** · the **required scope** and the

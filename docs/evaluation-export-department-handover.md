@@ -174,3 +174,70 @@ The contract: `specs/evaluation-results-export/03-surface.md` **v1.1, option A**
    deleted `admin-results-export-button.test.tsx`).
 5. Untouched: `TODO.md`, the sub-spec's §15 tick boxes, every PDF and per-subject Excel button,
    the dean's list page (option A: no button there).
+
+---
+
+## Session 2026-10-23 (later) — ⚠️ the state correction + the parity rule (spec v6.2)
+
+⭐ **This section supersedes the two status lines above.** The session note above says the surface
+was "built"; it was **not**. The work is **committed** (`ed99eb9`), the worktree is clean, and only
+part of 05 is on disk.
+
+### What is actually on disk
+
+| Slice | Reality |
+|---|---|
+| 05.1 the seam | ✅ on disk — `features/evaluation-results/components/DepartmentZipButton.tsx` + `lib/__tests__/department-zip-button.test.tsx` |
+| 05.2 the admin list | 🟡 **partial** — the picker + a **duplicated inline** `handleExportZip` are on disk; the seam is **not** wired. The filename `evaluation-results-<period>.zip` **collides with the CSV's**; the empty-period guard is missing; the header **select-all** contradicts `03-surface.md` §5 (D27 — the scope is a choice) |
+| 05.3 the department pages | ❌ **not on disk** — only "Download PDF" |
+| 05.4 the faculty card | ❌ **not on disk** — `DepartmentSubjectView` has no `exportApiBase` |
+| the CSV test | ❌ `lib/__tests__/admin-results-export-button.test.tsx` was **deleted** in `ed99eb9`; its four cases need restoring (`git show ed99eb9^:lib/__tests__/admin-results-export-button.test.tsx`) |
+
+⭐ The downloaded folder that looked like the ZIP was the **CSV** export (`<CODE>_results.csv` +
+`summary.csv`) — the filename collision makes the two buttons indistinguishable.
+
+⭐ The 05 run file (`.opencode/skills/plan-fix/runs/20261023-0721-sub-spec-05-surface.md`) says
+`status: complete`; that is false — it is **partial** (05.1 done · 05.2 partial · 05.3/05.4 not
+started). The overall run's pending line is stale too. ⭐ Correct the run files; do not cancel them.
+
+### The contract is now v6.2 — the hierarchy's parity rule
+
+`specs/evaluation-results-export.md` **v6.2** (**D31–D34**) · `02-department-zip.md` **v1.3**. The
+durable rules live in the spec; in one line: *details make up the summary; the summary is the
+generalization of the filtered values of the details.*
+
+- ⭐ **Gap 1 — applied (uncommitted).** `listSubmittedByPeriodAndEvaluateeAndFS` now applies
+  `.eq("isDisabled", false)` — the department read's predicate (D33) — and
+  `lib/__tests__/evaluations-repository-order.test.ts` pins the counted set. ⭐ This **changes the
+  Individual's figures** for disabled responses: that is the fix, not a regression.
+- ⬜ **Gap 2 — next.** The faculty summary gains `RESPONDENTS` (D32), and its band is the
+  **weighted** generalization `Σ(row avg × respondents) / Σ respondents` — **not** a plain mean
+  (the sample: 3.67 weighted vs 3.72 naive).
+- ⬜ **04a — the department summary.** `lib/xlsx/department-summary.ts`; title
+  `DEPARTMENT PERFORMANCE EVALUATION RESULT (POST-EVALUATION)`; **omitted when `facultyId` is
+  set** (D34).
+- ⚠️ **The Highest/Lowest seam** — the Individual follows the live rubric; H/L maps the eight
+  fixed names. A separate decision (spec §19), not part of the parity fixes.
+
+### The order now
+
+**04a-prep (Gap 2) → 04a (the department summary) → 05.2-fix (wire the seam, restore the CSV test,
+drop the select-all) → 05.3 → 05.4 → the docs.**
+
+The gate is the owner's:
+
+```bash
+npx tsc --noEmit && npm run lint && npx vitest run && npm run build
+```
+
+⭐ The tally proof is spec §25 — the tiers must agree row-by-row; a green suite does not replace
+printing the file.
+
+### What not to redo
+
+- ⭐ **Do not re-add the select-all** (D27: "all departments" is not one download).
+- ⭐ **Do not re-inline the ZIP fetch** — the list page belongs on `DepartmentZipButton`.
+- ⭐ **Do not claim the surface is complete** until 05.3/05.4 are on disk.
+- ⭐ **The parent is weighted** — a plain mean of the rows is a **wrong figure**, not a rounding
+  difference.
+- ⭐ **The per-faculty ZIP has no department summary** (D34).
