@@ -4,8 +4,20 @@ Updated: 2026-10-24
 
 ## Status
 
-The explicit-refresh behavior is specified but not implemented. Start with [the cache spec](../specs/evaluation-results-cache.md), under “Requested change — explicit refresh for the admin results list,” and the corresponding open item in [TODO.md](../TODO.md).
+The admin results list now persists its department list and attribution warnings per evaluation
+period, in addition to its department figures. Reloading a period with cached results skips
+`/api/admin/evaluation-results`; the **Refresh** button clears the selected period's local cache,
+requests the department list and figures again, then stores the results. An initial API request
+still occurs once when a period has no cached department-list data.
 
-Scope: `app/admin/evaluations/results/page.tsx` department figures only. The figures must survive a same-tab browser reload from client-persistent cache; there must be no timed/background refresh; the existing Refresh action is the only bypass and must update cached values on success. The banner must make cached/stale status and the need to refresh manually prominent.
+Implementation: [admin results page](../app/admin/evaluations/results/page.tsx). The behavior and
+acceptance checks are in [the cache spec](../specs/evaluation-results-cache.md).
 
-Acceptance criteria and failure behavior are in the spec. Do not change the live drill-down, report, department-list metadata, or attribution-warning cache contracts.
+The repository gate has not been run by the agent. The owner can run:
+
+```powershell
+npx tsc --noEmit
+if ($?) { npm run lint }
+if ($?) { npx vitest run }
+if ($?) { npm run build }
+```

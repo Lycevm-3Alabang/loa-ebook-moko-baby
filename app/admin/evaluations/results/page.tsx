@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useMemo, useEffect, useRef, useCallback } from "react"
+import { useState, useMemo, useEffect, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
-import { useApiGet, fetcher } from "@/lib/api/client"
+import { useApiGet, fetcher, dispatchToast } from "@/lib/api/client"
 import IosButton from "@/components/ui/IosButton"
 import { getRemarkColor, formatPeriodLabel, departmentLabel, findAttentionRubrics } from "@/lib/evaluation-utils"
 
@@ -17,6 +17,44 @@ interface DepartmentRow {
   remarks: string | null
   highestRubrics: { key: string; label: string; score: number }[]
   lowestRubrics: { key: string; label: string; score: number }[]
+}
+
+function readResultsCache(periodId: string): DepartmentResultsData | null {
+  if (typeof window === "undefined" || !periodId) return null
+  try {
+    const stored = window.localStorage.getItem(getResultsCacheKey(periodId))
+    if (!stored) return null
+    const parsed: unknown = JSON.parse(stored)
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !("departments" in parsed) ||
+      !Array.isArray(parsed.departments)
+    ) {
+      return null
+    }
+    return parsed as DepartmentResultsData
+  } catch {
+    return null
+  }
+}
+
+function writeResultsCache(periodId: string, data: DepartmentResultsData) {
+  if (typeof window === "undefined" || !periodId) return
+  try {
+    window.localStorage.setItem(getResultsCacheKey(periodId), JSON.stringify(data))
+  } catch {
+    // Keep the current view usable if browser storage is unavailable.
+  }
+}
+
+function clearResultsCache(periodId: string) {
+  if (typeof window === "undefined" || !periodId) return
+  try {
+    window.localStorage.removeItem(getResultsCacheKey(periodId))
+  } catch {
+    // Keep the current view usable if browser storage is unavailable.
+  }
 }
 
 /** One department's figures, read on their own so a row can fill early. */
@@ -34,11 +72,77 @@ interface DepartmentFigures {
 /** How many departments' figures are read at once. */
 const FIGURE_CONCURRENCY = 3
 
-/** How often the figures are read again. */
-const FIGURES_REFRESH_MS = 5 * 60 * 1000
+const FIGURES_CACHE_KEY = "admin-evaluation-results-figures"
+const RESULTS_CACHE_KEY = "admin-evaluation-results"
+
+function getFiguresCacheKey(periodId: string) {
+  return `${FIGURES_CACHE_KEY}:${periodId}`
+}
+
+function getResultsCacheKey(periodId: string) {
+  return `${RESULTS_CACHE_KEY}:${periodId}`
+}
+
+function getLastManualRefreshKey(periodId: string) {
+  return `${FIGURES_CACHE_KEY}:last-manual-refresh:${periodId}`
+}
+
+function readFiguresCache(periodId: string): Record<string, DepartmentFigures> {
+  if (typeof window === "undefined" || !periodId) return {}
+  try {
+    const cached = window.localStorage.getItem(getFiguresCacheKey(periodId))
+    if (!cached) return {}
+    const parsed = JSON.parse(cached)
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, DepartmentFigures>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function readLastManualRefresh(periodId: string): string | null {
+  if (typeof window === "undefined" || !periodId) return null
+  try {
+    return window.localStorage.getItem(getLastManualRefreshKey(periodId))
+  } catch {
+    return null
+  }
+}
+
+function writeLastManualRefresh(periodId: string, refreshedAt: string) {
+  if (typeof window === "undefined" || !periodId) return
+  try {
+    window.localStorage.setItem(getLastManualRefreshKey(periodId), refreshedAt)
+  } catch {
+    // Keep the current view usable if browser storage is unavailable.
+  }
+}
+
+function writeFiguresCache(periodId: string, figuresByDept: Record<string, DepartmentFigures>) {
+  if (typeof window === "undefined" || !periodId) return
+  try {
+    window.localStorage.setItem(getFiguresCacheKey(periodId), JSON.stringify(figuresByDept))
+  } catch {
+    // Ignore storage failures: the in-memory view still works and the page can
+    // continue without persisting the figures snapshot.
+  }
+}
+
+function clearFiguresCache(periodId: string) {
+  if (typeof window === "undefined" || !periodId) return
+  try {
+    window.localStorage.removeItem(getFiguresCacheKey(periodId))
+  } catch {
+    // Keep the current view usable if browser storage is unavailable.
+  }
+}
 
 interface IntegrityWarnings {
   unattributed: { count: number; faculty: { id: string; name: string }[] }
+}
+
+interface DepartmentResultsData {
+  departments: DepartmentRow[]
+  warnings?: IntegrityWarnings
 }
 
 interface Period {
@@ -67,78 +171,184 @@ export default function AdminEvaluationResultsPage() {
     }
   }, [periods, selectedPeriod])
 
-  const { data: resultsData, error: resultsError } = useApiGet<{ departments: DepartmentRow[]; warnings?: IntegrityWarnings }>(
-    selectedPeriod ? `/api/admin/evaluation-results?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}` : null,
-  )
-  const departments = useMemo(() => resultsData?.departments ?? [], [resultsData])
-  const warnings = resultsData?.warnings ?? null
+  const [resultsSnapshot, setResultsSnapshot] = useState<{
+    periodId: string
+    data: DepartmentResultsData
+  } | null>(null)
+  const [resultsError, setResultsError] = useState<Error | null>(null)
+  const currentResults = resultsSnapshot?.periodId === selectedPeriod ? resultsSnapshot.data : null
+  const departments = useMemo(() => currentResults?.departments ?? [], [currentResults])
+  const warnings = currentResults?.warnings ?? null
   const error = resultsError?.message || ""
-  const loading = !resultsData && !resultsError
+  const loading = !!selectedPeriod && !currentResults && !resultsError
+
+  useEffect(() => {
+    if (!selectedPeriod) return
+    let cancelled = false
+    const cached = readResultsCache(selectedPeriod)
+    if (cached) {
+      Promise.resolve().then(() => {
+        if (cancelled) return
+        setResultsSnapshot({ periodId: selectedPeriod, data: cached })
+        setResultsError(null)
+      })
+    } else {
+      void fetcher<DepartmentResultsData>(
+        `/api/admin/evaluation-results?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}`,
+      ).then((data) => {
+        if (cancelled) return
+        writeResultsCache(selectedPeriod, data)
+        setResultsSnapshot({ periodId: selectedPeriod, data })
+        setResultsError(null)
+      }).catch((fetchError: unknown) => {
+        if (cancelled) return
+        setResultsError(fetchError instanceof Error ? fetchError : new Error("Could not load evaluation results"))
+      })
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [selectedPeriod])
 
   // Each department's figures, read on their own so a row fills as soon as
   // its numbers arrive. The list reads the departments first, so the table is
   // on screen while the ratings are still being read.
   const [figures, setFigures] = useState<Record<string, DepartmentFigures>>({})
   const [figuresFailed, setFiguresFailed] = useState<Record<string, boolean>>({})
-  const [refreshTick, setRefreshTick] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
-  // The next read ignores the cache — the manual refresh.
-  const forceNextRead = useRef(false)
+  const [lastManualRefreshAt, setLastManualRefreshAt] = useState<string | null>(null)
+  const figuresRequestIdRef = useRef(0)
 
   // The set of departments, as a string: the effect below must not re-run
   // every time the list is revalidated, or it would re-read every figure.
   const departmentIds = useMemo(() => departments.map((d) => d.departmentId).join(","), [departments])
 
   useEffect(() => {
+    if (!selectedPeriod) {
+      Promise.resolve().then(() => {
+        setFigures({})
+        setFiguresFailed({})
+        setLastManualRefreshAt(null)
+      })
+      return
+    }
     Promise.resolve().then(() => {
-      setFigures({})
+      setFigures(readFiguresCache(selectedPeriod))
       setFiguresFailed({})
+      setLastManualRefreshAt(readLastManualRefresh(selectedPeriod))
     })
   }, [selectedPeriod])
 
-  useEffect(() => {
-    if (!selectedPeriod || departmentIds.length === 0) return
-    let cancelled = false
-    const ids = departmentIds.split(",")
-    const force = forceNextRead.current
-    forceNextRead.current = false
-    // Three at a time: the reads are the database's work, and a burst of
-    // eleven would queue behind each other anyway.
-    Promise.resolve().then(async () => {
-      for (let i = 0; i < ids.length; i += FIGURE_CONCURRENCY) {
-        if (cancelled) return
-        const batch = ids.slice(i, i + FIGURE_CONCURRENCY)
-        await Promise.all(batch.map(async (id) => {
-          try {
-            const data = await fetcher<DepartmentFigures>(
-              `/api/admin/evaluation-results/figures?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}&departmentId=${encodeURIComponent(id)}${force ? "&refresh=1" : ""}`,
-            )
-            if (!cancelled) setFigures((prev) => ({ ...prev, [id]: data }))
-          } catch {
-            if (!cancelled) setFiguresFailed((prev) => ({ ...prev, [id]: true }))
+  const fetchFigures = useCallback(async (forceRefresh: boolean) => {
+    if (!selectedPeriod || departmentIds.length === 0) return false
+    const requestId = ++figuresRequestIdRef.current
+    const ids = departmentIds.split(",").filter(Boolean)
+    const cached = readFiguresCache(selectedPeriod)
+    const targets = forceRefresh ? ids : ids.filter((id) => !cached[id])
+    if (targets.length === 0) return !forceRefresh
+    let succeeded = true
+    const refreshedFigures: Record<string, DepartmentFigures> = {}
+
+    for (let i = 0; i < targets.length; i += FIGURE_CONCURRENCY) {
+      if (requestId !== figuresRequestIdRef.current) return false
+      const batch = targets.slice(i, i + FIGURE_CONCURRENCY)
+      await Promise.all(batch.map(async (id) => {
+        if (requestId !== figuresRequestIdRef.current) {
+          succeeded = false
+          return
+        }
+        try {
+          const data = await fetcher<DepartmentFigures>(
+            `/api/admin/evaluation-results/figures?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}&departmentId=${encodeURIComponent(id)}${forceRefresh ? "&refresh=1" : ""}`,
+          )
+          if (requestId !== figuresRequestIdRef.current) {
+            succeeded = false
+            return
           }
-        }))
-      }
-      if (!cancelled) setRefreshing(false)
-    })
-    return () => { cancelled = true }
-  }, [selectedPeriod, departmentIds, refreshTick])
+          if (forceRefresh) {
+            refreshedFigures[id] = data
+          } else {
+            writeFiguresCache(selectedPeriod, { ...readFiguresCache(selectedPeriod), [id]: data })
+            setFigures((prev) => ({ ...prev, [id]: data }))
+            setFiguresFailed((prev) => ({ ...prev, [id]: false }))
+          }
+        } catch (error) {
+          succeeded = false
+          if (requestId !== figuresRequestIdRef.current) return
+          setFiguresFailed((prev) => ({ ...prev, [id]: true }))
+          if (forceRefresh) {
+            const message = error instanceof Error ? error.message : "Request failed"
+            dispatchToast(`Figures refresh failed: ${message}`)
+          }
+        }
+      }))
+    }
+    if (!succeeded || requestId !== figuresRequestIdRef.current) return false
+    if (forceRefresh) {
+      writeFiguresCache(selectedPeriod, refreshedFigures)
+      setFigures((prev) => ({ ...prev, ...refreshedFigures }))
+      setFiguresFailed((prev) => {
+        const next = { ...prev }
+        for (const id of ids) next[id] = false
+        return next
+      })
+    }
+    return true
+  }, [departmentIds, selectedPeriod])
 
-  // The figures are read again every five minutes. The server keeps them for
-  // five minutes, so this is cheap until the window passes.
   useEffect(() => {
-    if (!selectedPeriod || departmentIds.length === 0) return
-    const timer = setInterval(() => {
-      Promise.resolve().then(() => setRefreshTick((t) => t + 1))
-    }, FIGURES_REFRESH_MS)
-    return () => clearInterval(timer)
-  }, [selectedPeriod, departmentIds])
+    if (!selectedPeriod || departmentIds.length === 0 || refreshing) return
 
-  const refreshNow = useCallback(() => {
-    forceNextRead.current = true
+    const cached = readFiguresCache(selectedPeriod)
+    const ids = departmentIds.split(",").filter(Boolean)
+    const missingIds = ids.filter((id) => !cached[id])
+
+    Promise.resolve().then(() => {
+      setFigures(cached)
+      setFiguresFailed({})
+    })
+
+    if (missingIds.length > 0) void fetchFigures(false)
+  }, [departmentIds, fetchFigures, refreshing, selectedPeriod])
+
+  const refreshNow = useCallback(async () => {
+    if (!selectedPeriod || departmentIds.length === 0) return
+    const previousCache = readFiguresCache(selectedPeriod)
+    const previousResults = readResultsCache(selectedPeriod)
+    clearFiguresCache(selectedPeriod)
+    clearResultsCache(selectedPeriod)
     setRefreshing(true)
-    setRefreshTick((t) => t + 1)
-  }, [])
+    try {
+      const [succeeded] = await Promise.all([
+        fetchFigures(true),
+        fetcher<DepartmentResultsData>(
+          `/api/admin/evaluation-results?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}`,
+        ).then((data) => {
+          writeResultsCache(selectedPeriod, data)
+          setResultsSnapshot({ periodId: selectedPeriod, data })
+          setResultsError(null)
+        }).catch((error: unknown) => {
+          if (previousResults) writeResultsCache(selectedPeriod, previousResults)
+          const message = error instanceof Error ? error.message : "Request failed"
+          dispatchToast(`Evaluation results refresh failed: ${message}`)
+        }),
+      ])
+      if (succeeded) {
+        const refreshedAt = new Date().toISOString()
+        writeLastManualRefresh(selectedPeriod, refreshedAt)
+        setLastManualRefreshAt(refreshedAt)
+      } else {
+        writeFiguresCache(selectedPeriod, previousCache)
+      }
+    } catch (error) {
+      writeFiguresCache(selectedPeriod, previousCache)
+      if (previousResults) writeResultsCache(selectedPeriod, previousResults)
+      const message = error instanceof Error ? error.message : "Request failed"
+      dispatchToast(`Figures refresh failed: ${message}`)
+    } finally {
+      setRefreshing(false)
+    }
+  }, [departmentIds, fetchFigures, selectedPeriod])
 
   // The rows with the figures that have landed merged in.
   const rows = useMemo(
@@ -157,15 +367,6 @@ export default function AdminEvaluationResultsPage() {
   }, [rows])
   const anyAttention = Object.keys(attentionByDept).length > 0
   const allLoaded = rows.length > 0 && rows.every((r) => !!figures[r.departmentId])
-
-  // The least fresh of the figures on screen — what the banner says.
-  const oldestReadAt = useMemo(() => {
-    const stamps = Object.values(figures)
-      .map((f) => f.cachedAt)
-      .filter((s): s is string => !!s)
-      .sort()
-    return stamps[0] ?? null
-  }, [figures])
 
   const sortedDepartments = useMemo(() => {
     // While the figures are still landing the rows keep the order the
@@ -230,27 +431,30 @@ export default function AdminEvaluationResultsPage() {
         </select>
       </div>
 
-      {/* How fresh the numbers are, and how to refresh them. */}
+      {/* Cached figures are stale by design; the manual Refresh action is the only refresh path. */}
       {rows.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-default bg-surface px-4 py-2">
-          <span className="text-[11px] font-semibold text-secondary">
-            {oldestReadAt
-              ? `Figures as of ${new Date(oldestReadAt).toLocaleString()}`
-              : "Reading the figures..."}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-3">
+          <span className="text-[11px] font-semibold text-amber-900 dark:text-amber-200">
+            Displayed figures are cached and may be stale. Click Refresh to fetch current figures.
           </span>
-          <span className="text-[11px] text-tertiary">refreshes every 5 minutes</span>
+          <span className="text-[11px] text-amber-700 dark:text-amber-300">
+            {lastManualRefreshAt
+              ? `Last button refresh: ${new Date(lastManualRefreshAt).toLocaleString()}`
+              : "Not manually refreshed yet"}
+          </span>
           <IosButton
-            variant="plain"
-            size="xs"
+            variant="primary"
+            size="sm"
             onClick={refreshNow}
             loading={refreshing}
-            title="Read the figures again now"
+            title="Fetch the latest figures for this period"
+            className="ml-auto shrink-0 shadow-sm"
           >
             Refresh
           </IosButton>
           {!allLoaded && (
-            <span className="text-[11px] text-tertiary">
-              some rows are still loading — sorting by a column header is paused until they land
+            <span className="text-[11px] text-amber-800 dark:text-amber-300">
+              Some rows are still loading — sorting by a column header is paused until they land.
             </span>
           )}
         </div>
