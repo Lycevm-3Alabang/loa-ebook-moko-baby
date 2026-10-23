@@ -15,47 +15,27 @@ one per session, or none),
 `specs/evaluation-results-cache.md` (the cache contract),
 `specs/evaluation-results-attribution.md` (the attribution contract — §1.10, §3.21, S6.1, D7–D9),
 `specs/evaluation-results-export.md` (the export contract — both grains, **v6.2**, 2026-10-23:
-Part I v4.0 done · Part II the **department ZIP**, D20–D34, ⭐ **04a done; 05.2-fix done; 05.3
-done; 05.4 done; owner proofs next**).
+Part I v4.0 done · Part II the **department ZIP**, D20–D34, ⭐ **04a done; 05.1–05.4 done; 
+confirmation modal + "all" support done; owner proofs next**).
 
 ## NEXT (do first)
 
-- [ ] **The consolidated Excel export — the department-faculty grain. The shape changed (a **ZIP**,
-  not a stacked workbook); the API is built and **04a has landed**. ⭐ **04a-prep + 04a are on
-  disk (2026-10-23 — code + tests; ⚠️ gate not run, not committed):** the faculty summary carries
-  `RESPONDENTS` (D32); each department folder carries `<DEPT-CODE>_summary.xlsx` first (D30/D34 —
-  `members.length` + `departmentAggregate`, omitted when `facultyId` is set).
-  ⭐ **The surface (05):** 05.1's seam is on disk (`DepartmentZipButton` + 5 cases); ⭐ **05.2-fix
-  is on disk (2026-10-23 — code + tests; ⚠️ gate not run, not committed):** the list page uses the
-  seam (`page.tsx:265-269`), the **"all departments" header checkbox is gone** (§5 — D27 refuses
-  that scope), the row checkbox stops `onClick` propagation, and
-  `lib/__tests__/admin-results-export-button.test.tsx` exists (9 cases: 2 CSV + 7 ZIP/picker).
-    ⭐ **05.3 done; 05.4 done; owner proofs next** (the two department pages, beside Download PDF; the faculty card,
-  the required `exportApiBase` + the per-faculty ZIP) → the owner's curl/unzip proof.
- The timing
-  is still unmeasured (the guard bounds the size, not the time).**
-  ⭐ **The API (05a + 05b, 2026-10-22):** `GET /api/admin/evaluation-results/export/excel`
-  (⭐ `departmentIds` **required**; `facultyId?`) and
-  `GET /api/dean/evaluation-results/export/excel` (their own department; a foreign id → **403**) —
-  a ZIP, or a loud refusal (**400** too large / unknown id · **403** foreign department / inactive
-  period · **404** period).
-  Contract: **`specs/evaluation-results-export.md` Part II (v6.2, §15–26)** — the owner's decisions
-  **D20–D34**: the download is a **ZIP** — **department folder → faculty folder → subject (and
-  section)**; the workbooks are **Part I's, verbatim** (each keeps its Comments sheet and its
-  per-response Overall); **one consolidated XLSX per faculty** (the D25 model — the header block +
-  the band + `Subject | Section | RESPONDENTS | Avg Rating | Highest | Lowest`; every tie; an unevaluated section
-  prints "—"); the scope is **one department or a few**, ⭐ **"all departments" is NOT one
-  download**; ⭐ a department over the size guard is exported **per faculty**.
-  Sub-specs (one per commit): **`specs/evaluation-results-export/`** — `00-spike.md` ·
-  `01-building-blocks.md` · `02-department-zip.md` · `03-surface.md` · `04-docs.md`.
-  ⭐ **The measurements** (the spike, 2026-10-22 — 0 failures in three runs): a workbook ≈ **100 KB**
-  (the **47 KB letterhead is 46%** of it) · the **deflated** ZIP ≈ **41.4 KB** per workbook — GENED
-  (199 sections) ⇒ **8.2 MB** ❌, CTHM (145) ⇒ **6.0 MB** ❌, CCA (21) ⇒ **0.82 MB** ✓ · a subject
-  read is ≈ **1.7 s**, so the reads **must** be pooled. ⇒ the guard's bound is ≈ **96**
-  subject-sections, and the two biggest departments need the **per-faculty** export.
-  Entry point: **`docs/evaluation-export-department-handover.md`** — where the work stands, the
-  measurements, the next session's order and what not to redo. Run file:
-  `.opencode/skills/plan-fix/runs/20261022-1742-dept-export-workbook.md`.
+- [x] **The consolidated Excel export — the department-faculty grain. Done 2026-10-23.**
+  ⭐ **What landed:** the ZIP assembly (DEFLATE), the department summary tier (04a), the
+  consolidated "Export" button on the list page (05.1 + 05.2-fix), the two department pages
+  (05.3), the per-faculty ZIP on the cards (05.4), and a **confirmation modal** that names the
+  scope before the download. ⭐ **No selection = all departments** — the admin route resolves
+  every department when `departmentIds` is empty. Commits `7f77755` (05.3/05.4) and `03e9ecd`
+  (the modal); gate green on 05.3/05.4 (845 tests), the modal on targeted tests only.
+  ⭐ **The evaluation PDFs are removed** (owner, scope B, 2026-10-23): the department PDF + mode
+  switch, the subject-page PDF, the faculty-card PDF, and the Evaluation Reports PDF are gone;
+  the reports CSV and the Reports module's PDFs stay. `lib/evaluation-pdf.ts` and
+  `DownloadEvalPdfButton.tsx` are orphaned on disk.
+  ⭐ **The size guard fired on a real selection:** 179 subject-sections ≈ **7.5 MB** against the
+  **4.0 MB** limit — the answer is one department or one faculty.
+  ⭐ **Next: the owner's proofs** (§25.3) — one / several / none-selected exports, unzip, the
+  dean's 403/400, the Excel print. Contract: **`specs/evaluation-results-export.md` Part II
+  (v6.2)** · surface **`specs/evaluation-results-export/03-surface.md` v1.2**.
 
 - [x] **The Excel export — the workbook is GENERATED from scratch, and the routes serve it. Done
   2026-10-22 (the Excel proof is the owner's).**

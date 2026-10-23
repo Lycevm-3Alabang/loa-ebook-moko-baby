@@ -53,7 +53,7 @@ const faqs = [
   },
   {
     q: "How do I export my evaluation results?",
-    a: "On the 'My Results' page, click 'Download PDF' or 'Download CSV' to export your evaluation scores. Admin/Dean users can also export per-faculty or bulk CSV/PDF from the evaluation dashboard.",
+    a: "On the 'My Results' page, use 'Export Excel' to download your evaluation scores. Admin/Dean users can export a department (or selected departments) as an Excel ZIP from the Evaluation Results page.",
   },
   {
     q: "How do I see individual student responses?",

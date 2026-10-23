@@ -42,11 +42,22 @@ describe("DepartmentZipButton", () => {
     )
   })
 
-  it("shows toast when no departments selected", async () => {
-    renderButton({ departmentIds: [] })
+  it("opens the confirmation modal and does not download yet", () => {
+    renderButton()
     fireEvent.click(screen.getByRole("button", { name: /download excel/i }))
-    await waitFor(() =>
-      expect(mockDispatchToast).toHaveBeenCalledWith("Select at least one department before exporting."),
+    expect(screen.getByText("Confirm Export")).toBeTruthy()
+    expect(mockDownloadFromApi).not.toHaveBeenCalled()
+  })
+
+  it("treats an empty department list as all departments", async () => {
+    mockDownloadFromApi.mockResolvedValue(undefined)
+    renderButton({ departmentIds: [], totalDepartments: 3 })
+    fireEvent.click(screen.getByRole("button", { name: /download excel/i }))
+    expect(screen.getByText(/all 3 departments/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /start export/i }))
+    await waitFor(() => expect(mockDownloadFromApi).toHaveBeenCalled())
+    expect(mockDownloadFromApi.mock.calls[0][0]).toBe(
+      "/api/admin/evaluation-results/export/excel?evaluationPeriodId=p1",
     )
   })
 
@@ -54,6 +65,7 @@ describe("DepartmentZipButton", () => {
     mockDownloadFromApi.mockResolvedValue(undefined)
     renderButton({ facultyId: "f1" })
     fireEvent.click(screen.getByRole("button", { name: /download excel/i }))
+    fireEvent.click(screen.getByRole("button", { name: /start export/i }))
     await waitFor(() => expect(mockDownloadFromApi).toHaveBeenCalled())
     const url = mockDownloadFromApi.mock.calls[0][0] as string
     expect(url).toContain("&facultyId=f1")
@@ -63,6 +75,7 @@ describe("DepartmentZipButton", () => {
     mockDownloadFromApi.mockResolvedValue(undefined)
     renderButton()
     fireEvent.click(screen.getByRole("button", { name: /download excel/i }))
+    fireEvent.click(screen.getByRole("button", { name: /start export/i }))
     await waitFor(() => expect(mockDownloadFromApi).toHaveBeenCalled())
     const url = mockDownloadFromApi.mock.calls[0][0] as string
     expect(url).toBe("/api/admin/evaluation-results/export/excel?evaluationPeriodId=p1&departmentIds=d1")

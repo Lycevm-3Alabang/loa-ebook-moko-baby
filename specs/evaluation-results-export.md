@@ -380,7 +380,13 @@ reads it at runtime.
 
 ---
 
-## 12. What the PDF is carrying (for the slice that takes it)
+## 12. What the PDF was carrying (historical — the PDF is removed)
+
+⭐ **The PDF is gone (owner, 2026-10-23, scope B).** Every evaluation PDF — the department PDF
+with its per-subject/per-faculty modes, the consolidated faculty PDF, the subject-page PDF and
+the Evaluation Reports PDF — was removed from the UI. This table is kept as the record of what it
+carried; it is **not** a work list. The CSV on the Evaluation Reports page and the Reports
+module's PDFs remain.
 
 | Defect | Where |
 |---|---|
@@ -761,13 +767,13 @@ commit, independently reviewable and revertible. The contracts live in
 | 01 | **the contracts** — this file (v6.0 → **v6.2**) + the sub-spec folder | ✅ done 2026-10-22 · **v6.1 (2026-10-23)** · **v6.2 (2026-10-23)** |
 | 02 | **the spike** — measure the bytes, the time and the request count (`00-spike.md`) | ✅ done 2026-10-22 — the numbers (21 · 145 · 199 sections, 0 failures) |
 | 03 | **the building blocks** — the DEFLATE zip · the shared builder · the consolidated file (`01-building-blocks.md`) | ✅ done 2026-10-22 |
-| 04 | **the department ZIP route** (`02-department-zip.md`) | ✅ **05a** the assembly · **05b** the two routes (2026-10-22) · ⭐ **04a-prep pending — the parity fixes (v6.2, D31–D33)** · ⭐ **04a pending — the department summary (v6.1, D30; v6.2, D34)** |
-| 05 | **the surface** — the buttons, the scope picker, the faculty-card decision (`03-surface.md`) | 🟡 **partial** — 05.1 the seam + 05.2's picker are on disk (2026-10-23); ⭐ **05.2's seam wiring, 05.3 (the department pages) and 05.4 (the faculty card) are pending** |
-| 06 | **the docs** — the handover, the TODO row, the specs index (`04-docs.md`) | ✅ the handover + the TODO row (2026-10-22) · ⚠️ **the handover overstates 05 — a correction is owed** |
+| 04 | **the department ZIP route** (`02-department-zip.md`) | ✅ **05a** the assembly · **05b** the two routes (2026-10-22) · **04a-prep** the parity fixes (2026-10-23) · **04a** the department summary (2026-10-23) |
+| 05 | **the surface** — the buttons, the scope picker, the faculty-card decision (`03-surface.md`) | ✅ **done 2026-10-23** — 05.1 the seam · 05.2-fix the list page (one / several / **all**, confirmation modal) · 05.3 both department pages · 05.4 the faculty card · ⭐ **the evaluation PDFs removed** (scope B) |
+| 06 | **the docs** — the handover, the TODO row, the specs index (`04-docs.md`) | ✅ updated 2026-10-23 (the handover's scope section, the TODO row, this index) |
 
-⭐ **v6.2's order (owner, 2026-10-23):** **04a-prep — the two parity fixes (D31–D33)** first (the
-sub-spec is amended before the code), then **04a — the department summary (D30/D34)**; the
-surface's remaining slices (05.2-fix · 05.3 · 05.4) follow.
+⭐ **v6.2's order (owner, 2026-10-23)** is complete: **04a-prep** (D31–D33), then **04a**
+(D30/D34), then the surface (**05.2-fix · 05.3 · 05.4**). ⭐ **The PDFs are removed** (scope B):
+no evaluation PDF button remains; the Excel ZIP is the only evaluation download.
 
 ## 25. The proofs
 

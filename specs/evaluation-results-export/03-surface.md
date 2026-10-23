@@ -1,12 +1,14 @@
 # The surface — the buttons, the scope picker, the faculty-card decision
 
-**Version:** 1.1
-**Status:** Decided (2026-10-23) — **option A** (owner). Ready to implement as slice 05.
+**Version:** 1.2
+**Status:** Decided (2026-10-23) — **option A** (owner), amended 2026-10-23: the evaluation PDFs
+are removed (scope B). Ready to implement as slice 05.
 **Parent:** [evaluation-results-export.md](../evaluation-results-export.md) (Part II, v6.0)
 
 Where the export is offered, and what happens to the exports that are already on the page.
 ⭐ **The decision is taken (owner, 2026-10-23): option A** — the ZIP is real, so it is decided in
-front of the artifact, not on paper.
+front of the artifact, not on paper. ⭐ **Amended the same day:** the owner removed every PDF from
+the evaluation module; the Excel export is the only evaluation download.
 
 ---
 
@@ -17,10 +19,12 @@ places:
 
 | Where | Button | Artifact |
 |---|---|---|
-| the **results list** page | "Export" | the **CSV** ZIP (all departments) — it ships |
-| the **department** page | "Download PDF" | the department PDF (per-subject / per-faculty) |
-| the **faculty card** (in the drill-down) | "Download consolidated PDF" | the faculty's PDF |
+| the **results list** page | "Export" | the **department ZIP** (one / selected / all) — it ships |
+| the **department** page | "Export" | the department ZIP (one department) — it ships |
+| the **faculty card** (in the drill-down) | "Download Excel (ZIP)" | the faculty ZIP — it ships |
 | the **subject page** (admin · dean · faculty) | "Export Excel" | **the subject's workbook** — Part I |
+| ⭐ **removed** | "Per Subject" / "Per Faculty" / "Download PDF" | the evaluation PDFs — deleted 2026-10-23 |
+| ⭐ **removed** | "Download consolidated PDF" (faculty card) | the consolidated PDF — deleted 2026-10-23 |
 
 The new download is the **department ZIP**. ⭐ The question the owner raised: *"where does the
 export button sit, and do we still need the exports on the faculty-card level?"*
@@ -31,15 +35,20 @@ export button sit, and do we still need the exports on the faculty-card level?"*
 
 | | Option | What ships | What comes off |
 |---|---|---|---|
-| **A ⭐ CHOSEN** | the **list page** (with the scope picker) · the **department page** (one department) · ⭐ the **faculty card** (one faculty) — **three surfaces** | the ZIP on all three | ⭐ **nothing** — the per-subject "Export Excel" buttons stay, and so does every PDF |
+| **A ⭐ CHOSEN** | the **list page** (with the scope picker) · the **department page** (one department) · ⭐ the **faculty card** (one faculty) — **three surfaces** | the ZIP on all three | ⭐ **every evaluation PDF** (department pages, subject pages, faculty card, evaluation reports) — owner, 2026-10-23; the per-subject "Export Excel" buttons stay |
 | **B** | the list page **and** the department page | two surfaces | the **admin/dean** per-subject "Export Excel" buttons (⭐ the **faculty's own** stays) |
 | **C** | the **list page only** (the picker covers one / selected) | one surface | the admin/dean per-subject buttons |
 
 - ⭐ **A is the decision (owner, 2026-10-23).** A single form on demand is still a real need (a
   dean asked for *one teacher's form*, not a ZIP), and the ZIP is the bulk artifact. ⭐ Removing
   the per-subject button would make the school unzip a 75-file ZIP to get one form.
-- ⭐ **B and C are NOT taken** — every per-subject "Export Excel" button stays, and the faculty
-  card's "Download consolidated PDF" stays **beside** the new per-faculty ZIP.
+- ⭐ **B and C are NOT taken** — every per-subject "Export Excel" button stays.
+- ⭐ **The PDFs are gone (owner amendment, 2026-10-23).** The department PDF (with its
+  "Per Subject"/"Per Faculty" modes), the consolidated faculty PDF, the subject-page PDF, and the
+  **Evaluation Reports** PDF button are removed. The **CSV** on the Evaluation Reports page stays;
+  the Reports module's PDFs (backlog/coverage/demand/distribution/responsiveness) are untouched.
+  `lib/evaluation-pdf.ts` and `DownloadEvalPdfButton.tsx` are left orphaned on disk for a later
+  cleanup; nothing imports them.
 - ⭐ The decision is taken **with the ZIP in hand**, as this sub-spec asked; the measurement
   below is what rules out "all departments" and makes the faculty card the escape hatch.
 
@@ -54,10 +63,11 @@ per-subject "Export Excel" buttons (admin · dean · faculty) stay exactly as th
 
 1. ⭐ **The faculty's own page keeps its "Export Excel" button, always.** A faculty must be
    able to download their own form; the department ZIP does not reach them.
-2. ⭐ **The PDF buttons stay** — every one of them, at every level (the owner's instruction:
-   *"PDF excluded for now"*). ⭐ This sub-spec touches **no** PDF.
-3. ⭐ **The existing CSV "Export" button on the list page stays, untouched** — it is the
-   school-wide, flat-data download and it ships.
+2. ⭐ **No evaluation PDF remains** (owner, 2026-10-23). The department page, the subject pages
+   (admin · dean · faculty), the faculty card and the Evaluation Reports page have **no PDF
+   button**; `lib/evaluation-pdf.ts` is not imported anywhere. The Reports module's PDFs are out
+   of scope.
+3. ⭐ **The Evaluation Reports page keeps its CSV button** — it is the flat-data download.
 4. ⭐ **The house style**: `IosButton variant="tinted" size="sm"` with **`loading`** — the
    house's own button, not a hand-rolled `<button>` (AGENTS.md).
 5. ⭐ **The error is surfaced, verbatim**: the route's message in the toast — ⭐ the size
@@ -87,11 +97,12 @@ per-subject "Export Excel" buttons (admin · dean · faculty) stay exactly as th
   beside the existing "Export" (CSV) — ⭐ next to the **period** selector, because the period is
   the export's other input. ⭐ **No button on the dean's list page** (contract 9).
 - **The department page** (`app/admin/evaluations/results/[departmentId]/page.tsx` + the dean
-  twin): the button in the summary card's cluster, beside **Download PDF** — ⭐ the card is
-  **duplicated** across the two pages and stays so (§26); the button is added to **both**.
+  twin): the button in the summary card's cluster — ⭐ the card is **duplicated** across the two
+  pages and stays so (§26); the button is added to **both**. ⭐ The PDF modes and the PDF button
+  are gone (2026-10-23), so the ZIP is the card's only download.
 - ⭐ **The faculty card** (`features/evaluations/components/DepartmentSubjectView.tsx` — the
-  shared drill-down component): the **per-faculty ZIP**, next to **Download consolidated PDF**
-  (the PDF stays — §3.2). ⭐ The card is used by the admin's and the dean's department pages, so
+  shared drill-down component): the **per-faculty ZIP** — ⭐ the consolidated-PDF button is gone
+  (2026-10-23). ⭐ The card is used by the admin's and the dean's department pages, so
   it takes a **required** `exportApiBase` (`/api/admin/evaluation-results/export/excel` or
   `/api/dean/…`) — no role branch inside the component. The request is
   `?evaluationPeriodId=<period>&departmentIds=<the page's department>&facultyId=<the card's faculty>`.

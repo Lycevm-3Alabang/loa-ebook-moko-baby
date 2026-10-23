@@ -23,11 +23,6 @@ vi.mock("@/lib/api/client", () => ({
   downloadFromApi: vi.fn(),
 }))
 
-vi.mock("@/lib/evaluation-pdf", () => ({
-  downloadDeptPdf: vi.fn(),
-  downloadEvalDetailPdf: vi.fn(),
-}))
-
 import DepartmentDetailPage from "@/app/admin/evaluations/results/[departmentId]/page"
 
 // Two subjects for one faculty, unequal responses (3 and 1) and unequal averages

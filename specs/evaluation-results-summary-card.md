@@ -1,6 +1,7 @@
 # Evaluation Results — the Department Summary card — Spec
 
 **Status:** Final (approved 2026-10-21) — **Option A** (the headline and the read-out) was chosen by the owner, with a colour and size pass: the app's semantic tokens, a readable verdict, and **no faculty count** on the card (the cards below it are the faculty).
+⭐ **Amended 2026-10-23:** the PDF controls are **removed** from the card (owner scope B). The card's only download is the **Excel ZIP** button; the "Per Subject / Per Faculty" switch and "Download PDF" in the sketches below are historical.
 **Scope:** the header card of the department drill-down —
 `/admin/evaluations/results/[departmentId]` and the dean's twin
 `/dean/evaluations/results/[departmentId]`. The card is one component of the page, inlined
@@ -71,8 +72,8 @@ where it belongs: the **results list's** row, the **export's** `summary.csv` and
 **coverage page's** "Faculties" column (§3.14).
 
 The counts are **not** on the card (§3.22 — the coverage page owns them). The document
-controls (the PDF's mode switch and download) stay on the card, but they are **not** the
-title row any more.
+control (the **Excel ZIP** button) stays on the card, but it is **not** the title row any more.
+⭐ Since 2026-10-23 the PDF's mode switch and download are gone.
 
 ## 3. The options
 
@@ -175,7 +176,7 @@ card p-5
 │  │  ├─ the average     text-4xl font-bold leading-none text-primary
 │  │  └─ the badge       the remark, in its own colour
 │  │  └─ the eyebrow     "Department average", under the number
-│  └─ the controls       the PDF mode switch + the download
+│  └─ the controls       the Excel ZIP button (the PDF controls are gone)
 └─ the read-out          space-y-1 border-t border-default pt-3
    ├─ the attention row  (only when there is one)
    └─ the top row        (only when there is one)
@@ -191,9 +192,10 @@ card p-5
    headline (the average "—" and no verdict) and the faculty count alone.
 4. **The card's shape follows the data, but the grid does not** — rows appear and
    disappear; the columns never reflow.
-5. **The document controls stay on the card** — the PDF's mode switch and download are
-   about this department's document; they are not part of the summary, so they sit to the
-   right of the headline, not in a title row.
+5. **The document control stays on the card** — the **Excel ZIP** button is about this
+   department's document; it is not part of the summary, so it sits to the right of the
+   headline, not in a title row. ⭐ The PDF's mode switch and download were removed
+   (2026-10-23).
 
 ## 5. The files
 

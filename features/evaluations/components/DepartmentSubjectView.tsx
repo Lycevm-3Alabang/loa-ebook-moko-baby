@@ -1,10 +1,9 @@
 "use client"
 
-import { useMemo, useState, useCallback } from "react"
+import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import IosButton from "@/components/ui/IosButton"
 import { getRemarkColor, sectionLabel, formatFacultyName, type FacultyAggregate } from "@/lib/evaluation-utils"
-import { downloadEvalDetailPdf } from "@/lib/evaluation-pdf"
 import DepartmentZipButton from "@/features/evaluation-results/components/DepartmentZipButton"
 
 interface SubjectRow {
@@ -138,34 +137,6 @@ export default function DepartmentSubjectView({ subjects, members = [], departme
     setExpandedFaculty(allExpanded ? new Set() : new Set(facultyGroups.map((g) => g.facultyId)))
   }
 
-  const apiPrefix = basePath.startsWith("/dean") ? "/api/dean" : "/api/admin"
-
-  const handleConsolidatedPdf = useCallback(async (facultyId: string, _facultyName: string, _facultyEmail: string) => {
-    try {
-      const res = await fetch(
-        `${apiPrefix}/evaluation-results/departments/${encodeURIComponent(departmentId)}/faculty/${encodeURIComponent(facultyId)}?evaluationPeriodId=${encodeURIComponent(evaluationPeriodId)}`,
-      )
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Request failed" }))
-        console.error(err.error)
-        return
-      }
-      const data = await res.json()
-      await downloadEvalDetailPdf({
-        facultyName: data.faculty.name,
-        facultyEmail: data.faculty.email,
-        subjectCode: data.subject.code,
-        subjectName: "Consolidated",
-        departmentName: data.department.name,
-        departmentCode: data.department.code,
-        summary: data.summary,
-        evaluations: data.evaluations,
-      })
-    } catch (e) {
-      console.error("Consolidated PDF error:", e)
-    }
-  }, [apiPrefix, departmentId, evaluationPeriodId])
-
   const uniqueFacultyIds = useMemo(
     () => (members.length > 0 ? members.map((m) => m.id) : [...new Set(subjects.map((s) => s.facultyId))]),
     [members, subjects],
@@ -253,22 +224,8 @@ export default function DepartmentSubjectView({ subjects, members = [], departme
                       </span>
                     )}
                   </div>
-                  {agg && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleConsolidatedPdf(group.facultyId, group.facultyName, group.facultyEmail)
-                      }}
-                      className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm"
-                      title="Download consolidated PDF"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                    </button>
-                  )}
                   {exportApiBase && (
+
                     <div onClick={(e) => e.stopPropagation()}>
                       <DepartmentZipButton
                         evaluationPeriodId={evaluationPeriodId}

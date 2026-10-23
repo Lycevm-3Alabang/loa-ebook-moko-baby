@@ -327,6 +327,56 @@ results read cannot be confused. `vi.resetAllMocks()` in `beforeEach` (AGENTS.md
 
 ---
 
+## Session 2026-10-23 — 05.3/05.4 · the confirmation modal · "all" · the PDF removal
+
+**Status:** code on disk. ⭐ **`7f77755`** wired 05.3/05.4 and **`03e9ecd`** added the
+confirmation modal; the gate ran green on 05.3/05.4 (`tsc` + `lint` + **845** tests). ⭐ The
+modal changes were verified by **targeted** runs (**11** cases) — ⚠️ **the full gate has not been
+re-run after the modal, and not at all after the PDF removal.**
+
+### What landed
+
+- **05.3** — both department pages carry the ZIP (`departmentIds={[departmentId]}`, the page's own
+  base). ⭐ The PDF modes and the "Download PDF" button are **gone** (see below).
+- **05.4** — `DepartmentSubjectView` takes `exportApiBase`; every faculty card renders the
+  per-faculty ZIP for every member.
+- **The list page** — one "Export" button (the old CSV "Export" is removed; its route
+  `app/api/admin/evaluation-results/export/route.ts` still exists, uncalled). ⭐ **No selection =
+  all departments**: the admin Excel route resolves every department when `departmentIds` is empty.
+- **The confirmation modal** — `features/evaluation-results/components/ExportConfirmationModal.tsx`
+  names the scope ("all N departments" / "N selected department(s)" / faculty) before the download.
+- Tests: `admin-results-export-button.test.tsx` (7 cases) and
+  `department-page-export-button.test.tsx` (4 cases), both driving the modal.
+
+### The PDF removal (owner, scope B — 2026-10-23)
+
+⭐ **Every PDF in the evaluation module is removed**; the Excel export is the only evaluation
+download. Removed from: both department pages (the `Per Subject` / `Per Faculty` switch and
+`Download PDF`), the three subject detail pages (`DownloadEvalPdfButton`), the faculty card
+(consolidated PDF), and `EvaluationReportContent` (the PDF button; **CSV stays**).
+
+- `lib/evaluation-pdf.ts` and `features/evaluations/components/DownloadEvalPdfButton.tsx` are
+  **orphaned on disk** (nothing imports them) — a later cleanup, not deleted here.
+- The two test files' `vi.mock("@/lib/evaluation-pdf")` blocks are removed.
+- `app/faq/page.tsx` now points at "Export Excel", not PDF/CSV.
+- ⭐ **The Reports module's PDFs are untouched** (`DeanReportsTabs.tsx`, `PdfExport.tsx`), and the
+  dead `EvaluationDashboard.tsx` / `ReportModal.tsx` still contain their own PDF code — neither
+  is mounted.
+- Spec/docs: `03-surface.md` v1.2 (option A + the PDF removal), `evaluation-results-export.md`
+  §12 marked historical, `evaluation-results-summary-card.md` amended, `specs/README.md`,
+  `TODO.md`.
+
+### Open
+
+- ⭐ **The owner's gate:** `npx tsc --noEmit` → `npm run lint` → `npx vitest run` →
+  `npm run build`.
+- ⭐ **The proofs** (§25.3): one department, two selected, **none selected (= all)** — confirm the
+  modal's wording, unzip, check the tree against §17.1; the dean's **403/400**; the Excel print.
+- ⚠️ **The size guard fired on a real selection:** **179 subject-sections ≈ 7.5 MB** against the
+  **4.0 MB** limit. The answer is one department or one faculty, not a bigger guard.
+
+---
+
 **Note:** The handover note follows the convention of “one handover at a time”. The previous
 handover (`docs/evaluation-export-handover.md`) was **deleted** on 2026-10-22 and folded into
 this file. This file is the current entry point — it names the specs; it does not repeat them.

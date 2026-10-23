@@ -7,6 +7,7 @@ const mockLogServerError = vi.hoisted(() => vi.fn())
 const mockBuildSubjectWorkbook = vi.hoisted(() => vi.fn())
 const mockGetSubjectResultSet = vi.hoisted(() => vi.fn())
 const mockGetDepartmentResults = vi.hoisted(() => vi.fn())
+const mockGetDepartmentList = vi.hoisted(() => vi.fn())
 const mockDeptRepo = vi.hoisted(() => ({ findByDeanId: vi.fn(), findById: vi.fn() }))
 const mockFsRepo = vi.hoisted(() => ({ findById: vi.fn() }))
 const mockUserRepo = vi.hoisted(() => ({ findById: vi.fn() }))
@@ -32,6 +33,7 @@ vi.mock("@/lib/repositories/factory", () => ({
 }))
 vi.mock("@/features/evaluation-results/evaluation-results.service", () => ({
   getSubjectResultSet: mockGetSubjectResultSet,
+  getDepartmentResults: mockGetDepartmentList,
   getDepartmentSubjectResults: mockGetDepartmentResults,
 }))
 // ⭐ the mock mirrors the real class: the status comes from the throw site,
@@ -180,6 +182,9 @@ beforeEach(() => {
     members: [{ id: "f1", name: "Dela Cruz", email: "d@x.com" }],
     departmentAggregate: null,
   })
+  // ⭐ the LIST read (the empty-scope branch); the detail read above is
+  // what buildDepartmentZip consumes per department
+  mockGetDepartmentList.mockResolvedValue({ departments: [], warnings: {} })
 })
 
 describe("the workbook export routes", () => {
@@ -255,9 +260,10 @@ describe("the department ZIP routes", () => {
     ])
   })
 
-  it("the scope is required — 'all departments' is not one download", async () => {
+  it("an empty scope resolves all departments — and an empty period is a 404", async () => {
     const res = await adminDeptZipGET(req("?evaluationPeriodId=p1"))
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(404)
+    expect(mockGetDepartmentList).toHaveBeenCalledWith("p1")
     expect(mockGetDepartmentResults).not.toHaveBeenCalled()
   })
 

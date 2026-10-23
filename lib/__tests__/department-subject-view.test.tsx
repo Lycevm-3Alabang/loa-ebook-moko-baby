@@ -5,8 +5,6 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }))
 
-vi.mock("@/lib/evaluation-pdf", () => ({ downloadEvalDetailPdf: vi.fn() }))
-
 import DepartmentSubjectView from "@/features/evaluations/components/DepartmentSubjectView"
 import type { FacultyAggregate } from "@/lib/evaluation-utils"
 

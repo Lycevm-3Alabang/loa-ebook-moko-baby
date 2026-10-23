@@ -6,7 +6,6 @@ import ErrorState from "@/components/ui/ErrorState"
 import { useApiGet } from "@/lib/api/client"
 import { useCrumb } from "@/lib/contexts/breadcrumb"
 import { getRemarkColor, sectionLabel, CATEGORY_KEYS, CATEGORY_LABELS } from "@/lib/evaluation-utils"
-import { DownloadEvalPdfButton } from "@/features/evaluations/components/DownloadEvalPdfButton"
 import { ExportXlsxButton } from "./ExportXlsxButton"
 
 interface EvaluationRow {
@@ -105,16 +104,6 @@ export default function DeanGroupDetailPage() {
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <DownloadEvalPdfButton
-            facultyName={facultyName}
-            facultyEmail={facultyEmail}
-            subjectCode={subjectCode}
-            subjectName={subjectName}
-            departmentName={departmentName}
-            departmentCode={departmentCode}
-            summary={data.summary}
-            evaluations={data.evaluations}
-          />
           <ExportXlsxButton
             departmentId={departmentId}
             facultySubjectId={facultySubjectId}

@@ -5,11 +5,9 @@ import { useParams, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
-import IosButton from "@/components/ui/IosButton"
 import { useApiGet } from "@/lib/api/client"
 import { useCrumb } from "@/lib/contexts/breadcrumb"
 import { getRemarkColor, departmentLabel, findAttentionRubrics, type FacultyAggregate, type DepartmentAggregate } from "@/lib/evaluation-utils"
-import { downloadDeptPdf } from "@/lib/evaluation-pdf"
 import DepartmentSubjectView from "@/features/evaluations/components/DepartmentSubjectView"
 import DepartmentZipButton from "@/features/evaluation-results/components/DepartmentZipButton"
 
@@ -52,7 +50,6 @@ export default function DepartmentDetailPage() {
   const evaluationPeriodId = searchParams.get("evaluationPeriodId") || searchParams.get("semesterId") || ""
 
   const [search, setSearch] = useState("")
-  const [pdfMode, setPdfMode] = useState<"per_subject" | "per_faculty">("per_subject")
   const [visibilityMap, setVisibilityMap] = useState<Record<string, boolean>>({})
   const [toggling, setToggling] = useState(false)
 
@@ -125,27 +122,6 @@ export default function DepartmentDetailPage() {
     }
   }, [evaluationPeriodId, subjects, toggling, visibilityMap])
 
-  const handleDeptPdf = useCallback(() => {
-    if (!department || subjects.length === 0) return
-    downloadDeptPdf({
-      departmentName: department.name,
-      departmentCode: department.code,
-      subjects: subjects.map((s) => ({
-        facultyName: s.facultyName,
-        facultyEmail: s.facultyEmail,
-        subjectCode: s.subjectCode,
-        subjectName: s.subjectName,
-        totalRespondents: s.totalRespondents,
-        avgRating: s.avgRating,
-        remarks: s.remarks,
-        highestRubrics: s.highestRubrics,
-        lowestRubrics: s.lowestRubrics,
-        sentimentScore: s.sentimentScore,
-      })),
-      mode: pdfMode,
-    })
-  }, [department, subjects, pdfMode])
-
   return (
     <div className="w-full space-y-6 pb-12">
       <div>
@@ -203,35 +179,6 @@ export default function DepartmentDetailPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5">
-                  <IosButton
-                    variant={pdfMode === "per_subject" ? "primary" : "gray"}
-                    size="sm"
-                    onClick={() => setPdfMode("per_subject")}
-                    aria-pressed={pdfMode === "per_subject"}
-                  >
-                    Per Subject
-                  </IosButton>
-                  <IosButton
-                    variant={pdfMode === "per_faculty" ? "primary" : "gray"}
-                    size="sm"
-                    onClick={() => setPdfMode("per_faculty")}
-                    aria-pressed={pdfMode === "per_faculty"}
-                  >
-                    Per Faculty
-                  </IosButton>
-                </div>
-                <IosButton
-                  variant="tinted"
-                  size="sm"
-                  onClick={handleDeptPdf}
-                  title={`Download ${pdfMode === "per_faculty" ? "per-faculty" : "per-subject"} PDF`}
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  Download PDF
-                </IosButton>
                 <DepartmentZipButton
                   evaluationPeriodId={evaluationPeriodId}
                   departmentIds={[departmentId]}

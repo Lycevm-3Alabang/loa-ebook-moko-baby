@@ -1,6 +1,6 @@
 # ACES — Specs
 
-**Version:** 1.9
+**Version:** 1.10
 **Status:** Draft
 **Last Updated:** 2026-10-23
 
@@ -34,7 +34,7 @@ Specs must be Final before code is written (per loa-apache-server-apps conventio
 | [evaluation-surfaces-verification.md](../docs/evaluation-surfaces-verification.md) | — | The manual checks for the evaluation surfaces (dean's coverage, admin's coverage, the results pages) and the **home-less teachers** check — the one number no test can give you: how much coverage the home-only attribution rule moved |
 | [evaluation-results-attribution.md](evaluation-results-attribution.md) | Final (2026-10-21) | Why users go missing from the evaluation results — one department attribution rule across the admin/dean/coverage surfaces, the dean's duplicated route retired, an integrity warning, and a visible zero-response count. **Built and green 2026-10-20** (S1–S4 + F5: resolver, service, repository, dean route, visibility guard, coverage, null-safe rendering, integrity warning row, per-department "No responses" count, reconciled faculty counts, the dean's dashboard and evaluations page on the teaching roster; the pseudo-department row and its dead-end link are gone; both visibility routes now require `evaluationPeriodId`). **v1.2: the rule is faculty-driven** — the teacher's own department owns the result, with the section's department as the fallback for a teacher based somewhere that cannot own coverage; the coverage and the results surfaces now share one resolver. **v1.3 (2026-10-20, later the same day): one headcount, one membership** — every surface counts the faculty **homed in** a department (the school-wide headcount), the drill-downs' faculty lists are that same set, the results drill-down's subject tab is the members' subjects (evaluated or not), the no-response roster is gone from the results surfaces, and the dean's guards read the same set. **v1.4: the home is the only rule** — the section's department is no longer a fallback; a teacher with no home is unattributed. **v1.6–v1.14 (2026-10-21): the membership gate is closed** — the period scopes the responses (the term scopes the subject list only), the response set is decided in one read, the dean's guards read the members and the subject page's department guard (D9) is built, the results list's offSemester banner is retired, the surfaces show the ratings rather than the counts, every department is a row, and a tie is shown as a tie everywhere. Next: the data check — the home-less teachers |
 | [evaluation-results-summary-card.md](evaluation-results-summary-card.md) | Final (2026-10-21) | The department drill-down's header card — a summary, not a dashboard: the average is the headline with the verdict beside it, the rubric read-out is full-width rows (the alarm first, the ties joined on one line), the counts are the coverage page's, and the card's shape does not change with the data. **Built 2026-10-21** (Option A) |
-| [evaluation-results-export.md](evaluation-results-export.md) | Final (Part I) · Part II built; 04a done, 05.2-fix done (05.3 next) | The evaluation results as the school's legacy workbook, **generated from scratch** (the template is the reference, read by nothing at runtime). **Part I (§1–14, v4.0)** — the subject-grain workbook, three sheets (Individual, Comments, Overall one-row-per-response), everything follows the live rubric; **done 2026-10-22**, three routes (admin, dean, faculty). **Part II (§15–26, v6.2)** — the department download is a **ZIP**, not a stacked workbook: the **shipping per-subject workbook verbatim**, one per subject-section, plus **one consolidated file per faculty** (owner decisions **D20–D34**); ⭐ **the API is built** (the DEFLATE zip · the shared builder · the consolidated file · the assembly with its size guard · the two routes); **04a's summary tiers are on disk**; the list page's ZIP button is on the seam and the forbidden **"all departments" checkbox is gone** (05.1 + 05.2-fix, 2026-10-23) — **05.3 (the department pages) and 05.4 (the faculty card) are next** |
+| [evaluation-results-export.md](evaluation-results-export.md) | Final (Part I) · Part II built; 05.1–05.4 done; owner proofs next | The evaluation results as the school's legacy workbook, **generated from scratch** (the template is the reference, read by nothing at runtime). **Part I (§1–14, v4.0)** — the subject-grain workbook, three sheets (Individual, Comments, Overall one-row-per-response), everything follows the live rubric; **done 2026-10-22**, three routes (admin, dean, faculty). **Part II (§15–26, v6.2)** — the department download is a **ZIP**, not a stacked workbook: the **shipping per-subject workbook verbatim**, one per subject-section, plus **one consolidated file per faculty** (owner decisions **D20–D34**); ⭐ **the API is built** (the DEFLATE zip · the shared builder · the consolidated file · the assembly with its size guard · the two routes); **04a's summary tiers are built**; the list page's ZIP button is on the seam (one / selected / **all** departments) with a **confirmation modal**, the department pages and the faculty card are wired (05.3/05.4, 2026-10-23). ⭐ **The evaluation PDFs are removed** (owner, scope B, 2026-10-23): no department/faculty/subject/report PDF button remains; the Excel ZIP is the only evaluation download |
 | [coverage-parity.md](coverage-parity.md) | Final (2026-10-20) | Bring the evaluation coverage pages onto the results surfaces' footing — the dean's coverage page was non-functional (400 on the list, 403 on every detail), its scope unscoped, the detail guard asking the wrong question, and the dummy inflating the counts. **Built in 9 slices** (the dean's list exists and is scoped, the detail guard uses the list's resolver with 404 vs 403, the dummy is out of the counts, the integrity warning is carried and scoped, the Unresolved group counts its faculty, and the dean always loads their own department with no back link) |
 | [coverage-faculty-grouping.md](coverage-faculty-grouping.md) | Final (2026-10-20) | Give the coverage page's department drill-down the results page's two groupings — "By Subject & Section" and "By Faculty" — with a per-department faculty aggregate on distinct students. **Built**: the rows carry faculty + section, the service returns per-department faculty aggregates, the drill-down gains the switch and the faculty cards (one shared `components/ui/Tabs.tsx` for both pages). **v1.2: the coverage page is faculty-driven** — a teacher's coverage belongs to their own department, with the section's department as the fallback for a teacher based somewhere that cannot own coverage (no home, or a home with no courses — the "Unassigned"/"Admin" buckets). **v1.3: the results surfaces adopted the same rule** — one resolver, one rule, every surface. **v1.4 (2026-10-20): the home is the only rule** — no section fallback; a department's teaching is its members' teaching, and a teacher with no home is unattributed (the "Unresolved" group) |
 | *(unfiled)* | Done (2026-10-20) | Closed an authorization hole on `/api/dean/evaluation-results/details` — it resolved the dean's department and then ignored it, so any `facultyId` returned another department's per-student breakdown. Now scoped with the same membership the results page and the visibility toggle use (a new test file covers it). Also fixed the "anonymised" student id, which the object spread had been restoring to the real id |
@@ -120,23 +120,21 @@ genuinely unpersisted. The file was always the deduplicated count.
 
 ⭐ **Two threads — the export is the active one.**
 
-## Thread 1 — the Excel export (active, 2026-10-22)
+## Thread 1 — the Excel export (built 2026-10-23; owner proofs next)
 
-- **Where it stands:** the **subject workbook ships**; the department **ZIP's API is built** — the
-  assembly + ⭐ **the two routes** + their cases; **04a's summary tiers are on disk**; ⭐ **05.2-fix
-  is on disk** (2026-10-23 — the list page's ZIP button is on the seam, the forbidden "all
-  departments" checkbox is gone, and `admin-results-export-button.test.tsx` exists with 9 cases);
-  the department pages + the faculty card have **no button** yet.
+- **Where it stands:** the **subject workbook ships**; the department **ZIP** is built end-to-end —
+  the assembly, the two routes, 04a's summary tiers, the **list page** (select one / several /
+  **all** departments, with a confirmation modal), the **department pages** (05.3) and the
+  **faculty card** (05.4). ⭐ **The evaluation PDFs are removed** (owner, scope B): no department
+  PDF, no per-subject PDF, no consolidated faculty PDF, no Evaluation Reports PDF; the CSV on the
+  reports page stays, and the Reports module's PDFs are untouched.
 - **Read in this order:** `docs/evaluation-export-department-handover.md` (the entry point) →
   `evaluation-results-export.md` **§21** (what the routes promise) + **§24–25** (the slices and
-  the proofs) → `evaluation-results-export/03-surface.md` (**the next slice**).
-- ⭐ **Next slice: 05.3** — the two department pages, the ZIP button beside **Download PDF**
-  (`departmentIds={[departmentId]}`, the page's own base, a page-level test); then **05.4** (the
-  faculty card's required `exportApiBase` + the per-faculty ZIP). ⭐ The surface decision is
-  **A** (2026-10-23, `03-surface.md` §2): the per-subject "Export Excel" buttons **stay**.
-- ⭐ **The proofs are the owner's:** curl + unzip (the tree against §17.1) · the dean's
+  the proofs) → `evaluation-results-export/03-surface.md` (v1.2 — option A + the PDF removal).
+- ⭐ **Next: the owner's proofs** — curl + unzip (the tree against §17.1) · the dean's
   **403/400** · the Excel print · ⚠️ the **timing** (the 8-way pool's speed-up is unmeasured —
-  the guard bounds the size, not the time).
+  the guard bounds the size, not the time). ⭐ A real selection of **179 subject-sections** was
+  refused at **≈ 7.5 MB** against the **4.0 MB** guard — export one department or one faculty.
 
 ## Thread 2 — the student CSV importer (older; all incidents closed)
 
@@ -188,7 +186,8 @@ owner's run).
 
 ## Next slice to take — per thread
 
-- ⭐ **The export:** **05.3 → 05.4** — see Thread 1 above.
+- ⭐ **The export:** **no slice left** — 05.1–05.4, the modal and "all departments" landed
+  (2026-10-23); the **owner's proofs** are what remain. See Thread 1 above.
 - **The importer:** ⭐ **no slice left** — C3 S1–S4 and the table-first work all landed
   (2026-10-10, user-reported green). What remains is **verification**, tracked in root `TODO.md`:
   the **S2 + S3 browser pass**, **Run gate vs Needs Review**, the **F1 invalid-details modal

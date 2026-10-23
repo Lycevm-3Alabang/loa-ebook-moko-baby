@@ -264,77 +264,6 @@ export default function EvaluationReportContent({ role, evaluationPeriodId, init
     URL.revokeObjectURL(url)
   }, [showStudentBreakdown, showFacultyTable, showDeptOverview, selectedFaculty, selectedDeptId, studentData, filteredFaculty, initialData.departments])
 
-  const exportPDF = useCallback(async () => {
-    const { jsPDF } = await import("jspdf")
-    await import("jspdf-autotable")
-    const pdf = new jsPDF("landscape")
-    const margin = 10
-    let y = 20
-
-    const addTitle = (text: string) => {
-      pdf.setFontSize(14)
-      pdf.text(text, margin, y)
-      y += 8
-    }
-
-    const addTable = (head: string[][], body: string[][]) => {
-      pdf.autoTable({
-        head,
-        body,
-        startY: y,
-        margin: { left: margin, right: margin },
-        styles: { fontSize: 7 },
-        headStyles: { fillColor: [212, 160, 71] },
-      })
-      y = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8
-    }
-
-    if (showStudentBreakdown && selectedFaculty) {
-      addTitle(`Student Breakdown — ${selectedFaculty.facultyName} (${selectedFaculty.totalRespondents} responses)`)
-      addTable(
-        [["#", ...CATEGORY_LABELS.map((c) => c.short), "General", "Comment"]],
-        studentData.map((s, i) => [
-          String(i + 1),
-          ...CATEGORY_LABELS.map((c) => fmt(s[c.key])),
-          fmt(s.generalRating),
-          s.comment ?? "",
-        ])
-      )
-    } else if (showFacultyTable) {
-      const title = role === "admin" && selectedDeptId
-        ? `Faculty Evaluation Results — ${initialData.departments.find((d) => d.departmentId === selectedDeptId)?.departmentName ?? ""}`
-        : `Faculty Evaluation Results`
-      addTitle(title)
-      addTable(
-        [["Faculty", "Resp.", ...CATEGORY_LABELS.map((c) => c.short), "General", "Remark"]],
-        filteredFaculty.map((f) => [
-          f.facultyName,
-          String(f.totalRespondents),
-          ...CATEGORY_LABELS.map((c) => fmt(f[c.key])),
-          fmt(f.generalRating),
-          f.remarks ?? "",
-        ])
-      )
-    } else if (showDeptOverview) {
-      addTitle("Department Overview — Evaluation Results")
-      addTable(
-        [["Department", "Faculty", "Resp.", ...CATEGORY_LABELS.map((c) => c.short), "General"]],
-        initialData.departments.map((d) => [
-          d.departmentName,
-          String(d.facultyCount),
-          String(d.totalRespondents),
-          ...CATEGORY_LABELS.map((c) => fmt(deptAvg(c.key, d))),
-          fmt(d.avgGeneralRating),
-        ])
-      )
-    }
-
-    const ts = new Date().toISOString().slice(0, 10)
-    const deptPart = selectedDeptId ? initialData.departments.find((d) => d.departmentId === selectedDeptId)?.departmentName ?? "" : ""
-    const facultyPart = selectedFaculty?.facultyName ?? ""
-    pdf.save(`eval-report_${[deptPart, facultyPart, ts].filter(Boolean).join("_")}.pdf`)
-  }, [showStudentBreakdown, showFacultyTable, showDeptOverview, selectedFaculty, selectedDeptId, studentData, filteredFaculty, initialData.departments, role])
-
   if (!evaluationPeriodId || initialData.departments.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
@@ -383,12 +312,6 @@ export default function EvaluationReportContent({ role, evaluationPeriodId, init
             className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-primary font-medium"
           >
             CSV
-          </button>
-          <button
-            onClick={exportPDF}
-            className="text-xs px-3 py-1.5 rounded-lg bg-gold-600 text-white hover:bg-gold-700 font-medium"
-          >
-            PDF
           </button>
         </div>
       </div>
