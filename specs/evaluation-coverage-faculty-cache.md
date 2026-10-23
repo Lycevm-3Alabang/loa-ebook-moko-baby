@@ -87,8 +87,9 @@ action.
    between admin/dean scopes must never display another scope's snapshot.
 6. The banner must identify the displayed coverage as cached and potentially
    stale, show the last successful manual Refresh time, and emphasize the
-   Refresh action. The timestamp means the last button refresh, not browser
-   load or cache restoration.
+   Refresh action. Use the shared component contract in
+   `specs/cached-data-refresh-banner.md`; the timestamp means the last button
+   refresh, not browser load or cache restoration.
 7. The Refresh action is the only way to refresh the cached status response.
    It clears the selected period/scope's local entry, fetches the status
    response again, and stores it on success. It updates the displayed snapshot
@@ -118,6 +119,10 @@ Both routes use the shared `CoveragePage` component. The same behavior and
 correctness rules apply, while their cached data remains separate by route
 scope. The department drill-down selection in `?dept=...` is view state over
 the cached status payload; it is not a separate API-cache key.
+
+The stale-data warning and manual Refresh control use the shared UI specified
+in `specs/cached-data-refresh-banner.md`, also used by admin Evaluation
+Results. Sharing presentation does not share or alter the pages' cache logic.
 
 Out of scope:
 

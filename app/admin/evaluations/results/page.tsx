@@ -4,8 +4,8 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
+import CachedDataRefreshBanner from "@/components/ui/CachedDataRefreshBanner"
 import { useApiGet, fetcher, dispatchToast } from "@/lib/api/client"
-import IosButton from "@/components/ui/IosButton"
 import { getRemarkColor, formatPeriodLabel, departmentLabel, findAttentionRubrics } from "@/lib/evaluation-utils"
 
 interface DepartmentRow {
@@ -431,33 +431,15 @@ export default function AdminEvaluationResultsPage() {
         </select>
       </div>
 
-      {/* Cached figures are stale by design; the manual Refresh action is the only refresh path. */}
       {rows.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-3">
-          <span className="text-[11px] font-semibold text-amber-900 dark:text-amber-200">
-            Displayed figures are cached and may be stale. Click Refresh to fetch current figures.
-          </span>
-          <span className="text-[11px] text-amber-700 dark:text-amber-300">
-            {lastManualRefreshAt
-              ? `Last button refresh: ${new Date(lastManualRefreshAt).toLocaleString()}`
-              : "Not manually refreshed yet"}
-          </span>
-          <IosButton
-            variant="primary"
-            size="sm"
-            onClick={refreshNow}
-            loading={refreshing}
-            title="Fetch the latest figures for this period"
-            className="ml-auto shrink-0 shadow-sm"
-          >
-            Refresh
-          </IosButton>
-          {!allLoaded && (
-            <span className="text-[11px] text-amber-800 dark:text-amber-300">
-              Some rows are still loading — sorting by a column header is paused until they land.
-            </span>
-          )}
-        </div>
+        <CachedDataRefreshBanner
+          lastManualRefreshAt={lastManualRefreshAt}
+          isRefreshing={refreshing}
+          onRefresh={refreshNow}
+          statusMessage={!allLoaded
+            ? "Some rows are still loading — sorting by a column header is paused until they land."
+            : undefined}
+        />
       )}
 
       {error && <ErrorState message={error} onRetry={() => window.location.reload()} />}

@@ -100,7 +100,9 @@ or report contracts below.
    imply that the timestamp means they are current. The banner must clearly state that displayed
    figures are cached and may be stale, tell the user to click **Refresh** for current figures,
    show the last successful button-refresh time (not the browser-load time), and visually emphasize
-   the Refresh action. Preserve the loading/sorting-paused notice while uncached rows are loading.
+   the Refresh action. Use the shared presentation specified in
+   `specs/cached-data-refresh-banner.md`. Preserve the loading/sorting-paused notice while uncached
+   rows are loading.
 
 ### Acceptance checks
 

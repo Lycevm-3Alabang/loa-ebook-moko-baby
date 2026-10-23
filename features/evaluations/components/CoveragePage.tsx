@@ -1,13 +1,12 @@
 ﻿"use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useCallback } from "react"
 import { useRouter, useSearchParams, usePathname } from "next/navigation"
 import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import IosButton from "@/components/ui/IosButton"
-import Tabs from "@/components/ui/Tabs"
-import { useApiGet } from "@/lib/api/client"
-import { usePagination, Paginator } from "@/components/ui/Paginator"
+import CachedDataRefreshBanner from "@/components/ui/CachedDataRefreshBanner"
+import { useApiGet, fetcher, dispatchToast } from "@/lib/api/client"
 import { formatPeriodLabel, sectionLabel, departmentLabel } from "@/lib/evaluation-utils"
 import CoverageDetailModal from "./CoverageDetailModal"
 import { downloadBlob } from "@/lib/zip"
@@ -89,14 +88,72 @@ interface AttributionWarnings {
 // "Unassigned" department, which is a legitimate department with its own id.
 const UNRESOLVED = "__unknown__"
 
-/** The two groupings, with the results page's names for them. */
-const COVERAGE_TABS: { key: "by_subject" | "by_faculty"; label: string }[] = [
-  { key: "by_subject", label: "By Subject & Section" },
-  { key: "by_faculty", label: "By Faculty" },
-]
-
 function formatPct(v: number | null) {
   return v === null ? "-" : `${v.toFixed(1)}%`
+}
+
+const COVERAGE_CACHE_PREFIX = "evaluation-coverage-status"
+
+function getCoverageCacheKey(periodId: string, scopeKey: string) {
+  return `${COVERAGE_CACHE_PREFIX}:${scopeKey}:${periodId}`
+}
+
+function getLastManualRefreshKey(periodId: string, scopeKey: string) {
+  return `${COVERAGE_CACHE_PREFIX}:last-manual-refresh:${scopeKey}:${periodId}`
+}
+
+function readCoverageCache(periodId: string, scopeKey: string) {
+  if (typeof window === "undefined" || !periodId || !scopeKey) return null
+  try {
+    const stored = window.localStorage.getItem(getCoverageCacheKey(periodId, scopeKey))
+    if (!stored) return null
+    const parsed = JSON.parse(stored)
+    if (!parsed || typeof parsed !== "object") return null
+    return parsed as {
+      departments: DepartmentRow[]
+      subjects: SubjectRow[]
+      facultyAggregates?: Record<string, Record<string, FacultyCoverageAggregate>>
+      warnings?: AttributionWarnings
+    }
+  } catch {
+    return null
+  }
+}
+
+function writeCoverageCache(periodId: string, scopeKey: string, data: unknown) {
+  if (typeof window === "undefined" || !periodId || !scopeKey) return
+  try {
+    window.localStorage.setItem(getCoverageCacheKey(periodId, scopeKey), JSON.stringify(data))
+  } catch {
+    dispatchToast("Coverage cache could not be saved in this browser.")
+  }
+}
+
+function clearCoverageCache(periodId: string, scopeKey: string) {
+  if (typeof window === "undefined" || !periodId || !scopeKey) return
+  try {
+    window.localStorage.removeItem(getCoverageCacheKey(periodId, scopeKey))
+  } catch {
+    // ignore storage errors and keep the current view usable
+  }
+}
+
+function readLastManualRefresh(periodId: string, scopeKey: string): string | null {
+  if (typeof window === "undefined" || !periodId || !scopeKey) return null
+  try {
+    return window.localStorage.getItem(getLastManualRefreshKey(periodId, scopeKey))
+  } catch {
+    return null
+  }
+}
+
+function writeLastManualRefresh(periodId: string, scopeKey: string, refreshedAt: string) {
+  if (typeof window === "undefined" || !periodId || !scopeKey) return
+  try {
+    window.localStorage.setItem(getLastManualRefreshKey(periodId, scopeKey), refreshedAt)
+  } catch {
+    // ignore storage errors and keep the current view usable
+  }
 }
 
 export default function CoveragePage({
@@ -115,11 +172,21 @@ export default function CoveragePage({
   const [sortKey, setSortKey] = useState<"departmentName" | "completion" | "subjectsTotal" | "submitted">("completion")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [deptFromUrl, setDeptFromUrl] = useState<string | null>(() => searchParams.get("dept"))
-  const [viewTab, setViewTab] = useState<"by_subject" | "by_faculty">("by_subject")
   const [expandedFaculty, setExpandedFaculty] = useState<string | null>(null)
   const [modalSubject, setModalSubject] = useState<SubjectRow | null>(null)
   const [modalDetail, setModalDetail] = useState<SubjectDetail | "loading" | "error" | null>(null)
+  const [statusSnapshot, setStatusSnapshot] = useState<{ periodId: string; scope: string; data: {
+    departments: DepartmentRow[]
+    subjects: SubjectRow[]
+    facultyAggregates?: Record<string, Record<string, FacultyCoverageAggregate>>
+    warnings?: AttributionWarnings
+  } } | null>(null)
+  const [statusError, setStatusError] = useState<Error | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [lastManualRefreshAt, setLastManualRefreshAt] = useState<string | null>(null)
 
+  const scopeKey = departmentId ? `department:${departmentId}` : statusBase
+  const statusScopeLabel = departmentId ? "department scope" : "admin scope"
   const { data: periodsData } = useApiGet<{ periods: Period[] }>("/api/evaluation-periods")
   const periods = useMemo(() => periodsData?.periods ?? [], [periodsData])
 
@@ -130,21 +197,86 @@ export default function CoveragePage({
     }
   }, [periods, selectedPeriod])
 
-  const { data: statusData, error: statusError } = useApiGet<{
-    departments: DepartmentRow[]
-    subjects: SubjectRow[]
-    facultyAggregates?: Record<string, Record<string, FacultyCoverageAggregate>>
-    warnings?: AttributionWarnings
-  }>(
-    selectedPeriod ? `${statusBase}?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}` : null,
-    // Freshness: the global SWRConfig sets revalidateOnFocus:false, which leaves
-    // this page frozen after mount. Coverage is a live-progress report (students
-    // submit/dispute while it is open), so opt this hook back into focus
-    // revalidation and a 30s poll. Scoped to this call - other pages untouched.
-    { revalidateOnFocus: true, refreshInterval: 30_000 },
-  )
+  useEffect(() => {
+    if (!selectedPeriod) return
+    let cancelled = false
+    const cached = readCoverageCache(selectedPeriod, scopeKey)
+    const cachedRefresh = readLastManualRefresh(selectedPeriod, scopeKey)
+    if (cached) {
+      Promise.resolve().then(() => {
+        if (cancelled) return
+        setLastManualRefreshAt(cachedRefresh)
+        setStatusSnapshot({ periodId: selectedPeriod, scope: scopeKey, data: cached })
+        setStatusError(null)
+      })
+      return () => {
+        cancelled = true
+      }
+    }
+
+    Promise.resolve().then(() => {
+      if (!cancelled) setLastManualRefreshAt(cachedRefresh)
+    })
+
+    void fetcher<{
+      departments: DepartmentRow[]
+      subjects: SubjectRow[]
+      facultyAggregates?: Record<string, Record<string, FacultyCoverageAggregate>>
+      warnings?: AttributionWarnings
+    }>(`${statusBase}?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}`)
+      .then((data) => {
+        if (cancelled) return
+        writeCoverageCache(selectedPeriod, scopeKey, data)
+        setStatusSnapshot({ periodId: selectedPeriod, scope: scopeKey, data })
+        setStatusError(null)
+      })
+      .catch((fetchError: unknown) => {
+        if (cancelled) return
+        setStatusError(fetchError instanceof Error ? fetchError : new Error("Could not load evaluation coverage"))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [scopeKey, selectedPeriod, statusBase])
+
+  const statusData = statusSnapshot && statusSnapshot.periodId === selectedPeriod && statusSnapshot.scope === scopeKey
+    ? statusSnapshot.data
+    : null
   const error = statusError?.message || ""
-  const loading = !statusData && !statusError && !!selectedPeriod
+  const loading = !!selectedPeriod && !statusData && !statusError
+
+  const refreshCoverage = useCallback(async () => {
+    if (!selectedPeriod) return
+    const snapshot = statusData
+    const refreshedAt = new Date().toISOString()
+    setIsRefreshing(true)
+    setStatusError(null)
+    clearCoverageCache(selectedPeriod, scopeKey)
+    try {
+      const data = await fetcher<{
+        departments: DepartmentRow[]
+        subjects: SubjectRow[]
+        facultyAggregates?: Record<string, Record<string, FacultyCoverageAggregate>>
+        warnings?: AttributionWarnings
+      }>(`${statusBase}?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}`)
+      writeCoverageCache(selectedPeriod, scopeKey, data)
+      writeLastManualRefresh(selectedPeriod, scopeKey, refreshedAt)
+      setStatusSnapshot({ periodId: selectedPeriod, scope: scopeKey, data })
+      setLastManualRefreshAt(refreshedAt)
+    } catch (fetchError: unknown) {
+      if (snapshot) {
+        writeCoverageCache(selectedPeriod, scopeKey, snapshot)
+        setStatusSnapshot({ periodId: selectedPeriod, scope: scopeKey, data: snapshot })
+        setStatusError(fetchError instanceof Error ? fetchError : new Error("Could not refresh evaluation coverage"))
+      } else {
+        setStatusError(fetchError instanceof Error ? fetchError : new Error("Could not refresh evaluation coverage"))
+      }
+      dispatchToast("Refresh failed. Showing the last successful snapshot.")
+    } finally {
+      setIsRefreshing(false)
+    }
+  }, [scopeKey, selectedPeriod, statusBase, statusData])
 
   const q = search.trim().toLowerCase()
   const filteredDepts = useMemo(() => {
@@ -232,11 +364,8 @@ export default function CoveragePage({
     )
   }, [statusData, selectedDept, q])
 
-  const subjectPager = usePagination(deptSubjects, 25)
-
   const facultyAggregates = useMemo(() => statusData?.facultyAggregates ?? {}, [statusData?.facultyAggregates])
 
-  /** The department's subjects, grouped by their teacher. */
   const facultyGroups = useMemo(() => {
     const groups = new Map<string, { id: string; name: string; email: string; subjects: SubjectRow[] }>()
     for (const s of deptSubjects) {
@@ -245,16 +374,12 @@ export default function CoveragePage({
       groups.set(s.facultyId, g)
     }
     const all = [...groups.values()]
-    // The pseudo-department is not a department: it has no membership
-    // question, so it keeps every teacher of its subjects.
     if (!selectedDept || selectedDept === UNRESOLVED) return all
-    // The department's OWN faculty. The aggregate map is the member list:
-    // the service only aggregates the teachers homed here.
     return all.filter((g) => facultyAggregates[selectedDept]?.[g.id] !== undefined)
   }, [deptSubjects, selectedDept, facultyAggregates])
 
-  const selectDept = (id: string) => { setDeptFromUrl(id); subjectPager.setPage(0); router.replace(`${pathname}?dept=${encodeURIComponent(id)}`) }
-  const clearDept = () => { setDeptFromUrl(null); subjectPager.setPage(0); router.replace(pathname) }
+  const selectDept = (id: string) => { setDeptFromUrl(id); router.replace(`${pathname}?dept=${encodeURIComponent(id)}`) }
+  const clearDept = () => { setDeptFromUrl(null); router.replace(pathname) }
 
   const exportCsv = () => {
     const subjects = statusData?.subjects ?? []
@@ -315,7 +440,7 @@ export default function CoveragePage({
         <input
           type="text"
           value={search}
-          onChange={(e) => { setSearch(e.target.value); subjectPager.setPage(0) }}
+          onChange={(e) => setSearch(e.target.value)}
           placeholder="Search department or subject..."
           className="rounded-xl border border-default bg-surface px-3 py-2 text-sm text-secondary shadow-sm transition-colors focus:border-slate-400 focus:outline-none"
         />
@@ -330,6 +455,15 @@ export default function CoveragePage({
           Export CSV
         </IosButton>
       </div>
+
+      {statusData && (
+        <CachedDataRefreshBanner
+          lastManualRefreshAt={lastManualRefreshAt}
+          isRefreshing={isRefreshing}
+          onRefresh={refreshCoverage}
+          contextLabel={statusScopeLabel}
+        />
+      )}
 
       {error && <ErrorState message={error} onRetry={() => window.location.reload()} />}
 
@@ -460,87 +594,17 @@ export default function CoveragePage({
                 </p>
               </div>
 
-              <Tabs tabs={COVERAGE_TABS} active={viewTab} onChange={setViewTab} />
-
-              {deptSubjects.length === 0 ? (
-                <p className="text-sm text-tertiary text-center py-8">No evaluated subjects found.</p>
-              ) : viewTab === "by_subject" ? (
-                <>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="text-[10px] font-semibold uppercase tracking-wider text-tertiary border-b border-default">
-                        <th className="pb-3 pr-4">Subject</th>
-                        <th className="pb-3 pr-4">Section</th>
-                        <th className="pb-3 pr-4">Faculty</th>
-                        <th className="pb-3 pr-4 text-right">Enrolled</th>
-                        <th className="pb-3 pr-4 text-right">Participated</th>
-                        <th className="pb-3 pr-4 text-right">Disputed</th>
-                        <th className="pb-3 pr-4 text-right">In-prog.</th>
-                        <th className="pb-3 pr-4 text-right">Not part.</th>
-                        <th className="pb-3 pr-4 text-right">Completion</th>
-                        <th className="pb-3 pr-4 text-right">Status</th>
-                        <th className="pb-3 text-right">Details</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {subjectPager.paginatedItems.map((s) => {
-                        return (
-                          <tr key={s.facultySubjectId} className="border-b border-default align-top">
-                            <td className="py-3 pr-4">
-                              <span className="text-sm font-semibold text-primary">{s.subjectCode}</span>
-                              <span className="text-xs text-tertiary ml-2">{s.subjectName}</span>
-                            </td>
-                            <td className="py-3 pr-4 text-sm text-secondary">
-                              {sectionLabel(s.sectionProgram, s.sectionName)}
-                              {s.sectionDepartment && (
-                                <span className="ml-2 text-[10px] text-tertiary">{s.sectionDepartment} section</span>
-                              )}
-                            </td>
-                            <td className="py-3 pr-4 text-sm text-secondary">{s.facultyName}</td>
-                            <td className="py-3 pr-4 text-right text-sm text-secondary">{s.enrolled}</td>
-                            <td className="py-3 pr-4 text-right text-sm text-emerald-600 dark:text-emerald-400">{s.participated}</td>
-                            <td className="py-3 pr-4 text-right text-sm text-rose-600 dark:text-rose-400">{s.disputed}</td>
-                            <td className="py-3 pr-4 text-right text-sm text-blue-600 dark:text-blue-400">{s.inProgress}</td>
-                            <td className="py-3 pr-4 text-right text-sm text-amber-600 dark:text-amber-400">{s.notParticipated}</td>
-                            <td className="py-3 pr-4 text-right text-sm font-bold">{formatPct(s.enrolled > 0 ? (s.participated / s.enrolled) * 100 : null)}</td>
-                            <td className="py-3 pr-4 text-right">{coveragePill(s.enrolled > 0 ? (s.participated / s.enrolled) * 100 : null)}</td>
-                            <td className="py-3 text-right">
-                              <IosButton
-                                variant="plain"
-                                size="xs"
-                                onClick={() => openDetail(s)}
-                                title={`View student breakdown for ${s.subjectCode ?? s.subjectName ?? "subject"}`}
-                              >
-                                Details
-                              </IosButton>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                {deptSubjects.length > 0 && (
-                  <Paginator
-                    page={subjectPager.page}
-                    totalPages={subjectPager.totalPages}
-                    pageSize={subjectPager.pageSize}
-                    totalItems={deptSubjects.length}
-                    setPage={subjectPager.setPage}
-                    setPageSize={subjectPager.setPageSize}
-                  />
-                )}
-                </>
-              ) : (
-                <div className="space-y-3">
-                  {facultyGroups.map((group) => {
+              <div className="space-y-3">
+                {deptSubjects.length === 0 ? (
+                  <p className="text-sm text-tertiary text-center py-8">No evaluated subjects found.</p>
+                ) : facultyGroups.length === 0 ? (
+                  <p className="text-sm text-tertiary text-center py-8">No faculty coverage found for this selection.</p>
+                ) : (
+                  facultyGroups.map((group) => {
                     const agg = facultyAggregates[selectedDept]?.[group.id]
                     const isExpanded = expandedFaculty === group.id
-                    // The card's counts come from the aggregate, like the
-                    // department tiles (unfiltered); the list below it is the
-                    // searched subset.
                     const subjectCount = agg?.subjects ?? group.subjects.length
+                    const totalStudents = agg?.students ?? group.subjects.reduce((acc, s) => acc + s.enrolled, 0)
                     return (
                       <div key={group.id} className="card p-4 space-y-2">
                         <div
@@ -556,12 +620,11 @@ export default function CoveragePage({
                           </div>
                           <div className="flex items-center gap-3">
                             <div className="text-right text-xs text-tertiary">
-                              <div>{subjectCount} subject{subjectCount !== 1 ? "s" : ""}</div>
-                              <div>{agg?.students ?? 0} student{(agg?.students ?? 0) !== 1 ? "s" : ""}</div>
+                              <div>{subjectCount} {subjectCount === 1 ? "subject" : "subjects"}</div>
+                              <div>{totalStudents} {totalStudents === 1 ? "student" : "students"}</div>
                             </div>
-                            {agg && <span className="text-lg font-bold">{formatPct(agg.completion)}</span>}
                             {agg && coveragePill(agg.completion)}
-                            <span className="text-tertiary text-xs">{isExpanded ? "\u25B2" : "\u25BC"}</span>
+                            <span className="text-tertiary text-xs">{isExpanded ? "▲" : "▼"}</span>
                           </div>
                         </div>
 
@@ -613,9 +676,9 @@ export default function CoveragePage({
                         )}
                       </div>
                     )
-                  })}
-                </div>
-              )}
+                  })
+                )}
+              </div>
               <CoverageDetailModal
                 open={modalSubject !== null}
                 title={modalSubject ? `${modalSubject.subjectCode} - ${modalSubject.subjectName} - ${modalSubject.facultyName}` : ""}
@@ -641,5 +704,4 @@ function coveragePill(pct: number | null) {
   }
   return <span className={`ml-2 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${cls}`}>{label}</span>
 }
-
 
