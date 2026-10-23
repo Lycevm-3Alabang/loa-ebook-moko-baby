@@ -97,6 +97,9 @@ function renderView(opts: {
   subjects?: Row[]
   members?: { id: string; name: string; email: string }[]
   search?: string
+  selectedFacultyIds?: string[]
+  onFacultySelectionChange?: (facultyId: string, selected: boolean) => void
+  visibilityMap?: Record<string, boolean>
 } = {}) {
   return render(
     <DepartmentSubjectView
@@ -107,6 +110,9 @@ function renderView(opts: {
       search={opts.search ?? ""}
       onSearchChange={() => {}}
       facultyAggregates={opts.facultyAggregates}
+      selectedFacultyIds={opts.selectedFacultyIds}
+      onFacultySelectionChange={opts.onFacultySelectionChange}
+      visibilityMap={opts.visibilityMap}
     />,
   )
 }
@@ -200,6 +206,47 @@ describe("DepartmentSubjectView - the name", () => {
     })
 
     expect(screen.getByText("Dela Cruz, Juan B.")).toBeTruthy()
+  })
+})
+
+describe("DepartmentSubjectView - faculty export selection", () => {
+  it("selects only search-shown cards and preserves selections hidden by search", () => {
+    const onFacultySelectionChange = vi.fn()
+    renderView({
+      subjects: [
+        row({ facultyId: "f1", facultyName: "Ana Reyes", subjectCode: "IT101" }),
+        row({ facultyId: "f2", facultyName: "Ben Cruz", subjectCode: "CS101" }),
+      ],
+      selectedFacultyIds: ["f2"],
+      search: "IT101",
+      visibilityMap: { f1: false },
+      onFacultySelectionChange,
+    })
+
+    expect(screen.getByRole("button", { name: "Select shown" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Select shown" }))
+
+    expect(onFacultySelectionChange).toHaveBeenCalledTimes(1)
+    expect(onFacultySelectionChange).toHaveBeenCalledWith("f1", true)
+  })
+
+  it("unselects shown cards without clearing hidden selections", () => {
+    const onFacultySelectionChange = vi.fn()
+    renderView({
+      subjects: [
+        row({ facultyId: "f1", facultyName: "Ana Reyes", subjectCode: "IT101" }),
+        row({ facultyId: "f2", facultyName: "Ben Cruz", subjectCode: "CS101" }),
+      ],
+      selectedFacultyIds: ["f1", "f2"],
+      search: "IT101",
+      onFacultySelectionChange,
+    })
+
+    expect(screen.getByRole("button", { name: "Unselect shown" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Unselect shown" }))
+
+    expect(onFacultySelectionChange).toHaveBeenCalledTimes(1)
+    expect(onFacultySelectionChange).toHaveBeenCalledWith("f1", false)
   })
 })
 

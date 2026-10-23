@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import IosButton from "@/components/ui/IosButton"
+import SubmitButton from "@/components/ui/SubmitButton"
 import { getRemarkColor, sectionLabel, formatFacultyName, type FacultyAggregate } from "@/lib/evaluation-utils"
 
 interface SubjectRow {
@@ -141,6 +142,9 @@ export default function DepartmentSubjectView({ subjects, members = [], departme
     () => (members.length > 0 ? members.map((m) => m.id) : [...new Set(subjects.map((s) => s.facultyId))]),
     [members, subjects],
   )
+  const shownFacultyIds = facultyGroups.map((group) => group.facultyId)
+  const allShownSelected =
+    shownFacultyIds.length > 0 && shownFacultyIds.every((id) => selectedFacultyIds.includes(id))
   const allVisible = uniqueFacultyIds.length > 0 && uniqueFacultyIds.every((id) => visibilityMap[id])
 
   return (
@@ -157,8 +161,8 @@ export default function DepartmentSubjectView({ subjects, members = [], departme
           {facultyGroups.length} facult{facultyGroups.length !== 1 ? "ies" : "y"}
         </span>
         <div className="ml-auto flex items-center gap-2">
-          <IosButton
-            variant="gray"
+<IosButton
+          variant="gray"
             size="sm"
             onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
             title={sortDir === "asc" ? "Sorted by surname A–Z — click for Z–A" : "Sorted by surname Z–A — click for A–Z"}
@@ -194,6 +198,23 @@ export default function DepartmentSubjectView({ subjects, members = [], departme
           )}
         </div>
       </div>
+
+      {shownFacultyIds.length > 0 && onFacultySelectionChange && (
+        <SubmitButton
+          variant="ios-gray"
+          size="xs"
+          onClick={() => {
+            const selected = !allShownSelected
+            for (const id of shownFacultyIds) {
+              onFacultySelectionChange(id, selected)
+            }
+          }}
+        >
+          {search.trim()
+            ? allShownSelected ? "Unselect shown" : "Select shown"
+            : allShownSelected ? "Unselect All" : "Select All"}
+        </SubmitButton>
+      )}
 
       <div className="space-y-3">
         {sortedGroups.map((group) => {
