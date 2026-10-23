@@ -9,21 +9,24 @@ The owner runs it; the agent never executes CLI (H1).
 
 ## Next
 
+- [ ] **Admin evaluation-results cache UX.** Implement the explicit-refresh contract in `specs/evaluation-results-cache.md`: retain figures across browser reloads, remove timed refresh, and make the stale-data reminder prominent.
 - [x] **E4:** Select / unselect all — one toggle in card toolbar applying to shown faculty cards (D37). Hidden selections survive.
-- [ ] **E5:** Docs — update spec §24 status row, verify gate run green, delete handover file.
+- [x] **E5:** Docs — update spec §24 status row, verify gate run green, delete handover file.
 
 ## In progress
 
-E4–E5: faculty picker on department export.
+None.
 
-## Pending
+## Resolved (owner-confirmed 2026-10-24)
 
-- [ ] **Owner proofs — export.** Verify export for: one department, several departments, none selected (=all departments). Confirm dean's 403 for other department and 400 for unknown faculty. Print workbook in Excel.
-- [ ] **Legend convergence.** Move rating ladder from hard-coded `getRemark` to shared data readable by both remark and legend.
-- [ ] **Subject-page shared read.** Ensure page and export agree by construction rather than parallel reads.
-- [ ] **Student CSV importer verification.** Verify S2 + S3 browser pass; observe gate vs Needs Review behavior.
-- [ ] **Home-less teachers verification.** Run SQL from `docs/evaluation-surfaces-verification.md` §7 per period.
-- [ ] **Department Summary card duplication.** Decide on shared component vs inlined; not part of redesign.
+The owner confirms that every formerly pending item below is complete or a no-op. Detailed outcomes were not provided. The new cache UX work is tracked separately under Next.
+
+- [x] **Owner proofs — export.** Empty department selection is a local no-op; remaining export and workbook proofs are owner-confirmed resolved.
+- [x] **Legend convergence.** Owner-confirmed resolved.
+- [x] **Subject-page shared read.** Owner-confirmed resolved.
+- [x] **Student CSV importer verification.** Owner-confirmed resolved.
+- [x] **Home-less teachers verification.** Owner-confirmed resolved.
+- [x] **Department Summary card duplication.** Owner-confirmed resolved or no-op.
 
 ## Handovers
 

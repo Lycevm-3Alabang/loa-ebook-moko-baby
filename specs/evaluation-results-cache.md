@@ -7,7 +7,10 @@ connection cannot be opened and the endpoint answered **500**. The figures are n
 the app's own repositories — one department at a time, and one faculty at a time for the report —
 and the read is expensive enough to be worth keeping.
 
-## The contract
+## Current contract — before the requested change
+
+Rules below describe the currently implemented behavior. The requested change later in this
+document supersedes the admin results-list behavior for the department figures once implemented.
 
 1. **The figures are read per department.**
    `listDepartmentFigures(departmentId, evaluationPeriodId)` reads the department's own faculty
@@ -62,6 +65,53 @@ and the read is expensive enough to be worth keeping.
 8. **The export is a download, not a page.**
    It is slow by nature, so the button shows a loader while it runs, and the route carries
    `maxDuration = 60` — the same budget the import routes use.
+
+## Requested change — explicit refresh for the admin results list
+
+**Status:** Specified 2026-10-24; implementation pending.
+
+This section supersedes rules 2, 4, 5 and the freshness/reminder portion of rule 6 for the
+department figures shown on `app/admin/evaluations/results/page.tsx`. It does not change the
+uncached list metadata, attribution warnings, drill-down, or report contracts below.
+
+### Behavior
+
+1. **A page reload is not a refresh of the figures.** Once fetched, each department's figures
+   are cached on the client in storage that survives a browser reload in the same tab. Cache
+   entries are keyed by evaluation period and department. The current five-minute server cache
+   alone is insufficient: it is process-local and may be absent on a cold server instance.
+2. When a period is selected, render its cached figures immediately when available. Fetch figures
+   only for cache misses. Re-rendering, navigating away and back in the same tab, or reloading the
+   page must not re-fetch cached figures.
+3. **There is no timed or background refresh.** Remove the five-minute interval and any other
+   automatic re-fetch trigger for figures. The period list, department list and integrity-warning
+   reads are outside this cache requirement and retain their existing behavior.
+4. **The Refresh button is the only way to refresh cached figures.** Clicking it explicitly
+   requests every department's figures with the cache-bypass behavior (`refresh=1`). On success,
+   replace the corresponding client cache entries and update the displayed timestamp. A failed
+   refresh must keep the last successful figures visible, report the error through the existing
+   error-notification pattern, and allow retry.
+5. The cache is scoped by period. Changing the selected period displays that period's cached
+   values, if any, and fetches only missing entries; it must not show figures from another period.
+   An explicit refresh updates only the selected period.
+6. **The stale-data reminder is prominent.** Do not say that figures refresh automatically or
+   imply that the timestamp means they are current. The banner must clearly state that displayed
+   figures are cached and may be stale, tell the user to click **Refresh** for current figures,
+   show the oldest displayed figure timestamp, and visually emphasize the Refresh action. Preserve
+   the loading/sorting-paused notice while uncached rows are loading.
+
+### Acceptance checks
+
+- After figures have loaded, reloading the same page in the same tab displays the cached figures
+  without a figures request.
+- Switching periods never displays another period's figures; returning to a cached period does
+  not request its cached departments again.
+- Waiting longer than five minutes does not trigger a figures request or alter displayed figures.
+- Clicking **Refresh** does request fresh figures for all departments in the selected period; the
+  displayed values and timestamp update when successful.
+- A failed manual refresh leaves the prior figures visible and surfaces the error.
+- The banner communicates that figures can be stale and that the user must click **Refresh**;
+  no automatic refresh interval is displayed or implied.
 
 ## The report's figures — the faculty read
 

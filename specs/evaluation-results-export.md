@@ -2,7 +2,7 @@
 
 **Status:** Final (Part I) · **Part II (v6.2) Final**
 **Version:** 6.2
-**Last Updated:** 2026-10-23
+**Last Updated:** 2026-10-24
 **Scope:** exporting one evaluation result set as an **Excel workbook**, at the grain of one
 (faculty × subject × section) — the drill-down's subject page
 (`/admin/evaluations/results/[departmentId]/[facultySubjectId]`) and the faculty's own page
@@ -19,8 +19,8 @@ per subject-section) plus **one consolidated file per faculty**. Part I is untou
 > statement makes a longer form and there is nothing to drift; and the **Overall sheet's grain
 > changed** — it is now **one row per student response**, not one row per faculty.
 >
-> **The mechanics live in this file** — §9 (Part I) and §22 (Part II); the work's tracking is
-> `docs/evaluation-export-department-handover.md`. This file is the **contract**.
+> **The mechanics live in this file** — §9 (Part I) and §22 (Part II); the implementation
+> status and proofs are tracked in §24–25 and the sub-spec folder. This file is the **contract**.
 >
 > ⭐ **v6.0 (2026-10-22) — the department download is a ZIP, not a new workbook.** The second
 > grain's shape changed: instead of ONE workbook per department (the "Individual" sheet stacked
@@ -768,8 +768,8 @@ commit, independently reviewable and revertible. The contracts live in
 | 02 | **the spike** — measure the bytes, the time and the request count (`00-spike.md`) | ✅ done 2026-10-22 — the numbers (21 · 145 · 199 sections, 0 failures) |
 | 03 | **the building blocks** — the DEFLATE zip · the shared builder · the consolidated file (`01-building-blocks.md`) | ✅ done 2026-10-22 |
 | 04 | **the department ZIP route** (`02-department-zip.md`) | ✅ **05a** the assembly · **05b** the two routes (2026-10-22) · **04a-prep** the parity fixes (2026-10-23) · **04a** the department summary (2026-10-23) |
-| 05 | **the surface** — the buttons, the scope picker, the faculty-card decision (`03-surface.md`) | ✅ **done 2026-10-23** — 05.1 the seam · 05.2-fix the list page (one / several / **all**, confirmation modal) · 05.3 both department pages · 05.4 the faculty card · ⭐ **the evaluation PDFs removed** (scope B) |
-| 06 | **the docs** — the handover, the TODO row, the specs index (`04-docs.md`) | ✅ updated 2026-10-23 (the handover's scope section, the TODO row, this index) |
+| 05 | **the surface** — the buttons, the scope picker, the faculty-card decision (`03-surface.md`) | ✅ **done 2026-10-23** — 05.1 the seam · 05.2-fix the list page (one / several / **all**, confirmation modal) · 05.3 both department pages · 05.4 the faculty card · ⭐ **the evaluation PDFs removed** (scope B) · 05.5 select/unselect shown faculty (D37; hidden selections persist) |
+| 06 | **the docs** — the handover, the TODO row, the specs index (`04-docs.md`) | ✅ updated 2026-10-24 — this status row records 05.5; owner confirmed the gate is green and the handover was removed |
 
 ⭐ **v6.2's order (owner, 2026-10-23)** is complete: **04a-prep** (D31–D33), then **04a**
 (D30/D34), then the surface (**05.2-fix · 05.3 · 05.4**). ⭐ **The PDFs are removed** (scope B):
