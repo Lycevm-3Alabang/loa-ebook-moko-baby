@@ -1,7 +1,7 @@
 # Evaluation coverage department drill-down
 
 **Version:** 1.0
-**Status:** Draft — owner review required
+**Status:** Owner-approved and implemented — validation pending
 **Last Updated:** 2026-10-24
 **Scope:** Admin evaluation coverage when a department is selected via
 `?dept={departmentId}`.
@@ -126,7 +126,15 @@ Out of scope:
   the same status eligibility rules to the card aggregates.
 - Keep all database reads and writes within the existing repository and
   service layers.
-- Implement only after owner approval of this draft.
+- Enrollment roster reads use stable, 1,000-row pages in both the snapshot
+  and on-demand Details paths, preventing PostgREST row-cap truncation. The
+  snapshot roster also excludes enrollments without a student record, matching
+  the student list shown by Details.
+- Snapshot and Details use the same status classifier. Snapshot faculty
+  buckets count distinct students with each status in at least one eligible
+  subject; a student may appear in different buckets across subjects.
+- Search, sorting, and expansion remain local view state. Details remains a
+  live on-demand request, separate from the cached status snapshot.
 
 ## 6. Verification
 

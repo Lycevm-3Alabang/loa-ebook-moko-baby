@@ -126,6 +126,14 @@ describe("getEvaluationStatus — new bucket fields", () => {
     expect(s.disputed).toBe(1)
     expect(s.inProgress).toBe(1)
     expect(s.notParticipated).toBe(1)
+    expect(res.facultyAggregates.d1.f1).toMatchObject({
+      subjects: 1,
+      students: 4,
+      participated: 1,
+      disputed: 1,
+      inProgress: 1,
+      notParticipated: 1,
+    })
   })
 
   it("treats disabled SUBMITTED as disputed", async () => {
@@ -424,6 +432,29 @@ describe("getEvaluationStatus — new bucket fields", () => {
     expect(agg.students).toBe(2)
     expect(agg.participated).toBe(2)
     expect(agg.completion).toBe(100)
+  })
+
+  it("keeps the faculty bucket grain as distinct students per status, not summed subject assignments", async () => {
+    mockFsRepo.list.mockResolvedValue([
+      { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec1", semesterId: "s1" },
+      { id: "fs2", faculty_id: "f1", subject_id: "sub1", section_id: "sec2", semesterId: "s1" },
+    ])
+    mockEnrollmentRepo.listStudentIdsByFacultySubjectIds.mockResolvedValue(
+      new Map([["fs1", ["s1"]], ["fs2", ["s1"]]]),
+    )
+    mockEvalRepo.listStatusByPeriodAndFacultySubjectIds.mockResolvedValue([
+      st("s1", "SUBMITTED", false, "fs1"),
+      st("s1", "DRAFT", false, "fs2"),
+    ])
+
+    const res = await getEvaluationStatus("p1")
+    const agg = res.facultyAggregates.d1.f1
+
+    expect(agg.students).toBe(1)
+    expect(agg.participated).toBe(1)
+    expect(agg.inProgress).toBe(1)
+    expect(agg.disputed).toBe(0)
+    expect(agg.notParticipated).toBe(0)
   })
 
   it("keeps the dummy account out of the faculty aggregates", async () => {

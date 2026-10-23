@@ -1,6 +1,8 @@
 import { supabase } from "@/lib/db"
 import type { StudentEnrollmentData, StudentEnrollmentWithEmbeds, IStudentEnrollmentRepository } from "@/lib/types"
 
+const ENROLLMENT_PAGE_SIZE = 1000
+
 export const studentEnrollmentRepository: IStudentEnrollmentRepository = {
   async list(filters) {
     let q = supabase.from("student_enrollments").select("*")
@@ -266,44 +268,69 @@ export const studentEnrollmentRepository: IStudentEnrollmentRepository = {
   },
 
   async listByFacultySubject(facultySubjectId: string, semesterId?: string) {
-    let q = supabase
-      .from("student_enrollments")
-      .select(`
-        id,
-        "semesterId",
-        student:student_id (id, name, email),
-        section:section_id (id, name, program),
-        faculty_subject:faculty_subject_id (
+    const rows: StudentEnrollmentWithEmbeds[] = []
+    let offset = 0
+    for (;;) {
+      let q = supabase
+        .from("student_enrollments")
+        .select(`
           id,
-          faculty:faculty_id (id, name, email),
-          subject:subject_id (id, code, name),
-          section:section_id (id, name, program)
-        )
-      `)
-      .eq("faculty_subject_id", facultySubjectId)
-    if (semesterId) q = q.eq("semesterId", semesterId) as typeof q
-    const { data, error } = await q
-    if (error) throw error
-    return (data || []) as unknown as StudentEnrollmentWithEmbeds[]
+          "semesterId",
+          student:student_id (id, name, email),
+          section:section_id (id, name, program),
+          faculty_subject:faculty_subject_id (
+            id,
+            faculty:faculty_id (id, name, email),
+            subject:subject_id (id, code, name),
+            section:section_id (id, name, program)
+          )
+        `)
+        .eq("faculty_subject_id", facultySubjectId)
+      if (semesterId) q = q.eq("semesterId", semesterId) as typeof q
+      const { data, error } = await q
+        .order("id", { ascending: true })
+        .range(offset, offset + ENROLLMENT_PAGE_SIZE - 1)
+      if (error) throw error
+      const page = (data || []) as unknown as StudentEnrollmentWithEmbeds[]
+      rows.push(...page)
+      if (page.length < ENROLLMENT_PAGE_SIZE) break
+      offset += ENROLLMENT_PAGE_SIZE
+    }
+    return rows
   },
 
   async listStudentIdsByFacultySubjectIds(facultySubjectIds: string[], semesterId?: string) {
     const out = new Map<string, string[]>()
+    const seenByFacultySubject = new Map<string, Set<string>>()
     if (facultySubjectIds.length === 0) return out
     for (let i = 0; i < facultySubjectIds.length; i += 100) {
       const chunk = facultySubjectIds.slice(i, i + 100)
-      let q = supabase
-        .from("student_enrollments")
-        .select("faculty_subject_id, student_id")
-        .in("faculty_subject_id", chunk)
-      if (semesterId) q = q.eq("semesterId", semesterId) as typeof q
-      const { data, error } = await q
-      if (error) throw error
-      for (const row of data || []) {
-        if (!row.faculty_subject_id || !row.student_id) continue
-        if (!out.has(row.faculty_subject_id)) out.set(row.faculty_subject_id, [])
-        const arr = out.get(row.faculty_subject_id)!
-        if (!arr.includes(row.student_id)) arr.push(row.student_id)
+      let offset = 0
+      for (;;) {
+        let q = supabase
+          .from("student_enrollments")
+          .select("id, faculty_subject_id, student_id, student:student_id(id)")
+          .in("faculty_subject_id", chunk)
+        if (semesterId) q = q.eq("semesterId", semesterId) as typeof q
+        const { data, error } = await q
+          .order("id", { ascending: true })
+          .range(offset, offset + ENROLLMENT_PAGE_SIZE - 1)
+        if (error) throw error
+        const page = data || []
+        for (const row of page) {
+          if (!row.faculty_subject_id || !row.student_id || !row.student) continue
+          if (!out.has(row.faculty_subject_id)) out.set(row.faculty_subject_id, [])
+          if (!seenByFacultySubject.has(row.faculty_subject_id)) {
+            seenByFacultySubject.set(row.faculty_subject_id, new Set())
+          }
+          const arr = out.get(row.faculty_subject_id)!
+          const seen = seenByFacultySubject.get(row.faculty_subject_id)!
+          if (seen.has(row.student_id)) continue
+          seen.add(row.student_id)
+          arr.push(row.student_id)
+        }
+        if (page.length < ENROLLMENT_PAGE_SIZE) break
+        offset += ENROLLMENT_PAGE_SIZE
       }
     }
     return out

@@ -7,7 +7,7 @@ import ErrorState from "@/components/ui/ErrorState"
 import IosButton from "@/components/ui/IosButton"
 import CachedDataRefreshBanner from "@/components/ui/CachedDataRefreshBanner"
 import { useApiGet, fetcher, dispatchToast } from "@/lib/api/client"
-import { formatPeriodLabel, sectionLabel, departmentLabel } from "@/lib/evaluation-utils"
+import { formatPeriodLabel, sectionLabel, departmentLabel, formatFacultyName, UNASSIGNED_FACULTY_EMAIL } from "@/lib/evaluation-utils"
 import CoverageDetailModal from "./CoverageDetailModal"
 import { downloadBlob } from "@/lib/zip"
 
@@ -171,8 +171,9 @@ export default function CoveragePage({
   const [search, setSearch] = useState("")
   const [sortKey, setSortKey] = useState<"departmentName" | "completion" | "subjectsTotal" | "submitted">("completion")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+  const [facultySortDir, setFacultySortDir] = useState<"asc" | "desc">("asc")
   const [deptFromUrl, setDeptFromUrl] = useState<string | null>(() => searchParams.get("dept"))
-  const [expandedFaculty, setExpandedFaculty] = useState<string | null>(null)
+  const [expandedFaculty, setExpandedFaculty] = useState<Set<string>>(() => new Set())
   const [modalSubject, setModalSubject] = useState<SubjectRow | null>(null)
   const [modalDetail, setModalDetail] = useState<SubjectDetail | "loading" | "error" | null>(null)
   const [statusSnapshot, setStatusSnapshot] = useState<{ periodId: string; scope: string; data: {
@@ -354,14 +355,25 @@ export default function CoveragePage({
 
   const activeDept = sortedDepts.find((d) => d.departmentId === selectedDept) ?? null
 
-  const deptSubjects = useMemo(() => {
+  const allDeptSubjects = useMemo(() => {
     if (!selectedDept) return []
     const key = selectedDept === UNRESOLVED ? "" : selectedDept
-    return (statusData?.subjects ?? []).filter(
-      (s) => s.departmentId === key &&
-        (!q || `${s.subjectCode} ${s.subjectName} ${s.facultyName}`.toLowerCase().includes(q)),
+    return (statusData?.subjects ?? []).filter((s) => s.departmentId === key)
+  }, [statusData, selectedDept])
+
+  const deptSubjects = useMemo(() => {
+    if (!q) return allDeptSubjects
+    return allDeptSubjects.filter((s) =>
+      [
+        s.facultyName,
+        formatFacultyName(s.facultyName),
+        s.facultyEmail,
+        s.subjectCode,
+        s.subjectName,
+        sectionLabel(s.sectionProgram, s.sectionName),
+      ].some((value) => value.toLowerCase().includes(q)),
     )
-  }, [statusData, selectedDept, q])
+  }, [allDeptSubjects, q])
 
   const facultyAggregates = useMemo(() => statusData?.facultyAggregates ?? {}, [statusData?.facultyAggregates])
 
@@ -372,10 +384,55 @@ export default function CoveragePage({
       g.subjects.push(s)
       groups.set(s.facultyId, g)
     }
-    const all = [...groups.values()]
-    if (!selectedDept || selectedDept === UNRESOLVED) return all
-    return all.filter((g) => facultyAggregates[selectedDept]?.[g.id] !== undefined)
-  }, [deptSubjects, selectedDept, facultyAggregates])
+    return [...groups.values()].filter((g) => g.email !== UNASSIGNED_FACULTY_EMAIL)
+  }, [deptSubjects])
+
+  const sortedFacultyGroups = useMemo(() => {
+    return [...facultyGroups].sort((a, b) => {
+      const comparison = formatFacultyName(a.name).localeCompare(
+        formatFacultyName(b.name),
+        undefined,
+        { sensitivity: "base" },
+      )
+      return facultySortDir === "asc" ? comparison : -comparison
+    })
+  }, [facultyGroups, facultySortDir])
+
+  const missingFacultyAggregateNames = useMemo(() => {
+    if (!selectedDept || selectedDept === UNRESOLVED) return []
+    const allFaculty = new Map<string, string>()
+    for (const subject of allDeptSubjects) {
+      if (subject.facultyEmail !== UNASSIGNED_FACULTY_EMAIL) {
+        allFaculty.set(subject.facultyId, subject.facultyName)
+      }
+    }
+    return [...allFaculty]
+      .filter(([facultyId]) => facultyAggregates[selectedDept]?.[facultyId] === undefined)
+      .map(([, name]) => name)
+  }, [allDeptSubjects, facultyAggregates, selectedDept])
+
+  const allVisibleFacultyExpanded =
+    sortedFacultyGroups.length > 0 && sortedFacultyGroups.every((group) => expandedFaculty.has(group.id))
+
+  const toggleFaculty = (facultyId: string) => {
+    setExpandedFaculty((current) => {
+      const next = new Set(current)
+      if (next.has(facultyId)) next.delete(facultyId)
+      else next.add(facultyId)
+      return next
+    })
+  }
+
+  const toggleAllVisibleFaculty = () => {
+    setExpandedFaculty((current) => {
+      const next = new Set(current)
+      for (const group of sortedFacultyGroups) {
+        if (allVisibleFacultyExpanded) next.delete(group.id)
+        else next.add(group.id)
+      }
+      return next
+    })
+  }
 
   const selectDept = (id: string) => { setDeptFromUrl(id); router.replace(`${pathname}?dept=${encodeURIComponent(id)}`) }
   const clearDept = () => { setDeptFromUrl(null); router.replace(pathname) }
@@ -440,7 +497,7 @@ export default function CoveragePage({
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search department or subject..."
+          placeholder={selectedDept ? "Search faculty, subject, or section..." : "Search department or subject..."}
           className="rounded-xl border border-default bg-surface px-3 py-2 text-sm text-secondary shadow-sm transition-colors focus:border-slate-400 focus:outline-none"
         />
         <IosButton variant="gray" size="sm" onClick={() => { setSearch("") }}>Clear</IosButton>
@@ -593,22 +650,48 @@ export default function CoveragePage({
                 </p>
               </div>
 
+              {missingFacultyAggregateNames.length > 0 && (
+                <div role="alert" className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-300">
+                  Coverage totals are unavailable for {missingFacultyAggregateNames.length} faculty member(s):{" "}
+                  {missingFacultyAggregateNames.join(", ")}. Refresh the coverage snapshot to try again.
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-[10px] text-tertiary">
+                  {facultyGroups.length} facult{facultyGroups.length !== 1 ? "ies" : "y"}
+                </span>
+                <div className="ml-auto flex items-center gap-2">
+                  <IosButton
+                    variant="gray"
+                    size="sm"
+                    onClick={() => setFacultySortDir((direction) => direction === "asc" ? "desc" : "asc")}
+                    title={facultySortDir === "asc" ? "Sorted by surname A–Z — click for Z–A" : "Sorted by surname Z–A — click for A–Z"}
+                  >
+                    Name {facultySortDir === "asc" ? "↑" : "↓"}
+                  </IosButton>
+                  <IosButton variant="gray" size="sm" onClick={toggleAllVisibleFaculty}>
+                    {allVisibleFacultyExpanded ? "Collapse all" : "Expand all"}
+                  </IosButton>
+                </div>
+              </div>
+
               <div className="space-y-3">
                 {deptSubjects.length === 0 ? (
-                  <p className="text-sm text-tertiary text-center py-8">No evaluated subjects found.</p>
+                  <p className="text-sm text-tertiary text-center py-8">
+                    {q ? "No subjects match this search." : "No evaluated subjects found."}
+                  </p>
                 ) : facultyGroups.length === 0 ? (
                   <p className="text-sm text-tertiary text-center py-8">No faculty coverage found for this selection.</p>
                 ) : (
-                  facultyGroups.map((group) => {
+                  sortedFacultyGroups.map((group) => {
                     const agg = facultyAggregates[selectedDept]?.[group.id]
-                    const isExpanded = expandedFaculty === group.id
-                    const subjectCount = agg?.subjects ?? group.subjects.length
-                    const totalStudents = agg?.students ?? group.subjects.reduce((acc, s) => acc + s.enrolled, 0)
+                    const isExpanded = expandedFaculty.has(group.id)
                     return (
                       <div key={group.id} className="card p-4 space-y-2">
                         <div
-                          onClick={() => setExpandedFaculty(isExpanded ? null : group.id)}
-                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpandedFaculty(isExpanded ? null : group.id) } }}
+                          onClick={() => toggleFaculty(group.id)}
+                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFaculty(group.id) } }}
                           role="button"
                           tabIndex={0}
                           className="w-full flex items-center justify-between text-left cursor-pointer"
@@ -619,13 +702,26 @@ export default function CoveragePage({
                           </div>
                           <div className="flex items-center gap-3">
                             <div className="text-right text-xs text-tertiary">
-                              <div>{subjectCount} {subjectCount === 1 ? "subject" : "subjects"}</div>
-                              <div>{totalStudents} {totalStudents === 1 ? "student" : "students"}</div>
+                              <div>{agg ? `${agg.subjects} ${agg.subjects === 1 ? "subject" : "subjects"}` : "Subjects unavailable"}</div>
+                              <div>{agg ? `${agg.students} ${agg.students === 1 ? "student" : "students"}` : "Students unavailable"}</div>
                             </div>
                             {agg && coveragePill(agg.completion)}
                             <span className="text-tertiary text-xs">{isExpanded ? "▲" : "▼"}</span>
                           </div>
                         </div>
+
+                        {agg ? (
+                          <div className="grid grid-cols-2 gap-2 border-t border-default pt-3 sm:grid-cols-4">
+                            <CoverageCount label="Participated" count={agg.participated} tone="text-emerald-600 dark:text-emerald-400" />
+                            <CoverageCount label="Not participated" count={agg.notParticipated} tone="text-amber-600 dark:text-amber-400" />
+                            <CoverageCount label="In-progress" count={agg.inProgress} tone="text-blue-600 dark:text-blue-400" />
+                            <CoverageCount label="Disputed" count={agg.disputed} tone="text-rose-600 dark:text-rose-400" />
+                          </div>
+                        ) : (
+                          <p className="border-t border-default pt-3 text-xs text-rose-700 dark:text-rose-300">
+                            Coverage status counts unavailable.
+                          </p>
+                        )}
 
                         {isExpanded && (
                           <div className="border-t border-default pt-3">
@@ -636,6 +732,8 @@ export default function CoveragePage({
                                   <th className="pb-2 pr-3">Section</th>
                                   <th className="pb-2 pr-3 text-right">Enrolled</th>
                                   <th className="pb-2 pr-3 text-right">Participated</th>
+                                  <th className="pb-2 pr-3 text-right">Disputed</th>
+                                  <th className="pb-2 pr-3 text-right">In-prog.</th>
                                   <th className="pb-2 pr-3 text-right">Not part.</th>
                                   <th className="pb-2 pr-3 text-right">Completion</th>
                                   <th className="pb-2 text-right">Details</th>
@@ -653,6 +751,8 @@ export default function CoveragePage({
                                     </td>
                                     <td className="py-2 pr-3 text-right text-xs text-secondary">{s.enrolled}</td>
                                     <td className="py-2 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{s.participated}</td>
+                                    <td className="py-2 pr-3 text-right text-xs text-rose-600 dark:text-rose-400">{s.disputed}</td>
+                                    <td className="py-2 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{s.inProgress}</td>
                                     <td className="py-2 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{s.notParticipated}</td>
                                     <td className="py-2 pr-3 text-right text-xs font-semibold">
                                       {formatPct(s.enrolled > 0 ? (s.participated / s.enrolled) * 100 : null)}
@@ -688,6 +788,15 @@ export default function CoveragePage({
           )}
         </>
       )}
+    </div>
+  )
+}
+
+function CoverageCount({ label, count, tone }: { label: string; count: number; tone: string }) {
+  return (
+    <div className="rounded-lg bg-surface p-2 text-right" title="Distinct students with this status in at least one subject">
+      <div className="text-[10px] text-tertiary">{label}</div>
+      <div className={`text-sm font-semibold ${tone}`}>{count.toLocaleString()}</div>
     </div>
   )
 }

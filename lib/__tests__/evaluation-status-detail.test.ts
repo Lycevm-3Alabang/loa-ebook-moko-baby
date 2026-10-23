@@ -72,6 +72,22 @@ describe("getEvaluationStatusDetail", () => {
     expect(detail.notParticipated.map((s) => s.id)).toEqual(["s1"])
   })
 
+  it("counts each eligible student once, matching the coverage snapshot's student-set grain", async () => {
+    mockStudentEnrollmentRepo.listByFacultySubject.mockResolvedValue([
+      { student: { id: "s1", name: "Alice", email: "a@x.com" } },
+      { student: { id: "s1", name: "Alice", email: "a@x.com" } },
+      { student: { id: "s2", name: "Bob", email: "b@x.com" } },
+    ])
+    mockEvalRepo.listStatusByPeriodAndFacultySubjectIds.mockResolvedValue([
+      { id: "e1", evaluatorId: "s1", status: "SUBMITTED", isDisabled: false, submittedAt: "2026-01-01", facultySubjectId: "fs1" },
+    ])
+
+    const detail = await getEvaluationStatusDetail("p1", "fs1")
+
+    expect(detail.participated.map((student) => student.id)).toEqual(["s1"])
+    expect(detail.notParticipated.map((student) => student.id)).toEqual(["s2"])
+  })
+
   it("skips enrollments with null student", async () => {
     mockStudentEnrollmentRepo.listByFacultySubject.mockResolvedValue([
       { student: null },

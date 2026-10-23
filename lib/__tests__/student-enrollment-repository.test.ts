@@ -16,6 +16,8 @@ function chainable(resolveValue: unknown) {
     in: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
     is: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    range: vi.fn().mockReturnThis(),
     insert: vi.fn().mockReturnThis(),
     then: (onFulfilled: (v: unknown) => unknown) => Promise.resolve(resolveValue).then(onFulfilled),
   }
@@ -32,6 +34,58 @@ const ITEM_2026_1 = {
   faculty_subject_id: "fs-1",
   semesterId: "sem-2026-1",
 }
+
+describe("student enrollment status reads", () => {
+  it("pages the on-demand subject detail roster in a stable order", async () => {
+    const firstPage = Array.from({ length: 1000 }, (_, i) => ({ id: `enr-${i}`, student: { id: `stu-${i}` } }))
+    const secondPage = [{ id: "enr-last", student: { id: "stu-last" } }]
+    const firstChain = chainable({ data: firstPage, error: null })
+    const secondChain = chainable({ data: secondPage, error: null })
+    mockSupabase.from.mockReturnValueOnce(firstChain).mockReturnValueOnce(secondChain)
+
+    const enrollments = await studentEnrollmentRepository.listByFacultySubject("fs-1", "sem-1")
+
+    expect(enrollments).toHaveLength(1001)
+    expect(firstChain.order).toHaveBeenCalledWith("id", { ascending: true })
+    expect(firstChain.range).toHaveBeenCalledWith(0, 999)
+    expect(secondChain.range).toHaveBeenCalledWith(1000, 1999)
+  })
+
+  it("pages eligible student ids beyond the PostgREST row cap", async () => {
+    const firstPage = Array.from({ length: 1000 }, (_, i) => ({
+      id: `enr-${i}`,
+      faculty_subject_id: "fs-1",
+      student_id: `stu-${i}`,
+      student: { id: `stu-${i}` },
+    }))
+    const secondPage = [{ id: "enr-last", faculty_subject_id: "fs-1", student_id: "stu-last", student: { id: "stu-last" } }]
+    const firstChain = chainable({ data: firstPage, error: null })
+    const secondChain = chainable({ data: secondPage, error: null })
+    mockSupabase.from.mockReturnValueOnce(firstChain).mockReturnValueOnce(secondChain)
+
+    const students = await studentEnrollmentRepository.listStudentIdsByFacultySubjectIds(["fs-1"], "sem-1")
+
+    expect(students.get("fs-1")).toHaveLength(1001)
+    expect(firstChain.order).toHaveBeenCalledWith("id", { ascending: true })
+    expect(firstChain.range).toHaveBeenCalledWith(0, 999)
+    expect(secondChain.range).toHaveBeenCalledWith(1000, 1999)
+  })
+
+  it("excludes enrollments without a student record, matching the Details roster", async () => {
+    const chain = chainable({
+      data: [
+        { id: "enr-1", faculty_subject_id: "fs-1", student_id: "stu-1", student: { id: "stu-1" } },
+        { id: "enr-2", faculty_subject_id: "fs-1", student_id: "stu-2", student: null },
+      ],
+      error: null,
+    })
+    mockSupabase.from.mockReturnValueOnce(chain)
+
+    const students = await studentEnrollmentRepository.listStudentIdsByFacultySubjectIds(["fs-1"])
+
+    expect(students.get("fs-1")).toEqual(["stu-1"])
+  })
+})
 
 // ── D2: semesterId must be part of the idempotency key ───────────
 

@@ -28,3 +28,20 @@ review before implementation.
 2. Trace the status-count mismatch from repository/service through the
    coverage payload and compare it with the on-demand Details response.
 3. Implement the approved scope and run the owner validation gate.
+
+## Implementation update — 2026-10-24
+
+The owner approved the draft, and the implementation is complete. The
+department view now has faculty search, surname sorting, result counts, and
+visible-card expand/collapse controls without Results selection or visibility
+controls. Enrollment reads for both the cached status snapshot and live
+Details are paged; snapshot and Details share status classification and the
+same eligible student set. Missing faculty aggregates are surfaced instead of
+being hidden or rendered as zero.
+
+The durable behavior and count-grain contract are recorded in the
+[department drill-down spec](../specs/evaluation-coverage-department-drilldown.md).
+Focused tests were added for the controls, count buckets, paging, missing
+aggregates, and live Details separation. VS Code diagnostics report no errors
+in edited TypeScript files. The owner validation gate in `TODO.md` remains
+pending; do not rerun or expand the investigation before that gate is run.

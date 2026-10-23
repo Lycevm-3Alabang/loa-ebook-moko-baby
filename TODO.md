@@ -9,7 +9,7 @@ The owner runs it; the agent never executes CLI (H1).
 
 ## Next
 
-- [ ] **Evaluation coverage department drill-down.** Review/approve `specs/evaluation-coverage-department-drilldown.md`, then add Results-style faculty search/sorting to the admin `?dept={departmentId}` view without selection checkboxes, and fix faculty status counts that disagree with Details.
+- [ ] **Run owner validation gate for the evaluation coverage department drill-down** in `specs/evaluation-coverage-department-drilldown.md`.
 
 ## In progress
 
@@ -17,4 +17,4 @@ None.
 
 ## Handovers
 
-- `docs/evaluation-coverage-department-drilldown-handover.md` — start with the draft drill-down spec; owner review is required before implementation.
+- `docs/evaluation-coverage-department-drilldown-handover.md` — implementation complete; owner validation remains pending.

@@ -37,7 +37,11 @@ export interface SubjectStatusRow {
   notParticipated: number
 }
 
-/** One teacher's coverage inside one department. */
+/**
+ * One teacher's coverage inside one department. Status buckets are distinct
+ * students appearing in that bucket for at least one eligible subject; a
+ * student can appear in different buckets across different subjects.
+ */
 export interface FacultyCoverageAggregate {
   subjects: number
   students: number
@@ -82,6 +86,16 @@ export interface FacultySubjectStatusDetail {
   inProgress: StatusStudent[]
 }
 
+type Bucket = "participated" | "disputed" | "inProgress" | "notParticipated"
+
+function bucketOf(rows: EvaluationStatusItem[] | undefined): Bucket {
+  const rs = rows ?? []
+  if (rs.some((r) => r.status === "SUBMITTED" && !r.isDisabled)) return "participated"
+  if (rs.some((r) => r.status === "INVALID" || (r.status === "SUBMITTED" && r.isDisabled))) return "disputed"
+  if (rs.some((r) => r.status === "DRAFT")) return "inProgress"
+  return "notParticipated"
+}
+
 export async function getEvaluationStatusDetail(
   evaluationPeriodId: string,
   facultySubjectId: string,
@@ -105,17 +119,15 @@ export async function getEvaluationStatusDetail(
   const notParticipated: StatusStudent[] = []
   const disputed: StatusStudent[] = []
   const inProgress: StatusStudent[] = []
+  const seenStudents = new Set<string>()
 
   for (const enr of enrollments) {
     const student = enr.student
-    if (!student) continue
+    if (!student || seenStudents.has(student.id)) continue
+    seenStudents.add(student.id)
     const rows = byEvaluator.get(student.id) ?? []
     const entry: StatusStudent = { id: student.id, name: student.name, email: student.email }
-    let bucket: "participated" | "disputed" | "inProgress" | "notParticipated" = "notParticipated"
-    if (rows.some((r) => r.status === "SUBMITTED" && !r.isDisabled)) bucket = "participated"
-    else if (rows.some((r) => r.status === "INVALID" || (r.status === "SUBMITTED" && r.isDisabled))) bucket = "disputed"
-    else if (rows.some((r) => r.status === "DRAFT")) bucket = "inProgress"
-    else bucket = "notParticipated"
+    const bucket = bucketOf(rows)
 
     if (bucket === "participated") participated.push(entry)
     else if (bucket === "disputed") disputed.push(entry)
@@ -129,16 +141,6 @@ export async function getEvaluationStatusDetail(
 function pctOf(submitted: number, expected: number): number | null {
   if (expected <= 0) return null
   return Math.round((submitted / expected) * 1000) / 10
-}
-
-type Bucket = "participated" | "disputed" | "inProgress" | "notParticipated"
-
-function bucketOf(rows: EvaluationStatusItem[] | undefined): Bucket {
-  const rs = rows ?? []
-  if (rs.some((r) => r.status === "SUBMITTED" && !r.isDisabled)) return "participated"
-  if (rs.some((r) => r.status === "INVALID" || (r.status === "SUBMITTED" && r.isDisabled))) return "disputed"
-  if (rs.some((r) => r.status === "DRAFT")) return "inProgress"
-  return "notParticipated"
 }
 
 export async function getEvaluationStatus(evaluationPeriodId: string, search?: string, departmentId?: string) {
@@ -262,6 +264,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     // belong to no department, so they fall outside the scope.
     if (departmentId && rowDepartmentId !== departmentId) continue
     const agg = aggByFs.get(m.id)
+    if (!agg) throw new Error(`Missing enrollment status aggregate for faculty subject ${m.id}`)
     const section = m.section_id ? sectionById.get(m.section_id) : undefined
     const sectionDeptId = sectionDeptOf.get(m.id) ?? null
     const sectionDepartment =
@@ -281,11 +284,11 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
       expected,
       pct: pctOf(submitted, expected),
       evaluated: submitted > 0,
-      enrolled: agg?.enrolled ?? 0,
-      participated: agg?.participated ?? 0,
-      disputed: agg?.disputed ?? 0,
-      inProgress: agg?.inProgress ?? 0,
-      notParticipated: agg?.notParticipated ?? 0,
+      enrolled: agg.enrolled,
+      participated: agg.participated,
+      disputed: agg.disputed,
+      inProgress: agg.inProgress,
+      notParticipated: agg.notParticipated,
     })
   }
 
@@ -314,7 +317,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
       submitted += s
       expected += expectedByFs[m.id] ?? 0
       const agg = aggByFs.get(m.id)
-      if (!agg) continue
+      if (!agg) throw new Error(`Missing enrollment status aggregate for faculty subject ${m.id}`)
       for (const sid of agg.studentIds) uniqStudents.add(sid)
       for (const sid of agg.bucketed.participated) dParticipated.add(sid)
       for (const sid of agg.bucketed.disputed) dDisputed.add(sid)
