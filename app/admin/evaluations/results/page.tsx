@@ -6,7 +6,6 @@ import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import { useApiGet, fetcher } from "@/lib/api/client"
 import IosButton from "@/components/ui/IosButton"
-import DepartmentZipButton from "@/features/evaluation-results/components/DepartmentZipButton"
 import { getRemarkColor, formatPeriodLabel, departmentLabel, findAttentionRubrics } from "@/lib/evaluation-utils"
 
 interface DepartmentRow {
@@ -57,7 +56,6 @@ export default function AdminEvaluationResultsPage() {
   const [selectedPeriod, setSelectedPeriod] = useState("")
   const [sortKey, setSortKey] = useState<SortKey>("avgRating")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
-  const [selectedDepartmentIds, setSelectedDepartmentIds] = useState<string[]>([])
 
   const { data: periodsData } = useApiGet<{ periods: Period[] }>("/api/evaluation-periods")
   const periods = useMemo(() => periodsData?.periods ?? [], [periodsData])
@@ -230,13 +228,6 @@ export default function AdminEvaluationResultsPage() {
             <option key={p.id} value={p.id}>{formatPeriodLabel(p)}</option>
           ))}
         </select>
-        <DepartmentZipButton
-          evaluationPeriodId={selectedPeriod}
-          departmentIds={selectedDepartmentIds}
-          totalDepartments={departments.length}
-          exportApiBase="/api/admin/evaluation-results/export/excel"
-          label="Export"
-        />
       </div>
 
       {/* How fresh the numbers are, and how to refresh them. */}
@@ -257,16 +248,6 @@ export default function AdminEvaluationResultsPage() {
           >
             Refresh
           </IosButton>
-          {selectedDepartmentIds.length > 0 && (
-            <IosButton
-              variant="plain"
-              size="xs"
-              onClick={() => setSelectedDepartmentIds([])}
-              title="Clear selection"
-            >
-              Clear
-            </IosButton>
-          )}
           {!allLoaded && (
             <span className="text-[11px] text-tertiary">
               some rows are still loading — sorting by a column header is paused until they land
@@ -331,30 +312,7 @@ export default function AdminEvaluationResultsPage() {
                   className="border-b border-default hover:bg-surface-hover cursor-pointer transition-colors"
                 >
                   <td className="py-3 pr-4">
-                    <div>
-                      <input
-                        type="checkbox"
-                        checked={selectedDepartmentIds.includes(dept.departmentId)}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedDepartmentIds(
-                              selectedDepartmentIds.includes(dept.departmentId)
-                                ? selectedDepartmentIds.filter((id) => id !== dept.departmentId)
-                                : [...selectedDepartmentIds, dept.departmentId]
-                            )
-                          } else {
-                            setSelectedDepartmentIds(
-                              selectedDepartmentIds.filter((id) => id !== dept.departmentId)
-                            )
-                          }
-                          // Stop propagation to prevent row navigation
-                          e.stopPropagation()
-                        }}
-                        aria-label={`Select department ${departmentLabel(dept.departmentName, dept.departmentCode)}`}
-                        style={{ margin: 0 }}
-                      />&nbsp;{departmentLabel(dept.departmentName, dept.departmentCode)}
-                    </div>
+                    <div>{departmentLabel(dept.departmentName, dept.departmentCode)}</div>
                   </td>
                   <td className="py-3 pr-4 text-right">
                     {pending ? (
