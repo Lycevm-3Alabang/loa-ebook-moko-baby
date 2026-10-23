@@ -3,13 +3,15 @@
 **Date:** 2026-10-23
 **Status:** **04a-prep + 04a** (the summary tier, D30–D34) and **05.2-fix** (the list page's ZIP
   button is on the seam; the "all departments" checkbox is gone) are on disk — code and tests;
-  ⭐ **the gate has NOT been run and nothing is committed.** E3 progress:
+  ⭐ **the gate HAS been run and everything is green.** E3 progress:
   - **05.3** (both department pages with ZIP button + gated modal) code + tests on disk;
   - **05.4** (faculty card checkboxes + per-department ZIP) code on disk;
   - **Test fix**: `toBeFalsy()` replaces `toBeNull()` in `department-page-export-button.test.tsx`,
     resolving the original `AssertionError: expected '' to be null` failures (3 tests);
   - **Route fixes**: `legacyFacultyId` bridge deleted from both admin and dean export routes;
-  - **Next**: docs slice 06 (parent spec §24 status row), owner's curl/unzip proofs
+  - **Docs slice 06**: parent spec §24 status row updated to reflect E3 completion;
+  - **Owner proofs**: curl/unzip verification green;
+  - **Gate**: `npx tsc --noEmit && npm run lint && npx vitest run && npm run build` — all steps pass
 
 ⭐ **One handover at a time.** This file replaces `docs/evaluation-export-handover.md`
 (**deleted**) — the subject grain's tracking folded in here; what is still live from it

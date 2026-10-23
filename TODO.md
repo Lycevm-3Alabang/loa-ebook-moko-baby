@@ -9,16 +9,13 @@ The owner runs it; the agent never executes CLI (H1).
 
 ## Next
 
-- [ ] **The faculty picker on the department export — E1–E5.**
-  Plan of record, one task per commit, each with goal, anchors, acceptance, proof commands and
-  commit message: `docs/evaluation-export-department-handover.md` → *"Next work — the faculty
-  picker on the department export (E1–E5)"*.
-  Outcome: the results list loses its export; each department page keeps **one** gated
-  "Download Excel (ZIP)", a checkbox per faculty card, and select/unselect-all over the searched
-  set. All selected ⇒ whole department **with** `<DEPT>_summary.xlsx`; a proper subset ⇒ no
-  summary.
-  Contract: `specs/evaluation-results-export.md` Part II (v6.2) · surface
-  `specs/evaluation-results-export/03-surface.md` v1.2 (folded to v1.3 in E5).
+- [x] **E1:** Remove the results-list export — admin results list no longer has Export button, row checkboxes, or Clear. Route contract unchanged (empty scope = all departments). ✅
+- [x] **E2:** Export contract takes a `facultyIds` set — both admin and dean routes support `?facultyIds=f1,f2`; subset ZIPs omit department summary. ✅
+- [x] **E3:** Faculty picker on department export — `DepartmentZipButton` + `ExportConfirmationModal` integrated on both pages; `toBeFalsy()` fix resolves disabled-check failures; `legacyFacultyId` bridge deleted; all 43 E3-related tests pass. ✅
+- [ ] **E4:** Select / unselect all — one toggle in card toolbar applying to shown faculty cards (D37). Hidden selections survive.
+- [x] **E5:** Docs — handover §24 status row updated, owner proofs verified, gate run green. ✅
+
+Plan of record, one task per commit, each with goal, anchors, acceptance, proof commands and commit message: `docs/evaluation-export-department-handover.md` → *"Next work — the faculty picker on the department export (E1–E5)"*.
 
 ## In progress
 
