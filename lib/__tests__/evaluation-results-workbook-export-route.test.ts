@@ -283,18 +283,22 @@ describe("the department ZIP routes", () => {
     expect(mockGetSubjectResultSet).not.toHaveBeenCalled()
   })
 
-  // ⭐ the bridge — deleted in E3, when the per-card button stops sending
-  // the singular `facultyId`
-  it("the legacy single facultyId still narrows the export", async () => {
+  // ⭐ after E3 the bridge was deleted: the export route now expects
+  // the set form `facultyIds` (comma-separated) rather than the singular
+  // `facultyId`.  The per-card button sends `facultyIds`; the legacy
+  // `facultyId` parameter is no longer auto-bridged.
+  it("a facultyIds set narrows the export to those members", async () => {
     const res = await adminDeptZipGET(
-      req("?evaluationPeriodId=p1&departmentIds=d1&facultyId=f1"),
+      req("?evaluationPeriodId=p1&departmentIds=d1&facultyIds=f1"),
     )
     expect(res.status).toBe(200)
     const parts = readZip(new Uint8Array(await res.arrayBuffer()))
+    // ⭐ D38/D34: a proper subset carries NO department summary
     expect([...parts.keys()]).toEqual([
       "CCS/Dela Cruz/IT101_BSCS-A_evaluation.xlsx",
       "CCS/Dela Cruz/Dela Cruz_summary.xlsx",
     ])
+    expect(parts.has("CCS/CCS_summary.xlsx")).toBe(false)
   })
 
   it("an empty scope resolves all departments — and an empty period is a 404", async () => {
