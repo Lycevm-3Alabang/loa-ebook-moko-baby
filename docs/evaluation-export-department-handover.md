@@ -21,7 +21,7 @@
 |---|---|
 | **Part I** — the subject workbook, served by the three `…/export` routes | ✅ **done 2026-10-22** — generated from scratch by `lib/xlsx/`. ⭐ **The Excel proof is the owner's** (§14, hook below) |
 | **Part II** — the department **ZIP** | ✅ **04a done 2026-10-23** (D32 the `RESPONDENTS` column · D30/D34 the department summary) ·
-⭐ **05** the surface: **05.1 done**; **05.2-fix done** (the seam is wired, the forbidden "all" checkbox is gone); ✅ **05.3 / 05.4 done 2026-10-23** (the two department pages and the faculty card) |
+⭐ **05** the surface: **05.1 done**; **05.2-fix done** (the seam is wired, the forbidden "all" checkbox is gone); ✅ **05.3 / 05.4 done 2026-10-23** (the two department pages and the faculty card); ✅ **Export confirmation modal + "All departments" support done 2026-10-23** |
 
 ## ⭐ The measurements (the spike, 2026-10-22 — 0 failures in all three runs)
 
@@ -319,6 +319,10 @@ results read cannot be confused. `vi.resetAllMocks()` in `beforeEach` (AGENTS.md
    check the tree against §17.1, print one subject workbook and one consolidated file; ⭐ and the
    **scope proof** — the dean's route answers **403** for another department and **400** for an
    unknown id.
+   ⭐ **Multiple scope proof** — select two departments on the list page, click Export, confirm, 
+   unzip, and verify both folders exist.
+   ⭐ **"All" scope proof** — select NO departments, click Export, confirm (verify "all 11 departments" text),
+   unzip, and verify all departments exist.
 2. The docs slice **06** (the parent spec's §24 status row still reads "04a-prep/04a pending").
 
 ---
