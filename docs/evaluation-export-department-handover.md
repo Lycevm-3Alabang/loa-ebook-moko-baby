@@ -2,16 +2,17 @@
 
 **Date:** 2026-10-23
 **Status:** **04a-prep** (D32) and **04a** (the department summary, D30/D34) are on disk —
-  code and tests; ⭐ **the gate has NOT been run and nothing is committed.** Next: the
-  surface's remaining slices (**05.2-fix → 05.3 → 05.4**). Gap 1 (`.eq("isDisabled", false)`
-  on `listSubmittedByPeriodAndEvaluateeAndFS`) was applied uncommitted in a prior session.
+  code and tests; ⭐ **the gate has NOT been run and nothing is committed.** Next: **05.2-fix**
+  (the list page bypasses the seam and its picker has an "all" checkbox §5 forbids — see the
+  last session section) → **05.3** → **05.4**. Gap 1 (`.eq("isDisabled", false)` on
+  `listSubmittedByPeriodAndEvaluateeAndFS`) was applied uncommitted in a prior session.
 
 ⭐ **One handover at a time.** This file replaces `docs/evaluation-export-handover.md`
 (**deleted**) — the subject grain's tracking folded in here; what is still live from it
 (the owner's Excel proof, the deferreds) is in `TODO.md` and the spec's §10–14.
 
 > **The contract:** Part I **§1–14** — the subject workbook (v4.0, done) · Part II **§15–26**
-> — the department ZIP (v6.2, owner decisions D20–D29). This file does not repeat them.
+> — the department ZIP (v6.2, owner decisions D20–D34). This file does not repeat them.
 
 ## Where the export stands
 
@@ -19,7 +20,7 @@
 |---|---|
 | **Part I** — the subject workbook, served by the three `…/export` routes | ✅ **done 2026-10-22** — generated from scratch by `lib/xlsx/`. ⭐ **The Excel proof is the owner's** (§14, hook below) |
 | **Part II** — the department **ZIP** | 🟡 **04a-prep + 04a done 2026-10-23** (D32 the `RESPONDENTS` column · D30/D34 the department summary — code + tests on disk, gate not yet run) ·
-⭐ **05** the surface (buttons + scope picker): 05.1 on disk, **05.2-fix / 05.3 / 05.4 pending** |
+⭐ **05** the surface: **05.1 on disk**; **05.2 on disk but bypasses the seam** and has an **"all departments" checkbox the spec forbids**; **05.3 / 05.4 pending** |
 
 ## ⭐ The measurements (the spike, 2026-10-22 — 0 failures in all three runs)
 
@@ -103,8 +104,10 @@ values of the details.*
 1. ✅ **04a-prep — the RESPONDENTS column** (D32) — done 2026-10-23, code on disk.
 2. ✅ **04a — the department summary** (D30/D34) — done 2026-10-23, code + tests on disk;
    the gate is the owner's.
-3. **05.2-fix — wire the seam** (surface's remaining slices: 05.2-fix, 05.3, 05.4) — the
-   scope picker, the department pages, the faculty card.
+3. **05.2-fix — wire the seam** (surface's remaining slices: 05.2-fix, 05.3, 05.4) — the list
+   page uses `DepartmentZipButton`, the **"all departments" header checkbox comes off** (§5),
+   and `admin-results-export-button.test.tsx` is created; then the department pages and the
+   faculty card.
 4. **The owner's proofs** — curl the admin route (`?departmentIds=<one>`) and the dean's, unzip,
    check the tree against §17.1, print one subject workbook and one consolidated file; ⭐ and the
    **scope proof** — the dean's route answers **403** for another department and **400** for an
@@ -199,6 +202,38 @@ aggregate still emits the file; a per-faculty ZIP has no department summary.
 - ⭐ **The unzip/print proof** (§25.3): `<DEPT>_summary.xlsx`'s row must equal the department card
   and `summary.csv` for the same period; a per-faculty ZIP must contain none.
 - The spec's §24 status row still reads "04a-prep/04a pending" — correct it in the docs slice (06).
+
+## Session 2026-10-23 — the surface verified (05.1 done · 05.2 bypasses the seam)
+
+**Status:** docs-only this session; the only source edit is the `figure-cache.ts` comment. ⭐ **The
+gate has NOT been run and nothing is committed.**
+
+- ⭐ **`features/evaluation-results/figure-cache.ts`** — the comment no longer claims the export
+  reads the cache. The cache serves the **results list** and the **report**; both export routes
+  re-read live, because a workbook needs the raw ratings, comments and statement averages — not
+  the pooled figures. No code, no behaviour.
+- ⭐ **The surface, verified on disk (the old "05.2's picker is on disk" line was too kind):**
+  - **05.1 ✔** — `DepartmentZipButton.tsx` + `lib/__tests__/department-zip-button.test.tsx`
+    (5 cases).
+  - **05.2 ✘** — the list page has the picker and the button, but it **bypasses the seam**:
+    `handleExportZip` (`app/admin/evaluations/results/page.tsx:229-243`) hand-rolls
+    `downloadFromApi`. Three defects: **no period guard** (the CSV handler has one at `:210-215`;
+    a ZIP with no period sends `evaluationPeriodId=` and the route answers 400) · the filename is
+    the CSV's **`evaluation-results-<period>.zip`** (the seam's is
+    `evaluation-results-excel-<period>.zip`) · both buttons share one `exporting` state
+    (`:272`, `:284`), so either download spins both spinners. ⭐ **And the picker has a
+    "Select all departments" header checkbox** (`:363-376`) — the scope `03-surface.md` §5
+    forbids (D27: the school-wide data is the CSV button). ⭐ **`admin-results-export-button.test.tsx`
+    does not exist** — `03-surface.md` §7 calls it "the existing file with four CSV cases"; it
+    must be created, not extended.
+  - **05.3 ✘** — both department pages have only **Download PDF**
+    (`app/admin/evaluations/results/[departmentId]/page.tsx:232`,
+    `app/dean/evaluations/results/[departmentId]/page.tsx:219`).
+  - **05.4 ✘** — `DepartmentSubjectView` has no `exportApiBase` prop; the faculty card has no
+    per-faculty ZIP.
+- ⭐ **Next:** **05.2-fix** — use the seam, remove the header checkbox, add the page's test file;
+  then **05.3** (both pages, beside Download PDF) → **05.4** (the required `exportApiBase` and the
+  per-faculty button) → the owner's proofs (§25.3) → docs slice 06.
 
 ---
 

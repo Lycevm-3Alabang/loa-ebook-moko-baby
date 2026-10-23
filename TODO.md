@@ -14,26 +14,34 @@ Context: `specs/README.md` ("Next Session — Start Here" + status table),
 one per session, or none),
 `specs/evaluation-results-cache.md` (the cache contract),
 `specs/evaluation-results-attribution.md` (the attribution contract — §1.10, §3.21, S6.1, D7–D9),
-`specs/evaluation-results-export.md` (the export contract — both grains, **v6.0**, 2026-10-22:
-Part I v4.0 done · Part II the **department ZIP**, D20–D29, ⭐ **the API built — no button yet**).
+`specs/evaluation-results-export.md` (the export contract — both grains, **v6.2**, 2026-10-23:
+Part I v4.0 done · Part II the **department ZIP**, D20–D34, ⭐ **04a done; the surface is partly
+on disk (05.1 + 05.2) and 05.2-fix is next**).
 
 ## NEXT (do first)
 
 - [ ] **The consolidated Excel export — the department-faculty grain. The shape changed (a **ZIP**,
-  not a stacked workbook); the contract is written and measured and ⭐ **the API is built** (the
-  assembly + the two routes + their cases) — but ⭐ **no button exists**. Next: the surface (the
-  buttons + the scope picker), then the owner's curl/unzip proof, and the timing is still
+  not a stacked workbook); the API is built and **04a has landed**. ⭐ **04a-prep + 04a are on
+  disk (2026-10-23 — code + tests; ⚠️ gate not run, not committed):** the faculty summary carries
+  `RESPONDENTS` (D32); each department folder carries `<DEPT-CODE>_summary.xlsx` first (D30/D34 —
+  `members.length` + `departmentAggregate`, omitted when `facultyId` is set).
+  ⭐ **The surface (05):** 05.1's seam is on disk (`DepartmentZipButton` + 5 cases); **05.2's
+  picker + button are on disk but the list page bypasses the seam** (`page.tsx:229-243` hand-rolls
+  `downloadFromApi`) and its picker has an **"all departments" header checkbox** the spec forbids
+  (§5 — D27 refuses that scope). ⭐ **Next: 05.2-fix** (use the seam · remove the "all" checkbox ·
+  add `admin-results-export-button.test.tsx`, which does not exist) → **05.3** (the two department
+  pages) → **05.4** (the faculty card) → the owner's curl/unzip proof. The timing is still
   unmeasured (the guard bounds the size, not the time).**
   ⭐ **The API (05a + 05b, 2026-10-22):** `GET /api/admin/evaluation-results/export/excel`
   (⭐ `departmentIds` **required**; `facultyId?`) and
   `GET /api/dean/evaluation-results/export/excel` (their own department; a foreign id → **403**) —
   a ZIP, or a loud refusal (**400** too large / unknown id · **403** foreign department / inactive
   period · **404** period).
-  Contract: **`specs/evaluation-results-export.md` Part II (v6.0, §15–26)** — the owner's decisions
-  **D20–D29**: the download is a **ZIP** — **department folder → faculty folder → subject (and
+  Contract: **`specs/evaluation-results-export.md` Part II (v6.2, §15–26)** — the owner's decisions
+  **D20–D34**: the download is a **ZIP** — **department folder → faculty folder → subject (and
   section)**; the workbooks are **Part I's, verbatim** (each keeps its Comments sheet and its
   per-response Overall); **one consolidated XLSX per faculty** (the D25 model — the header block +
-  the band + `Subject | Section | Avg Rating | Highest | Lowest`; every tie; an unevaluated section
+  the band + `Subject | Section | RESPONDENTS | Avg Rating | Highest | Lowest`; every tie; an unevaluated section
   prints "—"); the scope is **one department or a few**, ⭐ **"all departments" is NOT one
   download**; ⭐ a department over the size guard is exported **per faculty**.
   Sub-specs (one per commit): **`specs/evaluation-results-export/`** — `00-spike.md` ·
@@ -741,6 +749,15 @@ The cap was the **first** reason the two pages disagreed. These are the rest. Al
   own spec (with the export's, or beside it).
 
 ## Done this session (do not redo)
+
+- [x] **04a-prep + 04a — the summary tiers (2026-10-23).** The faculty summary gained
+  `RESPONDENTS` (D32); each department folder gained `<DEPT-CODE>_summary.xlsx` first (D30/D34)
+  from `members.length` + `departmentAggregate` — not `uniqueFaculty`, not a mean of the bands;
+  omitted in a per-faculty ZIP. Files: `lib/xlsx/overall-summary.ts`,
+  `lib/xlsx/department-summary.ts` (new), `features/evaluation-results/department-zip.ts`, four
+  test files. ⚠️ Gate not run; not committed. ⭐ Also corrected
+  `features/evaluation-results/figure-cache.ts`'s comment: the cache serves the list and the
+  report; the exports re-read live.
 
 - [x] **The export's workbook is generated from scratch — the generator is built (2026-10-22).**
   The decision (owner): **B** — the workbook is built, not patched; the template file stays as the
