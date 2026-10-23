@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 
-// Mock functions hoisted at module level (same pattern as admin-results-export-button.test.tsx)
+// Mock functions hoisted at module level
 const mockDownloadFromApi = vi.hoisted(() => vi.fn())
 const mockDispatchToast = vi.hoisted(() => vi.fn())
 

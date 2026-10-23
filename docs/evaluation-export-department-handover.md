@@ -2,8 +2,9 @@
 
 **Date:** 2026-10-22
 **Status:** the subject grain is **done and shipping**; the department grain's **API is built** —
-the assembly and ⭐ **the two routes** — and ⭐ **no button exists**, so nothing the school sees
-has changed.
+the assembly and ⭐ **the two routes** — and ⭐ **the surface is built (05, 2026-10-23)**: the
+buttons are on the admin's list page, both department pages and the faculty card.
+⭐ **Uncommitted and unverified in the browser** — the school sees nothing until the owner's pass.
 **Scope:** tracking the export's open work. ⭐ **The decisions are the spec's** —
 `specs/evaluation-results-export.md` — and this file does not repeat them.
 
@@ -22,7 +23,7 @@ has changed.
 | Grain | State |
 |---|---|
 | **Part I** — the subject workbook, served by the three `…/export` routes | ✅ **done 2026-10-22** — generated from scratch by `lib/xlsx/`. ⭐ **The Excel proof is the owner's** (§14, hook below) |
-| **Part II** — the department **ZIP** | 🟡 **the API is built (05a + 05b)** — the assembly, ⭐ **the two routes** and their cases; ⬜ **the surface is next** — ⭐ **no button exists** |
+| **Part II** — the department **ZIP** | 🟡 **the API is built (05a + 05b)** and ⭐ **the surface is built (05, 2026-10-23)** — the assembly, ⭐ **the two routes**, the buttons and the scope picker; ⬜ **the owner's browser proof + the commit are pending** |
 
 ⭐ **Part II's shape changed (2026-10-22, owner):** it is **not** one stacked workbook per
 department. ⭐ It is **one ZIP** that holds **the workbooks the school already receives** — one per
@@ -54,7 +55,7 @@ departments" is not one download**.
 | 02 | **the spike** — the measurement | ✅ done — the numbers above |
 | 03 | **the building blocks** — the DEFLATE zip · the shared builder · the consolidated file | ✅ done |
 | 04 | **the department ZIP route** | ✅ **done 2026-10-22** — **05a** the assembly · **05b** the two routes (+ the spec amendments: the scope is required, an unknown id is **refused**) |
-| 05 | **the surface** — the buttons · the scope picker | ⬜ **next** |
+| 05 | **the surface** — the buttons · the scope picker | ✅ **built 2026-10-23** (four slices, on disk — session section below) — ⬜ **gate + browser pass + commit pending** |
 | 06 | **the docs** | ✅ this file + `TODO.md` — updated after 05a/05b |
 
 ## What is on disk (the pieces — each with its own test)
@@ -71,13 +72,10 @@ departments" is not one download**.
 
 ## Next (the new session's order)
 
-1. ⭐ **The surface (05)** — the admin's results list page (the button + the **scope picker**) ·
-   both **department pages** (the admin's and the dean's) · ⭐ **the faculty card's button = the
-   per-faculty ZIP** (the measured answer to *"remove the export on faculty card levels?"* —
-   **no**: it becomes the export that gets CTHM and GENED to the school). ⭐ **The decision is
-   TAKEN (owner, 2026-10-23) — option A**: the per-subject "Export Excel" buttons stay, and so
-   does every PDF; the dean's list page gets **no** button (it redirects to the department page).
-   `03-surface.md` is **v1.1** — Decided.
+1. ✅ **The surface (05) — BUILT 2026-10-23**, see the session section at the bottom of this
+   file. The decision it implements is option A (owner, 2026-10-23): the per-subject "Export
+   Excel" buttons stay, and so does every PDF; the dean's list page gets **no** button (it
+   redirects to the department page). `03-surface.md` is **v1.1** — Decided.
 2. **The owner's proofs (no code)** — **curl** the admin route (`?departmentIds=<one>`) and the
    dean's, **unzip**, check the tree against §17.1, print one subject workbook and one consolidated
    file; ⭐ and the **scope proof** — the dean's route answers **403** for another department (and
@@ -124,3 +122,55 @@ Gate: `npx tsc --noEmit` → `npm run lint` → `npx vitest run` → `npm run bu
 ```bash
 ACES_SAMPLE_PATH=/tmp/eval-sample.xlsx npx vitest run lib/__tests__/xlsx-workbook.test.ts
 ```
+
+---
+
+## Session 2026-10-23 — sub-spec 05 built (the surface)
+
+**Status:** all four slices are **on disk**. ⭐ **The gate has NOT been run by the owner, the
+work is NOT committed, and NOTHING has been proven in a browser.** The run file (status
+`complete`, pending owner verification):
+`.opencode/skills/plan-fix/runs/20261023-0721-sub-spec-05-surface.md`.
+The contract: `specs/evaluation-results-export/03-surface.md` **v1.1, option A**.
+
+### The four slices (one file each — the whole blast radius)
+
+| Slice | File | What landed |
+|---|---|---|
+| 05.1 the seam | `features/evaluation-results/components/DepartmentZipButton.tsx` | the one client seam: URL build · filename · `downloadFromApi` · loading · the empty-period and empty-departments guards · verbatim error toasting |
+| 05.1 (test) | `lib/__tests__/department-zip-button.test.tsx` | **5/5** — label, both guards, URL with and without `facultyId` |
+| 05.2 the admin list | `app/admin/evaluations/results/page.tsx` | ZIP button beside the CSV one · `selectedDepartmentIds` ⭐ **separate from the `departmentIds` memo** · a checkbox column with `stopPropagation` (a tick does **not** navigate) · **Clear** |
+| 05.3 the department pages | `app/admin/evaluations/results/[departmentId]/page.tsx` · `app/dean/evaluations/results/[departmentId]/page.tsx` | ZIP beside **Download PDF**, each passing **its own** `exportApiBase` |
+| 05.4 the faculty card | `features/evaluations/components/DepartmentSubjectView.tsx` | `exportApiBase` is now a **required** prop — both department pages pass it |
+
+⭐ Filename: `evaluation-results-excel-<period>.zip` — deliberately **not**
+`evaluation-results-<period>.zip`, the CSV's name on the same page (collision avoided).
+
+### ⭐ What not to redo (the mistakes this session made and paid for)
+
+- ⭐ **There is no `admin-results-export-button.test.tsx`, by design.** It was written here and
+  **deleted**: rendering an App-Router page in Vitest dies on
+  `invariant expected app router to be mounted`. Page-level coverage is **the owner's browser
+  pass**; the seam's unit coverage is `department-zip-button.test.tsx`. Do not retry that shape.
+- ⭐ **`afterEach` is IMPORTED from `vitest`** (`import { …, afterEach } from "vitest"`), repo
+  convention (`bulkStudentImportGate.test.tsx:1`). `tsconfig.json` has **no**
+  `"types": ["vitest/globals"]`, so a bare global `afterEach` is a **tsc hard error**, and a
+  `/// <reference>` workaround is a **lint error** (`@typescript-eslint/triple-slash-reference`).
+  Both were made here; the import is the fix.
+- ⭐ **Correction to a claim made in this session:** that tsc error was reported as
+  "pre-existing". It was **not** — `git stash` does **not** stash **untracked** files, so the
+  check tested my own new file against itself. ⭐ Verify a "pre-existing" claim with
+  `git stash -u` (or a clean worktree), not plain `git stash`.
+
+### Open
+
+1. ⭐ **The gate (owner, PowerShell):**
+   `npx tsc --noEmit; if ($?) { npm run lint }; if ($?) { npx vitest run }; if ($?) { npm run build }`
+   — expect **819 passed / 2 skipped** and the seam test **5/5**.
+2. ⭐ **The browser pass (§15.1–§17.1)** — tick → download → unzip → the §17.1 tree; the
+   **dean's 403** for a foreign department; the tick-does-not-navigate and **Clear** behaviours.
+3. **Commit** — the four slices + this note (gate-and-commit, or the owner's own).
+4. ~~Stale comment: `department-zip-button.test.tsx:4`~~ — **removed 2026-10-23** (it named the
+   deleted `admin-results-export-button.test.tsx`).
+5. Untouched: `TODO.md`, the sub-spec's §15 tick boxes, every PDF and per-subject Excel button,
+   the dean's list page (option A: no button there).
