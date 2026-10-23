@@ -56,7 +56,7 @@ describe("AdminEvaluationResultsPage cached-data banner", () => {
 
     render(<AdminEvaluationResultsPage />)
 
-    await waitFor(() => expect(screen.getByText("Computer Studies")).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/Computer Studies/)).toBeTruthy())
     expect(screen.getByText(/Displayed figures are cached and may be stale/i)).toBeTruthy()
     expect(screen.getByText(/Not manually refreshed yet/i)).toBeTruthy()
     expect(screen.getByText("Refresh")).toBeTruthy()

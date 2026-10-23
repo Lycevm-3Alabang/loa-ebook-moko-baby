@@ -89,26 +89,34 @@ describe("CoveragePage status cache", () => {
 
     render(<CoveragePage statusBase="/api/admin/evaluation-status" />)
 
-    await waitFor(() => expect(screen.getByText("Ana Cruz")).toBeTruthy())
+    await waitFor(() => expect(screen.getByText("CCS (CCS)")).toBeTruthy())
     expect(screen.getByText(/Displayed figures are cached and may be stale/i)).toBeTruthy()
     expect(screen.getByText(/Not manually refreshed yet/i)).toBeTruthy()
     expect(screen.getByText(/admin scope/i)).toBeTruthy()
     expect(mockFetcher).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByText("CCS (CCS)"))
+    await waitFor(() => expect(screen.getByText("Ana Cruz")).toBeTruthy())
+    expect(mockFetcher).not.toHaveBeenCalled()
   })
 
   it("keeps the last cached snapshot when a manual refresh fails", async () => {
-    mockFetcher.mockResolvedValueOnce(payload).mockRejectedValueOnce(new Error("refresh failed"))
+    const key = "evaluation-coverage-status:/api/admin/evaluation-status:p1"
+    window.localStorage.setItem(key, JSON.stringify(payload))
+    mockFetcher.mockRejectedValueOnce(new Error("refresh failed"))
 
     render(<CoveragePage statusBase="/api/admin/evaluation-status" />)
 
+    await waitFor(() => expect(screen.getByText("CCS (CCS)")).toBeTruthy())
+    fireEvent.click(screen.getByText("CCS (CCS)"))
     await waitFor(() => expect(screen.getByText("Ana Cruz")).toBeTruthy())
 
-    fireEvent.click(screen.getByText("Refresh"))
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }))
 
     await waitFor(() => expect(mockDispatchToast).toHaveBeenCalledWith("Refresh failed. Showing the last successful snapshot."))
     expect(screen.getByText("Ana Cruz")).toBeTruthy()
-    expect(screen.getByText(/Could not refresh evaluation coverage/i)).toBeTruthy()
-    expect(mockFetcher).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText("Something went wrong")).toBeNull()
+    expect(mockFetcher).toHaveBeenCalledTimes(1)
   })
 })
 

@@ -19,6 +19,23 @@ Focused tests were added for the component and both page integrations. They
 have not been run; the owner must run the project validation gate before
 considering the work verified. No CLI commands were run in this task.
 
+## Follow-up: coverage test expectations
+
+The coverage freshness tests now assert the department overview before
+selecting a department to verify faculty details. The failed-refresh case
+starts with a cached snapshot, then checks that the selected faculty view
+remains visible after refresh fails. The results-page integration assertion
+matches the department label without requiring an exact string. These test
+adjustments have not been run.
+
+## Follow-up: keep cached data visible on refresh failure
+
+When a manual coverage refresh fails and a prior snapshot exists, the page
+now keeps that snapshot rendered and reports the failure through the existing
+toast. It no longer sets the full-page status error that hid the cached
+content. The focused test asserts the view remains visible; validation has
+not been run.
+
 ## Next
 
 Run the owner validation gate. Do not add automatic refresh behavior: the

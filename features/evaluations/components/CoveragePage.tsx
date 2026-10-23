@@ -268,7 +268,6 @@ export default function CoveragePage({
       if (snapshot) {
         writeCoverageCache(selectedPeriod, scopeKey, snapshot)
         setStatusSnapshot({ periodId: selectedPeriod, scope: scopeKey, data: snapshot })
-        setStatusError(fetchError instanceof Error ? fetchError : new Error("Could not refresh evaluation coverage"))
       } else {
         setStatusError(fetchError instanceof Error ? fetchError : new Error("Could not refresh evaluation coverage"))
       }
@@ -704,4 +703,3 @@ function coveragePill(pct: number | null) {
   }
   return <span className={`ml-2 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${cls}`}>{label}</span>
 }
-
