@@ -52,13 +52,20 @@ export async function GET(request: NextRequest) {
     // subject-grain export carries
     await evaluationResultRepository.assertPeriodIsActive(evaluationPeriodId)
 
-    // the per-faculty export (D27) — one member of the department
-    const facultyId = searchParams.get("facultyId") || undefined
+    // the selected faculty (D39) — empty = the whole department
+    const facultyIds = (searchParams.get("facultyIds") ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean)
+    // ⭐ the bridge: the per-card button still sends `facultyId` until E3.
+    // Delete these two lines in E3, not before — they keep the old button truthful.
+    const legacyFacultyId = searchParams.get("facultyId")
+    if (facultyIds.length === 0 && legacyFacultyId) facultyIds.push(legacyFacultyId)
 
     const result = await buildDepartmentZip({
       evaluationPeriodId,
       departmentIds: [dept.id],
-      facultyId,
+      facultyIds: facultyIds.length > 0 ? facultyIds : undefined,
     })
     const verdict = verdictForDepartmentZip(result)
     if (verdict.kind === "refusal") {

@@ -139,7 +139,7 @@ describe("the department ZIP", () => {
     const result = await buildDepartmentZip({
       evaluationPeriodId: "p1",
       departmentIds: ["d1"],
-      facultyId: "someone-else",
+      facultyIds: ["someone-else"],
     })
     expect(result).toMatchObject({
       ok: false,
@@ -160,11 +160,11 @@ describe("the department ZIP", () => {
     expect(new TextDecoder().decode(parts.get("_INCOMPLETE.txt")!)).toContain("1815-ITELEC009")
   })
 
-  it("exports one member only, when the scope is a faculty", async () => {
+  it("exports one selected member only — and no department summary", async () => {
     const result = await buildDepartmentZip({
       evaluationPeriodId: "p1",
       departmentIds: ["d1"],
-      facultyId: "f1",
+      facultyIds: ["f1"],
     })
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -178,6 +178,68 @@ describe("the department ZIP", () => {
     // details are one faculty's, so a whole-department row would read as the
     // scope's figure.
     expect(parts.has("CCS/CCS_summary.xlsx")).toBe(false)
+  })
+
+  it("exports exactly the selected set — and no department summary", async () => {
+    const ROW2 = {
+      ...ROW,
+      facultySubjectId: "fs2",
+      facultyId: "f2",
+      facultyName: "Dela Cruz, Juan",
+      facultyEmail: "jd@x.edu.ph",
+      subjectCode: "1815-ITELEC010",
+      subjectName: "Data Structures",
+      sectionName: "31E2",
+    }
+    mockGetDepartmentResults.mockResolvedValue({
+      subjects: [ROW, ROW2],
+      facultyAggregates: {
+        f1: { avgRating: 3.38, remarks: "Very Satisfactory" },
+        f2: { avgRating: 3.10, remarks: "Satisfactory" },
+      },
+      members: [
+        { id: "f1", name: "Alamo, Nino Francisco", email: "nf@x.edu.ph" },
+        { id: "f2", name: "Dela Cruz, Juan", email: "jd@x.edu.ph" },
+        { id: "f3", name: "Reyes, Ana", email: "ar@x.edu.ph" },
+      ],
+      departmentAggregate: null,
+    })
+
+    const result = await buildDepartmentZip({
+      evaluationPeriodId: "p1",
+      departmentIds: ["d1"],
+      facultyIds: ["f1", "f2"],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const parts = readZip(result.bytes)
+    expect([...parts.keys()]).toEqual([
+      "CCS/Alamo, Nino Francisco/1815-ITELEC009_BSIT-31E1_evaluation.xlsx",
+      "CCS/Dela Cruz, Juan/1815-ITELEC010_BSIT-31E2_evaluation.xlsx",
+      "CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_summary.xlsx",
+      "CCS/Dela Cruz, Juan/Dela Cruz, Juan_summary.xlsx",
+    ])
+    // ⭐ f3 is a member, but was not selected — no folder for them
+    expect([...parts.keys()].some((name) => name.startsWith("CCS/Reyes, Ana/"))).toBe(false)
+    // ⭐ D38/D34: a proper subset carries NO department summary
+    expect(parts.has("CCS/CCS_summary.xlsx")).toBe(false)
+  })
+
+  it("exports the whole department when the selected set is empty", async () => {
+    const result = await buildDepartmentZip({
+      evaluationPeriodId: "p1",
+      departmentIds: ["d1"],
+      facultyIds: [],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const parts = readZip(result.bytes)
+    // ⭐ an empty set is not a filter — the whole-department ZIP, summary first
+    expect([...parts.keys()]).toEqual([
+      "CCS/CCS_summary.xlsx",
+      "CCS/Alamo, Nino Francisco/1815-ITELEC009_BSIT-31E1_evaluation.xlsx",
+      "CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_summary.xlsx",
+    ])
   })
 
   it("builds the department summary from the members and the aggregate — not a mean of the bands", async () => {
@@ -304,7 +366,7 @@ describe("the verdict", () => {
     const result = await buildDepartmentZip({
       evaluationPeriodId: "p1",
       departmentIds: ["d1"],
-      facultyId: "someone-else",
+      facultyIds: ["someone-else"],
     })
     const verdict = verdictForDepartmentZip(result)
     expect(verdict).toMatchObject({ kind: "refusal", status: 400 })

@@ -260,6 +260,43 @@ describe("the department ZIP routes", () => {
     ])
   })
 
+  it("a facultyIds set exports exactly those members — and no department summary", async () => {
+    const res = await adminDeptZipGET(req("?evaluationPeriodId=p1&departmentIds=d1&facultyIds=f1"))
+    expect(res.status).toBe(200)
+    const parts = readZip(new Uint8Array(await res.arrayBuffer()))
+    expect([...parts.keys()]).toEqual([
+      "CCS/Dela Cruz/IT101_BSCS-A_evaluation.xlsx",
+      "CCS/Dela Cruz/Dela Cruz_summary.xlsx",
+    ])
+    // ⭐ D38/D34: a proper subset carries NO department summary
+    expect(parts.has("CCS/CCS_summary.xlsx")).toBe(false)
+  })
+
+  it("an unknown id in the set refuses the whole export — before any subject read", async () => {
+    const res = await adminDeptZipGET(
+      req("?evaluationPeriodId=p1&departmentIds=d1&facultyIds=f1,ghost"),
+    )
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toContain("Unknown faculty")
+    // ⭐ the refusal precedes pass 2 — not one workbook read
+    expect(mockGetSubjectResultSet).not.toHaveBeenCalled()
+  })
+
+  // ⭐ the bridge — deleted in E3, when the per-card button stops sending
+  // the singular `facultyId`
+  it("the legacy single facultyId still narrows the export", async () => {
+    const res = await adminDeptZipGET(
+      req("?evaluationPeriodId=p1&departmentIds=d1&facultyId=f1"),
+    )
+    expect(res.status).toBe(200)
+    const parts = readZip(new Uint8Array(await res.arrayBuffer()))
+    expect([...parts.keys()]).toEqual([
+      "CCS/Dela Cruz/IT101_BSCS-A_evaluation.xlsx",
+      "CCS/Dela Cruz/Dela Cruz_summary.xlsx",
+    ])
+  })
+
   it("an empty scope resolves all departments — and an empty period is a 404", async () => {
     const res = await adminDeptZipGET(req("?evaluationPeriodId=p1"))
     expect(res.status).toBe(404)

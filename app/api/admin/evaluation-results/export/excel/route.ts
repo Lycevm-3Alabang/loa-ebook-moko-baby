@@ -43,10 +43,21 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // the per-faculty export (D27) — one member of the scope
-    const facultyId = searchParams.get("facultyId") || undefined
+    // the selected faculty (D39) — empty = the whole department
+    const facultyIds = (searchParams.get("facultyIds") ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean)
+    // ⭐ the bridge: the per-card button still sends `facultyId` until E3.
+    // Delete these two lines in E3, not before — they keep the old button truthful.
+    const legacyFacultyId = searchParams.get("facultyId")
+    if (facultyIds.length === 0 && legacyFacultyId) facultyIds.push(legacyFacultyId)
 
-    const result = await buildDepartmentZip({ evaluationPeriodId, departmentIds, facultyId })
+    const result = await buildDepartmentZip({
+      evaluationPeriodId,
+      departmentIds,
+      facultyIds: facultyIds.length > 0 ? facultyIds : undefined,
+    })
     const verdict = verdictForDepartmentZip(result)
     if (verdict.kind === "refusal") {
       return NextResponse.json({ error: verdict.error }, { status: verdict.status })

@@ -37,8 +37,8 @@ export interface DepartmentZipOptions {
   evaluationPeriodId: string
   /** the departments to export */
   departmentIds: string[]
-  /** one member only — the per-faculty export */
-  facultyId?: string
+  /** the selected members; absent or empty = the whole department */
+  facultyIds?: string[]
 }
 
 /** What the export produced. */
@@ -112,24 +112,27 @@ export async function buildDepartmentZip(
     loaded.push({ department, results })
   }
 
+  // ⭐ one Set for the membership check, the count and the filters below.
+  const selected = new Set(options.facultyIds ?? [])
+  const isFiltered = selected.size > 0
+
   // ⭐ a faculty that is not a member of the scope is REFUSED, not skipped —
   // an empty ZIP would be a quiet wrong artifact (the same rule as the unknown
   // department). ⭐ The members come from the read above, so the check costs
   // no round trip.
-  if (options.facultyId) {
-    const facultyId = options.facultyId
+  if (isFiltered) {
     for (const { department, results } of loaded) {
-      if (!results.members.some((member) => member.id === facultyId)) {
-        return { ok: false, reason: "unknown-faculty", facultyId, departmentId: department.id }
+      for (const facultyId of selected) {
+        if (!results.members.some((member) => member.id === facultyId)) {
+          return { ok: false, reason: "unknown-faculty", facultyId, departmentId: department.id }
+        }
       }
     }
   }
 
   const count = loaded.reduce((sum, entry) => {
-    if (!options.facultyId) return sum + entry.results.subjects.length
-    return (
-      sum + entry.results.subjects.filter((row) => row.facultyId === options.facultyId).length
-    )
+    if (!isFiltered) return sum + entry.results.subjects.length
+    return sum + entry.results.subjects.filter((row) => selected.has(row.facultyId)).length
   }, 0)
 
   // ── the guard ─────────────────────────────────────────────────────────────
@@ -155,7 +158,7 @@ export async function buildDepartmentZip(
     // aggregate — NOT a mean of the faculty bands.
     // ⭐ D34: a per-faculty export omits it — that ZIP's details are one
     // faculty's, so a whole-department row would read as the scope's figure.
-    if (!options.facultyId) {
+    if (!isFiltered) {
       const aggregate = results.departmentAggregate
       entries.push({
         name: `${folder}/${folder}_summary.xlsx`,
@@ -172,14 +175,14 @@ export async function buildDepartmentZip(
       })
     }
 
-    const members = options.facultyId
-      ? results.members.filter((member) => member.id === options.facultyId)
+    const members = isFiltered
+      ? results.members.filter((member) => selected.has(member.id))
       : results.members
     const rowsOf = (facultyId: string) =>
       results.subjects.filter((row) => row.facultyId === facultyId)
 
-    const subjects = options.facultyId
-      ? rowsOf(options.facultyId)
+    const subjects = isFiltered
+      ? results.subjects.filter((row) => selected.has(row.facultyId))
       : results.subjects
 
     const built = await mapPool(subjects, SUBJECT_READ_CONCURRENCY, async (row) => {
