@@ -9,7 +9,7 @@ The owner runs it; the agent never executes CLI (H1).
 
 ## Next
 
-- [ ] **Evaluation coverage faculty cache.** Review/finalize `specs/evaluation-coverage-faculty-cache.md`, then implement faculty-only coverage, accurate department/faculty aggregates, and period/scope local-storage caching with manual Refresh for admin and dean.
+- [ ] **Evaluation coverage department drill-down.** Review/approve `specs/evaluation-coverage-department-drilldown.md`, then add Results-style faculty search/sorting to the admin `?dept={departmentId}` view without selection checkboxes, and fix faculty status counts that disagree with Details.
 
 ## In progress
 
@@ -17,4 +17,4 @@ None.
 
 ## Handovers
 
-- `docs/evaluation-coverage-faculty-cache-handover.md` — start with the draft spec and its open owner approval.
+- `docs/evaluation-coverage-department-drilldown-handover.md` — start with the draft drill-down spec; owner review is required before implementation.

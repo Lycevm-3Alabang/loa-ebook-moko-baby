@@ -1,7 +1,7 @@
 # Evaluation coverage — faculty-only view and explicit refresh
 
-**Version:** 1.0
-**Status:** Draft — owner review required
+**Version:** 1.1
+**Status:** Implemented — owner validation pending
 **Last Updated:** 2026-10-24
 **Scope:** Admin and dean evaluation-coverage pages, using the shared
 `features/evaluations/components/CoveragePage.tsx`.
