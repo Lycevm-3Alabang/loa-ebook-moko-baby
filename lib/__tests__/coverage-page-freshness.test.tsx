@@ -189,10 +189,8 @@ describe("CoveragePage faculty-only drill-down", () => {
     fireEvent.change(searchInput, { target: { value: "BS101" } })
     fireEvent.click(screen.getByRole("button", { name: "Expand all" }))
     expect(screen.getByText("2 subjects")).toBeTruthy()
-    expect(screen.getByText("5", { selector: ".text-sm.font-semibold" })).toBeTruthy()
-    expect(screen.getByText("1", { selector: ".text-sm.font-semibold" })).toBeTruthy()
-    expect(screen.getByText("2", { selector: ".text-sm.font-semibold" })).toBeTruthy()
-    expect(screen.getByText("3", { selector: ".text-sm.font-semibold" })).toBeTruthy()
+    expect(screen.getByText("6 students")).toBeTruthy()
+    expect(screen.getByText("On track")).toBeTruthy()
     expect(screen.getByText("BS101 Intro")).toBeTruthy()
     expect(screen.queryByText("BS202 Advanced Topics")).toBeNull()
     expect(mockFetcher).not.toHaveBeenCalled()
@@ -256,8 +254,8 @@ describe("CoveragePage faculty-only drill-down", () => {
 
     await waitFor(() => expect(screen.getByText("Ana Cruz")).toBeTruthy())
     expect(screen.getByRole("alert").textContent).toContain("Coverage totals are unavailable")
-    expect(screen.getByText("Coverage status counts unavailable.")).toBeTruthy()
     expect(screen.getByText("Subjects unavailable")).toBeTruthy()
+    expect(screen.getByText("Students unavailable")).toBeTruthy()
   })
 
   it("keeps subject Details as a live request separate from the cached status snapshot", async () => {
