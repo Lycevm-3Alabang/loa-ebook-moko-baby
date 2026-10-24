@@ -49,3 +49,13 @@ VS Code diagnostics report no errors in changed files; tests have not been
 run. Run
 `npx vitest run lib/__tests__/admin-users-seeded-admin.test.ts` in the owner
 validation workflow.
+
+## Required evaluation comments — 2026-10-24
+
+Student evaluation submission now requires a non-blank comment. The feedback
+step shows a warning while the comment is empty; the final submit button stays
+disabled and explains how to proceed. The submit handler returns to feedback
+if invoked without a comment, and `POST /api/evaluations/[id]/submit` enforces
+the requirement server-side with HTTP 400. Focused route tests cover missing,
+blank, and valid comments. VS Code diagnostics report no errors in changed
+files; tests have not been run.
