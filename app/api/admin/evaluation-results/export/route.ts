@@ -49,8 +49,8 @@ export async function GET(request: NextRequest) {
     // repository round trips, so awaiting them one-by-one over every department
     // blew past the serverless budget. One failure must not lose the rest.
     //
-    // The department's pooled figures come from the same read as its CSV, so
-    // the summary does not walk the ratings a second time.
+    // The department's row-based summary figures come from the same read as
+    // its CSV, so the summary does not walk the ratings a second time.
     const perDept = await Promise.allSettled(
       departments.map(async (dept) => {
         const { subjects, departmentAggregate } = await getDepartmentSubjectResults(evaluationPeriodId, dept.id)
@@ -101,7 +101,8 @@ export async function GET(request: NextRequest) {
       const aggregate = aggregateByDept.get(dept.id)
       return [
         dept.name, dept.code ?? "", facultyCounts[dept.id] ?? 0, aggregate?.totalResponses ?? 0,
-        aggregate?.avgRating ?? "", aggregate?.remarks ?? "",
+        aggregate?.avgRating === null || aggregate?.avgRating === undefined ? "" : aggregate.avgRating.toFixed(2),
+        aggregate?.remarks ?? "",
       ]
     })
     const summaryCsv = [summaryHeaders.join(","), ...summaryRows.map((r) => r.map(csvEscape).join(","))].join("\n")

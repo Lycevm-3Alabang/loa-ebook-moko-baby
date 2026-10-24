@@ -21,8 +21,8 @@ export async function GET(request: NextRequest) {
     const dept = await departmentRepository.findByDeanId(userId)
     if (!dept) return NextResponse.json({ departments: [] })
 
-    // The same live, POOLED department figures the admin route renders - the
-    // dean's page and the admin's page must not disagree about a department.
+    // The same live department figures the admin route renders - the dean's
+    // page and the admin's page must not disagree about a department.
     const { departments } = await getDepartmentResults(evaluationPeriodId, dept.id)
     if (departments.length === 0) return NextResponse.json({ departments: [] })
 

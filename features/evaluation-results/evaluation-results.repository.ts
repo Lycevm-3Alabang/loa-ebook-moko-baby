@@ -4,6 +4,7 @@ import {
   computeCategoryAverages,
   computeCategoryTotals,
   computeGeneralRating,
+  averageDisplayedRatings,
   computeSentimentScore,
   findHighestLowestRubrics,
   getRemark,
@@ -511,8 +512,8 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
   },
 
   /**
-   * One department's figures for a period: the response count, the pooled
-   * rating and its remark, the highest and lowest rubrics, and the comment
+   * One department's figures for a period: the response count, the average
+   * of its rated Subject–Section scores and its remark, the highest and lowest rubrics, and the comment
    * sentiment — read from the app's own reads, with no direct database
    * connection.
    *
@@ -543,8 +544,26 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
       listCommentScores(liveEvalIds),
     ])
 
+    const evaluationIdsByAssignment = new Map<string, string[]>()
+    for (const evaluation of evaluations) {
+      if (!evaluation.facultySubjectId) continue
+      const ids = evaluationIdsByAssignment.get(evaluation.facultySubjectId) ?? []
+      ids.push(evaluation.id)
+      evaluationIdsByAssignment.set(evaluation.facultySubjectId, ids)
+    }
+    const ratingsByEvaluation = new Map<string, typeof ratings>()
+    for (const rating of ratings) {
+      const rows = ratingsByEvaluation.get(rating.evaluationId) ?? []
+      rows.push(rating)
+      ratingsByEvaluation.set(rating.evaluationId, rows)
+    }
+    const subjectScores = [...evaluationIdsByAssignment.values()].map((evaluationIds) => {
+      const subjectRatings = evaluationIds.flatMap((id) => ratingsByEvaluation.get(id) ?? [])
+      return computeGeneralRating(computeCategoryAverages(subjectRatings))
+    })
+    const general = averageDisplayedRatings(subjectScores)
+
     const catAverages = computeCategoryAverages(ratings)
-    const general = computeGeneralRating(catAverages)
     const catColumns = mapCategoryAveragesToColumns(catAverages)
     const { highest, lowest } = findHighestLowestRubrics(catColumns)
 

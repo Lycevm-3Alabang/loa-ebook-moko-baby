@@ -4,7 +4,7 @@ import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import IosButton from "@/components/ui/IosButton"
 import SubmitButton from "@/components/ui/SubmitButton"
-import { getRemarkColor, sectionLabel, formatFacultyName, type FacultyAggregate } from "@/lib/evaluation-utils"
+import { averageDisplayedRatings, getRemark, getRemarkColor, sectionLabel, formatFacultyName, type FacultyAggregate } from "@/lib/evaluation-utils"
 
 interface SubjectRow {
   facultySubjectId: string
@@ -55,12 +55,24 @@ interface Props {
 
 type SortDir = "asc" | "desc"
 
-export default function DepartmentSubjectView({ subjects, members = [], departmentId, evaluationPeriodId, search, onSearchChange, basePath = "/admin/evaluations/results", visibilityMap = {}, onVisibilityChange, onBulkVisibilityChange, facultyAggregates = {}, selectedFacultyIds = [], onFacultySelectionChange }: Props) {
+export default function DepartmentSubjectView({ subjects, members = [], departmentId, evaluationPeriodId, search, onSearchChange, basePath = "/admin/evaluations/results", visibilityMap = {}, onVisibilityChange, onBulkVisibilityChange, selectedFacultyIds = [], onFacultySelectionChange }: Props) {
   const router = useRouter()
   const [sortDir, setSortDir] = useState<SortDir>("asc")
   const [expandedFaculty, setExpandedFaculty] = useState<Set<string>>(new Set())
 
   const formatScore = (v: number | null) => (v !== null ? v.toFixed(2) : "—")
+  const facultyAverages = useMemo(() => {
+    const rowsByFaculty = new Map<string, SubjectRow[]>()
+    for (const subject of subjects) {
+      const rows = rowsByFaculty.get(subject.facultyId) ?? []
+      rows.push(subject)
+      rowsByFaculty.set(subject.facultyId, rows)
+    }
+    return new Map([...rowsByFaculty].map(([facultyId, rows]) => [
+      facultyId,
+      averageDisplayedRatings(rows.map((row) => row.avgRating)),
+    ]))
+  }, [subjects])
 
   const filteredSubjects = useMemo(() => {
     if (!search.trim()) return subjects
@@ -218,9 +230,8 @@ export default function DepartmentSubjectView({ subjects, members = [], departme
 
       <div className="space-y-3">
         {sortedGroups.map((group) => {
-          const agg = facultyAggregates[group.facultyId]
-          const facultyAvg = agg?.avgRating ?? null
-          const facultyRemark = agg?.remarks ?? null
+          const facultyAvg = facultyAverages.get(group.facultyId) ?? null
+          const facultyRemark = getRemark(facultyAvg)
           const isExpanded = expandedFaculty.has(group.facultyId)
 
           return (

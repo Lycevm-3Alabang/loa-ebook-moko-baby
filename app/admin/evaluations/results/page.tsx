@@ -72,7 +72,7 @@ interface DepartmentFigures {
 /** How many departments' figures are read at once. */
 const FIGURE_CONCURRENCY = 3
 
-const FIGURES_CACHE_KEY = "admin-evaluation-results-figures"
+const FIGURES_CACHE_KEY = "admin-evaluation-results-figures-v2"
 const RESULTS_CACHE_KEY = "admin-evaluation-results"
 
 function getFiguresCacheKey(periodId: string) {

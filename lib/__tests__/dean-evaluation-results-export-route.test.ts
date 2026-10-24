@@ -19,6 +19,7 @@ vi.mock("@/features/evaluation-results/evaluation-results.service", () => ({
 vi.mock("@/lib/services/audit", () => ({ logServerError: mockLogServerError }))
 
 import { GET } from "@/app/api/dean/evaluation-results/export/route"
+import { readZip, partText } from "@/lib/xlsx-template"
 
 function req(qs: string) { return new Request(`http://localhost/api/dean/evaluation-results/export${qs}`) as never }
 
@@ -56,12 +57,15 @@ describe("GET /api/dean/evaluation-results/export", () => {
     mockDeptRepo.findByDeanId.mockResolvedValue({ id: "dept-1", name: "CCS", code: "CCS" })
     mockGetDeptResults.mockResolvedValue({
       subjects: [
-        { facultyName: "Ana", facultyEmail: "a@x.com", subjectCode: "IT101", subjectName: "Intro", totalRespondents: 3, avgRating: 4, remarks: "Very Satisfactory", professionalManner: 4, communicationWithStudent: 4, studentEngagement: 4, learningMaterials: 4, timeManagement: 4, experientialLearning: 4, respectUniqueness: 4, assessmentAndFeedback: 4, sentimentScore: 0.5, facultySubjectId: "fs1", facultyId: "f1", subjectId: "s1", highestRubrics: [], lowestRubrics: [] },
+        { facultyName: "Ana", facultyEmail: "a@x.com", subjectCode: "IT101", subjectName: "Intro", totalRespondents: 3, avgRating: 4.25, remarks: "Very Satisfactory", professionalManner: 4, communicationWithStudent: 4, studentEngagement: 4, learningMaterials: 4, timeManagement: 4, experientialLearning: 4, respectUniqueness: 4, assessmentAndFeedback: 4, sentimentScore: 0.5, facultySubjectId: "fs1", facultyId: "f1", subjectId: "s1", highestRubrics: [], lowestRubrics: [] },
       ],
       facultyAggregates: {},
+      departmentAggregate: { totalResponses: 3, avgRating: 4.3, remarks: "Very Satisfactory" },
     })
     const res = await GET(req("?evaluationPeriodId=p1"))
     expect(res.status).toBe(200)
     expect(res.headers.get("content-type")).toBe("application/zip")
+    const zip = readZip(new Uint8Array(await res.arrayBuffer()))
+    expect(partText(zip, "summary.csv")).toContain('"CCS","CCS","0","3","4.30","Very Satisfactory"')
   })
 })

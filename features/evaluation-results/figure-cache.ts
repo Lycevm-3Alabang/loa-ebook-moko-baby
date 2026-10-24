@@ -10,10 +10,8 @@ import type { DepartmentFigures, FacultyFigures } from "@/lib/types"
  * those figures are kept for five minutes and their surfaces read the same
  * numbers.
  *
- * ⭐ The exports do NOT read this cache. A ZIP is a download, and a workbook
- * needs the raw ratings, comments and statement averages — not the pooled
- * figures. Both export routes re-read their departments live; this cache is
- * the list's and the report's.
+ * ⭐ The exports do NOT read this cache. They re-read each department live;
+ * this cache is the list's and the report's.
  *
  * The cache lives in the module, so it belongs to the warm instance: a cold
  * instance reads once and then serves from its own copy. The five minutes are
@@ -81,7 +79,7 @@ function makeFiguresCache<T>() {
   }
 }
 
-/** The departments' figures — the results list, the exports and the dean view read these. */
+/** The departments' summary figures — the results list and dean view read these. */
 const departmentCache = makeFiguresCache<DepartmentFigures>()
 /** The faculty's figures — the report reads these, and a department is their pool. */
 const facultyCache = makeFiguresCache<FacultyFigures>()

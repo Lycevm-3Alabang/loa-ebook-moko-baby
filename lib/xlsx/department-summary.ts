@@ -11,8 +11,9 @@ import type { SummaryLine } from "./overall-summary"
  * ⭐ The row is the department card's figure: the `summary.csv` columns, built
  * from the department read's `members` and `departmentAggregate` — no new read.
  * ⭐ The faculty count is the `members` (the §3.14 headcount), NOT
- * `departmentAggregate.uniqueFaculty`; the average is the aggregate's pooled
- * figure, NOT a mean of the faculty bands (D31's parity rule).
+ * `departmentAggregate.uniqueFaculty`; the average is the aggregate's
+ * unweighted mean of rated Subject–Section scores, not a mean of faculty
+ * averages.
  */
 
 /** The file's title — the school's wording (D34). */
@@ -31,7 +32,7 @@ export interface DepartmentSummaryInput {
   facultyCount: number
   /** ⭐ the aggregate's `totalResponses` — 0 when the aggregate is null */
   totalRespondents: number
-  /** the aggregate's pooled average — null prints a dash */
+  /** the aggregate's Subject–Section-row average — null prints a dash */
   avgRating: number | null
   /** the aggregate's remark — null prints a dash */
   remarks: string | null

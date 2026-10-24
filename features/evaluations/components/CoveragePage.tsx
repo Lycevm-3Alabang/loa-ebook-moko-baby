@@ -426,8 +426,10 @@ export default function CoveragePage({
   const toggleAllVisibleFaculty = () => {
     setExpandedFaculty((current) => {
       const next = new Set(current)
+      const allExpanded =
+        sortedFacultyGroups.length > 0 && sortedFacultyGroups.every((group) => current.has(group.id))
       for (const group of sortedFacultyGroups) {
-        if (allVisibleFacultyExpanded) next.delete(group.id)
+        if (allExpanded) next.delete(group.id)
         else next.add(group.id)
       }
       return next

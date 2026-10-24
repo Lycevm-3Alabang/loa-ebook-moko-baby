@@ -283,9 +283,14 @@ export async function getDepartmentSubjectResults(
 
   return {
     subjects: out,
-    // The members' pooled figures. A member with no evaluation has none yet:
-    // they are in the subject rows, not on a card.
-    facultyAggregates: aggregateFacultyResults(set.evaluations, ratings, commentsRaw),
+    // Overall averages follow the displayed subject rows; category and
+    // sentiment figures in the aggregates remain pooled from response data.
+    facultyAggregates: aggregateFacultyResults(
+      set.evaluations,
+      ratings,
+      commentsRaw,
+      out.map(({ facultyId, avgRating }) => ({ facultyId, avgRating })),
+    ),
     departmentAggregate: aggregateDepartmentResults(out, ratings, commentsRaw),
     members,
   }

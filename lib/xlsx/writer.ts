@@ -252,6 +252,8 @@ function workbookXml(sheets: SheetSpec[]): string {
 }
 
 const MEDIA_TYPES: Record<string, string> = {
+  rels: "application/vnd.openxmlformats-package.relationships+xml",
+  xml: "application/xml",
   png: "image/png",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",

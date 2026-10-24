@@ -309,6 +309,7 @@ describe("evaluationResultRepository.listDepartmentFigures", () => {
   function respondWithDepartmentFacts(over: {
     evaluations?: { id: string; evaluateeId: string; facultySubjectId: string | null }[]
     assignmentFaculty?: string
+    assignments?: { id: string; faculty_id: string }[]
     users?: { id: string; name: string; email: string; departmentId: string | null }[]
     ratings?: { evaluationId: string; rating: number; itemId: string }[]
     comments?: { evaluationId: string; sentimentScore: number | null }[]
@@ -316,7 +317,12 @@ describe("evaluationResultRepository.listDepartmentFigures", () => {
     return respondWith({
       evaluations: { data: over.evaluations ?? [], error: null },
       faculty_subjects: {
-        data: [{ id: "fs1", faculty_id: over.assignmentFaculty ?? "f1", subject_id: "s1", section_id: null, semesterId: "sem1" }],
+        data: over.assignments?.map((assignment) => ({
+          ...assignment,
+          subject_id: "s1",
+          section_id: null,
+          semesterId: "sem1",
+        })) ?? [{ id: "fs1", faculty_id: over.assignmentFaculty ?? "f1", subject_id: "s1", section_id: null, semesterId: "sem1" }],
         error: null,
       },
       users: { data: over.users ?? [], error: null },
@@ -327,7 +333,7 @@ describe("evaluationResultRepository.listDepartmentFigures", () => {
     })
   }
 
-  it("pools a department's ratings into its figures", async () => {
+  it("averages a department's single rated Subject–Section row", async () => {
     mockUserRepo.listFacultyByDepartment.mockResolvedValue([
       { id: "f1", name: "Ana", email: "ana@x", departmentId: "d1", role: "FACULTY" },
     ])
@@ -344,6 +350,36 @@ describe("evaluationResultRepository.listDepartmentFigures", () => {
     expect(figures.remarks).toBe("Outstanding")
     expect(figures.highestRubrics[0].key).toBe("professionalManner")
     expect(figures.sentimentScore).toBe(0.4)
+  })
+
+  it("averages department Subject–Section scores equally despite unequal response counts", async () => {
+    mockUserRepo.listFacultyByDepartment.mockResolvedValue([
+      { id: "f1", name: "Ana", email: "ana@x", departmentId: "d1", role: "FACULTY" },
+    ])
+    respondWithDepartmentFacts({
+      evaluations: [
+        { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" },
+        { id: "e2", evaluateeId: "f1", facultySubjectId: "fs1" },
+        { id: "e3", evaluateeId: "f1", facultySubjectId: "fs1" },
+        { id: "e4", evaluateeId: "f1", facultySubjectId: "fs2" },
+      ],
+      assignments: [
+        { id: "fs1", faculty_id: "f1" },
+        { id: "fs2", faculty_id: "f1" },
+      ],
+      ratings: [
+        { evaluationId: "e1", rating: 4, itemId: "i1" },
+        { evaluationId: "e2", rating: 4, itemId: "i1" },
+        { evaluationId: "e3", rating: 4, itemId: "i1" },
+        { evaluationId: "e4", rating: 2, itemId: "i1" },
+      ],
+    })
+
+    const figures = await evaluationResultRepository.listDepartmentFigures("d1", "p1")
+
+    expect(figures.totalRespondents).toBe(4)
+    expect(figures.avgRating).toBe(3)
+    expect(figures.remarks).toBe("Satisfactory")
   })
 
   it("drops an evaluation whose assignment no longer belongs to its evaluatee", async () => {

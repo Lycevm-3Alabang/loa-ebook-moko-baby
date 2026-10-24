@@ -9,10 +9,10 @@ import type { StyleToken } from "./styles"
  *
  * ⭐ One file per member, in the department ZIP: the header block (the term,
  * the period, the department), the member's band (the name, the email, the
- * pooled average) and the table — one row per subject-section.
+ * unweighted mean of rated rows) and the table — one row per subject-section.
  *
  * ⭐ It is built from what the page already read (the department read's rows
- * and the pooled figures), so it adds NO read of its own.
+ * and its summary aggregates), so it adds NO read of its own.
  */
 
 /** The file's title — the school's wording. */
@@ -24,7 +24,7 @@ export interface FacultySummaryRow {
   subject: { code: string; name: string } | null
   /** the section — the program and the name */
   section: { program: string | null; name: string | null }
-  /** ⭐ the counted responses — the weight the band is pooled with (D32) */
+  /** the counted responses for this Subject–Section row */
   totalRespondents: number
   /** the subject-section's general rating */
   avgRating: number | null
@@ -94,7 +94,7 @@ function rubricsLabel(rubrics: { label: string; score: number }[]): string {
   return rubrics.map((rubric) => `${rubric.label} ${rubric.score.toFixed(2)}`).join(", ")
 }
 
-/** The band's average line — the pooled figure and its remark. */
+/** The band's average line — the unweighted mean and its remark. */
 function averageLine(faculty: FacultySummaryInput["faculty"]): string {
   if (faculty.avgRating === null) return "Average: —"
   const remark = faculty.remarks ? ` — ${faculty.remarks}` : ""

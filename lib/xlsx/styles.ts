@@ -142,7 +142,7 @@ export function styleId(token: StyleToken): number {
 /** The number formats. `general` is the built-in 0 and needs no declaration. */
 const NUMBER_FORMATS: Record<Exclude<NumberFormat, "general">, { id: number; code: string }> = {
   accounting: { id: 165, code: "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \\-??_);_(@_)" },
-  plain2dp: { id: 166, code: "0.00_);[RED]\\(0.00\\)" },
+  plain2dp: { id: 166, code: "0.00;[Red](0.00)" },
 }
 
 function fontXml(font: FontSpec): string {

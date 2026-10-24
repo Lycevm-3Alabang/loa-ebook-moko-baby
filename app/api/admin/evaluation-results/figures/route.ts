@@ -4,7 +4,8 @@ import { logServerError } from "@/lib/services/audit"
 import { getCachedDepartmentFigures } from "@/features/evaluation-results/figure-cache"
 
 /**
- * One department's figures for a period: the pooled rating and its remark,
+ * One department's figures for a period: the mean of its rated
+ * Subject–Section scores and its remark,
  * the highest and lowest rubrics, and the comment sentiment.
  *
  * The list reads the departments first and then asks for each one's figures,

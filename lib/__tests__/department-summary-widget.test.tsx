@@ -26,7 +26,7 @@ vi.mock("@/lib/api/client", () => ({
 import DepartmentDetailPage from "@/app/admin/evaluations/results/[departmentId]/page"
 
 // Two subjects for one faculty, unequal responses (3 and 1) and unequal averages
-// (4.00 and 2.00). Mean of the subject averages = 3.00; pooled = 3.50.
+// (4.00 and 2.00). The summary mean is 3.00; category scores remain pooled.
 const SUBJECTS = [
   {
     facultySubjectId: "fs1", facultyId: "f1", facultyName: "Ana Reyes", facultyEmail: "ana@x.com",
@@ -50,8 +50,8 @@ const DEPARTMENT_AGGREGATE = {
   totalSubjects: 2,
   uniqueFaculty: 1,
   totalResponses: 4,
-  avgRating: 3.5,
-  remarks: "Very Satisfactory",
+  avgRating: 3,
+  remarks: "Satisfactory",
   professionalManner: 3.5, communicationWithStudent: 3.5, studentEngagement: 3.5, learningMaterials: 3.5,
   timeManagement: 3.5, experientialLearning: 3.5, respectUniqueness: 3.5, assessmentAndFeedback: 3.5,
   highestRubrics: [{ key: "professionalManner", label: "Professional Manner", score: 3.5 }],
@@ -75,15 +75,12 @@ beforeEach(() => {
 })
 
 describe("Department results page - Department Summary widget", () => {
-  it("shows the server department average, not a mean of the subject averages", async () => {
+  it("shows the department mean of the subject averages", async () => {
     render(<DepartmentDetailPage />)
 
-    // The card repeats the figure (the department's and, for a single-member
-    // department, the teacher's) — the mean of the subject averages must be
-    // nowhere on the page.
-    await waitFor(() => expect(screen.getAllByText("3.50").length).toBeGreaterThan(0))
-    expect(screen.queryByText("3.00")).toBeNull()
-    expect(screen.getAllByText("Very Satisfactory").length).toBeGreaterThan(0)
+    await waitFor(() => expect(screen.getAllByText("3.00").length).toBeGreaterThan(0))
+    expect(screen.queryByText("3.50")).toBeNull()
+    expect(screen.getAllByText("Satisfactory").length).toBeGreaterThan(0)
   })
 
   it("carries no faculty count - the cards below are the faculty", async () => {
@@ -192,7 +189,7 @@ describe("Department results page - Department Summary widget", () => {
   it("no longer shows a sentiment figure", async () => {
     render(<DepartmentDetailPage />)
 
-    await waitFor(() => expect(screen.getAllByText("3.50").length).toBeGreaterThan(0))
+    await waitFor(() => expect(screen.getAllByText("3.00").length).toBeGreaterThan(0))
     expect(screen.queryByText("Overall Sentiment")).toBeNull()
     expect(screen.queryByText("0.4000")).toBeNull()
   })

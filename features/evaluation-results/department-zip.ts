@@ -154,8 +154,9 @@ export async function buildDepartmentZip(
     const folder = entryName(department.code ?? department.id)
 
     // ⭐ D30: the DEPARTMENT summary sits at the folder's root, first in the
-    // tree. ⭐ It is the card's figure — the members' count and the pooled
-    // aggregate — NOT a mean of the faculty bands.
+    // tree. ⭐ It is the department summary — the members' count and the
+    // unweighted average of rated Subject–Section rows, not a mean of faculty
+    // averages.
     // ⭐ D34: a per-faculty export omits it — that ZIP's details are one
     // faculty's, so a whole-department row would read as the scope's figure.
     if (!isFiltered) {

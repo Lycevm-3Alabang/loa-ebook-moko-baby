@@ -70,7 +70,7 @@ beforeEach(() => {
 })
 
 describe("getDepartmentSubjectResults", () => {
-  it("returns a pooled faculty aggregate, not a mean of per-subject means", async () => {
+  it("averages the displayed subject rows for faculty and department summaries", async () => {
     mockEvalResultRepo.listDepartmentTeachingAssignments.mockResolvedValue([
       assignment({ id: "fs1", subject_id: "s1" }),
       assignment({ id: "fs2", subject_id: "s2" }),
@@ -98,14 +98,14 @@ describe("getDepartmentSubjectResults", () => {
     const { subjects, facultyAggregates, departmentAggregate } = await getDepartmentSubjectResults("p1", "d1")
 
     expect(subjects.map((s) => s.avgRating)).toEqual([4, 2])
-    // mean of the two subject averages would be 3.00; pooled is 3.50
-    expect(facultyAggregates.f1.avgRating).toBe(3.5)
+    // One subject has three responses and the other has one; each row still
+    // contributes equally to the summary.
+    expect(facultyAggregates.f1.avgRating).toBe(3)
     expect(facultyAggregates.f1.totalRespondents).toBe(4)
     expect(departmentAggregate?.totalSubjects).toBe(2)
     expect(departmentAggregate?.uniqueFaculty).toBe(1)
     expect(departmentAggregate?.totalResponses).toBe(4)
-    expect(departmentAggregate?.avgRating).toBe(3.5)
-    expect(departmentAggregate?.avgRating).not.toBe(3)
+    expect(departmentAggregate?.avgRating).toBe(3)
   })
 
   it("reads the response set and the term's teaching, and nothing else", async () => {

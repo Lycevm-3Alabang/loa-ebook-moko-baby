@@ -412,9 +412,9 @@ export interface PooledAggregate {
 }
 
 /**
- * The one aggregation rule: pool a set of rating rows, then average the
- * category averages. Used at every level so a higher-level figure is the
- * same kind of number as the one below it.
+ * Pool rating rows for category-level figures. Faculty and department
+ * summaries replace this helper's pooled overall score with an average of
+ * their displayed Subject–Section scores.
  */
 export function aggregatePooledResults(
   ratings: RatingRow[],
@@ -465,22 +465,41 @@ export interface DepartmentAggregate {
 }
 
 /**
+ * Average the displayed Subject–Section ratings equally, round the result to
+ * hundredths using round-half-up, and leave formatting (always two decimal
+ * places) to the caller. Row ratings are already rounded to hundredths.
+ */
+export function averageDisplayedRatings(ratings: (number | null)[]): number | null {
+  const cents = ratings
+    .filter((rating): rating is number => rating !== null)
+    .map((rating) => Math.round(rating * 100))
+  if (cents.length === 0) return null
+
+  const roundedCents = Math.floor(
+    (cents.reduce((sum, rating) => sum + rating, 0) + cents.length / 2) / cents.length,
+  )
+  return roundedCents / 100
+}
+
+/**
  * Assemble a department-level aggregate from its subject rows and the
- * department's pooled rating/comment rows. The averages are pooled, so the
- * department figure is the same kind of number as the faculty figure below it.
+ * department's pooled rating/comment rows. The overall rating is the mean of
+ * the displayed subject-row ratings; category and sentiment figures remain
+ * pooled.
  */
 export function aggregateDepartmentResults(
-  subjects: { facultyId: string; totalRespondents: number }[],
+  subjects: { facultyId: string; totalRespondents: number; avgRating: number | null }[],
   ratings: RatingRow[],
   comments: { sentimentScore: number | null }[] = [],
 ): DepartmentAggregate {
   const pooled = aggregatePooledResults(ratings, comments)
+  const avgRating = averageDisplayedRatings(subjects.map((subject) => subject.avgRating))
   return {
     totalSubjects: subjects.length,
     uniqueFaculty: new Set(subjects.map((s) => s.facultyId)).size,
     totalResponses: subjects.reduce((sum, s) => sum + s.totalRespondents, 0),
-    avgRating: pooled.avgRating,
-    remarks: pooled.remarks,
+    avgRating,
+    remarks: getRemark(avgRating),
     professionalManner: pooled.catColumns.professionalManner ?? null,
     communicationWithStudent: pooled.catColumns.communicationWithStudent ?? null,
     studentEngagement: pooled.catColumns.studentEngagement ?? null,
@@ -523,15 +542,15 @@ export interface FacultyAggregate {
 }
 
 /**
- * Pool a faculty's evaluation set into one aggregate, keyed by facultyId.
- * Uses the same chain as the per-facultySubject detail page
- * (aggregatePooledResults), so a faculty headline equals the detail page's
- * pooled figure instead of a mean of per-subject means.
+ * Pool the faculty's evaluation set for category and sentiment figures, while
+ * averaging its displayed Subject–Section ratings equally for the overall
+ * score.
  */
 export function aggregateFacultyResults(
   evals: { id: string; evaluateeId: string }[],
   ratings: FacultyRatingRow[],
   comments: FacultyCommentRow[],
+  subjects: { facultyId: string; avgRating: number | null }[],
 ): Record<string, FacultyAggregate> {
   const evalIdsByFaculty = new Map<string, string[]>()
   for (const ev of evals) {
@@ -547,11 +566,14 @@ export function aggregateFacultyResults(
       ratings.filter((r) => idSet.has(r.evaluationId)),
       comments.filter((c) => idSet.has(c.evaluationId)),
     )
+    const avgRating = averageDisplayedRatings(
+      subjects.filter((subject) => subject.facultyId === facultyId).map((subject) => subject.avgRating),
+    )
     out[facultyId] = {
       facultyId,
       totalRespondents: evalIds.length,
-      avgRating: pooled.avgRating,
-      remarks: pooled.remarks,
+      avgRating,
+      remarks: getRemark(avgRating),
       professionalManner: pooled.catColumns.professionalManner ?? null,
       communicationWithStudent: pooled.catColumns.communicationWithStudent ?? null,
       studentEngagement: pooled.catColumns.studentEngagement ?? null,

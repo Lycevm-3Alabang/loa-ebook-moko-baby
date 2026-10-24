@@ -81,7 +81,7 @@ const aggregate = (overrides: Partial<FacultyAggregate> = {}): FacultyAggregate 
 })
 
 // Two subjects for one faculty, unequal responses (3 and 1) and unequal averages
-// (4.00 and 2.00). Mean of the subject averages = 3.00; pooled = 3.50.
+// (4.00 and 2.00). The unweighted mean is 3.00.
 const TWO_SUBJECTS = [
   row({ facultySubjectId: "fs1", subjectCode: "IT101", subjectName: "Intro", avgRating: 4, totalRespondents: 3 }),
   row({ facultySubjectId: "fs2", subjectCode: "IT102", subjectName: "Advanced", avgRating: 2, totalRespondents: 1 }),
@@ -118,12 +118,57 @@ function renderView(opts: {
 }
 
 describe("DepartmentSubjectView - the faculty card", () => {
-  it("shows the server faculty aggregate instead of the mean of the subject averages", () => {
-    renderView({ facultyAggregates: { f1: aggregate() } })
+  it("shows the unweighted mean of the displayed subject averages", () => {
+    renderView({
+      subjects: [
+        row({ facultySubjectId: "fs1", avgRating: 4.65, totalRespondents: 3 }),
+        row({ facultySubjectId: "fs2", avgRating: 3.94, totalRespondents: 1 }),
+      ],
+      facultyAggregates: { f1: aggregate({ avgRating: 4.43 }) },
+    })
 
-    expect(screen.getByText("3.50")).toBeTruthy()
-    expect(screen.queryByText("3.00")).toBeNull()
+    expect(screen.getByText("4.30")).toBeTruthy()
+    expect(screen.queryByText("4.43")).toBeNull()
     expect(screen.getByText("Very Satisfactory")).toBeTruthy()
+  })
+
+  it("keeps the card mean independent of search and excludes unrated rows", () => {
+    renderView({
+      subjects: [
+        row({ facultySubjectId: "fs1", subjectCode: "IT101", avgRating: 4.65 }),
+        row({ facultySubjectId: "fs2", subjectCode: "IT102", avgRating: 3.94 }),
+        row({ facultySubjectId: "fs3", subjectCode: "IT103", avgRating: null }),
+      ],
+      search: "IT101",
+    })
+
+    expect(screen.getByText("4.30")).toBeTruthy()
+    fireEvent.click(screen.getByText("Reyes, Ana"))
+    expect(screen.getByText("IT101 Intro")).toBeTruthy()
+    expect(screen.queryByText("IT102 Intro")).toBeNull()
+    expect(screen.queryByText("IT103 Intro")).toBeNull()
+  })
+
+  it("shows no score when there are no rated subject rows", () => {
+    renderView({
+      subjects: [row({ avgRating: null })],
+      search: "",
+    })
+
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0)
+    expect(screen.queryByText("3.50")).toBeNull()
+  })
+
+  it("includes a numeric zero as a rated row", () => {
+    renderView({
+      subjects: [
+        row({ facultySubjectId: "fs1", avgRating: 0 }),
+        row({ facultySubjectId: "fs2", avgRating: 4 }),
+      ],
+    })
+
+    expect(screen.getByText("2.00")).toBeTruthy()
+    expect(screen.getByText("Unsatisfactory")).toBeTruthy()
   })
 
   it("shows no response counts - the coverage page owns them", () => {
@@ -151,11 +196,10 @@ describe("DepartmentSubjectView - the faculty card", () => {
     expect(screen.getByText("Cruz, Ben")).toBeTruthy()
   })
 
-  it("does not derive a faculty average when the server sends none", () => {
+  it("derives the card average from subject rows rather than requiring a server aggregate", () => {
     renderView()
 
-    expect(screen.queryByText("3.50")).toBeNull()
-    expect(screen.queryByText("3.00")).toBeNull()
+    expect(screen.getByText("3.00")).toBeTruthy()
   })
 
   it("keeps the per-subject rows on the subject values when the card is expanded", () => {
@@ -165,7 +209,7 @@ describe("DepartmentSubjectView - the faculty card", () => {
 
     expect(screen.getByText("4.00")).toBeTruthy()
     expect(screen.getByText("2.00")).toBeTruthy()
-    expect(screen.getByText("3.50")).toBeTruthy()
+    expect(screen.queryByText("3.50")).toBeNull()
   })
 })
 

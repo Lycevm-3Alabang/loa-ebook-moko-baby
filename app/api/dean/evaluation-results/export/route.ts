@@ -60,7 +60,16 @@ export async function GET(request: NextRequest) {
     }
 
     const summaryHeaders = ["Department", "Code", "Faculty Count", "Respondents", "Avg Rating", "Remark"]
-    const summaryRows = [[dept.name, dept.code ?? "", facultyCounts[dept.id] ?? 0, departmentAggregate?.totalResponses ?? 0, departmentAggregate?.avgRating ?? "", departmentAggregate?.remarks ?? ""]]
+    const summaryRows = [[
+      dept.name,
+      dept.code ?? "",
+      facultyCounts[dept.id] ?? 0,
+      departmentAggregate?.totalResponses ?? 0,
+      departmentAggregate?.avgRating === null || departmentAggregate?.avgRating === undefined
+        ? ""
+        : departmentAggregate.avgRating.toFixed(2),
+      departmentAggregate?.remarks ?? "",
+    ]]
     const summaryCsv = [summaryHeaders.join(","), ...summaryRows.map((r) => r.map(csvEscape).join(","))].join("\n")
     entries.push({ name: "summary.csv", data: encoder.encode(summaryCsv) })
 

@@ -29,6 +29,7 @@ import {
   MAX_SUBJECT_SECTIONS,
 } from "@/features/evaluation-results/department-zip"
 import { readZip, partText } from "@/lib/xlsx-template"
+import { styleId } from "@/lib/xlsx/styles"
 
 /** The XML inside one cell — the summary's figures are asserted by position. */
 function cellOf(sheet: string, ref: string): string {
@@ -71,7 +72,7 @@ beforeEach(() => {
   ])
   mockGetDepartmentResults.mockResolvedValue({
     subjects: [ROW],
-    facultyAggregates: { f1: { avgRating: 3.67, remarks: "Very Satisfactory" } },
+    facultyAggregates: { f1: { avgRating: 3.4, remarks: "Satisfactory" } },
     members: [{ id: "f1", name: "Alamo, Nino Francisco", email: "nf@x.edu.ph" }],
     departmentAggregate: null,
   })
@@ -106,6 +107,8 @@ describe("the department ZIP", () => {
       "CCS/Alamo, Nino Francisco/1815-ITELEC009_BSIT-31E1_evaluation.xlsx",
       "CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_summary.xlsx",
     ])
+    const facultySummary = readZip(parts.get("CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_summary.xlsx")!)
+    expect(partText(facultySummary, "xl/worksheets/sheet1.xml")).toContain("Average: 3.40 — Satisfactory")
   })
 
   it("refuses a selection that cannot fit in one response — with the number", async () => {
@@ -242,10 +245,11 @@ describe("the department ZIP", () => {
     ])
   })
 
-  it("builds the department summary from the members and the aggregate — not a mean of the bands", async () => {
+  it("builds the department summary from its row-based aggregate, not a mean of faculty averages", async () => {
     mockGetDepartmentResults.mockResolvedValue({
       subjects: [ROW],
-      // ⭐ the bands' plain mean is 3.00 — the row must NOT be 3.00
+      // The department row is the row-based aggregate. The faculty averages
+      // are deliberately different so the export cannot substitute their mean.
       facultyAggregates: {
         f1: { avgRating: 4, remarks: "Very Satisfactory" },
         f2: { avgRating: 2, remarks: "Unsatisfactory" },
@@ -259,8 +263,8 @@ describe("the department ZIP", () => {
         // ⭐ deliberately NOT the members' count (2) — the file must ignore it
         uniqueFaculty: 1,
         totalResponses: 34,
-        avgRating: 3.42,
-        remarks: "Very Satisfactory",
+        avgRating: 3.4,
+        remarks: "Satisfactory",
         professionalManner: null,
         communicationWithStudent: null,
         studentEngagement: null,
@@ -283,14 +287,15 @@ describe("the department ZIP", () => {
     const summary = readZip(parts.get("CCS/CCS_summary.xlsx")!)
     const sheet = partText(summary, "xl/worksheets/sheet1.xml")
 
-    // ⭐ the card's row: 2 members (not uniqueFaculty's 1), 34 responses,
-    // 3.42 (not the bands' 3.00)
+    // The summary row: 2 members (not uniqueFaculty's 1), 34 responses,
+    // and the row-based average rather than the faculty averages' mean.
     expect(cellOf(sheet, "A6")).toContain("Computer Studies")
     expect(cellOf(sheet, "B6")).toContain("CCS")
     expect(cellOf(sheet, "C6")).toContain(">2<")
     expect(cellOf(sheet, "D6")).toContain(">34<")
-    expect(cellOf(sheet, "E6")).toContain(">3.42<")
-    expect(cellOf(sheet, "F6")).toContain("Very Satisfactory")
+    expect(cellOf(sheet, "E6")).toContain(">3.4<")
+    expect(sheet).toContain(`<c r="E6" s="${styleId("tableNumber")}"><v>3.4</v></c>`)
+    expect(cellOf(sheet, "F6")).toContain("Satisfactory")
   })
 
   it("still writes the department summary with no responses — 0 and dashes", async () => {

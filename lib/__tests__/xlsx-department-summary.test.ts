@@ -5,6 +5,7 @@ import {
   buildDepartmentSummaryModel,
   buildDepartmentSummaryWorkbook,
 } from "@/lib/xlsx/department-summary"
+import { styleId } from "@/lib/xlsx/styles"
 
 const INPUT = {
   semesterTitle: "SY 2026-2027 First Semester",
@@ -14,8 +15,8 @@ const INPUT = {
   // these two numbers (`members.length`, `departmentAggregate`).
   facultyCount: 2,
   totalRespondents: 34,
-  avgRating: 3.42,
-  remarks: "Very Satisfactory",
+  avgRating: 3.4,
+  remarks: "Satisfactory",
 }
 
 describe("the department's consolidated file", () => {
@@ -36,7 +37,7 @@ describe("the department's consolidated file", () => {
     ])
     expect(model.rows).toHaveLength(1)
     expect(model.rows[0].cells).toEqual([
-      "Computer Studies", "CCS", 2, 34, 3.42, "Very Satisfactory",
+      "Computer Studies", "CCS", 2, 34, 3.4, "Satisfactory",
     ])
   })
 
@@ -86,7 +87,7 @@ describe("the department's consolidated file", () => {
     expect(sheet).toContain("Computer Studies")
     expect(sheet).toContain("CCS")
     expect(sheet).toContain("34")
-    expect(sheet).toContain("3.42")
-    expect(sheet).toContain("Very Satisfactory")
+    expect(sheet).toContain(`<c r="E6" s="${styleId("tableNumber")}"><v>3.4</v></c>`)
+    expect(sheet).toContain("Satisfactory")
   })
 })

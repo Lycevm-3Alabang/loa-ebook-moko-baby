@@ -49,6 +49,12 @@ describe("the workbook writer", () => {
     ]) {
       expect(parts.has(name)).toBe(true)
     }
+
+    const contentTypes = partText(parts, "[Content_Types].xml")
+    expect(contentTypes).toContain(
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
+    )
+    expect(contentTypes).toContain('<Default Extension="xml" ContentType="application/xml"/>')
   })
 
   it("writes the cells, the merges and the widths", () => {
@@ -68,6 +74,11 @@ describe("the workbook writer", () => {
     expect(sheet).toContain('<pageSetup paperSize="1" orientation="portrait" fitToWidth="1" fitToHeight="0"/>')
     expect(workbook).toContain('name="_xlnm.Print_Area"')
     expect(workbook).toContain('name="_xlnm.Print_Titles"')
+  })
+
+  it("writes Excel-compatible plain two-decimal number formats", () => {
+    const styles = partText(built().parts, "xl/styles.xml")
+    expect(styles).toContain('<numFmt numFmtId="166" formatCode="0.00;[Red](0.00)"/>')
   })
 
   it("writes a landscape sheet's own orientation", () => {

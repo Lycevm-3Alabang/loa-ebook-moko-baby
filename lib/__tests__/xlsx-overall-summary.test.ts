@@ -12,8 +12,8 @@ const INPUT = {
   faculty: {
     name: "Alamo, Nino Francisco",
     email: "nf.alamo@x.edu.ph",
-    avgRating: 3.67,
-    remarks: "Very Satisfactory",
+    avgRating: 3.4,
+    remarks: "Satisfactory",
   },
   rows: [
     {
@@ -40,7 +40,7 @@ describe("the faculty's consolidated file", () => {
     expect(model.band.map((line) => line.text)).toEqual([
       "Alamo, Nino Francisco",
       "nf.alamo@x.edu.ph",
-      "Average: 3.67 — Very Satisfactory",
+      "Average: 3.40 — Satisfactory",
       "",
     ])
   })
@@ -51,6 +51,19 @@ describe("the faculty's consolidated file", () => {
       faculty: { ...INPUT.faculty, avgRating: null, remarks: null },
     })
     expect(model.band[2].text).toBe("Average: —")
+  })
+
+  it("preserves the hundredths of the average in the summary band", () => {
+    const model = buildFacultySummaryModel({
+      ...INPUT,
+      faculty: { ...INPUT.faculty, avgRating: 3.65, remarks: "Very Satisfactory" },
+      rows: [
+        { ...INPUT.rows[0], avgRating: 3.45 },
+        { ...INPUT.rows[0], avgRating: 3.9, section: { program: "BSIT", name: "31E2" } },
+        { ...INPUT.rows[0], avgRating: 3.6, section: { program: "BSIT", name: "31E3" } },
+      ],
+    })
+    expect(model.band[2].text).toBe("Average: 3.65 — Very Satisfactory")
   })
 
   it("prints a row for a subject-section nobody evaluated", () => {
@@ -127,29 +140,26 @@ describe("the faculty's consolidated file", () => {
     expect(partText(parts, "xl/worksheets/sheet1.xml")).toContain('orientation="landscape"')
   })
 
-  it("prints the six columns, with the respondents as the weight", () => {
+  it("prints the six columns and keeps row ratings unchanged", () => {
     const model = buildFacultySummaryModel(INPUT)
     expect(model.headings).toEqual([
       "SUBJECT", "SECTION", "RESPONDENTS", "AVG RATING", "HIGHEST", "LOWEST",
     ])
     expect(model.rows[0].cells[2]).toBe(20)
+    expect(model.rows[0].cells[3]).toBe(3.38)
   })
 
-  it("makes the band recomputable from its rows — weighted, not a plain mean", () => {
+  it("prints the precomputed unweighted row mean to two decimal places", () => {
     const model = buildFacultySummaryModel({
       ...INPUT,
+      faculty: { ...INPUT.faculty, avgRating: 3.72, remarks: "Very Satisfactory" },
       rows: [
         { ...INPUT.rows[0], avgRating: 3.6, totalRespondents: 20 },
         { ...INPUT.rows[0], avgRating: 3.75, totalRespondents: 10, section: { program: "BSIT", name: "31E2" } },
         { ...INPUT.rows[0], avgRating: 3.8, totalRespondents: 4, section: { program: "BSIT", name: "31E3" } },
       ],
     })
-    const total = model.rows.reduce((sum, row) => sum + Number(row.cells[2]), 0)
-    const weighted = model.rows.reduce(
-      (sum, row) => sum + Number(row.cells[3]) * Number(row.cells[2]),
-      0,
-    ) / total
-    expect(weighted).toBeCloseTo(3.67, 2) // (20·3.60 + 10·3.75 + 4·3.80) / 34
-    expect(weighted).not.toBeCloseTo(3.72, 2) // the naive mean of the rows
+    expect(model.band[2].text).toBe("Average: 3.72 — Very Satisfactory")
+    expect(model.rows.map((row) => row.cells[3])).toEqual([3.6, 3.75, 3.8])
   })
 })

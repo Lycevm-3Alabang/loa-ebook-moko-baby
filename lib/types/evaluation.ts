@@ -617,8 +617,9 @@ export interface PeriodDepartmentFigure {
 }
 
 /**
- * One department's figures for a period: the pooled rating and its remark,
- * the highest and lowest rubrics, and the comment sentiment.
+ * One department's figures for a period: the unweighted mean of its rated
+ * Subject–Section scores and its remark, the highest and lowest rubrics, and
+ * the comment sentiment.
  */
 export interface DepartmentFigures {
   departmentId: string
@@ -719,8 +720,9 @@ export interface IEvaluationResultRepository {
    */
   listPeriodFigures(evaluationPeriodId: string, departmentId?: string): Promise<PeriodFigures>
   /**
-   * One department's figures for a period: the pooled rating, its remark, the
-   * highest and lowest rubrics and the comment sentiment.
+   * One department's figures for a period: the unweighted mean of its rated
+   * Subject–Section scores, its remark, the highest and lowest rubrics, and
+   * the comment sentiment.
    */
   listDepartmentFigures(departmentId: string, evaluationPeriodId: string): Promise<DepartmentFigures>
   /**

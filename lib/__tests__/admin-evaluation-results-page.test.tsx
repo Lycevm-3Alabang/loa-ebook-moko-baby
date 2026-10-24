@@ -52,7 +52,7 @@ describe("AdminEvaluationResultsPage cached-data banner", () => {
       "admin-evaluation-results:p1",
       JSON.stringify({ departments }),
     )
-    window.localStorage.setItem("admin-evaluation-results-figures:p1", JSON.stringify(figures))
+    window.localStorage.setItem("admin-evaluation-results-figures-v2:p1", JSON.stringify(figures))
 
     render(<AdminEvaluationResultsPage />)
 
@@ -61,5 +61,24 @@ describe("AdminEvaluationResultsPage cached-data banner", () => {
     expect(screen.getByText(/Not manually refreshed yet/i)).toBeTruthy()
     expect(screen.getByText("Refresh")).toBeTruthy()
     expect(mockFetcher).not.toHaveBeenCalled()
+  })
+
+  it("does not reuse the prior pooled-figure cache after the average rule changes", async () => {
+    window.localStorage.setItem(
+      "admin-evaluation-results:p1",
+      JSON.stringify({ departments }),
+    )
+    window.localStorage.setItem(
+      "admin-evaluation-results-figures:p1",
+      JSON.stringify({ d1: { ...figures.d1, avgRating: 4.43 } }),
+    )
+
+    render(<AdminEvaluationResultsPage />)
+
+    await waitFor(() => {
+      expect(mockFetcher).toHaveBeenCalledWith(
+        expect.stringContaining("/api/admin/evaluation-results/figures?evaluationPeriodId=p1&departmentId=d1"),
+      )
+    })
   })
 })
