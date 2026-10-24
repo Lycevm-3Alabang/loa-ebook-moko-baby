@@ -714,19 +714,6 @@ export default function CoveragePage({
                           </div>
                         </div>
 
-                        {agg ? (
-                          <div className="grid grid-cols-2 gap-2 border-t border-default pt-3 sm:grid-cols-4">
-                            <CoverageCount label="Participated" count={agg.participated} tone="text-emerald-600 dark:text-emerald-400" />
-                            <CoverageCount label="Not participated" count={agg.notParticipated} tone="text-amber-600 dark:text-amber-400" />
-                            <CoverageCount label="In-progress" count={agg.inProgress} tone="text-blue-600 dark:text-blue-400" />
-                            <CoverageCount label="Disputed" count={agg.disputed} tone="text-rose-600 dark:text-rose-400" />
-                          </div>
-                        ) : (
-                          <p className="border-t border-default pt-3 text-xs text-rose-700 dark:text-rose-300">
-                            Coverage status counts unavailable.
-                          </p>
-                        )}
-
                         {isExpanded && (
                           <div className="border-t border-default pt-3">
                             <table className="w-full text-left">
@@ -792,15 +779,6 @@ export default function CoveragePage({
           )}
         </>
       )}
-    </div>
-  )
-}
-
-function CoverageCount({ label, count, tone }: { label: string; count: number; tone: string }) {
-  return (
-    <div className="rounded-lg bg-surface p-2 text-right" title="Distinct students with this status in at least one subject">
-      <div className="text-[10px] text-tertiary">{label}</div>
-      <div className={`text-sm font-semibold ${tone}`}>{count.toLocaleString()}</div>
     </div>
   )
 }
