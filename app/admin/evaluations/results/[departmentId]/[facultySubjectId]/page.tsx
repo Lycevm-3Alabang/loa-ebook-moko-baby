@@ -1,7 +1,6 @@
 "use client"
 
-import { useParams, useSearchParams } from "next/navigation"
-import Link from "next/link"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import IosButton from "@/components/ui/IosButton"
@@ -64,6 +63,7 @@ interface EvalDetailData {
 
 export default function GroupDetailPage() {
   const params = useParams()
+  const router = useRouter()
   const searchParams = useSearchParams()
   const departmentId = params.departmentId as string
   const facultySubjectId = params.facultySubjectId as string
@@ -166,12 +166,13 @@ export default function GroupDetailPage() {
   return (
     <div className="w-full space-y-8 pb-12">
       <div className="flex items-center justify-between">
-        <Link
-          href={`/admin/evaluations/results/${departmentId}?evaluationPeriodId=${encodeURIComponent(evaluationPeriodId)}`}
-          className="text-xs text-amber-600 hover:underline"
+        <IosButton
+          variant="plain"
+          size="xs"
+          onClick={() => router.push(`/admin/evaluations/results/${departmentId}?evaluationPeriodId=${encodeURIComponent(evaluationPeriodId)}`)}
         >
-          &larr; Back to {department?.name ?? "department"}
-        </Link>
+          &larr; Back to {departmentName} Evaluation Results
+        </IosButton>
         <div className="flex items-center gap-2">
           <ExportXlsxButton
             departmentId={departmentId}

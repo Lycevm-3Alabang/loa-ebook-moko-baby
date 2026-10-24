@@ -1,10 +1,10 @@
 "use client"
 
 import { useState, useMemo, useCallback, useEffect } from "react"
-import { useParams, useSearchParams } from "next/navigation"
-import Link from "next/link"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
+import IosButton from "@/components/ui/IosButton"
 import { useApiGet } from "@/lib/api/client"
 import { useCrumb } from "@/lib/contexts/breadcrumb"
 import { getRemarkColor, departmentLabel, findAttentionRubrics, type FacultyAggregate, type DepartmentAggregate } from "@/lib/evaluation-utils"
@@ -45,6 +45,7 @@ interface DepartmentInfo {
 
 export default function DepartmentDetailPage() {
   const params = useParams()
+  const router = useRouter()
   const searchParams = useSearchParams()
   const departmentId = params.departmentId as string
   const evaluationPeriodId = searchParams.get("evaluationPeriodId") || searchParams.get("semesterId") || ""
@@ -146,12 +147,13 @@ export default function DepartmentDetailPage() {
   return (
     <div className="w-full space-y-6 pb-12">
       <div>
-        <Link
-          href={`/admin/evaluations/results?evaluationPeriodId=${encodeURIComponent(evaluationPeriodId)}`}
-          className="text-xs text-amber-600 hover:underline"
+        <IosButton
+          variant="plain"
+          size="xs"
+          onClick={() => router.push(`/admin/evaluations/results?evaluationPeriodId=${encodeURIComponent(evaluationPeriodId)}`)}
         >
-          &larr; Back to Evaluation Results
-        </Link>
+          &larr; Back to Evaluation Results Page
+        </IosButton>
         <h1 className="text-2xl font-bold text-primary mt-2">
           {loading ? (
             <Skeleton variant="text" className="inline-block w-48 h-7 align-middle" />

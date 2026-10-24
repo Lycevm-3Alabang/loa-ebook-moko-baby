@@ -452,8 +452,6 @@ export interface IStudentEnrollmentRepository {
   listByFacultySubject(facultySubjectId: string, semesterId?: string): Promise<StudentEnrollmentWithEmbeds[]>
   /** One roster read for the coverage card and its Details modal. */
   listRosterByFacultySubjectIds(facultySubjectIds: string[], semesterId?: string): Promise<Map<string, RosterStudent[]>>
-  /** @deprecated Slice-1 shim — removed when the service switches to the roster read. */
-  listStudentIdsByFacultySubjectIds(facultySubjectIds: string[], semesterId?: string): Promise<Map<string, string[]>>
   countBySemesterId(semesterId: string): Promise<number>
   countByFacultySubjectId(facultySubjectId: string, semesterId?: string): Promise<number>
   getFacultySubjectsByStudent(student_id: string, faculty_id: string, semesterId: string): Promise<{ id: string; code: string; title: string }[]>
