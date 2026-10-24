@@ -5,8 +5,8 @@ repo: D:\loa\e-consultation-worktrees\regie-worktree
 calibration: {1: "A", 2: "A", 3: "A", 4: "A", 5: "A", 6: "A"}
 workflow: "A — SCAN → VISUAL → APPROVE → BUILD"
 decision: "One roster read + one classifier: the card's enrolled and four buckets are the lengths of the same lists the modal renders. Cache key v2 retires pre-fix snapshots."
-status: implementing
-pending: "slice-2"
+status: done
+pending:
 ---
 
 # Plan
@@ -21,10 +21,13 @@ pending: "slice-2"
 | P3 | Run implement-fix with this file? | A — Yes |
 | P4 | Who implements? | B — Code it |
 | S1 | Apply slice 1 (one roster read)? | Applied — `RosterStudent` + `listRosterByFacultySubjectIds`; old id-only method delegates. |
+| S2 | Apply slice 2 (one classifier)? | Applied — `classifyRoster` serves both the snapshot and Details. |
+| S3 | Apply slice 3 (cache key v2)? | Applied — snapshot and refresh keys carry `v2`. |
+| S4 | Apply slice 4 (parity proof + cleanup)? | Applied — parity test added, doubles converted to the roster read, id-only shim removed. |
 
 ## Pending
 
-- Slice 2: one classifier (service).
+- None — all four slices applied. Run `npm test` and the owner gate.
 
 ## Decisions
 

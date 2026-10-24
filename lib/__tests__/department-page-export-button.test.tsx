@@ -7,11 +7,12 @@ const mockDownloadFromApi = vi.hoisted(() => vi.fn())
 const mockDispatchToast = vi.hoisted(() => vi.fn())
 const mockUseParams = vi.hoisted(() => vi.fn())
 const mockUseSearchParams = vi.hoisted(() => vi.fn())
+const mockRouterPush = vi.hoisted(() => vi.fn())
 
 vi.mock("next/navigation", () => ({
   useParams: () => mockUseParams(),
   useSearchParams: () => mockUseSearchParams(),
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: mockRouterPush, replace: vi.fn() }),
 }))
 
 vi.mock("@/lib/api/client", () => ({
@@ -27,6 +28,7 @@ vi.mock("@/lib/contexts/breadcrumb", () => ({
 
 import AdminDepartmentDetailPage from "@/app/admin/evaluations/results/[departmentId]/page"
 import DeanDepartmentDetailPage from "@/app/dean/evaluations/results/[departmentId]/page"
+import GroupDetailPage from "@/app/admin/evaluations/results/[departmentId]/[facultySubjectId]/page"
 
 const DEPT = { id: "d1", name: "College of Computer Studies", code: "CCS" }
 const AGGREGATE = {
@@ -80,6 +82,7 @@ describe("Department Results Page - Excel Export integration", () => {
       const facultyCheckbox = screen.getByRole("checkbox", { 
         name: /Include Doe, John in the export/i 
       })
+
       fireEvent.change(facultyCheckbox, { target: { checked: true } })
       
       // Wait for the ZIP button to be enabled (disabled={false} renders disabled="")
@@ -102,6 +105,51 @@ describe("Department Results Page - Excel Export integration", () => {
       render(<AdminDepartmentDetailPage />)
       
       expect(screen.queryByRole("button", { name: /download excel \(zip\)/i })).toBeNull()
+    })
+  })
+
+  describe("Faculty subject results navigation", () => {
+    it("uses the plain small link style to return to Evaluation Results", () => {
+      mockUseParams.mockReturnValue({ departmentId: "d1", facultySubjectId: "fs1" })
+      mockUseApiGet.mockReturnValue({
+        data: {
+          department: DEPT,
+          faculty: { id: "f1", name: "John Doe", email: "john@example.com" },
+          subject: { id: "s1", code: "IT101", name: "Intro" },
+          sectionProgram: "BSIT",
+          sectionName: "1A",
+          summary: {
+            totalRespondents: 1,
+            avgRating: 4.5,
+            remarks: "Outstanding",
+            highestRubrics: [],
+            lowestRubrics: [],
+            sentimentScore: null,
+            professionalManner: null,
+            communicationWithStudent: null,
+            studentEngagement: null,
+            learningMaterials: null,
+            timeManagement: null,
+            experientialLearning: null,
+            respectUniqueness: null,
+            assessmentAndFeedback: null,
+          },
+          evaluations: [],
+        },
+        error: undefined,
+        isLoading: false,
+      })
+
+      render(<GroupDetailPage />)
+
+      const backButton = screen.getByRole("button", { name: "← Back to College of Computer Studies Evaluation Results" })
+      expect(backButton.className).toContain("btn-ios-plain")
+      expect(backButton.className).toContain("ios-btn-xs")
+
+      fireEvent.click(backButton)
+      expect(mockRouterPush).toHaveBeenCalledWith(
+        "/admin/evaluations/results/d1?evaluationPeriodId=p1",
+      )
     })
   })
 

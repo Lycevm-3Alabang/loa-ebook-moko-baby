@@ -354,14 +354,6 @@ export const studentEnrollmentRepository: IStudentEnrollmentRepository = {
     return readRoster(facultySubjectIds, semesterId)
   },
 
-  /** @deprecated Slice-1 shim — removed when the service switches to the roster read. */
-  async listStudentIdsByFacultySubjectIds(facultySubjectIds: string[], semesterId?: string) {
-    const roster = await readRoster(facultySubjectIds, semesterId)
-    const ids = new Map<string, string[]>()
-    for (const [fsId, students] of roster) ids.set(fsId, students.map((student) => student.id))
-    return ids
-  },
-
   async countByFacultySubjectId(facultySubjectId: string, semesterId?: string) {
     let q = supabase
       .from("student_enrollments")

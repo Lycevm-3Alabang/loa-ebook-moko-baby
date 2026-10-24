@@ -11,7 +11,7 @@ import {
 } from "@/lib/repositories/factory"
 import { resolveSectionDepartment, resolveSubjectDepartment, UNASSIGNED_FACULTY_EMAIL } from "@/lib/evaluation-utils"
 import { getFacultyCountsByDepartment } from "@/features/users/users.service"
-import type { EvaluationStatusItem } from "@/lib/types"
+import type { EvaluationStatusItem, RosterStudent } from "@/lib/types"
 import { STATUS_ON_TRACK_PCT } from "./constants"
 
 export interface SubjectStatusRow {
@@ -96,6 +96,40 @@ function bucketOf(rows: EvaluationStatusItem[] | undefined): Bucket {
   return "notParticipated"
 }
 
+/**
+ * The only tally. Given the roster and that section's evaluation rows, each
+ * student lands in exactly one bucket. The coverage card counts these lists and
+ * the Details modal renders them, so the two surfaces cannot disagree.
+ */
+function classifyRoster(
+  roster: RosterStudent[],
+  statusRows: EvaluationStatusItem[],
+): Record<Bucket, StatusStudent[]> {
+  const byEvaluator = new Map<string, EvaluationStatusItem[]>()
+  for (const row of statusRows) {
+    if (!byEvaluator.has(row.evaluatorId)) byEvaluator.set(row.evaluatorId, [])
+    byEvaluator.get(row.evaluatorId)!.push(row)
+  }
+
+  const lists: Record<Bucket, StatusStudent[]> = {
+    participated: [],
+    disputed: [],
+    inProgress: [],
+    notParticipated: [],
+  }
+  const seen = new Set<string>()
+  for (const student of roster) {
+    if (seen.has(student.id)) continue
+    seen.add(student.id)
+    lists[bucketOf(byEvaluator.get(student.id))].push({
+      id: student.id,
+      name: student.name,
+      email: student.email,
+    })
+  }
+  return lists
+}
+
 export async function getEvaluationStatusDetail(
   evaluationPeriodId: string,
   facultySubjectId: string,
@@ -104,38 +138,19 @@ export async function getEvaluationStatusDetail(
   if (!period) throw new Error("Evaluation period not found")
   const semesterId = period.semesterId
 
-  const [enrollments, evalRows] = await Promise.all([
-    studentEnrollmentRepository.listByFacultySubject(facultySubjectId, semesterId ?? undefined),
+  const [rosterByFs, evalRows] = await Promise.all([
+    studentEnrollmentRepository.listRosterByFacultySubjectIds([facultySubjectId], semesterId ?? undefined),
     evaluationRepository.listStatusByPeriodAndFacultySubjectIds(evaluationPeriodId, [facultySubjectId]),
   ])
 
-  const byEvaluator = new Map<string, typeof evalRows>()
-  for (const e of evalRows) {
-    if (!byEvaluator.has(e.evaluatorId)) byEvaluator.set(e.evaluatorId, [])
-    byEvaluator.get(e.evaluatorId)!.push(e)
+  const lists = classifyRoster(rosterByFs.get(facultySubjectId) ?? [], evalRows)
+  return {
+    facultySubjectId,
+    participated: lists.participated,
+    notParticipated: lists.notParticipated,
+    disputed: lists.disputed,
+    inProgress: lists.inProgress,
   }
-
-  const participated: StatusStudent[] = []
-  const notParticipated: StatusStudent[] = []
-  const disputed: StatusStudent[] = []
-  const inProgress: StatusStudent[] = []
-  const seenStudents = new Set<string>()
-
-  for (const enr of enrollments) {
-    const student = enr.student
-    if (!student || seenStudents.has(student.id)) continue
-    seenStudents.add(student.id)
-    const rows = byEvaluator.get(student.id) ?? []
-    const entry: StatusStudent = { id: student.id, name: student.name, email: student.email }
-    const bucket = bucketOf(rows)
-
-    if (bucket === "participated") participated.push(entry)
-    else if (bucket === "disputed") disputed.push(entry)
-    else if (bucket === "inProgress") inProgress.push(entry)
-    else notParticipated.push(entry)
-  }
-
-  return { facultySubjectId, participated, notParticipated, disputed, inProgress }
 }
 
 function pctOf(submitted: number, expected: number): number | null {
@@ -164,11 +179,11 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
   const fsIds = mappings.map((m) => m.id)
   const facultyIds = [...new Set(mappings.map((m) => m.faculty_id))]
 
-  const [submittedCounts, expectedByFs, subjects, enrolledByFs, statusRows, facUsers, subjectCtx, allSections, facultyCounts] = await Promise.all([
+  const [submittedCounts, expectedByFs, subjects, rosterByFs, statusRows, facUsers, subjectCtx, allSections, facultyCounts] = await Promise.all([
     evaluationRepository.countSubmittedByFacultySubjectIds(evaluationPeriodId, fsIds),
     studentEnrollmentRepository.countByFacultySubjectIdsPaged(fsIds, semesterId),
     subjectRepository.findByIds([...new Set(mappings.map((m) => m.subject_id))]),
-    studentEnrollmentRepository.listStudentIdsByFacultySubjectIds(fsIds, semesterId ?? undefined),
+    studentEnrollmentRepository.listRosterByFacultySubjectIds(fsIds, semesterId ?? undefined),
     evaluationRepository.listStatusByPeriodAndFacultySubjectIds(evaluationPeriodId, fsIds),
     userRepository.listByIds(facultyIds, { includeDeleted: true }),
     evaluationResultRepository.buildSubjectContext(mappings),
@@ -206,13 +221,12 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     coverageDeptOf.set(m.id, resolveSubjectDepartment(m, subjectCtx))
   }
 
-  // Index eval status rows by (facultySubjectId, evaluatorId)
-  const statusByKey = new Map<string, EvaluationStatusItem[]>()
+  // Index eval status rows by faculty-subject for the shared classifier.
+  const statusByFs = new Map<string, EvaluationStatusItem[]>()
   for (const r of statusRows) {
     if (!r.facultySubjectId) continue
-    const key = `${r.facultySubjectId}|${r.evaluatorId}`
-    if (!statusByKey.has(key)) statusByKey.set(key, [])
-    statusByKey.get(key)!.push(r)
+    if (!statusByFs.has(r.facultySubjectId)) statusByFs.set(r.facultySubjectId, [])
+    statusByFs.get(r.facultySubjectId)!.push(r)
   }
 
   // Per-subject bucket counts + enrolled student id set
@@ -227,25 +241,22 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
   }
   const aggByFs = new Map<string, SubjectAgg>()
   for (const fsId of fsIds) {
-    const ids = enrolledByFs.get(fsId) ?? []
-    const bucketed: Record<Bucket, Set<string>> = {
-      participated: new Set(),
-      disputed: new Set(),
-      inProgress: new Set(),
-      notParticipated: new Set(),
-    }
-    for (const sid of ids) {
-      const b = bucketOf(statusByKey.get(`${fsId}|${sid}`))
-      bucketed[b].add(sid)
-    }
+    const roster = rosterByFs.get(fsId) ?? []
+    const lists = classifyRoster(roster, statusByFs.get(fsId) ?? [])
+    const studentIds = new Set(roster.map((student) => student.id))
     aggByFs.set(fsId, {
-      enrolled: ids.length,
-      participated: bucketed.participated.size,
-      disputed: bucketed.disputed.size,
-      inProgress: bucketed.inProgress.size,
-      notParticipated: bucketed.notParticipated.size,
-      studentIds: new Set(ids),
-      bucketed,
+      enrolled: studentIds.size,
+      participated: lists.participated.length,
+      disputed: lists.disputed.length,
+      inProgress: lists.inProgress.length,
+      notParticipated: lists.notParticipated.length,
+      studentIds,
+      bucketed: {
+        participated: new Set(lists.participated.map((student) => student.id)),
+        disputed: new Set(lists.disputed.map((student) => student.id)),
+        inProgress: new Set(lists.inProgress.map((student) => student.id)),
+        notParticipated: new Set(lists.notParticipated.map((student) => student.id)),
+      },
     })
   }
 

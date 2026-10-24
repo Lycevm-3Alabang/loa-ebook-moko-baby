@@ -51,39 +51,49 @@ describe("student enrollment status reads", () => {
     expect(secondChain.range).toHaveBeenCalledWith(1000, 1999)
   })
 
-  it("pages eligible student ids beyond the PostgREST row cap", async () => {
+  it("pages the shared roster read beyond the PostgREST row cap", async () => {
     const firstPage = Array.from({ length: 1000 }, (_, i) => ({
       id: `enr-${i}`,
       faculty_subject_id: "fs-1",
       student_id: `stu-${i}`,
-      student: { id: `stu-${i}` },
+      student: { id: `stu-${i}`, name: `Student ${i}`, email: `stu-${i}@x` },
     }))
-    const secondPage = [{ id: "enr-last", faculty_subject_id: "fs-1", student_id: "stu-last", student: { id: "stu-last" } }]
+    const secondPage = [{
+      id: "enr-last",
+      faculty_subject_id: "fs-1",
+      student_id: "stu-last",
+      student: { id: "stu-last", name: "Last", email: "last@x" },
+    }]
     const firstChain = chainable({ data: firstPage, error: null })
     const secondChain = chainable({ data: secondPage, error: null })
     mockSupabase.from.mockReturnValueOnce(firstChain).mockReturnValueOnce(secondChain)
 
-    const students = await studentEnrollmentRepository.listStudentIdsByFacultySubjectIds(["fs-1"], "sem-1")
+    const roster = await studentEnrollmentRepository.listRosterByFacultySubjectIds(["fs-1"], "sem-1")
 
-    expect(students.get("fs-1")).toHaveLength(1001)
+    expect(roster.get("fs-1")).toHaveLength(1001)
+    expect(roster.get("fs-1")?.[0]).toEqual({ id: "stu-0", name: "Student 0", email: "stu-0@x" })
+    expect(firstChain.select).toHaveBeenCalledWith(
+      "id, faculty_subject_id, student_id, student:student_id(id, name, email)",
+    )
     expect(firstChain.order).toHaveBeenCalledWith("id", { ascending: true })
     expect(firstChain.range).toHaveBeenCalledWith(0, 999)
     expect(secondChain.range).toHaveBeenCalledWith(1000, 1999)
   })
 
-  it("excludes enrollments without a student record, matching the Details roster", async () => {
+  it("skips enrollments without a student and returns each student once", async () => {
     const chain = chainable({
       data: [
-        { id: "enr-1", faculty_subject_id: "fs-1", student_id: "stu-1", student: { id: "stu-1" } },
-        { id: "enr-2", faculty_subject_id: "fs-1", student_id: "stu-2", student: null },
+        { id: "enr-1", faculty_subject_id: "fs-1", student_id: "stu-1", student: { id: "stu-1", name: "One", email: "one@x" } },
+        { id: "enr-2", faculty_subject_id: "fs-1", student_id: "stu-1", student: { id: "stu-1", name: "One", email: "one@x" } },
+        { id: "enr-3", faculty_subject_id: "fs-1", student_id: "stu-2", student: null },
       ],
       error: null,
     })
     mockSupabase.from.mockReturnValueOnce(chain)
 
-    const students = await studentEnrollmentRepository.listStudentIdsByFacultySubjectIds(["fs-1"])
+    const roster = await studentEnrollmentRepository.listRosterByFacultySubjectIds(["fs-1"])
 
-    expect(students.get("fs-1")).toEqual(["stu-1"])
+    expect(roster.get("fs-1")).toEqual([{ id: "stu-1", name: "One", email: "one@x" }])
   })
 })
 

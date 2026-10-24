@@ -93,13 +93,16 @@ function formatPct(v: number | null) {
 }
 
 const COVERAGE_CACHE_PREFIX = "evaluation-coverage-status"
+// Bump when the snapshot's meaning changes. v2: the counts come from the shared
+// roster read, so a v1 snapshot (id-only tally) must never be served.
+const COVERAGE_CACHE_VERSION = 2
 
 function getCoverageCacheKey(periodId: string, scopeKey: string) {
-  return `${COVERAGE_CACHE_PREFIX}:${scopeKey}:${periodId}`
+  return `${COVERAGE_CACHE_PREFIX}:v${COVERAGE_CACHE_VERSION}:${scopeKey}:${periodId}`
 }
 
 function getLastManualRefreshKey(periodId: string, scopeKey: string) {
-  return `${COVERAGE_CACHE_PREFIX}:last-manual-refresh:${scopeKey}:${periodId}`
+  return `${COVERAGE_CACHE_PREFIX}:v${COVERAGE_CACHE_VERSION}:last-manual-refresh:${scopeKey}:${periodId}`
 }
 
 function readCoverageCache(periodId: string, scopeKey: string) {

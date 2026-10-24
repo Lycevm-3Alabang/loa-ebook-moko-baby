@@ -45,3 +45,30 @@ Focused tests were added for the controls, count buckets, paging, missing
 aggregates, and live Details separation. VS Code diagnostics report no errors
 in edited TypeScript files. The owner validation gate in `TODO.md` remains
 pending; do not rerun or expand the investigation before that gate is run.
+
+## Zero-row parity fix — 2026-10-24
+
+The zero-row mismatch came from two leftovers: the snapshot's id-only bulk
+read (`listStudentIdsByFacultySubjectIds`) and the versionless localStorage
+key that kept serving its pre-fix snapshot. Both surfaces now use one roster
+read (`listRosterByFacultySubjectIds`: `id, faculty_subject_id, student_id,
+student:student_id(id, name, email)`, 100-id chunks, `order("id")` and
+1,000-row pages, per-section dedupe) and one tally (`classifyRoster`). The
+card's enrolled/bucket numbers are the lengths of the same lists the Details
+modal renders. The coverage cache key carries `v2`, so a pre-fix snapshot is a
+miss. `evaluation-status-parity.test.ts` asserts the two surfaces agree,
+including a duplicate-roster/conflicting-rows case; the id-only shim is gone.
+
+Gate (2026-10-24): `npx tsc --noEmit` and `npm run lint` pass; `npx vitest run`
+reports 1 failed / 862 passed / 1 skipped. The failure is unrelated to this
+fix: `lib/__tests__/department-page-export-button.test.tsx:145` expects the
+button name `← Back to Evaluation Results`, while
+`app/admin/evaluations/results/[departmentId]/[facultySubjectId]/page.tsx:174`
+renders `← Back to {departmentName} Evaluation Results` — the intentional
+label change recorded in `evaluation-results-cache-handover.md`. Fix the test
+expectation to the department-specific name, rerun the gate, then commit. No
+commit was made.
+
+The “test adapters” note in `evaluation-results-cache-handover.md` is
+superseded: the service tests now mock `listRosterByFacultySubjectIds`
+directly.

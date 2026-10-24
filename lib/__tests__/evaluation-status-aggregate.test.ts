@@ -9,7 +9,7 @@ const mockEvalRepo = vi.hoisted(() => ({
 }))
 const mockEnrollmentRepo = vi.hoisted(() => ({
   countByFacultySubjectIdsPaged: vi.fn(),
-  listStudentIdsByFacultySubjectIds: vi.fn(),
+  listRosterByFacultySubjectIds: vi.fn(),
 }))
 const mockSubjectRepo = vi.hoisted(() => ({ findByIds: vi.fn() }))
 const mockSectionRepo = vi.hoisted(() => ({ list: vi.fn() }))
@@ -42,6 +42,8 @@ const st = (evaluatorId: string, status: "DRAFT" | "SUBMITTED" | "INVALID", isDi
   facultySubjectId: fsId,
 })
 
+const roster = (...ids: string[]) => ids.map((id) => ({ id, name: id, email: `${id}@x` }))
+
 beforeEach(() => {
   vi.resetAllMocks()
   mockEvalPeriodRepo.findById.mockResolvedValue({ id: "p1", semesterId: "s1" })
@@ -69,7 +71,7 @@ beforeEach(() => {
   mockEvalRepo.countSubmittedByFacultySubjectIds.mockResolvedValue({})
   mockEnrollmentRepo.countByFacultySubjectIdsPaged.mockResolvedValue({})
   mockEvalRepo.listStatusByPeriodAndFacultySubjectIds.mockResolvedValue([])
-  mockEnrollmentRepo.listStudentIdsByFacultySubjectIds.mockResolvedValue(new Map())
+  mockEnrollmentRepo.listRosterByFacultySubjectIds.mockResolvedValue(new Map())
 })
 
 describe("getEvaluationStatus — new bucket fields", () => {
@@ -86,8 +88,8 @@ describe("getEvaluationStatus — new bucket fields", () => {
       { id: "fs2", faculty_id: "f1", subject_id: "sub1", section_id: "sec2", semesterId: "s1" },
     ])
     mockEnrollmentRepo.countByFacultySubjectIdsPaged.mockResolvedValue({ fs1: 10, fs2: 10 })
-    mockEnrollmentRepo.listStudentIdsByFacultySubjectIds.mockResolvedValue(
-      new Map([["fs1", ["s1", "s2"]], ["fs2", ["s2", "s3"]]]),
+    mockEnrollmentRepo.listRosterByFacultySubjectIds.mockResolvedValue(
+      new Map([["fs1", roster("s1", "s2")], ["fs2", roster("s2", "s3")]]),
     )
     mockEvalRepo.countSubmittedByFacultySubjectIds.mockResolvedValue({ fs1: 1, fs2: 1 })
     mockEvalRepo.listStatusByPeriodAndFacultySubjectIds.mockResolvedValue([
@@ -110,7 +112,7 @@ describe("getEvaluationStatus — new bucket fields", () => {
       { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec1", semesterId: "s1" },
     ])
     mockEnrollmentRepo.countByFacultySubjectIdsPaged.mockResolvedValue({ fs1: 4 })
-    mockEnrollmentRepo.listStudentIdsByFacultySubjectIds.mockResolvedValue(new Map([["fs1", ["a", "b", "c", "d"]]]))
+    mockEnrollmentRepo.listRosterByFacultySubjectIds.mockResolvedValue(new Map([["fs1", roster("a", "b", "c", "d")]]))
     mockEvalRepo.countSubmittedByFacultySubjectIds.mockResolvedValue({ fs1: 1 })
     mockEvalRepo.listStatusByPeriodAndFacultySubjectIds.mockResolvedValue([
       st("a", "SUBMITTED"),
@@ -141,7 +143,7 @@ describe("getEvaluationStatus — new bucket fields", () => {
       { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec1", semesterId: "s1" },
     ])
     mockEnrollmentRepo.countByFacultySubjectIdsPaged.mockResolvedValue({ fs1: 1 })
-    mockEnrollmentRepo.listStudentIdsByFacultySubjectIds.mockResolvedValue(new Map([["fs1", ["a"]]]))
+    mockEnrollmentRepo.listRosterByFacultySubjectIds.mockResolvedValue(new Map([["fs1", roster("a")]]))
     mockEvalRepo.listStatusByPeriodAndFacultySubjectIds.mockResolvedValue([st("a", "SUBMITTED", true)])
 
     const res = await getEvaluationStatus("p1")
@@ -154,7 +156,7 @@ describe("getEvaluationStatus — new bucket fields", () => {
       { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec1", semesterId: "s1" },
     ])
     mockEnrollmentRepo.countByFacultySubjectIdsPaged.mockResolvedValue({ fs1: 1 })
-    mockEnrollmentRepo.listStudentIdsByFacultySubjectIds.mockResolvedValue(new Map([["fs1", ["a"]]]))
+    mockEnrollmentRepo.listRosterByFacultySubjectIds.mockResolvedValue(new Map([["fs1", roster("a")]]))
     mockEvalRepo.listStatusByPeriodAndFacultySubjectIds.mockResolvedValue([
       st("a", "INVALID", true, "fs1"),
       { ...st("a", "SUBMITTED", false, "fs1"), id: "e2" },
@@ -170,7 +172,7 @@ describe("getEvaluationStatus — new bucket fields", () => {
       { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec1", semesterId: "s1" },
     ])
     mockEnrollmentRepo.countByFacultySubjectIdsPaged.mockResolvedValue({ fs1: 20 })
-    mockEnrollmentRepo.listStudentIdsByFacultySubjectIds.mockResolvedValue(new Map([["fs1", ["a", "b"]]]))
+    mockEnrollmentRepo.listRosterByFacultySubjectIds.mockResolvedValue(new Map([["fs1", roster("a", "b")]]))
     mockEvalRepo.countSubmittedByFacultySubjectIds.mockResolvedValue({ fs1: 5 })
 
     const res = await getEvaluationStatus("p1")
@@ -205,7 +207,7 @@ describe("getEvaluationStatus — new bucket fields", () => {
       { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec1", semesterId: "s1" },
       { id: "fs2", faculty_id: "f1", subject_id: "sub2", section_id: "sec2", semesterId: "s1" },
     ])
-    mockEnrollmentRepo.listStudentIdsByFacultySubjectIds.mockResolvedValue(new Map())
+    mockEnrollmentRepo.listRosterByFacultySubjectIds.mockResolvedValue(new Map())
 
     const res = await getEvaluationStatus("p1", "IT102")
     expect(res.subjects).toHaveLength(1)
@@ -418,8 +420,8 @@ describe("getEvaluationStatus — new bucket fields", () => {
       departmentCourses: new Map([["dc1", "d1"]]),
     })
     // The SAME two students are enrolled in both of the teacher's sections.
-    mockEnrollmentRepo.listStudentIdsByFacultySubjectIds.mockResolvedValue(
-      new Map([["fs1", ["s1", "s2"]], ["fs2", ["s1", "s2"]]]),
+    mockEnrollmentRepo.listRosterByFacultySubjectIds.mockResolvedValue(
+      new Map([["fs1", roster("s1", "s2")], ["fs2", roster("s1", "s2")]]),
     )
     mockEvalRepo.listStatusByPeriodAndFacultySubjectIds.mockResolvedValue([
       st("s1", "SUBMITTED", false, "fs1"), st("s2", "SUBMITTED", false, "fs1"),
@@ -439,8 +441,8 @@ describe("getEvaluationStatus — new bucket fields", () => {
       { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec1", semesterId: "s1" },
       { id: "fs2", faculty_id: "f1", subject_id: "sub1", section_id: "sec2", semesterId: "s1" },
     ])
-    mockEnrollmentRepo.listStudentIdsByFacultySubjectIds.mockResolvedValue(
-      new Map([["fs1", ["s1"]], ["fs2", ["s1"]]]),
+    mockEnrollmentRepo.listRosterByFacultySubjectIds.mockResolvedValue(
+      new Map([["fs1", roster("s1")], ["fs2", roster("s1")]]),
     )
     mockEvalRepo.listStatusByPeriodAndFacultySubjectIds.mockResolvedValue([
       st("s1", "SUBMITTED", false, "fs1"),
@@ -495,8 +497,8 @@ describe("getEvaluationStatus — new bucket fields", () => {
       sections: new Map([["sec-cs", "dc-cs"], ["sec-math", "dc-math"]]),
       departmentCourses: new Map([["dc-cs", "d1"], ["dc-math", "d2"]]),
     })
-    mockEnrollmentRepo.listStudentIdsByFacultySubjectIds.mockResolvedValue(
-      new Map([["fs1", ["s1"]], ["fs2", ["s2"]], ["fs3", ["s3"]]]),
+    mockEnrollmentRepo.listRosterByFacultySubjectIds.mockResolvedValue(
+      new Map([["fs1", roster("s1")], ["fs2", roster("s2")], ["fs3", roster("s3")]]),
     )
     mockEvalRepo.listStatusByPeriodAndFacultySubjectIds.mockResolvedValue([
       st("s1", "SUBMITTED", false, "fs1"),

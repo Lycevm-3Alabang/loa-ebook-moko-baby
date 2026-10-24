@@ -88,7 +88,7 @@ afterEach(() => {
 
 describe("CoveragePage status cache", () => {
   it("uses the current period and scope cache without requesting the status endpoint", async () => {
-    const key = "evaluation-coverage-status:/api/admin/evaluation-status:p1"
+    const key = "evaluation-coverage-status:v2:/api/admin/evaluation-status:p1"
     window.localStorage.setItem(key, JSON.stringify(payload))
 
     render(<CoveragePage statusBase="/api/admin/evaluation-status" />)
@@ -105,7 +105,7 @@ describe("CoveragePage status cache", () => {
   })
 
   it("keeps the last cached snapshot when a manual refresh fails", async () => {
-    const key = "evaluation-coverage-status:/api/admin/evaluation-status:p1"
+    const key = "evaluation-coverage-status:v2:/api/admin/evaluation-status:p1"
     window.localStorage.setItem(key, JSON.stringify(payload))
     mockFetcher.mockRejectedValueOnce(new Error("refresh failed"))
 
@@ -172,7 +172,7 @@ describe("CoveragePage faculty-only drill-down", () => {
         },
       },
     }
-    const cacheKey = "evaluation-coverage-status:department:d1:p1"
+    const cacheKey = "evaluation-coverage-status:v2:department:d1:p1"
     window.localStorage.setItem(cacheKey, JSON.stringify(departmentPayload))
 
     const { container } = render(<CoveragePage statusBase="/api/admin/evaluation-status" departmentId="d1" />)
@@ -222,7 +222,7 @@ describe("CoveragePage faculty-only drill-down", () => {
       },
     }
     window.localStorage.setItem(
-      "evaluation-coverage-status:department:d1:p1",
+      "evaluation-coverage-status:v2:department:d1:p1",
       JSON.stringify(departmentPayload),
     )
 
@@ -248,7 +248,7 @@ describe("CoveragePage faculty-only drill-down", () => {
 
   it("surfaces missing faculty aggregates instead of omitting faculty or showing zero counts", async () => {
     window.localStorage.setItem(
-      "evaluation-coverage-status:department:d1:p1",
+      "evaluation-coverage-status:v2:department:d1:p1",
       JSON.stringify({ ...payload, facultyAggregates: undefined }),
     )
 
@@ -262,7 +262,7 @@ describe("CoveragePage faculty-only drill-down", () => {
 
   it("keeps subject Details as a live request separate from the cached status snapshot", async () => {
     window.localStorage.setItem(
-      "evaluation-coverage-status:department:d1:p1",
+      "evaluation-coverage-status:v2:department:d1:p1",
       JSON.stringify(payload),
     )
     const fetchMock = vi.fn().mockResolvedValue({

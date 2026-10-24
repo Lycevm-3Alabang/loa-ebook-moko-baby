@@ -175,3 +175,33 @@ faculty values therefore yield `4.465`, displayed as `4.47`. Shared utility,
 service, repository, ZIP expectation, cache-version, and spec updates are
 complete. VS Code diagnostics report no errors in edited code and tests; tests
 have not been run. The owner validation gates in `TODO.md` remain.
+
+## Faculty subject back-link styling — 2026-10-24
+
+The faculty-subject results page now renders “Back to Evaluation Results” as
+an actual `IosButton` with `variant="plain"` and `size="xs"`, matching
+CoveragePage's “Back to departments” button. It uses client-side navigation to
+the department results and retains the evaluation-period query. The focused
+test asserts button semantics, design classes, and the router destination.
+Tests have not been run.
+
+## Test fixture updates — 2026-10-24
+
+The owner's test run reported 27 failures. The coverage aggregate and detail
+tests still mocked the older enrollment repository methods, while the service
+now reads rosters through `listRosterByFacultySubjectIds`; test adapters now
+translate the legacy fixture data into the roster map shape. The faculty
+subject page test fixture was also missing the eight nullable rubric-category
+scores accessed by `formatScore`, causing `toFixed` to be called on
+`undefined`; those fields are now present. VS Code diagnostics report no
+errors in the three edited test files. Focused tests have not been run; the
+owner should run the three affected test files before the broader validation
+gate in `TODO.md`.
+
+## Results navigation labels — 2026-10-24
+
+The department results page's plain button now reads “Back to Evaluation
+Results Page.” The faculty-subject detail page's matching button now reads
+“Back to {Department Name} Evaluation Results,” using the loaded department
+name (or “Department” when unavailable). VS Code diagnostics report no errors
+in either page. Tests have not been run.
