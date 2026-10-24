@@ -2,7 +2,12 @@ import { NextResponse } from "next/server"
 import { logServerError } from "@/lib/services/audit"
 import { auth } from "@/lib/auth"
 import { hasRole } from "@/lib/utils/roles"
-import { submitEvaluation, getEvaluationIfOwner, isDummyAssignment } from "@/features/evaluations/evaluations.service"
+import {
+  submitEvaluation,
+  getEvaluationComment,
+  getEvaluationIfOwner,
+  isDummyAssignment,
+} from "@/features/evaluations/evaluations.service"
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
@@ -18,6 +23,13 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     // against one of its classes must never be submitted.
     if (evaluation.facultySubjectId && (await isDummyAssignment(evaluation.facultySubjectId))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+    const comment = await getEvaluationComment(id)
+    if (!comment?.comment.trim()) {
+      return NextResponse.json(
+        { error: "A comment is required before submitting an evaluation." },
+        { status: 400 },
+      )
     }
     const submitted = await submitEvaluation(id)
     return NextResponse.json({ evaluation: submitted })

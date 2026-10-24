@@ -7,6 +7,7 @@ const mockGetOrCreateEvaluation = vi.hoisted(() => vi.fn())
 const mockGetEvaluation = vi.hoisted(() => vi.fn())
 const mockGetEvaluationIfOwner = vi.hoisted(() => vi.fn())
 const mockSubmitEvaluation = vi.hoisted(() => vi.fn())
+const mockGetEvaluationComment = vi.hoisted(() => vi.fn())
 const mockGetActiveEvaluationPeriod = vi.hoisted(() => vi.fn())
 const mockUserRepo = vi.hoisted(() => ({ findById: vi.fn() }))
 const mockFsRepo = vi.hoisted(() => ({ findById: vi.fn() }))
@@ -26,7 +27,7 @@ vi.mock("@/features/evaluations/evaluations.service", () => ({
   submitEvaluation: mockSubmitEvaluation,
   isDummyAssignment: mockIsDummyAssignment,
   getEvaluationRatings: vi.fn().mockResolvedValue([]),
-  getEvaluationComment: vi.fn().mockResolvedValue(null),
+  getEvaluationComment: mockGetEvaluationComment,
   getMyEvaluations: vi.fn().mockResolvedValue([]),
 }))
 vi.mock("@/features/admin-data/evaluation-periods.service", () => ({
@@ -77,6 +78,7 @@ beforeEach(() => {
   mockGetEvaluation.mockResolvedValue(DRAFT)
   mockGetEvaluationIfOwner.mockResolvedValue(DRAFT)
   mockSubmitEvaluation.mockResolvedValue({ ...DRAFT, status: "SUBMITTED" })
+  mockGetEvaluationComment.mockResolvedValue({ comment: "A valid comment" })
   mockUserRepo.findById.mockResolvedValue({ id: "f-dummy", name: "Unassigned Faculty" })
   mockFsRepo.findById.mockResolvedValue({ id: "fs-dummy", subject_id: "sub1", section_id: "sec1" })
 })
@@ -114,6 +116,33 @@ describe("the shared dummy account is never an evaluated entity for a student", 
 
     expect(res.status).toBe(403)
     expect(mockSubmitEvaluation).not.toHaveBeenCalled()
+  })
+
+  it("refuses to submit when the required comment is missing or blank", async () => {
+    mockGetEvaluationComment.mockResolvedValueOnce(null).mockResolvedValueOnce({ comment: "   " })
+
+    const missingComment = await submitEvaluation(
+      new Request("http://localhost/api/evaluations/ev1/submit", { method: "POST" }) as never,
+      params("ev1"),
+    )
+    const blankComment = await submitEvaluation(
+      new Request("http://localhost/api/evaluations/ev1/submit", { method: "POST" }) as never,
+      params("ev1"),
+    )
+
+    expect(missingComment.status).toBe(400)
+    expect(blankComment.status).toBe(400)
+    expect(mockSubmitEvaluation).not.toHaveBeenCalled()
+  })
+
+  it("submits when a non-blank comment exists", async () => {
+    const res = await submitEvaluation(
+      new Request("http://localhost/api/evaluations/ev1/submit", { method: "POST" }) as never,
+      params("ev1"),
+    )
+
+    expect(res.status).toBe(200)
+    expect(mockSubmitEvaluation).toHaveBeenCalledWith("ev1")
   })
 
   it("still allows a normal assignment through", async () => {

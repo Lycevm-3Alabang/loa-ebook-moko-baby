@@ -238,6 +238,10 @@ export default function StandaloneEvaluationPage() {
 
   async function handleSubmit() {
     if (!evaluationId) return
+    if (!comment.trim()) {
+      setStep(FEEDBACK_STEP)
+      return
+    }
     setSubmitting(true)
     try {
       const ratingsArray = Object.entries(ratings).map(([itemId, rating]) => ({ itemId, rating }))
@@ -650,13 +654,22 @@ export default function StandaloneEvaluationPage() {
                   </div>
                   <div>
                     <h2 className="text-lg font-bold text-primary tracking-tight">Additional Feedback</h2>
-                    <p className="text-xs text-tertiary">Share your thoughts (optional)</p>
+                    <p className="text-xs text-tertiary">Share your thoughts about this evaluation</p>
                   </div>
                 </div>
+                {!comment.trim() && (
+                  <div
+                    role="alert"
+                    className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200"
+                  >
+                    A written comment is required before you can submit this evaluation.
+                  </div>
+                )}
                 <textarea
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
-                  placeholder="Write your feedback here..."
+                  placeholder="Write your required feedback here..."
+                  aria-label="Required evaluation comment"
                   className="w-full border border-default rounded-2xl px-4 py-3.5 text-sm text-primary placeholder:text-tertiary bg-surface-secondary focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 min-h-36 resize-none transition-all duration-200 mt-5"
                 />
               </div>
@@ -746,6 +759,14 @@ export default function StandaloneEvaluationPage() {
                   </button>
                 </div>
               </div>
+              {!comment.trim() && (
+                <div
+                  role="alert"
+                  className="mt-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200"
+                >
+                  Return to Additional Feedback and add a comment to enable submission.
+                </div>
+              )}
               <div className="flex items-center gap-3 mt-6 pt-4 border-t border-default">
                 <button
                   type="button"
@@ -757,7 +778,7 @@ export default function StandaloneEvaluationPage() {
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  disabled={submitting || !allAnswered || !pledgeAgreed}
+                  disabled={submitting || !allAnswered || !pledgeAgreed || !comment.trim()}
                   className="btn-ios-primary flex-1"
                 >
                   {submitting ? "Submitting..." : "Submit"}

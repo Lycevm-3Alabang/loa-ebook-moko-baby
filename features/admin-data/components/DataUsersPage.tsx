@@ -9,6 +9,7 @@ import ErrorBoundary from "@/components/ui/ErrorBoundary"
 import { useApiGet, invalidate } from "@/lib/api/client"
 import { hasRole } from "@/lib/utils/roles"
 import BulkUserImport from "@/features/users/components/bulk-import/BulkUserImport"
+import { isSeededAdmin } from "@/features/users/seeded-admin"
 import type { UserData, DepartmentData } from "@/lib/types"
 
 const PAGE_SIZES = [10, 25, 50, 100, 300]
@@ -87,6 +88,12 @@ export default function DataUsersPage() {
   const [createResult, setCreateResult] = useState<string | null>(null)
 
   const { data: adminData, isLoading, error: apiError } = useApiGet<{ users: UserData[]; departments: DepartmentData[] }>("/api/admin/users")
+  const hasOtherActiveAdmin = editUser
+    ? users.some((user) => user.id !== editUser.id && !user.isDisabled && hasRole(user.role, "ADMIN"))
+    : false
+  const cannotDisableLastSeededAdmin = Boolean(
+    editUser && isSeededAdmin(editUser) && !editUser.isDisabled && !hasOtherActiveAdmin,
+  )
 
   useEffect(() => {
     Promise.resolve().then(() => {
@@ -126,7 +133,13 @@ export default function DataUsersPage() {
         setUsers((prev) =>
           prev.map((u) => (u.id === userId ? { ...u, isDisabled: !currentStatus } : u))
         )
+        setEditUser((prev) => prev?.id === userId ? { ...prev, isDisabled: !currentStatus } : prev)
+      } else {
+        const response = await res.json().catch(() => null) as { error?: string } | null
+        setErrorMessage(response?.error || "Failed to update user status")
       }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to update user status")
     } finally {
       pendingRef.current = false
     }
@@ -602,7 +615,7 @@ export default function DataUsersPage() {
                   {paginated.map((u) => {
                     const userType = getUserType(u.role)
                     const grant = getGrant(u.role)
-                    const isDefaultAdmin = u.email === "admin@lyceumalabang.ph" || u.id === "a0000000-0000-0000-0000-000000000001"
+                    const isDefaultAdmin = isSeededAdmin(u)
 
                     return (
                       <tr key={u.id} >
@@ -741,7 +754,7 @@ export default function DataUsersPage() {
             {paginated.map((u) => {
               const userType = getUserType(u.role)
               const grant = getGrant(u.role)
-              const isDefaultAdmin = u.email === "admin@lyceumalabang.ph" || u.id === "a0000000-0000-0000-0000-000000000001"
+              const isDefaultAdmin = isSeededAdmin(u)
 
               return (
                 <div key={u.id} className="rounded-xl border border-default bg-surface p-3.5 space-y-2.5">
@@ -989,10 +1002,16 @@ export default function DataUsersPage() {
                   variant="plain"
                   size="xs"
                   className={editUser.isDisabled ? "!text-green-600 font-semibold" : "!text-red-500 font-semibold"}
+                  disabled={cannotDisableLastSeededAdmin}
                 >
                   {editUser.isDisabled ? "Enable" : "Disable"}
                 </IosButton>
               </div>
+              {cannotDisableLastSeededAdmin && (
+                <p className="text-[11px] text-amber-700">
+                  Add or enable another admin before disabling the seeded admin account.
+                </p>
+              )}
               {/* Hidden: Onboarding Reset not useful — handler kept for reference */}
               {false && (
               <div className="flex items-center justify-between">

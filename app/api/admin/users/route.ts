@@ -4,6 +4,8 @@ import { requireAdmin } from '@/lib/route-guard'
 import { userRepository, departmentRepository } from '@/lib/repositories/factory'
 import { bulkPreviewUsers, bulkUpsertUsers } from '@/features/users/users.service'
 import { logAuditEvent } from '@/lib/services/audit'
+import { hasRole } from '@/lib/utils/roles'
+import { isSeededAdmin } from '@/features/users/seeded-admin'
 
 function extractErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message
@@ -111,6 +113,23 @@ export async function PATCH(request: NextRequest) {
     const { userId, ...fields } = body
     if (!userId) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 })
+    }
+
+    if (fields.isDisabled === true) {
+      const target = await userRepository.findById(userId)
+      if (target && isSeededAdmin(target) && hasRole(target.role, "ADMIN") && !target.isDisabled) {
+        const admins = await userRepository.listByRole("ADMIN")
+        const anotherActiveAdminExists = admins.some(
+          (admin) => admin.id !== userId && !admin.isDisabled,
+        )
+
+        if (!anotherActiveAdminExists) {
+          return NextResponse.json(
+            { error: "Cannot disable the seeded admin unless another enabled admin account exists." },
+            { status: 409 },
+          )
+        }
+      }
     }
 
     const user = await userRepository.update(userId, fields)

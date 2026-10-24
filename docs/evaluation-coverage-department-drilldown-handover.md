@@ -36,3 +36,16 @@ Complete. No open work.
   both caused the zero-row/stale-snapshot defect.
 - The removed strip was redundant with the subject table's columns. Do not
   restore it.
+
+## Seeded admin disable safeguard — 2026-10-24
+
+The seeded admin can now be disabled only when a different enabled,
+non-deleted account has the ADMIN role. The admin users page disables the
+action and explains the requirement when no backup admin exists; the
+`PATCH /api/admin/users` route enforces the same rule server-side and returns
+HTTP 409 if it is not met. Re-enabling remains allowed. Focused route tests
+cover allowing/disallowing the transition, including a disabled backup admin.
+VS Code diagnostics report no errors in changed files; tests have not been
+run. Run
+`npx vitest run lib/__tests__/admin-users-seeded-admin.test.ts` in the owner
+validation workflow.
