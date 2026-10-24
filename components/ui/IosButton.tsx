@@ -4,6 +4,7 @@ import { useRef } from "react"
 
 interface IosButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean
+  allowRapidClick?: boolean
   variant?: "primary" | "tinted" | "success" | "destructive" | "gray" | "plain"
   size?: "xs" | "sm" | "md"
   // React 19 passes `ref` to function components as a regular prop, so this is
@@ -29,6 +30,7 @@ const sizeClasses = {
 export default function IosButton({
   children,
   loading = false,
+  allowRapidClick = false,
   disabled = false,
   variant = "primary",
   size = "md",
@@ -40,12 +42,14 @@ export default function IosButton({
   const clicked = useRef(false)
 
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (clicked.current || loading || disabled) {
+    if ((!allowRapidClick && clicked.current) || loading || disabled) {
       e.preventDefault()
       return
     }
-    clicked.current = true
-    setTimeout(() => { clicked.current = false }, 500)
+    if (!allowRapidClick) {
+      clicked.current = true
+      setTimeout(() => { clicked.current = false }, 500)
+    }
     onClick?.(e)
   }
 

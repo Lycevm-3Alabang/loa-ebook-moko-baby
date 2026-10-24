@@ -117,3 +117,33 @@ hundredth using half-up behavior, preserving `3.65`; this applies consistently
 to faculty and department summaries, UI, and exports. The averaging spec and
 focused helper/workbook tests now cover the corrected rule. VS Code diagnostics
 report no errors in the edited files; tests have not been run.
+
+## Coverage expand/collapse test fix — 2026-10-24
+
+The CoveragePage test found the `Details` controls still present immediately
+after clicking Collapse all. The handler now follows the action represented by
+the current button state while updating only visible faculty groups. The test
+waits for the resulting collapsed state and verifies the button returns to
+Expand all. VS Code diagnostics report no errors in the component or test;
+tests have not been run.
+
+## Follow-up investigation — 2026-10-24
+
+The owner's latest full test run still fails the Collapse all assertion.
+`queryByRole("button", { name: "Details" })` is invoked inside `waitFor`, but
+two matching Details buttons remain in the rendered output, so the assertion
+continues to fail rather than observing a collapsed state. This confirms the
+earlier wait-for adjustment did not fix the behavior. Lint passed and the
+other 84 test files passed (one skipped); the act warnings in the department
+export-button test are separate. No code change was made during this
+investigation. The collapse transition needs further targeted diagnosis.
+
+## Collapse all root cause and fix — 2026-10-24
+
+The failure was caused by the shared `IosButton` 500ms rapid-click guard, not
+the expanded-faculty state calculation. Expand all was immediately followed by
+Collapse all in the test (and could likewise happen in the UI), so the second
+click was suppressed. `IosButton` now accepts `allowRapidClick`; CoveragePage's
+Expand/Collapse all toggle opts into it, while other buttons retain the guard.
+VS Code diagnostics report no errors in the button, page, or focused test. The
+test has not been rerun.

@@ -241,7 +241,8 @@ describe("CoveragePage faculty-only drill-down", () => {
     fireEvent.click(screen.getByRole("button", { name: "Expand all" }))
     expect(screen.getAllByRole("button", { name: "Details" })).toHaveLength(2)
     fireEvent.click(screen.getByRole("button", { name: "Collapse all" }))
-    expect(screen.queryByRole("button", { name: "Details" })).toBeNull()
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Details" })).toBeNull())
+    expect(screen.getByRole("button", { name: "Expand all" })).toBeTruthy()
     expect(mockFetcher).not.toHaveBeenCalled()
   })
 

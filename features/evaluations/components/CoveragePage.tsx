@@ -424,13 +424,12 @@ export default function CoveragePage({
   }
 
   const toggleAllVisibleFaculty = () => {
+    const shouldExpand = !allVisibleFacultyExpanded
     setExpandedFaculty((current) => {
       const next = new Set(current)
-      const allExpanded =
-        sortedFacultyGroups.length > 0 && sortedFacultyGroups.every((group) => current.has(group.id))
       for (const group of sortedFacultyGroups) {
-        if (allExpanded) next.delete(group.id)
-        else next.add(group.id)
+        if (shouldExpand) next.add(group.id)
+        else next.delete(group.id)
       }
       return next
     })
@@ -672,7 +671,7 @@ export default function CoveragePage({
                   >
                     Name {facultySortDir === "asc" ? "↑" : "↓"}
                   </IosButton>
-                  <IosButton variant="gray" size="sm" onClick={toggleAllVisibleFaculty}>
+                  <IosButton variant="gray" size="sm" allowRapidClick onClick={toggleAllVisibleFaculty}>
                     {allVisibleFacultyExpanded ? "Collapse all" : "Expand all"}
                   </IosButton>
                 </div>
