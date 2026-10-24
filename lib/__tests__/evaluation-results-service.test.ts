@@ -70,10 +70,11 @@ beforeEach(() => {
 })
 
 describe("getDepartmentSubjectResults", () => {
-  it("averages the displayed subject rows for faculty and department summaries", async () => {
+  it("averages faculty scores equally for the department summary", async () => {
     mockEvalResultRepo.listDepartmentTeachingAssignments.mockResolvedValue([
       assignment({ id: "fs1", subject_id: "s1" }),
       assignment({ id: "fs2", subject_id: "s2" }),
+      assignment({ id: "fs3", faculty_id: "f2", subject_id: "s3" }),
     ])
     mockEvalResultRepo.listDepartmentResponseSet.mockResolvedValue(responseSet({
       evaluations: [
@@ -81,31 +82,40 @@ describe("getDepartmentSubjectResults", () => {
         { id: "e2", evaluateeId: "f1", facultySubjectId: "fs1" },
         { id: "e3", evaluateeId: "f1", facultySubjectId: "fs1" },
         { id: "e4", evaluateeId: "f1", facultySubjectId: "fs2" },
+        { id: "e5", evaluateeId: "f2", facultySubjectId: "fs3" },
       ],
-      assignments: [assignment({ id: "fs1" }), assignment({ id: "fs2", subject_id: "s2" })],
+      members: [member(), member({ id: "f2", name: "G" })],
+      assignments: [
+        assignment({ id: "fs1" }),
+        assignment({ id: "fs2", subject_id: "s2" }),
+        assignment({ id: "fs3", faculty_id: "f2", subject_id: "s3" }),
+      ],
     }))
     mockSubjectRepo.findByIds.mockResolvedValue([
       { id: "s1", code: "C1", name: "N1" },
       { id: "s2", code: "C2", name: "N2" },
+      { id: "s3", code: "C3", name: "N3" },
     ])
     mockEvalRepo.listRatingsByEvaluationIds.mockResolvedValue([
       { evaluationId: "e1", rating: 4, rubric_items: { categoryId: "c1", rubric_categories: { name: "Professional Manner" } } },
       { evaluationId: "e2", rating: 4, rubric_items: { categoryId: "c1", rubric_categories: { name: "Professional Manner" } } },
       { evaluationId: "e3", rating: 4, rubric_items: { categoryId: "c1", rubric_categories: { name: "Professional Manner" } } },
       { evaluationId: "e4", rating: 2, rubric_items: { categoryId: "c1", rubric_categories: { name: "Professional Manner" } } },
+      { evaluationId: "e5", rating: 5, rubric_items: { categoryId: "c1", rubric_categories: { name: "Professional Manner" } } },
     ])
 
     const { subjects, facultyAggregates, departmentAggregate } = await getDepartmentSubjectResults("p1", "d1")
 
-    expect(subjects.map((s) => s.avgRating)).toEqual([4, 2])
-    // One subject has three responses and the other has one; each row still
-    // contributes equally to the summary.
+    expect(subjects.map((s) => s.avgRating)).toEqual([4, 2, 5])
+    // f1's two subject scores average to 3; f2's one score is 5. The
+    // department weights those two faculty scores equally.
     expect(facultyAggregates.f1.avgRating).toBe(3)
+    expect(facultyAggregates.f2.avgRating).toBe(5)
     expect(facultyAggregates.f1.totalRespondents).toBe(4)
-    expect(departmentAggregate?.totalSubjects).toBe(2)
-    expect(departmentAggregate?.uniqueFaculty).toBe(1)
-    expect(departmentAggregate?.totalResponses).toBe(4)
-    expect(departmentAggregate?.avgRating).toBe(3)
+    expect(departmentAggregate?.totalSubjects).toBe(3)
+    expect(departmentAggregate?.uniqueFaculty).toBe(2)
+    expect(departmentAggregate?.totalResponses).toBe(5)
+    expect(departmentAggregate?.avgRating).toBe(4)
   })
 
   it("reads the response set and the term's teaching, and nothing else", async () => {

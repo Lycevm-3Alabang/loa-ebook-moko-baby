@@ -12,8 +12,7 @@ import type { SummaryLine } from "./overall-summary"
  * from the department read's `members` and `departmentAggregate` — no new read.
  * ⭐ The faculty count is the `members` (the §3.14 headcount), NOT
  * `departmentAggregate.uniqueFaculty`; the average is the aggregate's
- * unweighted mean of rated Subject–Section scores, not a mean of faculty
- * averages.
+ * the equally weighted mean of rated faculty averages.
  */
 
 /** The file's title — the school's wording (D34). */

@@ -1,7 +1,58 @@
 import { supabase } from "@/lib/db"
-import type { StudentEnrollmentData, StudentEnrollmentWithEmbeds, IStudentEnrollmentRepository } from "@/lib/types"
+import type { StudentEnrollmentData, StudentEnrollmentWithEmbeds, IStudentEnrollmentRepository, RosterStudent } from "@/lib/types"
 
 const ENROLLMENT_PAGE_SIZE = 1000
+
+/**
+ * The roster read both coverage surfaces share. The snapshot calls it with all
+ * of a term's faculty-subject ids; Details calls it with one. Same select,
+ * filters, order and pages either way, so the card's tally and the modal's
+ * lists cannot drift.
+ */
+async function readRoster(
+  facultySubjectIds: string[],
+  semesterId?: string,
+): Promise<Map<string, RosterStudent[]>> {
+  const out = new Map<string, RosterStudent[]>()
+  const seenByFacultySubject = new Map<string, Set<string>>()
+  if (facultySubjectIds.length === 0) return out
+  for (let i = 0; i < facultySubjectIds.length; i += 100) {
+    const chunk = facultySubjectIds.slice(i, i + 100)
+    let offset = 0
+    for (;;) {
+      let q = supabase
+        .from("student_enrollments")
+        .select("id, faculty_subject_id, student_id, student:student_id(id, name, email)")
+        .in("faculty_subject_id", chunk)
+      if (semesterId) q = q.eq("semesterId", semesterId) as typeof q
+      const { data, error } = await q
+        .order("id", { ascending: true })
+        .range(offset, offset + ENROLLMENT_PAGE_SIZE - 1)
+      if (error) throw error
+      const page = (data || []) as unknown as Array<{
+        id: string
+        faculty_subject_id: string | null
+        student_id: string | null
+        student: RosterStudent | null
+      }>
+      for (const row of page) {
+        if (!row.faculty_subject_id || !row.student_id || !row.student) continue
+        if (!out.has(row.faculty_subject_id)) out.set(row.faculty_subject_id, [])
+        if (!seenByFacultySubject.has(row.faculty_subject_id)) {
+          seenByFacultySubject.set(row.faculty_subject_id, new Set())
+        }
+        const students = out.get(row.faculty_subject_id)!
+        const seen = seenByFacultySubject.get(row.faculty_subject_id)!
+        if (seen.has(row.student.id)) continue
+        seen.add(row.student.id)
+        students.push({ id: row.student.id, name: row.student.name, email: row.student.email })
+      }
+      if (page.length < ENROLLMENT_PAGE_SIZE) break
+      offset += ENROLLMENT_PAGE_SIZE
+    }
+  }
+  return out
+}
 
 export const studentEnrollmentRepository: IStudentEnrollmentRepository = {
   async list(filters) {
@@ -299,41 +350,16 @@ export const studentEnrollmentRepository: IStudentEnrollmentRepository = {
     return rows
   },
 
+  async listRosterByFacultySubjectIds(facultySubjectIds: string[], semesterId?: string) {
+    return readRoster(facultySubjectIds, semesterId)
+  },
+
+  /** @deprecated Slice-1 shim — removed when the service switches to the roster read. */
   async listStudentIdsByFacultySubjectIds(facultySubjectIds: string[], semesterId?: string) {
-    const out = new Map<string, string[]>()
-    const seenByFacultySubject = new Map<string, Set<string>>()
-    if (facultySubjectIds.length === 0) return out
-    for (let i = 0; i < facultySubjectIds.length; i += 100) {
-      const chunk = facultySubjectIds.slice(i, i + 100)
-      let offset = 0
-      for (;;) {
-        let q = supabase
-          .from("student_enrollments")
-          .select("id, faculty_subject_id, student_id, student:student_id(id)")
-          .in("faculty_subject_id", chunk)
-        if (semesterId) q = q.eq("semesterId", semesterId) as typeof q
-        const { data, error } = await q
-          .order("id", { ascending: true })
-          .range(offset, offset + ENROLLMENT_PAGE_SIZE - 1)
-        if (error) throw error
-        const page = data || []
-        for (const row of page) {
-          if (!row.faculty_subject_id || !row.student_id || !row.student) continue
-          if (!out.has(row.faculty_subject_id)) out.set(row.faculty_subject_id, [])
-          if (!seenByFacultySubject.has(row.faculty_subject_id)) {
-            seenByFacultySubject.set(row.faculty_subject_id, new Set())
-          }
-          const arr = out.get(row.faculty_subject_id)!
-          const seen = seenByFacultySubject.get(row.faculty_subject_id)!
-          if (seen.has(row.student_id)) continue
-          seen.add(row.student_id)
-          arr.push(row.student_id)
-        }
-        if (page.length < ENROLLMENT_PAGE_SIZE) break
-        offset += ENROLLMENT_PAGE_SIZE
-      }
-    }
-    return out
+    const roster = await readRoster(facultySubjectIds, semesterId)
+    const ids = new Map<string, string[]>()
+    for (const [fsId, students] of roster) ids.set(fsId, students.map((student) => student.id))
+    return ids
   },
 
   async countByFacultySubjectId(facultySubjectId: string, semesterId?: string) {

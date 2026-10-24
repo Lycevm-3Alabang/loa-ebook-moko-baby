@@ -1,6 +1,6 @@
 # Evaluation Results — Consistent Averages
 
-**Version:** 1.2
+**Version:** 1.3
 **Status:** Owner-approved scope — implementation in progress
 **Last Updated:** 2026-10-24
 **Scope:** Overall average ratings in admin and dean Evaluation Results
@@ -29,27 +29,31 @@ summary hierarchy and its exported summaries.
 1. Keep the existing calculation and display of each Subject–Section
    `avgRating`. These row scores are the base values for all higher-level
    summaries.
-2. Every faculty, department, and department-list overall Avg Rating is the
-   **unweighted arithmetic mean of its included rated Subject–Section rows**.
-   Each row has equal weight, regardless of its respondent count or the
-   faculty's number of other rows:
+2. Every faculty overall Avg Rating is the **unweighted arithmetic mean of
+   that faculty's included rated Subject–Section rows**. Each row has equal
+   weight, regardless of its respondent count.
 
-   `summary average = sum(included subject-row averages) / number of rated rows`
+3. Every department and department-list overall Avg Rating is the
+   **unweighted arithmetic mean of its rated faculty averages**. Each faculty
+   has equal weight regardless of how many rated Subject–Section rows they
+   teach:
 
-3. For a faculty summary, include only that faculty's Subject–Section rows in
+   `department average = sum(rated faculty averages) / number of rated faculty`
+
+4. For a faculty summary, include only that faculty's Subject–Section rows in
    the selected department and evaluation period.
-4. For a department summary or department-list row, include all rated
-   Subject–Section rows in that department and period. Do not average faculty
-   averages, as that would give each faculty equal weight rather than each
-   displayed Subject–Section row equal weight.
-5. Include rows with non-null `avgRating`; exclude null-rated rows. Include a
-   valid numeric score of zero.
-6. Compute from the same row-rating values shown in the UI, then round the
+5. Exclude faculty with no rated Subject–Section rows from the department
+   average. Include non-null row ratings and valid numeric zero scores when
+   calculating each faculty average.
+6. Compute from the same displayed values at each level, then round the
    final mean once to the nearest hundredth using round-half-up. Always display
    summary averages with two decimal places. Thus
    `(4.65 + 3.94) / 2 = 4.295` rounds to `4.30`; and
-   `(3.45 + 3.90 + 3.60) / 3 = 3.65` displays as `3.65`.
-7. When a scope has no rated rows, use the existing empty score marker (`—`);
+   `(3.45 + 3.90 + 3.60) / 3 = 3.65` displays as `3.65`. The department
+   average of faculty scores `4.33`, `4.49`, `4.31`, and `4.73` is `4.465`,
+   rounded to `4.47`.
+7. When a faculty has no rated rows or a department has no rated faculty, use
+   the existing empty score marker (`—`);
    do not show zero or fabricate an average.
 8. Search only filters visible rows/cards. It must not change faculty or
    department summaries; calculations use all rated rows in the selected
@@ -90,11 +94,11 @@ No schema, Supabase, or evaluation-coverage changes are in scope.
    containing those rows display `4.30`, not `4.43`.
 2. Respondent-count differences do not weight summaries; summary averages
    round to hundredths and display with two decimal places.
-3. Department average is the mean of its rated Subject–Section rows, not a
-   mean of faculty averages; faculty average is the mean of that faculty's
-   rated rows.
-4. Null rows are excluded; numeric zero is included; no-rated-row scope shows
-   `—`.
+3. Faculty averages are means of their rated Subject–Section rows; department
+   averages are means of rated faculty averages, regardless of each faculty's
+   number of rows.
+4. Null rows are excluded; numeric zero is included; a scope with no rated
+   values shows `—`.
 5. Search does not change summary averages.
 6. Admin/dean UI, department list, department summary, faculty summary, and
    corresponding workbook and CSV summary outputs agree at their applicable
@@ -124,10 +128,14 @@ if ($?) { npm run build }
   rather than retaining the pooled response-level Faculty Card average.
 - **2026-10-24:** Owner expanded scope to all Results summaries and summary
   exports; the department list/detail and export outputs must share the same
-  Subject–Section-row averaging rule.
+  averaging rule.
 - **2026-10-24:** Owner clarified that summary averages round to the nearest
   tenth but are always displayed with two decimal places; Subject–Section row
   precision remains unchanged.
 - **2026-10-24:** Owner clarified that the summary mean must preserve hundredths
   (for example, `3.45`, `3.90`, and `3.60` average to `3.65`); this supersedes
   the earlier nearest-tenth rule.
+- **2026-10-24:** Owner clarified that department averages equally weight
+  faculty-card averages (not every Subject–Section row). For `4.33`, `4.49`,
+  `4.31`, and `4.73`, the mean is `4.465`, displayed as `4.47`; this supersedes
+  the earlier department row-weighting rule.

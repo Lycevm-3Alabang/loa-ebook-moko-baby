@@ -352,34 +352,34 @@ describe("evaluationResultRepository.listDepartmentFigures", () => {
     expect(figures.sentimentScore).toBe(0.4)
   })
 
-  it("averages department Subject–Section scores equally despite unequal response counts", async () => {
+  it("averages faculty scores equally despite unequal subject counts", async () => {
     mockUserRepo.listFacultyByDepartment.mockResolvedValue([
       { id: "f1", name: "Ana", email: "ana@x", departmentId: "d1", role: "FACULTY" },
+      { id: "f2", name: "Ben", email: "ben@x", departmentId: "d1", role: "FACULTY" },
     ])
     respondWithDepartmentFacts({
       evaluations: [
         { id: "e1", evaluateeId: "f1", facultySubjectId: "fs1" },
-        { id: "e2", evaluateeId: "f1", facultySubjectId: "fs1" },
-        { id: "e3", evaluateeId: "f1", facultySubjectId: "fs1" },
-        { id: "e4", evaluateeId: "f1", facultySubjectId: "fs2" },
+        { id: "e2", evaluateeId: "f1", facultySubjectId: "fs2" },
+        { id: "e3", evaluateeId: "f2", facultySubjectId: "fs3" },
       ],
       assignments: [
         { id: "fs1", faculty_id: "f1" },
         { id: "fs2", faculty_id: "f1" },
+        { id: "fs3", faculty_id: "f2" },
       ],
       ratings: [
         { evaluationId: "e1", rating: 4, itemId: "i1" },
-        { evaluationId: "e2", rating: 4, itemId: "i1" },
-        { evaluationId: "e3", rating: 4, itemId: "i1" },
-        { evaluationId: "e4", rating: 2, itemId: "i1" },
+        { evaluationId: "e2", rating: 2, itemId: "i1" },
+        { evaluationId: "e3", rating: 5, itemId: "i1" },
       ],
     })
 
     const figures = await evaluationResultRepository.listDepartmentFigures("d1", "p1")
 
-    expect(figures.totalRespondents).toBe(4)
-    expect(figures.avgRating).toBe(3)
-    expect(figures.remarks).toBe("Satisfactory")
+    expect(figures.totalRespondents).toBe(3)
+    expect(figures.avgRating).toBe(4)
+    expect(figures.remarks).toBe("Very Satisfactory")
   })
 
   it("drops an evaluation whose assignment no longer belongs to its evaluatee", async () => {

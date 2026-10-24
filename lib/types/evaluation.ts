@@ -217,6 +217,13 @@ export interface StudentEnrollmentWithEmbeds extends StudentEnrollmentData {
   } | null
 }
 
+/** A student on an evaluation roster — the identity the coverage card tallies and the Details modal renders. */
+export interface RosterStudent {
+  id: string
+  name: string
+  email: string
+}
+
 export interface RubricCategoryData {
   id: string
   rubricGroupId: string
@@ -443,6 +450,9 @@ export interface IStudentEnrollmentRepository {
   countByFacultySubjectIdsPaged(ids: string[], semesterId?: string): Promise<Record<string, number>>
   listAllWithEmbeds(filters?: { semesterId?: string }): Promise<StudentEnrollmentWithEmbeds[]>
   listByFacultySubject(facultySubjectId: string, semesterId?: string): Promise<StudentEnrollmentWithEmbeds[]>
+  /** One roster read for the coverage card and its Details modal. */
+  listRosterByFacultySubjectIds(facultySubjectIds: string[], semesterId?: string): Promise<Map<string, RosterStudent[]>>
+  /** @deprecated Slice-1 shim — removed when the service switches to the roster read. */
   listStudentIdsByFacultySubjectIds(facultySubjectIds: string[], semesterId?: string): Promise<Map<string, string[]>>
   countBySemesterId(semesterId: string): Promise<number>
   countByFacultySubjectId(facultySubjectId: string, semesterId?: string): Promise<number>

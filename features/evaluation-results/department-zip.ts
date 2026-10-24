@@ -155,8 +155,7 @@ export async function buildDepartmentZip(
 
     // ⭐ D30: the DEPARTMENT summary sits at the folder's root, first in the
     // tree. ⭐ It is the department summary — the members' count and the
-    // unweighted average of rated Subject–Section rows, not a mean of faculty
-    // averages.
+    // the equally weighted mean of rated faculty averages.
     // ⭐ D34: a per-faculty export omits it — that ZIP's details are one
     // faculty's, so a whole-department row would read as the scope's figure.
     if (!isFiltered) {

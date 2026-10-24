@@ -283,8 +283,9 @@ export async function getDepartmentSubjectResults(
 
   return {
     subjects: out,
-    // Overall averages follow the displayed subject rows; category and
-    // sentiment figures in the aggregates remain pooled from response data.
+    // Faculty averages use their displayed subject rows; the department
+    // average equally weights those faculty averages. Categories and
+    // sentiment remain pooled from response data.
     facultyAggregates: aggregateFacultyResults(
       set.evaluations,
       ratings,

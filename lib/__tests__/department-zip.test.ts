@@ -245,11 +245,11 @@ describe("the department ZIP", () => {
     ])
   })
 
-  it("builds the department summary from its row-based aggregate, not a mean of faculty averages", async () => {
+  it("builds the department summary from its equally weighted faculty aggregate", async () => {
     mockGetDepartmentResults.mockResolvedValue({
       subjects: [ROW],
-      // The department row is the row-based aggregate. The faculty averages
-      // are deliberately different so the export cannot substitute their mean.
+      // The department aggregate is calculated from equally weighted faculty
+      // scores, independent of how many subject rows each faculty has.
       facultyAggregates: {
         f1: { avgRating: 4, remarks: "Very Satisfactory" },
         f2: { avgRating: 2, remarks: "Unsatisfactory" },
@@ -263,7 +263,7 @@ describe("the department ZIP", () => {
         // ⭐ deliberately NOT the members' count (2) — the file must ignore it
         uniqueFaculty: 1,
         totalResponses: 34,
-        avgRating: 3.4,
+        avgRating: 3,
         remarks: "Satisfactory",
         professionalManner: null,
         communicationWithStudent: null,
@@ -288,13 +288,13 @@ describe("the department ZIP", () => {
     const sheet = partText(summary, "xl/worksheets/sheet1.xml")
 
     // The summary row: 2 members (not uniqueFaculty's 1), 34 responses,
-    // and the row-based average rather than the faculty averages' mean.
+    // and the equally weighted faculty average.
     expect(cellOf(sheet, "A6")).toContain("Computer Studies")
     expect(cellOf(sheet, "B6")).toContain("CCS")
     expect(cellOf(sheet, "C6")).toContain(">2<")
     expect(cellOf(sheet, "D6")).toContain(">34<")
-    expect(cellOf(sheet, "E6")).toContain(">3.4<")
-    expect(sheet).toContain(`<c r="E6" s="${styleId("tableNumber")}"><v>3.4</v></c>`)
+    expect(cellOf(sheet, "E6")).toContain(">3<")
+    expect(sheet).toContain(`<c r="E6" s="${styleId("tableNumber")}"><v>3</v></c>`)
     expect(cellOf(sheet, "F6")).toContain("Satisfactory")
   })
 

@@ -52,7 +52,7 @@ describe("AdminEvaluationResultsPage cached-data banner", () => {
       "admin-evaluation-results:p1",
       JSON.stringify({ departments }),
     )
-    window.localStorage.setItem("admin-evaluation-results-figures-v2:p1", JSON.stringify(figures))
+    window.localStorage.setItem("admin-evaluation-results-figures-v3:p1", JSON.stringify(figures))
 
     render(<AdminEvaluationResultsPage />)
 

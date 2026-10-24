@@ -147,3 +147,31 @@ click was suppressed. `IosButton` now accepts `allowRapidClick`; CoveragePage's
 Expand/Collapse all toggle opts into it, while other buttons retain the guard.
 VS Code diagnostics report no errors in the button, page, or focused test. The
 test has not been rerun.
+
+## Open TODO gates — 2026-10-24
+
+`TODO.md` still lists two owner-run validation gates: consistent Evaluation
+Results averages/exports, and the evaluation-coverage department drill-down.
+The latest `allowRapidClick` fix for the coverage test has not been validated
+by a test run yet, so rerun that focused test before or as part of the full
+owner gate. No implementation item is otherwise listed as open.
+
+## Department average discrepancy investigation — 2026-10-24
+
+The screenshot shows faculty-card averages `4.33`, `4.49`, `4.31`, and `4.73`.
+Their equally weighted mean is `4.465` (which rounds to `4.47` under the
+current hundredths rule, or `4.5` under the superseded tenths rule). At the
+time of this investigation, department summaries still weighted every
+Subject–Section row equally. The owner clarified that each faculty card must
+instead have equal weight, superseding the earlier row-grain department rule.
+
+## Department average weighting correction — 2026-10-24
+
+Department summaries now average rated faculty-card scores equally in the
+department detail page, department list/dean figures, and summary exports.
+Faculty without a rated score are excluded; each faculty score is itself the
+mean of that faculty's rated Subject–Section rows. The screenshot's four
+faculty values therefore yield `4.465`, displayed as `4.47`. Shared utility,
+service, repository, ZIP expectation, cache-version, and spec updates are
+complete. VS Code diagnostics report no errors in edited code and tests; tests
+have not been run. The owner validation gates in `TODO.md` remain.

@@ -11,6 +11,7 @@ import {
   aggregateFacultyResults,
   aggregatePooledResults,
   averageDisplayedRatings,
+  averageFacultyDisplayedRatings,
   resolveFacultyDepartment,
   resolveDepartmentFaculties,
   sectionLabel,
@@ -143,6 +144,26 @@ describe("averageDisplayedRatings", () => {
     expect(averageDisplayedRatings([4.25])).toBe(4.25)
     expect(averageDisplayedRatings([4, null, 0])).toBe(2)
     expect(averageDisplayedRatings([null, null])).toBeNull()
+  })
+})
+
+describe("averageFacultyDisplayedRatings", () => {
+  it("weights faculty equally and rounds the mean to hundredths", () => {
+    expect(averageFacultyDisplayedRatings([
+      { facultyId: "f1", avgRating: 4.33 },
+      { facultyId: "f2", avgRating: 4.49 },
+      { facultyId: "f3", avgRating: 4.31 },
+      { facultyId: "f4", avgRating: 4.73 },
+    ])).toBe(4.47)
+  })
+
+  it("averages each faculty's rated subject rows before weighting faculty equally", () => {
+    expect(averageFacultyDisplayedRatings([
+      { facultyId: "f1", avgRating: 5 },
+      { facultyId: "f1", avgRating: 3 },
+      { facultyId: "f2", avgRating: 2 },
+      { facultyId: "f3", avgRating: null },
+    ])).toBe(3)
   })
 })
 

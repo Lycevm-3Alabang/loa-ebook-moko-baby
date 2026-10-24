@@ -482,10 +482,28 @@ export function averageDisplayedRatings(ratings: (number | null)[]): number | nu
 }
 
 /**
+ * Average faculty scores equally, regardless of how many Subject–Section
+ * rows each faculty teaches.
+ */
+export function averageFacultyDisplayedRatings(
+  subjects: { facultyId: string; avgRating: number | null }[],
+): number | null {
+  const ratingsByFaculty = new Map<string, (number | null)[]>()
+  for (const subject of subjects) {
+    const ratings = ratingsByFaculty.get(subject.facultyId) ?? []
+    ratings.push(subject.avgRating)
+    ratingsByFaculty.set(subject.facultyId, ratings)
+  }
+
+  return averageDisplayedRatings(
+    [...ratingsByFaculty.values()].map((ratings) => averageDisplayedRatings(ratings)),
+  )
+}
+
+/**
  * Assemble a department-level aggregate from its subject rows and the
  * department's pooled rating/comment rows. The overall rating is the mean of
- * the displayed subject-row ratings; category and sentiment figures remain
- * pooled.
+ * the faculty averages; category and sentiment figures remain pooled.
  */
 export function aggregateDepartmentResults(
   subjects: { facultyId: string; totalRespondents: number; avgRating: number | null }[],
@@ -493,7 +511,7 @@ export function aggregateDepartmentResults(
   comments: { sentimentScore: number | null }[] = [],
 ): DepartmentAggregate {
   const pooled = aggregatePooledResults(ratings, comments)
-  const avgRating = averageDisplayedRatings(subjects.map((subject) => subject.avgRating))
+  const avgRating = averageFacultyDisplayedRatings(subjects)
   return {
     totalSubjects: subjects.length,
     uniqueFaculty: new Set(subjects.map((s) => s.facultyId)).size,

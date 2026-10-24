@@ -5,6 +5,7 @@ import {
   computeCategoryTotals,
   computeGeneralRating,
   averageDisplayedRatings,
+  averageFacultyDisplayedRatings,
   computeSentimentScore,
   findHighestLowestRubrics,
   getRemark,
@@ -513,7 +514,7 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
 
   /**
    * One department's figures for a period: the response count, the average
-   * of its rated Subject–Section scores and its remark, the highest and lowest rubrics, and the comment
+   * of its faculty scores and its remark, the highest and lowest rubrics, and the comment
    * sentiment — read from the app's own reads, with no direct database
    * connection.
    *
@@ -535,7 +536,7 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
 
     // The department's live response set — the same set the department page's
     // rows are built from, so the two pages print the same number.
-    const { evaluations } = await loadDepartmentResponseSet(departmentId, evaluationPeriodId)
+    const { evaluations, assignments } = await loadDepartmentResponseSet(departmentId, evaluationPeriodId)
     if (evaluations.length === 0) return empty
     const liveEvalIds = evaluations.map((e) => e.id)
 
@@ -557,11 +558,21 @@ export const evaluationResultRepository: IEvaluationResultRepository = {
       rows.push(rating)
       ratingsByEvaluation.set(rating.evaluationId, rows)
     }
-    const subjectScores = [...evaluationIdsByAssignment.values()].map((evaluationIds) => {
+    const facultySubjectScores = new Map<string, (number | null)[]>()
+    for (const [facultySubjectId, evaluationIds] of evaluationIdsByAssignment) {
+      const assignment = assignments.get(facultySubjectId)
+      if (!assignment) continue
       const subjectRatings = evaluationIds.flatMap((id) => ratingsByEvaluation.get(id) ?? [])
-      return computeGeneralRating(computeCategoryAverages(subjectRatings))
-    })
-    const general = averageDisplayedRatings(subjectScores)
+      const scores = facultySubjectScores.get(assignment.faculty_id) ?? []
+      scores.push(computeGeneralRating(computeCategoryAverages(subjectRatings)))
+      facultySubjectScores.set(assignment.faculty_id, scores)
+    }
+    const general = averageFacultyDisplayedRatings(
+      [...facultySubjectScores].map(([facultyId, avgRatings]) => ({
+        facultyId,
+        avgRating: averageDisplayedRatings(avgRatings),
+      })),
+    )
 
     const catAverages = computeCategoryAverages(ratings)
     const catColumns = mapCategoryAveragesToColumns(catAverages)
