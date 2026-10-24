@@ -9,13 +9,9 @@ The owner runs it; the agent never executes CLI (H1).
 
 ## Next
 
-- [ ] **Run the owner validation gate** for consistent Evaluation Results averages and exports in `specs/evaluation-results-faculty-card-average.md`.
-- [ ] **Run owner validation gate for the evaluation coverage department drill-down** in `specs/evaluation-coverage-department-drilldown.md`.
-
-## In progress
-
-- **Consistent Evaluation Results averages:** implementation is complete for the Faculty Card, department detail/list summaries, and summary workbook/CSV exports. Owner validation remains.
+- Nothing open.
 
 ## Handovers
 
-- `docs/evaluation-results-cache-handover.md` — implementation status and remaining department-list/export work.
+- `docs/evaluation-coverage-department-drilldown-handover.md` — coverage drill-down, zero-row parity, and faculty-card strip removal.
+- `docs/evaluation-results-cache-handover.md` — results averages, caching, and navigation labels.

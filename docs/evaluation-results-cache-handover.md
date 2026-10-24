@@ -205,3 +205,10 @@ Results Page.” The faculty-subject detail page's matching button now reads
 “Back to {Department Name} Evaluation Results,” using the loaded department
 name (or “Department” when unavailable). VS Code diagnostics report no errors
 in either page. Tests have not been run.
+
+## Final gate — 2026-10-24
+
+The full suite is green after the back-link test was aligned to the
+department-specific label: `npx tsc --noEmit`, `npm run lint`, and
+`npx vitest run` (863 passed, 1 skipped). This supersedes the “tests have not
+been run” notes above. No open work remains.
