@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import Skeleton from "@/components/ui/Skeleton"
 import ErrorState from "@/components/ui/ErrorState"
 import CachedDataRefreshBanner from "@/components/ui/CachedDataRefreshBanner"
+import ResultsDashboard from "@/features/evaluation-results/components/ResultsDashboard"
 import { useApiGet, fetcher, dispatchToast } from "@/lib/api/client"
 import { getRemarkColor, formatPeriodLabel, departmentLabel, findAttentionRubrics } from "@/lib/evaluation-utils"
 
@@ -368,6 +369,16 @@ export default function AdminEvaluationResultsPage() {
   const anyAttention = Object.keys(attentionByDept).length > 0
   const allLoaded = rows.length > 0 && rows.every((r) => !!figures[r.departmentId])
 
+  // The dashboard waits for every figure to land or fail. The table's
+  // `allLoaded` stays stricter: a failed figure pauses its sorting until a
+  // refresh, while the dashboard can already show the rows it has.
+  const figuresSettled =
+    rows.length > 0 &&
+    rows.every((r) => !!figures[r.departmentId] || !!figuresFailed[r.departmentId])
+  const missingDepartmentIds = rows
+    .filter((r) => !figures[r.departmentId] && figuresFailed[r.departmentId])
+    .map((r) => r.departmentId)
+
   const sortedDepartments = useMemo(() => {
     // While the figures are still landing the rows keep the order the
     // departments came in: a table that re-sorts under the reader is worse
@@ -456,6 +467,15 @@ export default function AdminEvaluationResultsPage() {
             )}
           </p>
         </div>
+      )}
+
+      {!error && rows.length > 0 && (
+        <ResultsDashboard
+          rows={rows}
+          attentionByDept={attentionByDept}
+          settled={figuresSettled}
+          missingDepartmentIds={missingDepartmentIds}
+        />
       )}
 
       {loading && (
