@@ -172,6 +172,7 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
       departments: [],
       subjects: [] as SubjectStatusRow[],
       facultyAggregates: {} as Record<string, Record<string, FacultyCoverageAggregate>>,
+      totals: { students: 0, participated: 0, disputed: 0, inProgress: 0, notParticipated: 0 },
       warnings: { unattributed: { count: 0, faculty: [] }, offSemester: { count: 0, faculty: [] } },
     }
   }
@@ -258,6 +259,36 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
         notParticipated: new Set(lists.notParticipated.map((student) => student.id)),
       },
     })
+  }
+
+  // School-grain totals: the pooled union of the same per-subject sets the
+  // department rows union. Scoped by departmentId only — independent of the
+  // search box, so the headline tiles do not change as you type — and built
+  // by Set merges over data already in memory; no additional reads. Summing
+  // the department rows instead would double-count students whose subjects
+  // span departments; this pooled union does not.
+  const pooledStudents = new Set<string>()
+  const pooledBuckets: Record<Bucket, Set<string>> = {
+    participated: new Set<string>(),
+    disputed: new Set<string>(),
+    inProgress: new Set<string>(),
+    notParticipated: new Set<string>(),
+  }
+  for (const m of mappings) {
+    if (departmentId && coverageDeptOf.get(m.id) !== departmentId) continue
+    const agg = aggByFs.get(m.id)
+    if (!agg) throw new Error(`Missing enrollment status aggregate for faculty subject ${m.id}`)
+    for (const sid of agg.studentIds) pooledStudents.add(sid)
+    for (const bucket of ["participated", "disputed", "inProgress", "notParticipated"] as const) {
+      for (const sid of agg.bucketed[bucket]) pooledBuckets[bucket].add(sid)
+    }
+  }
+  const totals = {
+    students: pooledStudents.size,
+    participated: pooledBuckets.participated.size,
+    disputed: pooledBuckets.disputed.size,
+    inProgress: pooledBuckets.inProgress.size,
+    notParticipated: pooledBuckets.notParticipated.size,
   }
 
   const q = (search ?? "").trim().toLowerCase()
@@ -413,5 +444,5 @@ export async function getEvaluationStatus(evaluationPeriodId: string, search?: s
     departmentId,
   )
 
-  return { departments: deptRows, subjects: subjectRows, facultyAggregates, warnings }
+  return { departments: deptRows, subjects: subjectRows, facultyAggregates, totals, warnings }
 }

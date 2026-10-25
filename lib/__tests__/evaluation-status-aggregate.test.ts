@@ -519,8 +519,116 @@ describe("getEvaluationStatus — new bucket fields", () => {
     expect(res.facultyAggregates.d2.f2).toBeUndefined()
     // The department's own figures agree with its teachers'.
     expect(res.departments.find((d) => d.departmentId === "d1")?.uniqueStudents).toBe(3)
-    expect(res.departments.find((d) => d.departmentId === "d2")?.subjectsTotal).toBe(0)
+    expect(res.departments.find((d) => d.departmentId === "d2")?.uniqueStudents).toBe(0)
     // The MATH section is in CCS's list, flagged with its owner.
     expect(res.subjects.find((s) => s.facultySubjectId === "fs2")?.sectionDepartment).toBe("MATH")
+  })
+})
+
+describe("getEvaluationStatus — pooled school totals", () => {
+  /**
+   * Two faculty, two departments, one student enrolled across both: each
+   * department's union holds her, so the two Depts sum to 4 — but she is one
+   * person. The pooled totals count her once; this is the regression the old
+   * card-sum UI could not pass.
+   */
+  function twoDepartmentRoster() {
+    mockDeptRepo.listAll.mockResolvedValue([
+      { id: "d1", name: "CCS", code: "CCS" },
+      { id: "d2", name: "MATH", code: "MATH" },
+    ])
+    mockFsRepo.list.mockResolvedValue([
+      { id: "fs1", faculty_id: "f1", subject_id: "sub1", section_id: "sec-cs", semesterId: "s1" },
+      { id: "fs2", faculty_id: "f2", subject_id: "sub1", section_id: "sec-math", semesterId: "s1" },
+    ])
+    mockUserRepo.listByIds.mockResolvedValue([
+      { id: "f1", name: "Ana", email: "ana@x", departmentId: "d1" },
+      { id: "f2", name: "Ben", email: "ben@x", departmentId: "d2" },
+    ])
+    mockUserRepo.listByRole.mockResolvedValue([
+      { id: "f1", name: "Ana", email: "ana@x", departmentId: "d1", role: "FACULTY" },
+      { id: "f2", name: "Ben", email: "ben@x", departmentId: "d2", role: "FACULTY" },
+    ])
+    mockEvalResultRepo.buildSubjectContext.mockResolvedValue({
+      userDept: new Map([["f1", "d1"], ["f2", "d2"]]),
+      sections: new Map([["sec-cs", "dc-cs"], ["sec-math", "dc-math"]]),
+      departmentCourses: new Map([["dc-cs", "d1"], ["dc-math", "d2"]]),
+    })
+    // sX is enrolled in a CCS subject AND a MATH subject.
+    mockEnrollmentRepo.listRosterByFacultySubjectIds.mockResolvedValue(
+      new Map([["fs1", roster("sX", "sA")], ["fs2", roster("sX", "sB")]]),
+    )
+    mockEvalRepo.listStatusByPeriodAndFacultySubjectIds.mockResolvedValue([
+      st("sX", "SUBMITTED", false, "fs1"),
+    ])
+  }
+
+  it("counts a cross-department student once and pools per bucket", async () => {
+    twoDepartmentRoster()
+    const res = await getEvaluationStatus("p1")
+    // Department unions each hold sX: d1 has {sX, sA}, d2 has {sX, sB}.
+    expect(res.departments.find((d) => d.departmentId === "d1")?.uniqueStudents).toBe(2)
+    expect(res.departments.find((d) => d.departmentId === "d2")?.uniqueStudents).toBe(2)
+    // The pool counts sX once per person: she submitted for CCS and did not
+    // for MATH, so she legitimately sits in two buckets.
+    expect(res.totals).toEqual({
+      students: 3,
+      participated: 1,
+      disputed: 0,
+      inProgress: 0,
+      notParticipated: 3,
+    })
+  })
+
+  it("pools each bucket independently of one subject's bucket", async () => {
+    twoDepartmentRoster()
+    mockEvalRepo.listStatusByPeriodAndFacultySubjectIds.mockResolvedValue([
+      st("sA", "SUBMITTED", false, "fs1"),
+      st("sX", "INVALID", true, "fs1"),
+      st("sB", "DRAFT", false, "fs2"),
+    ])
+    const res = await getEvaluationStatus("p1")
+    expect(res.totals).toEqual({
+      students: 3,
+      participated: 1,
+      disputed: 1,
+      inProgress: 1,
+      notParticipated: 1,
+    })
+  })
+
+  it("keeps totals scoped by departmentId and independent of search", async () => {
+    twoDepartmentRoster()
+    const full = await getEvaluationStatus("p1")
+    // A search that matches nothing empties subjects AND departments, but the
+    // headline totals stay scope-wide: the pool walks the mappings, not the
+    // filtered rows.
+    const searched = await getEvaluationStatus("p1", "no-match")
+    expect(searched.subjects).toHaveLength(0)
+    expect(searched.departments).toHaveLength(0)
+    expect(searched.totals).toEqual(full.totals)
+
+    // Dean parity: scope the service to one department — the pool shrinks
+    // with the same predicate, counting sX once for the scope she's in.
+    const deanScoped = await getEvaluationStatus("p1", undefined, "d2")
+    expect(deanScoped.totals).toEqual({
+      students: 2,
+      participated: 0,
+      disputed: 0,
+      inProgress: 0,
+      notParticipated: 2,
+    })
+  })
+
+  it("returns zeroed totals when there are no mappings", async () => {
+    mockFsRepo.list.mockResolvedValue([])
+    const res = await getEvaluationStatus("p1")
+    expect(res.totals).toEqual({
+      students: 0,
+      participated: 0,
+      disputed: 0,
+      inProgress: 0,
+      notParticipated: 0,
+    })
   })
 })

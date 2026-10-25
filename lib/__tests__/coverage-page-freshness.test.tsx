@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, waitFor, fireEvent } from "@testing-library/react"
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react"
 
 const mockUseApiGet = vi.hoisted(() => vi.fn())
 const mockFetcher = vi.hoisted(() => vi.fn())
@@ -62,6 +62,13 @@ const payload = {
     completion: 75,
   }],
   subjects: [subjectRow],
+  totals: {
+    students: 4,
+    participated: 3,
+    disputed: 0,
+    inProgress: 0,
+    notParticipated: 1,
+  },
   facultyAggregates: {
     d1: {
       f1: { subjects: 1, students: 4, participated: 3, disputed: 0, inProgress: 0, notParticipated: 1, completion: 75 },

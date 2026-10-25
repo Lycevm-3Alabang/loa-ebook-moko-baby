@@ -84,6 +84,24 @@ interface AttributionWarnings {
   offSemester: { count: number; faculty: { id: string; name: string }[] }
 }
 
+interface CoverageTotals {
+  students: number
+  participated: number
+  disputed: number
+  inProgress: number
+  notParticipated: number
+}
+
+interface CoverageStatusPayload {
+  departments: DepartmentRow[]
+  subjects: SubjectRow[]
+  facultyAggregates?: Record<string, Record<string, FacultyCoverageAggregate>>
+  /** Pooled distinct-student unions across departments in scope, independent of the search box.
+   *  Optional: v2 snapshots cached before this field exists simply lack it. */
+  totals?: CoverageTotals
+  warnings?: AttributionWarnings
+}
+
 // A subject whose department cannot be resolved. Named apart from a real
 // "Unassigned" department, which is a legitimate department with its own id.
 const UNRESOLVED = "__unknown__"
@@ -112,12 +130,7 @@ function readCoverageCache(periodId: string, scopeKey: string) {
     if (!stored) return null
     const parsed = JSON.parse(stored)
     if (!parsed || typeof parsed !== "object") return null
-    return parsed as {
-      departments: DepartmentRow[]
-      subjects: SubjectRow[]
-      facultyAggregates?: Record<string, Record<string, FacultyCoverageAggregate>>
-      warnings?: AttributionWarnings
-    }
+    return parsed as CoverageStatusPayload
   } catch {
     return null
   }
@@ -179,12 +192,7 @@ export default function CoveragePage({
   const [expandedFaculty, setExpandedFaculty] = useState<Set<string>>(() => new Set())
   const [modalSubject, setModalSubject] = useState<SubjectRow | null>(null)
   const [modalDetail, setModalDetail] = useState<SubjectDetail | "loading" | "error" | null>(null)
-  const [statusSnapshot, setStatusSnapshot] = useState<{ periodId: string; scope: string; data: {
-    departments: DepartmentRow[]
-    subjects: SubjectRow[]
-    facultyAggregates?: Record<string, Record<string, FacultyCoverageAggregate>>
-    warnings?: AttributionWarnings
-  } } | null>(null)
+  const [statusSnapshot, setStatusSnapshot] = useState<{ periodId: string; scope: string; data: CoverageStatusPayload } | null>(null)
   const [statusError, setStatusError] = useState<Error | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [lastManualRefreshAt, setLastManualRefreshAt] = useState<string | null>(null)
@@ -222,12 +230,7 @@ export default function CoveragePage({
       if (!cancelled) setLastManualRefreshAt(cachedRefresh)
     })
 
-    void fetcher<{
-      departments: DepartmentRow[]
-      subjects: SubjectRow[]
-      facultyAggregates?: Record<string, Record<string, FacultyCoverageAggregate>>
-      warnings?: AttributionWarnings
-    }>(`${statusBase}?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}`)
+    void fetcher<CoverageStatusPayload>(`${statusBase}?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}`)
       .then((data) => {
         if (cancelled) return
         writeCoverageCache(selectedPeriod, scopeKey, data)
@@ -258,12 +261,7 @@ export default function CoveragePage({
     setStatusError(null)
     clearCoverageCache(selectedPeriod, scopeKey)
     try {
-      const data = await fetcher<{
-        departments: DepartmentRow[]
-        subjects: SubjectRow[]
-        facultyAggregates?: Record<string, Record<string, FacultyCoverageAggregate>>
-        warnings?: AttributionWarnings
-      }>(`${statusBase}?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}`)
+      const data = await fetcher<CoverageStatusPayload>(`${statusBase}?evaluationPeriodId=${encodeURIComponent(selectedPeriod)}`)
       writeCoverageCache(selectedPeriod, scopeKey, data)
       writeLastManualRefresh(selectedPeriod, scopeKey, refreshedAt)
       setStatusSnapshot({ periodId: selectedPeriod, scope: scopeKey, data })
@@ -338,20 +336,23 @@ export default function CoveragePage({
   }
   const sortArrow = (key: typeof sortKey) => sortKey !== key ? "" : sortDir === "desc" ? " v" : " ^"
 
-  const kpis = useMemo(() => {
-    const depts = filteredDepts.filter((d) => d.departmentId !== UNRESOLVED)
+  // Headline tiles describe the scope for the selected period and do NOT follow
+  // the search box — scoping is the table's job. Department rows are
+  // per-department student unions; summing them would double-count students
+  // spanning departments, so population tiles read the service-pooled unions.
+  const strip = useMemo(() => {
+    const depts = statusData?.departments ?? []
     const reporting = depts.filter((d) => d.subjectsEvaluated > 0).length
     // Each faculty is homed in exactly one department, so the departments'
-    // headcounts add up to the school's faculty count — no double counting.
+    // headcounts add up — no double counting.
     const facultyCount = depts.reduce((a, d) => a + d.facultyCount, 0)
-    const uniqueStudents = depts.reduce((a, d) => a + d.uniqueStudents, 0)
-    const participated = depts.reduce((a, d) => a + d.participated, 0)
-    const disputed = depts.reduce((a, d) => a + d.disputed, 0)
-    const inProgress = depts.reduce((a, d) => a + d.inProgress, 0)
-    const notParticipated = depts.reduce((a, d) => a + d.notParticipated, 0)
-    return { reporting, deptTotal: depts.length, facultyCount, uniqueStudents, participated, disputed, inProgress, notParticipated }
-  }, [filteredDepts])
-  const completion = kpis.uniqueStudents > 0 ? (kpis.participated / kpis.uniqueStudents) * 100 : null
+    return { reporting, deptTotal: depts.length, facultyCount }
+  }, [statusData])
+  const studentTotals = statusData?.totals ?? null
+  const responseRate =
+    studentTotals && studentTotals.students > 0
+      ? (studentTotals.participated / studentTotals.students) * 100
+      : null
 
   // A caller that names a department gets that department's coverage, not a list.
   const selectedDept = departmentId ?? deptFromUrl
@@ -562,39 +563,41 @@ export default function CoveragePage({
 
       {!loading && !error && selectedPeriod && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-            <div className="rounded-xl border border-default bg-surface p-4">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Depts reporting</p>
-              <p className="text-xl font-bold text-primary mt-1">{kpis.reporting} / {kpis.deptTotal}</p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div
+              className="rounded-xl border border-default bg-surface p-4"
+              title="Departments with at least one subject that received a submitted evaluation this period"
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Departments evaluated</p>
+              <p className="text-xl font-bold text-primary mt-1">{strip.reporting} / {strip.deptTotal}</p>
             </div>
-            <div className="rounded-xl border border-default bg-surface p-4">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Faculties</p>
-              <p className="text-xl font-bold text-primary mt-1">{kpis.facultyCount}</p>
+            <div
+              className="rounded-xl border border-default bg-surface p-4"
+              title="Faculty whose home department is in scope — each faculty belongs to exactly one department"
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Faculty members</p>
+              <p className="text-xl font-bold text-primary mt-1">{strip.facultyCount}</p>
             </div>
-            <div className="rounded-xl border border-default bg-surface p-4">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Unique students</p>
-              <p className="text-xl font-bold text-primary mt-1">{kpis.uniqueStudents.toLocaleString()}</p>
-            </div>
-            <div className="rounded-xl border border-default bg-surface p-4">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Participated</p>
-              <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{kpis.participated.toLocaleString()}</p>
-            </div>
-            <div className="rounded-xl border border-default bg-surface p-4">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Disputed</p>
-              <p className="text-xl font-bold text-rose-600 dark:text-rose-400 mt-1">{kpis.disputed.toLocaleString()}</p>
-            </div>
-            <div className="rounded-xl border border-default bg-surface p-4">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">In-progress</p>
-              <p className="text-xl font-bold text-blue-600 dark:text-blue-400 mt-1">{kpis.inProgress.toLocaleString()}</p>
-            </div>
-            <div className="rounded-xl border border-default bg-surface p-4">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Not participated</p>
-              <p className="text-xl font-bold text-amber-600 dark:text-amber-400 mt-1">{kpis.notParticipated.toLocaleString()}</p>
-            </div>
-            <div className="rounded-xl border border-default bg-surface p-4">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Completion</p>
-              <p className="text-xl font-bold text-primary mt-1">{completion === null ? "-" : `${completion.toFixed(1)}%`}</p>
-            </div>
+            {studentTotals && (
+              <>
+                <div
+                  className="rounded-xl border border-default bg-surface p-4"
+                  title="Distinct students enrolled across the departments in scope this period"
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Students</p>
+                  <p className="text-xl font-bold text-primary mt-1">{studentTotals.students.toLocaleString()}</p>
+                </div>
+                <div
+                  className="rounded-xl border border-default bg-surface p-4"
+                  title="Distinct student participants ÷ distinct students in scope"
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Response rate</p>
+                  <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+                    {responseRate === null ? "-" : `${responseRate.toFixed(1)}%`}
+                  </p>
+                </div>
+              </>
+            )}
           </div>
 
           {!selectedDept && sortedDepts.length === 0 && (
