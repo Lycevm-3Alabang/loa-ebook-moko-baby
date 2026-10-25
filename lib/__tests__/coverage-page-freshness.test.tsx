@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, waitFor, fireEvent, within } from "@testing-library/react"
+import { render, screen, waitFor, fireEvent } from "@testing-library/react"
 
 const mockUseApiGet = vi.hoisted(() => vi.fn())
 const mockFetcher = vi.hoisted(() => vi.fn())

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, within } from "@testing-library/react"
 
 const mockUseApiGet = vi.hoisted(() => vi.fn())
 const mockFetcher = vi.hoisted(() => vi.fn())
@@ -56,7 +56,12 @@ describe("AdminEvaluationResultsPage cached-data banner", () => {
 
     render(<AdminEvaluationResultsPage />)
 
-    await waitFor(() => expect(screen.getByText(/Computer Studies/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId("dashboard-chart")).toBeTruthy())
+    expect(within(screen.getByTestId("dashboard-mean-tile")).getByText("4.50")).toBeTruthy()
+    expect(within(screen.getByTestId("dashboard-mean-tile")).getByText("Outstanding")).toBeTruthy()
+    const chart = screen.getByTestId("dashboard-chart")
+    expect(within(chart).getByText("Computer Studies (CS)")).toBeTruthy()
+    expect(within(chart).getAllByRole("listitem")).toHaveLength(1)
     expect(screen.getByText(/Displayed figures are cached and may be stale/i)).toBeTruthy()
     expect(screen.getByText(/Not manually refreshed yet/i)).toBeTruthy()
     expect(screen.getByText("Refresh")).toBeTruthy()
