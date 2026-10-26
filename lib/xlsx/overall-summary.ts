@@ -233,6 +233,8 @@ export function renderFacultySummarySheet(
     })
 
     // ---- assemble all rows for the new Individual sheet -------------
+    // ⭐ No "Subject(s):" subtitle — the sheet summarises the whole faculty,
+    //    not per subject/section. Rubric blocks average ALL responses.
     const allRows: SummaryLine[] = []
 
     // header block rows 1‑5
@@ -247,10 +249,10 @@ export function renderFacultySummarySheet(
     // band rows 6‑7 (Employee Name & Rating)
     allRows.push(...bandRows)
 
-    // row 8: Subject(s): subtitle
-    allRows.push({ kind: "subtitle", text: "Subject(s):" })
-
-    // rubric blocks – one per criterion from the database
+    // rubric blocks – one per criterion from the database (APP_RUBRIC).
+    // Each block's AVERAGE is computed from categoryAverages, keyed by the
+    // criterion display name — this averages ALL responses across the faculty,
+    // not per subject‑section.
     for (const block of rubricBlocks) {
       allRows.push({ kind: "label", text: block.title })
       for (const si of block.subItems) {
