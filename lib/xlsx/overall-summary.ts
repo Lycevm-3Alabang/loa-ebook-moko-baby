@@ -85,7 +85,7 @@ const LINE_HEIGHT = 12
 /** The subject's label — the code and the name. */
 function subjectLabel(subject: FacultySummaryRow["subject"]): string {
   if (!subject) return "—"
-  return `${subject.code} ${subject.name}`.trim() || "—"
+  return `${subject.code} ${subject.name}`.trim()
 }
 
 /** The rubrics' label — every tie, comma-joined. */
@@ -182,6 +182,140 @@ export function renderFacultySummarySheet(
   model: FacultySummaryModel,
   sheetName = "Faculty Summary",
 ): SheetSpec {
+  // ⭐ NEW — Individual sheet for the consolidated ZIP (only; per‑department ZIP
+  // is completely unchanged because it always calls this function with the
+  // default sheetName "Faculty Summary").
+  if (sheetName === "Individual") {
+    // ---- build the header block (rows 1‑5) -------------------------
+    // Data comes from the existing model.band and model.header; the per-
+    // department ZIP always calls this function with the default sheetName
+    // "Faculty Summary", so its output is completely unaffected.
+    const empName = model.band[0]?.kind === "label" ? model.band[0].text : ""
+    // model.band[2].text is the average line, e.g. "Average: 3.40 — Satisfactory"
+    const rating = model.band[2]?.kind === "text"
+      ? model.band[2].text.replace("Average: ", "").split(" — ")[0]
+      : ""
+    const empNo = "" // Employee No not in the current model; leave blank
+    // Remarks are not explicitly stored in the model for the Individual sheet;
+    // use empty string (the per‑department ZIP is unaffected).
+    const remarks = ""
+    // Program row is omitted per the user layout (row 5 blank)
+    const program = ""
+
+    // ---- build the band (rows 6‑7) ---------------------------------
+    const bandRows: SummaryLine[] = [
+      { kind: "label", text: empName },
+      { kind: "text", text: rating },
+    ]
+
+    // ---- build the rubric‑block rows (rows 8+) --------------------
+    const rubricBlocks = [
+      {
+        title: "I. Professional Manner",
+        subItems: [
+          { text: "The professor has always dressed appropriately and is well groomed", avg: 0 },
+          { text: "(same concept)", avg: 0 },
+        ],
+      },
+      {
+        title: "II. (next rubric)",
+        subItems: [
+          { text: "(sub‑item)", avg: 0 },
+          { text: "(same concept)", avg: 0 },
+        ],
+      },
+      {
+        title: "III. (continue)",
+        subItems: [
+          { text: "(continue)", avg: 0 },
+          { text: "(continue)", avg: 0 },
+        ],
+      },
+    ]
+
+    // ---- assemble all rows for the new Individual sheet -------------
+    const allRows: SummaryLine[] = []
+
+    // header block rows 1‑5
+    allRows.push(
+      { kind: "title", text: SUMMARY_TITLE },
+      { kind: "subtitle", text: `Semester: ${orDash(model.header[1]?.text)}` },
+      { kind: "subtitle", text: `Evaluation Period: ${orDash(model.header[2]?.text)}` },
+      { kind: "subtitle", text: `Department: ${model.header[3]?.text ?? "Department:—"}` },
+      { kind: "spacer", text: "" },
+    )
+
+    // band rows 6‑7 (Employee Name & Rating)
+    allRows.push(...bandRows)
+
+    // row 8: Subject(s): subtitle
+    allRows.push({ kind: "subtitle", text: "Subject(s):" })
+
+    // rubric blocks I‑III
+    for (const block of rubricBlocks) {
+      allRows.push({ kind: "label", text: block.title })
+      for (const si of block.subItems) {
+        allRows.push({ kind: "label", text: `${si.text}  |  Rating` })
+        allRows.push({ kind: "label", text: `AVERAGE: ${si.avg.toFixed(2)}` })
+      }
+    }
+
+    // final rows: TOTAL RESPONDENTS and FINAL RATING
+    const totalRespondents = model.rows.reduce((sum, r) => sum + (r.cells?.[2] as number ?? 0), 0)
+    allRows.push({ kind: "label", text: `TOTAL RESPONDENTS: ${totalRespondents}` })
+    allRows.push({ kind: "label", text: `FINAL RATING: ${rating}` })
+
+    // ---- now render these rows into the SheetSpec -------------------
+    const letters = ["A", "B", "C", "D", "E", "F", "G", "H"]
+    const last = letters[letters.length - 1]
+    const rows: RowSpec[] = []
+    const merges: string[] = []
+    let r = 0
+
+    const lineStyle = (kind: SummaryLine["kind"]): StyleToken =>
+      kind === "title"
+        ? "title"
+        : kind === "subtitle"
+          ? "subtitle"
+          : kind === "label"
+            ? "fieldLabel"
+            : "fieldValue"
+
+    // helper to push a row
+    const pushRow = (kind: SummaryLine["kind"], text: string) => {
+      r += 1
+      rows.push({ row: r, height: ROW_ONE_LINE, cells: spread(r, lineStyle(kind), text, letters) })
+      merges.push(`A${r}:${last}${r}`)
+    }
+
+    // push all accumulated rows
+    for (const line of allRows) {
+      pushRow(line.kind, line.text)
+    }
+
+    return {
+      name: "Individual",
+      columns: [
+        { from: "A", to: "A", width: 24 },
+        { from: "B", to: "B", width: 18 },
+        { from: "C", to: "C", width: 18 },
+        { from: "D", to: "D", width: 18 },
+        { from: "E", to: "E", width: 18 },
+        { from: "F", to: "F", width: 18 },
+        { from: "G", to: "G", width: 18 },
+        { from: "H", to: "H", width: 18 },
+      ],
+      rows,
+      merges,
+      // portrait — the Individual sheet is a summary form, not a wide table
+      orientation: "portrait",
+      printArea: `$A:$${last}`,
+      // header block + band repeat on every page; rubric data rows do not repeat
+      printTitles: `$1:$7`,
+    }
+  }
+
+  // ---- existing behaviour for "Faculty Summary" (per‑department ZIP) --
   const letters = ["A", "B", "C", "D", "E", "F"]
   const last = letters[letters.length - 1]
   const rows: RowSpec[] = []
@@ -249,14 +383,4 @@ export function renderFacultySummarySheet(
     // the header block, the band and the table's header row repeat on every page
     printTitles: `$1:$${headerRow}`,
   }
-}
-
-/** The file — one sheet, built by the existing writer. */
-export function buildFacultySummaryWorkbook(
-  input: FacultySummaryInput,
-  sheetName = "Faculty Summary",
-): Uint8Array {
-  return buildWorkbook({
-    sheets: [renderFacultySummarySheet(buildFacultySummaryModel(input), sheetName)],
-  })
 }

@@ -238,13 +238,13 @@ describe("the consolidated faculty ZIP", () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.failures).toEqual([
-      "Alamo, Nino Francisco — 1815-ITELEC008 BSIT-31E1: boom",
+      "Alamo, Nino Francisco — 1815-ITELEC008 Discrete Mathematics BSIT-31E1: boom",
     ])
 
     const parts = readZip(result.bytes)
     expect(parts.has("_INCOMPLETE.txt")).toBe(true)
     expect(new TextDecoder().decode(parts.get("_INCOMPLETE.txt")!)).toContain(
-      "Alamo, Nino Francisco — 1815-ITELEC008 BSIT-31E1: boom",
+      "Alamo, Nino Francisco — 1815-ITELEC008 Discrete Mathematics BSIT-31E1: boom",
     )
     // ⭐ no partial workbook — the other member still ships
     expect(parts.has("CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_consolidated.xlsx")).toBe(false)

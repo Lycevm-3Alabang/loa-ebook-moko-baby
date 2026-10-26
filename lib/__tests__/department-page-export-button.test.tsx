@@ -129,7 +129,7 @@ describe("Department Results Page - Excel Export integration", () => {
         name: /Include Doe, John in the export/i,
       })
       fireEvent.change(facultyCheckbox, { target: { checked: true } })
-      await waitFor(() => expect(consolidatedButton().hasAttribute("disabled")).toBe(false))
+      await waitFor(() => expect(consolidatedButton().getAttribute("disabled")).toBeFalsy())
 
       fireEvent.click(consolidatedButton())
       // ⭐ the confirmation names the consolidated workbook, not subject workbooks
@@ -214,7 +214,7 @@ describe("Department Results Page - Excel Export integration", () => {
         name: /Include Doe, John in the export/i,
       })
       fireEvent.change(facultyCheckbox, { target: { checked: true } })
-      await waitFor(() => expect(consolidatedButton().hasAttribute("disabled")).toBe(false))
+      await waitFor(() => expect(consolidatedButton().getAttribute("disabled")).toBeFalsy())
 
       fireEvent.click(consolidatedButton())
       fireEvent.click(screen.getByRole("button", { name: /start export/i }))
