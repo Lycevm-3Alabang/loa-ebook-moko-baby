@@ -1,77 +1,79 @@
 import { renderCommentsSheet } from "./comments"
-import type { FormRow } from "./form-model"
+import { buildFormModel, type FormInput, type FormRow } from "./form-model"
+import { renderIndividualSheet } from "./individual"
 import { renderOverallSheet, type OverallModel } from "./overall"
-import {
-  renderFacultySummarySheet,
-  type SummaryRubricCategory,
-  type FacultySummaryModel,
-} from "./overall-summary"
-import { APP_RUBRIC } from "@/lib/__tests__/fixtures/eval-rubric"
+import { type SummaryRubricCategory, type FacultySummaryModel } from "./overall-summary"
 import { buildWorkbook } from "./writer"
 
 /**
  * The CONSOLIDATED faculty workbook — one faculty's whole term in one file.
  *
- * ⭐ It is a COMPOSITION, not a fourth form renderer: the three sheets are the
- * shipping models, drawn by their shipping renderers, in the legacy's tab
- * order (Individual, Comments, Overall). That is what keeps the school's
- * artifact from drifting — there is still one renderer per sheet.
- *
- * ⭐ The faculty grain changes the SCOPE of a sheet, never its kind:
- * - the Individual is the shipping faculty summary, renamed;
- * - the Comments are the shipping model with a group banner per subject-section;
- * - the Overall is the shipping model with SUBJECT and SECTION columns.
- *
- * ⭐ No letterhead: the consolidated file is data, not the signed form. The
- * writer carries no media, so no drawing part is written at all.
+ * ⭐ The Individual sheet keeps the legacy form layout and only changes the
+ * scope: it is one faculty-level workbook, not a subject-section form. The
+ * Comments and Overall sheets are the same shipping models, in the same tab
+ * order, and the Overall sheet remains exactly as it already was.
  */
 
-/** What the consolidated workbook is built from — three finished models. */
 export interface ConsolidatedFacultyWorkbookInput {
-  /** the Individual tab — the faculty summary's model */
   individual: FacultySummaryModel
-  /** the Comments tab — the identity block, the banner and the groups */
   comments: FormRow[]
-  /** the Overall tab — one row per response across the faculty */
   overall: OverallModel
-  /** per-item arithmetic means across the faculty's valid responses */
   itemAverages?: Record<string, number>
-  /** the evaluation period's rubric, in display order */
   rubricCategories?: SummaryRubricCategory[]
+  form?: FormInput
+}
+
+function mean(values: Array<number | null | undefined>): number | null {
+  const scores = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+  if (scores.length === 0) return null
+  return scores.reduce((sum, score) => sum + score, 0) / scores.length
 }
 
 /** The consolidated workbook, as bytes. */
 export function buildConsolidatedFacultyWorkbook(
   input: ConsolidatedFacultyWorkbookInput,
 ): Uint8Array {
-  // ⭐ NEW — compute overall category averages from all responses,
-  // so the Individual sheet's rubric blocks display the mean score
-  // across ALL subject-sections (not per-section). This matches the
-  // requirement: "it averages ALL regardless of subject-section".
-  // Each OverallDataRow.values[i] holds the per-criterion average for that response.
-  const criteria = input.overall.columns.filter((column) => column.kind === "criterion")
-  const categoryAverages: Record<string, number> = {}
-  for (const [index, criterion] of criteria.entries()) {
-    const scores = input.overall.rows
-      .map((row) => row.values[index])
-      .filter((v): v is number => typeof v === "number")
-    if (scores.length > 0) {
-      categoryAverages[criterion.heading] = scores.reduce(
-        (sum, s) => sum + s,
-        0,
-      ) / scores.length
-    }
+  const form = input.form ?? {
+    semesterTitle: input.individual.header[1]?.text.replace("Semester: ", "") || null,
+    evaluationPeriodName: input.individual.header[2]?.text.replace("Evaluation Period: ", "") || null,
+    employeeNo: null,
+    facultyName: input.individual.band[0]?.kind === "label" ? input.individual.band[0].text : null,
+    avgRating: input.individual.band[2]?.kind === "text"
+      ? Number(input.individual.band[2].text.replace("Average: ", "").split(" — ")[0]) || null
+      : null,
+    remarks: input.individual.band[2]?.kind === "text"
+      ? input.individual.band[2].text.includes("—")
+        ? input.individual.band[2].text.split(" — ")[1] || null
+        : null
+      : null,
+    program: null,
+    sectionName: null,
+    subject: null,
+    totalRespondents: input.individual.rows.reduce((sum, row) => sum + (typeof row.cells[2] === "number" ? row.cells[2] : 0), 0),
+    criteria: (input.rubricCategories ?? []).map((category) => {
+      const index = input.overall.columns.findIndex(
+        (column) => column.kind === "criterion" && column.heading === category.name,
+      )
+      return {
+        name: category.name,
+        average: mean(input.overall.rows.map((row) => row.values[index] ?? null)),
+        statements: category.items.map((item) => ({
+          text: item.text,
+          avg: input.itemAverages?.[item.id] ?? null,
+        })),
+      }
+    }),
+  }
+
+  const rows = buildFormModel(form)
+  const titleRow = rows.find((row) => row.kind === "title")
+  if (titleRow && titleRow.kind === "title") {
+    titleRow.text = "FACULTY PERFORMANCE EVALUATION RESULT (POST-EVALUATION)"
   }
 
   return buildWorkbook({
     sheets: [
-      renderFacultySummarySheet(
-        input.individual,
-        "Individual",
-        categoryAverages,
-        input.itemAverages,
-        input.rubricCategories,
-      ),
+      renderIndividualSheet({ rows }),
       renderCommentsSheet(input.comments),
       renderOverallSheet(input.overall),
     ],

@@ -248,6 +248,26 @@ export async function buildConsolidatedFacultyZip(
               lowest: [],
             }],
           }),
+          form: {
+            semesterTitle: period.semesterTitle ?? null,
+            evaluationPeriodName: period.name ?? null,
+            employeeNo: employeeNo ?? null,
+            facultyName: member.name,
+            avgRating: averageRating,
+            remarks: getRemark(averageRating),
+            program: null,
+            sectionName: null,
+            subject: null,
+            totalRespondents: responses.length,
+            criteria: rubric.map((category) => ({
+              name: category.name,
+              average: averageCategories[category.name] ?? null,
+              statements: category.items.map((item) => ({
+                text: item.text,
+                avg: itemAverages[item.id] ?? null,
+              })),
+            })),
+          },
           comments: buildCommentsModel(
             {
               semesterTitle: period.semesterTitle ?? null,

@@ -3,7 +3,6 @@ import { orDash, ROW_ONE_LINE } from "./form-model"
 import { sectionLabel } from "../evaluation-utils"
 import { buildWorkbook, type ColumnSpec, type RowSpec, type SheetSpec } from "./writer"
 import type { StyleToken } from "./styles"
-import { APP_RUBRIC } from "@/lib/__tests__/fixtures/eval-rubric"
 
 /**
  * The faculty's CONSOLIDATED FILE — the summary the faculty cards show.
@@ -187,158 +186,10 @@ export function buildFacultySummaryModel(
 export function renderFacultySummarySheet(
   model: FacultySummaryModel,
   sheetName = "Faculty Summary",
-  // ⭐ NEW — category averages keyed by rubric criterion name, computed from
-  // ALL responses across all subject-sections (passed from
-  // buildConsolidatedFacultyWorkbook when sheetName === "Individual").
-  categoryAverages?: Record<string, number>,
-  itemAverages?: Record<string, number>,
-  rubricCategories?: SummaryRubricCategory[],
+  _categoryAverages?: Record<string, number>,
+  _itemAverages?: Record<string, number>,
+  _rubricCategories?: SummaryRubricCategory[],
 ): SheetSpec {
-  // ⭐ NEW — Individual sheet for the consolidated ZIP (only; per‑department ZIP
-  // is completely unchanged because it always calls this function with the
-  // default sheetName "Faculty Summary").
-  if (sheetName === "Individual") {
-    // ---- build the header block (rows 1‑5) -------------------------
-    // Data comes from the existing model.band and model.header; the per-
-    // department ZIP always calls this function with the default sheetName
-    // "Faculty Summary", so its output is completely unaffected.
-    const empName = model.band[0]?.kind === "label" ? model.band[0].text : ""
-    // model.band[2].text is the average line, e.g. "Average: 3.40 — Satisfactory"
-    const rating = model.band[2]?.kind === "text"
-      ? model.band[2].text.replace("Average: ", "").split(" — ")[0]
-      : ""
-    const empNo = "" // Employee No not in the current model; leave blank
-    // Remarks are not explicitly stored in the model for the Individual sheet;
-    // use empty string (the per‑department ZIP is unaffected).
-    const remarks = ""
-    // Program row is omitted per the user layout (row 5 blank)
-    const program = ""
-
-    // ---- build the band (rows 6‑7) ---------------------------------
-    const bandRows: SummaryLine[] = [
-      { kind: "label", text: empName },
-      { kind: "text", text: rating },
-    ]
-
-// ---- build the rubric‑block rows (rows 8+) --------------------
-    // Use the live rubric from the database (APP_RUBRIC). Each criterion becomes a
-    // "block"; its sub‑items are the rubric statements; the AVERAGE line is computed
-    // from the categoryAverages map keyed by the criterion display name.
-    const rubric = rubricCategories ?? APP_RUBRIC.map((criterion) => ({
-      name: criterion.name,
-      items: criterion.statements,
-    }))
-    const rubricBlocks = rubric.map((criterion) => {
-      const criterionName = criterion.name
-      const avgValue = categoryAverages?.[criterionName] ?? null
-      const statements = criterion.items.map((statement) => ({
-        id: statement.id,
-        text: statement.text,
-        avg: itemAverages?.[statement.id] ?? null,
-      }))
-      return {
-        title: criterionName,
-        avg: avgValue,
-        subItems: statements,
-      }
-    })
-
-    // ---- assemble all rows for the new Individual sheet -------------
-    // ⭐ No "Subject(s):" subtitle — the sheet summarises the whole faculty,
-    //    not per subject/section. Rubric blocks average ALL responses.
-    const allRows: SummaryLine[] = []
-
-    // header block rows 1‑5
-    allRows.push(
-      { kind: "title", text: SUMMARY_TITLE },
-      { kind: "subtitle", text: `Semester: ${orDash(model.header[1]?.text)}` },
-      { kind: "subtitle", text: `Evaluation Period: ${orDash(model.header[2]?.text)}` },
-      { kind: "subtitle", text: `Department: ${model.header[3]?.text ?? "Department:—"}` },
-      { kind: "spacer", text: "" },
-    )
-
-    // band rows 6‑7 (Employee Name & Rating)
-    allRows.push(...bandRows)
-
-    // rubric blocks – one per criterion from the database (APP_RUBRIC).
-    // Each block's AVERAGE is computed from categoryAverages, keyed by the
-    // criterion display name — this averages ALL responses across the faculty,
-    // not per subject‑section.
-    for (const block of rubricBlocks) {
-      allRows.push({ kind: "label", text: block.title })
-      allRows.push({
-        kind: "label",
-        text: `CATEGORY AVERAGE: ${block.avg === null ? "—" : block.avg.toFixed(2)}`,
-      })
-      for (const si of block.subItems) {
-        allRows.push({ kind: "label", text: `${si.text}  |  Rating` })
-        allRows.push({
-          kind: "label",
-          text: `AVERAGE: ${si.avg === null ? "—" : si.avg.toFixed(2)}`,
-        })
-      }
-    }
-
-    // final rows: TOTAL RESPONDENTS and FINAL RATING
-    const totalRespondents = model.rows.reduce((sum, r) => sum + (r.cells?.[2] as number ?? 0), 0)
-    allRows.push({ kind: "label", text: `TOTAL RESPONDENTS: ${totalRespondents}` })
-    allRows.push({ kind: "label", text: `FINAL RATING: ${rating}` })
-
-    // ---- now render these rows into the SheetSpec -------------------
-    // ⭐ 10 columns (A-J) to match the template format — the Individual sheet
-    // summarises the whole faculty, not per subject/section.
-    const letters = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]
-    const last = letters[letters.length - 1]
-    const rows: RowSpec[] = []
-    const merges: string[] = []
-    let r = 0
-
-    const lineStyle = (kind: SummaryLine["kind"]): StyleToken =>
-      kind === "title"
-        ? "title"
-        : kind === "subtitle"
-          ? "subtitle"
-          : kind === "label"
-            ? "fieldLabel"
-            : "fieldValue"
-
-    // helper to push a row
-    const pushRow = (kind: SummaryLine["kind"], text: string) => {
-      r += 1
-      rows.push({ row: r, height: ROW_ONE_LINE, cells: spread(r, lineStyle(kind), text, letters) })
-      merges.push(`A${r}:${last}${r}`)
-    }
-
-    // push all accumulated rows
-    for (const line of allRows) {
-      pushRow(line.kind, line.text)
-    }
-
-    return {
-      name: "Individual",
-columns: [
-      { from: "A", to: "A", width: 24 },
-      { from: "B", to: "B", width: 14 },
-      { from: "C", to: "C", width: 11 },
-      { from: "D", to: "D", width: 10 },
-      { from: "E", to: "E", width: 26 },
-      { from: "F", to: "F", width: 26 },
-      { from: "G", to: "G", width: 26 },
-      { from: "H", to: "H", width: 26 },
-      { from: "I", to: "I", width: 18 },
-      { from: "J", to: "J", width: 18 },
-    ],
-      rows,
-      merges,
-      // portrait — the Individual sheet is a summary form, not a wide table
-      orientation: "portrait",
-      printArea: `$A:$${last}`,
-      // header block + band repeat on every page; rubric data rows do not repeat
-      printTitles: `$1:$7`,
-    }
-  }
-
-  // ---- existing behaviour for "Faculty Summary" (per‑department ZIP) --
   const letters = ["A", "B", "C", "D", "E", "F"]
   const last = letters[letters.length - 1]
   const rows: RowSpec[] = []
