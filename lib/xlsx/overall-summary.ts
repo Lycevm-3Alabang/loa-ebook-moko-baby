@@ -66,6 +66,11 @@ export interface FacultySummaryModel {
   rows: { cells: (string | number | null)[]; height: number }[]
 }
 
+export interface SummaryRubricCategory {
+  name: string
+  items: { id: string; text: string }[]
+}
+
 /** The table's columns — their widths decide the row heights. */
 const COLUMN_WIDTHS = [34, 14, 11, 10, 26, 26]
 
@@ -85,7 +90,7 @@ const LINE_HEIGHT = 12
 /** The subject's label — the code and the name. */
 function subjectLabel(subject: FacultySummaryRow["subject"]): string {
   if (!subject) return "—"
-  return `${subject.code} ${subject.name}`.trim() || "—"
+  return `${subject.code} ${subject.name}`.trim()
 }
 
 /** The rubrics' label — every tie, comma-joined. */
@@ -171,8 +176,20 @@ export function buildFacultySummaryModel(
   }
 }
 
-/** The sheet, drawn from its model. */
-export function renderFacultySummarySheet(model: FacultySummaryModel): SheetSpec {
+/**
+ * The sheet, drawn from its model.
+ *
+ * ⭐ The tab's name is a parameter because the faculty grain's workbook calls
+ * this sheet `Individual` — the same sheet, the same content, the name the
+ * school's three-tab workbook gives it. The subject grain keeps the default.
+ */
+export function renderFacultySummarySheet(
+  model: FacultySummaryModel,
+  sheetName = "Faculty Summary",
+  _categoryAverages?: Record<string, number>,
+  _itemAverages?: Record<string, number>,
+  _rubricCategories?: SummaryRubricCategory[],
+): SheetSpec {
   const letters = ["A", "B", "C", "D", "E", "F"]
   const last = letters[letters.length - 1]
   const rows: RowSpec[] = []
@@ -230,7 +247,7 @@ export function renderFacultySummarySheet(model: FacultySummaryModel): SheetSpec
   }
 
   return {
-    name: "Faculty Summary",
+    name: sheetName,
     columns: COLUMN_SPECS,
     rows,
     merges,
@@ -243,8 +260,11 @@ export function renderFacultySummarySheet(model: FacultySummaryModel): SheetSpec
 }
 
 /** The file — one sheet, built by the existing writer. */
-export function buildFacultySummaryWorkbook(input: FacultySummaryInput): Uint8Array {
+export function buildFacultySummaryWorkbook(
+  input: FacultySummaryInput,
+  sheetName = "Faculty Summary",
+): Uint8Array {
   return buildWorkbook({
-    sheets: [renderFacultySummarySheet(buildFacultySummaryModel(input))],
+    sheets: [renderFacultySummarySheet(buildFacultySummaryModel(input), sheetName)],
   })
 }

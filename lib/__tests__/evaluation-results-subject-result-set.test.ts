@@ -78,6 +78,43 @@ describe("getSubjectResultSet", () => {
     expect(row?.categoryAverages).toEqual({ "Professional Manner": 5, "Course Coverage": 3 })
   })
 
+  it("carries per-response item averages for the consolidated export", async () => {
+    mockEvalRepo.listSubmittedByPeriodAndEvaluateeAndFS.mockResolvedValue([
+      { id: "e1", submittedAt: "2026-02-11T09:00:00.000Z" },
+      { id: "e2", submittedAt: "2026-02-12T09:00:00.000Z" },
+    ])
+    mockEvalRepo.listRatingsByEvaluationIds.mockResolvedValue([
+      {
+        evaluationId: "e1",
+        itemId: "i1",
+        rating: 5,
+        rubric_items: {
+          id: "i1",
+          categoryId: "c1",
+          text: "Statement",
+          displayOrder: 1,
+          rubric_categories: { id: "c1", name: "Professional Manner", displayOrder: 1 },
+        },
+      },
+      {
+        evaluationId: "e2",
+        itemId: "i1",
+        rating: 3,
+        rubric_items: {
+          id: "i1",
+          categoryId: "c1",
+          text: "Statement",
+          displayOrder: 1,
+          rubric_categories: { id: "c1", name: "Professional Manner", displayOrder: 1 },
+        },
+      },
+    ])
+
+    const set = await getSubjectResultSet("fs1", "p1")
+    expect(set?.evaluations.map((evaluation) => evaluation.itemAverages.map((item) => item.avg)))
+      .toEqual([[5], [3]])
+  })
+
   it("carries the set's own live map too", async () => {
     const set = await getSubjectResultSet("fs1", "p1")
     expect(set?.summary.categoryAverages).toEqual({ "Professional Manner": 5, "Course Coverage": 3 })

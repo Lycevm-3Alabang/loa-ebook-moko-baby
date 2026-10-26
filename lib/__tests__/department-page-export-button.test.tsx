@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import React from "react"
 
 const mockUseApiGet = vi.hoisted(() => vi.fn())
@@ -51,6 +51,13 @@ const resultsFor = (url: string | null) => {
           avgRating: 4.5,
           highestRubrics: [],
           lowestRubrics: [],
+        }, {
+          facultyId: "f2",
+          facultyName: "Ana Reyes",
+          totalRespondents: 4,
+          avgRating: 4.0,
+          highestRubrics: [],
+          lowestRubrics: [],
         }],
         members: [],
         visibilityMap: {},
@@ -70,12 +77,21 @@ beforeEach(() => {
   mockUseApiGet.mockImplementation(resultsFor)
 })
 
+const settleInitialSelectionReset = async () => {
+  await act(async () => {
+    await Promise.resolve()
+  })
+}
+
 const zipButton = () => screen.getAllByRole("button", { name: /download excel \(zip\)/i })[0]
+const consolidatedButton = () =>
+  screen.getAllByRole("button", { name: /download consolidated excel \(zip\)/i })[0]
 
 describe("Department Results Page - Excel Export integration", () => {
   describe("Admin Department Page", () => {
     it("renders the ZIP button and enables after faculty selection", async () => {
       render(<AdminDepartmentDetailPage />)
+      await settleInitialSelectionReset()
       
       // Select faculty member f1 first to enable the ZIP button
       // The checkbox has aria-label "Include Doe, John in the export"
@@ -83,7 +99,7 @@ describe("Department Results Page - Excel Export integration", () => {
         name: /Include Doe, John in the export/i 
       })
 
-      fireEvent.change(facultyCheckbox, { target: { checked: true } })
+      fireEvent.click(facultyCheckbox)
       
       // Wait for the ZIP button to be enabled (disabled={false} renders disabled="")
       // This was fixed: toBeFalsy() instead of toBeNull() resolves the original
@@ -105,6 +121,42 @@ describe("Department Results Page - Excel Export integration", () => {
       render(<AdminDepartmentDetailPage />)
       
       expect(screen.queryByRole("button", { name: /download excel \(zip\)/i })).toBeNull()
+    })
+
+    it("renders the consolidated button, disabled until a faculty is ticked", () => {
+      render(<AdminDepartmentDetailPage />)
+      expect(consolidatedButton().hasAttribute("disabled")).toBe(true)
+    })
+
+    it("exports the selected faculty's consolidated workbook from the admin route", async () => {
+      mockDownloadFromApi.mockResolvedValue(undefined)
+      render(<AdminDepartmentDetailPage />)
+      await settleInitialSelectionReset()
+
+      const facultyCheckbox = screen.getByRole("checkbox", {
+        name: /Include Doe, John in the export/i,
+      })
+      fireEvent.click(facultyCheckbox)
+      await waitFor(() => expect(consolidatedButton().getAttribute("disabled")).toBeFalsy())
+
+      fireEvent.click(consolidatedButton())
+      // ⭐ the confirmation names the consolidated workbook, not subject workbooks
+      await waitFor(() => {
+        const confirmation = screen.getByText((_, element) =>
+          element?.tagName === "P" &&
+          /one consolidated workbook per faculty member/i.test(element.textContent ?? ""),
+        )
+        expect(confirmation).toBeTruthy()
+      })
+      fireEvent.click(screen.getByRole("button", { name: /start export/i }))
+
+      await waitFor(() => expect(mockDownloadFromApi).toHaveBeenCalled())
+      expect(mockDownloadFromApi.mock.calls[0][0]).toBe(
+        "/api/admin/evaluation-results/export/consolidated?evaluationPeriodId=p1&departmentIds=d1&facultyIds=f1",
+      )
+      expect(mockDownloadFromApi.mock.calls[0][1]).toBe(
+        "evaluation-results-consolidated-p1.zip",
+      )
     })
   })
 
@@ -156,28 +208,53 @@ describe("Department Results Page - Excel Export integration", () => {
   describe("Dean Department Page", () => {
     it("renders the ZIP button and enables after faculty selection", async () => {
       render(<DeanDepartmentDetailPage />)
+      await settleInitialSelectionReset()
       
       // Select faculty member f1 first to enable the ZIP button
       // The checkbox has aria-label "Include Doe, John in the export"
       const facultyCheckbox = screen.getByRole("checkbox", { 
         name: /Include Doe, John in the export/i 
       })
-      fireEvent.change(facultyCheckbox, { target: { checked: true } })
+      fireEvent.click(facultyCheckbox)
       
       // Wait for the ZIP button to be enabled (disabled={false} renders disabled="")
       await waitFor(() => expect(zipButton().getAttribute("disabled")).toBeFalsy())
+    })
+
+    it("exports the consolidated workbook from the dean's own route", async () => {
+      mockDownloadFromApi.mockResolvedValue(undefined)
+      render(<DeanDepartmentDetailPage />)
+      await settleInitialSelectionReset()
+
+      const facultyCheckbox = screen.getByRole("checkbox", {
+        name: /Include Doe, John in the export/i,
+      })
+      fireEvent.click(facultyCheckbox)
+      await waitFor(() => expect(consolidatedButton().getAttribute("disabled")).toBeFalsy())
+
+      fireEvent.click(consolidatedButton())
+      fireEvent.click(screen.getByRole("button", { name: /start export/i }))
+
+      await waitFor(() => expect(mockDownloadFromApi).toHaveBeenCalled())
+      expect(mockDownloadFromApi.mock.calls[0][0]).toBe(
+        "/api/dean/evaluation-results/export/consolidated?evaluationPeriodId=p1&departmentIds=d1&facultyIds=f1",
+      )
+      expect(mockDownloadFromApi.mock.calls[0][1]).toBe(
+        "evaluation-results-consolidated-p1.zip",
+      )
     })
   })
 
   it("ZIP button click triggers export flow", async () => {
     render(<AdminDepartmentDetailPage />)
+    await settleInitialSelectionReset()
     
     // Select faculty member f1 first to enable the ZIP button
     // The checkbox has aria-label "Include Doe, John in the export"
     const facultyCheckbox = screen.getByRole("checkbox", { 
       name: /Include Doe, John in the export/i 
     })
-    fireEvent.change(facultyCheckbox, { target: { checked: true } })
+    fireEvent.click(facultyCheckbox)
     
     // Wait for the ZIP button to be enabled
     await waitFor(() => expect(zipButton().getAttribute("disabled")).toBeFalsy())

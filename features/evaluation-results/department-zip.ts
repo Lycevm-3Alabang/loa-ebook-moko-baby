@@ -50,7 +50,7 @@ export type DepartmentZipResult =
   | { ok: false; reason: "nothing-to-export"; count: number }
 
 /** A name a ZIP entry can carry. */
-function entryName(value: string): string {
+export function entryName(value: string): string {
   return value.replace(/[^a-zA-Z0-9 ._(),-]/g, "_").trim() || "unnamed"
 }
 
@@ -62,7 +62,7 @@ function entryName(value: string): string {
  * route's budget. ⭐ A failure is COLLECTED, never thrown: one subject that
  * cannot be built must not lose the rest.
  */
-async function mapPool<T, R>(
+export async function mapPool<T, R>(
   items: T[],
   limit: number,
   worker: (item: T) => Promise<R>,

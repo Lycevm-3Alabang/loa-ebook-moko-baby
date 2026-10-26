@@ -14,6 +14,17 @@ interface DepartmentZipButtonProps {
   disabled?: boolean
   exportApiBase: string
   label?: string
+  /**
+   * ⭐ The artifact's filename prefix — the consolidated export names its own
+   * file. The default is the existing subject-ZIP filename.
+   */
+  filenamePrefix?: string
+  /**
+   * ⭐ What the download contains — the confirmation's second sentence. The
+   * consolidated export names its workbook here; the existing button keeps
+   * the modal's default copy.
+   */
+  confirmationDescription?: string
 }
 
 /**
@@ -29,6 +40,8 @@ export default function DepartmentZipButton({
   disabled = false,
   exportApiBase,
   label = "Download Excel (ZIP)",
+  filenamePrefix = "evaluation-results-excel",
+  confirmationDescription,
 }: DepartmentZipButtonProps) {
   const [loading, setLoading] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -44,12 +57,12 @@ export default function DepartmentZipButton({
       }
       if (facultyIds && facultyIds.length > 0) params.set("facultyIds", facultyIds.join(","))
       const url = `${exportApiBase}?${params.toString()}`
-      const filename = `evaluation-results-excel-${evaluationPeriodId}.zip`
+      const filename = `${filenamePrefix}-${evaluationPeriodId}.zip`
       await downloadFromApi(url, filename)
     } finally {
       setLoading(false)
     }
-  }, [evaluationPeriodId, departmentIds, facultyIds, exportApiBase])
+  }, [evaluationPeriodId, departmentIds, facultyIds, exportApiBase, filenamePrefix])
 
   const handleClick = useCallback(() => {
     if (disabled) return
@@ -71,6 +84,7 @@ export default function DepartmentZipButton({
         onClose={() => setIsModalOpen(false)}
         onConfirm={startExport}
         facultyCount={facultyIds?.length ?? 0}
+        description={confirmationDescription}
       />
     </>
   )

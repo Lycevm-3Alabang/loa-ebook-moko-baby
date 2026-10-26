@@ -1,5 +1,10 @@
 import { supabase } from "@/lib/db"
-import type { RubricCategoryData, RubricItemData, IRubricRepository } from "@/lib/types"
+import type {
+  RubricCategoryData,
+  RubricCategoryWithItems,
+  RubricItemData,
+  IRubricRepository,
+} from "@/lib/types"
 
 export const rubricRepository: IRubricRepository = {
   async getCategoriesWithItems(groupId) {
@@ -32,7 +37,7 @@ export const rubricRepository: IRubricRepository = {
     return (data ?? []).map((c: { id: string; [k: string]: unknown }) => ({
       ...c,
       items: itemsByCat.get(c.id) ?? [],
-    })) as unknown as RubricCategoryData[]
+    })) as unknown as RubricCategoryWithItems[]
   },
 
   async replaceRubric(groupId, categories) {

@@ -312,6 +312,8 @@ export interface SubjectEvaluationRow {
    * the read already has, so carrying it costs nothing and adds no query.
    */
   categoryAverages: CategoryAverages
+  /** per-item averages for this response, used by the consolidated faculty export */
+  itemAverages: ItemAverage[]
   professionalManner: number | null
   communicationWithStudent: number | null
   studentEngagement: number | null
@@ -415,6 +417,7 @@ export async function getSubjectResultSet(
       // ⭐ the LIVE map, not the eight columns - the rubric's own criteria and
       // what this response scored against each of them
       categoryAverages: evalCatAverages,
+      itemAverages: computeItemAverages(evalRatings),
       professionalManner: evalCatColumns.professionalManner,
       communicationWithStudent: evalCatColumns.communicationWithStudent,
       studentEngagement: evalCatColumns.studentEngagement,

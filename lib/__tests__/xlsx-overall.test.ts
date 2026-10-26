@@ -187,3 +187,93 @@ describe("the Overall sheet", () => {
     ).toThrow(/no "criterion" row/)
   })
 })
+
+// ⭐ the faculty grain — the same table, with the subject and the section as
+// COLUMNS because one faculty's sheet spans several subject-sections.
+const FACULTY_INPUT: OverallInput = {
+  semesterTitle: "SY 2026-2027 First Semester",
+  facultyName: "Alamo, Nino Francisco",
+  department: { name: "Computer Studies", code: "CCS" },
+  subject: null,
+  showSubjectColumn: true,
+  showSectionColumn: true,
+  criteria: CRITERIA,
+  responses: [
+    {
+      ...INPUT.responses[0],
+      subject: "1815-ITELEC009 Introduction to Computing",
+      section: "BSIT-31E1",
+    },
+    {
+      ...INPUT.responses[1],
+      subject: "1815-ITELEC010 Data Structures",
+      section: "BSIT-31E2",
+    },
+  ],
+}
+
+describe("the Overall sheet at the faculty grain", () => {
+  it("puts SUBJECT and SECTION after NO, and DATE after them", () => {
+    const model = buildOverallModel(FACULTY_INPUT)
+    expect(model.columns.map((column) => column.heading)).toEqual([
+      "NO",
+      "SUBJECT",
+      "SECTION",
+      "DATE",
+      ...CRITERIA.map((criterion) => criterion.name),
+      "GENERAL RATING",
+      "REMARKS",
+    ])
+  })
+
+  it("prints the Department and OMITS the Subject line — never both", () => {
+    const s = sheet(FACULTY_INPUT)
+    expect(texts(s)).toContain("Department: Computer Studies (CCS)")
+    // ⭐ the subject is a column now; a header line would say it twice
+    expect(texts(s).some((text) => text.startsWith("Subject:"))).toBe(false)
+  })
+
+  it("writes each response's own subject and section", () => {
+    const s = sheet(FACULTY_INPUT)
+    expect(at(s, "B7")?.value).toBe("1815-ITELEC009 Introduction to Computing")
+    expect(at(s, "C7")?.value).toBe("BSIT-31E1")
+    expect(at(s, "B8")?.value).toBe("1815-ITELEC010 Data Structures")
+    expect(at(s, "C8")?.value).toBe("BSIT-31E2")
+  })
+
+  it("keeps NO continuous and shifts the figures under their own columns", () => {
+    const s = sheet(FACULTY_INPUT)
+    expect(at(s, "A7")?.value).toBe(1)
+    expect(at(s, "A8")?.value).toBe(2)
+    // the criteria start at E — after NO, SUBJECT, SECTION and DATE
+    expect(at(s, "E7")?.value).toBe(4.5)
+    // and the rating/remark follow the last criterion
+    expect(at(s, "M7")?.value).toBe(4.25)
+    expect(at(s, "N7")?.value).toBe("Very Satisfactory")
+  })
+
+  it("prints a dash for a response with no label", () => {
+    const s = sheet({
+      ...FACULTY_INPUT,
+      responses: [{ ...FACULTY_INPUT.responses[0], subject: undefined, section: undefined }],
+    })
+    expect(at(s, "B7")?.value).toBe("—")
+    expect(at(s, "C7")?.value).toBe("—")
+  })
+
+  it("keeps the columns even when the faculty has no responses", () => {
+    const model = buildOverallModel({ ...FACULTY_INPUT, responses: [] })
+    expect(model.rows).toHaveLength(0)
+    expect(model.columns.map((column) => column.heading)).toContain("SUBJECT")
+    expect(model.columns.map((column) => column.heading)).toContain("SECTION")
+  })
+
+  it("grows a row when a label wraps, and keeps it landscape with the wider print area", () => {
+    const s = sheet(FACULTY_INPUT)
+    // ⭐ the subject's 38 characters take two lines in a 30-wide column
+    expect(s.rows.find((row) => row.row === 7)?.height).toBeGreaterThan(13.5)
+    expect(s.orientation).toBe("landscape")
+    expect(s.printArea).toBe("$A:$N")
+    expect(s.printTitles).toBe("$1:$6")
+  })
+})
