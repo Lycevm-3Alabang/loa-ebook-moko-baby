@@ -384,3 +384,13 @@ export function renderFacultySummarySheet(
     printTitles: `$1:$${headerRow}`,
   }
 }
+
+/** The file — one sheet, built by the existing writer. */
+export function buildFacultySummaryWorkbook(
+  input: FacultySummaryInput,
+  sheetName = "Faculty Summary",
+): Uint8Array {
+  return buildWorkbook({
+    sheets: [renderFacultySummarySheet(buildFacultySummaryModel(input), sheetName)],
+  })
+}
