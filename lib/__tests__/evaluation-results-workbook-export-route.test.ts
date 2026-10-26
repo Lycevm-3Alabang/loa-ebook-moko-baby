@@ -257,6 +257,7 @@ describe("the department ZIP routes", () => {
       "CCS/CCS_summary.xlsx",
       "CCS/Dela Cruz/IT101_BSCS-A_evaluation.xlsx",
       "CCS/Dela Cruz/Dela Cruz_summary.xlsx",
+      "CCS/Dela Cruz/Dela Cruz_consolidated.xlsx",
     ])
   })
 
@@ -267,6 +268,7 @@ describe("the department ZIP routes", () => {
     expect([...parts.keys()]).toEqual([
       "CCS/Dela Cruz/IT101_BSCS-A_evaluation.xlsx",
       "CCS/Dela Cruz/Dela Cruz_summary.xlsx",
+      "CCS/Dela Cruz/Dela Cruz_consolidated.xlsx",
     ])
     // ⭐ D38/D34: a proper subset carries NO department summary
     expect(parts.has("CCS/CCS_summary.xlsx")).toBe(false)
@@ -297,6 +299,7 @@ describe("the department ZIP routes", () => {
     expect([...parts.keys()]).toEqual([
       "CCS/Dela Cruz/IT101_BSCS-A_evaluation.xlsx",
       "CCS/Dela Cruz/Dela Cruz_summary.xlsx",
+      "CCS/Dela Cruz/Dela Cruz_consolidated.xlsx",
     ])
     expect(parts.has("CCS/CCS_summary.xlsx")).toBe(false)
   })

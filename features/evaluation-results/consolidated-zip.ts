@@ -4,12 +4,9 @@ import {
   evaluationPeriodRepository,
   rubricRepository,
 } from "@/lib/repositories/factory"
-import { buildConsolidatedFacultyWorkbook } from "@/lib/xlsx/consolidated-workbook"
-import { buildFacultySummaryModel } from "@/lib/xlsx/overall-summary"
-import { buildCommentsModel } from "@/lib/xlsx/comments"
-import { buildOverallModel, type OverallResponse } from "@/lib/xlsx/overall"
+import { buildConsolidatedFacultyWorkbook } from "./consolidated-workbook"
 import { createDeflatedZip } from "@/lib/zip-deflate"
-import { averageDisplayedRatings, getRemark, sectionLabel } from "@/lib/evaluation-utils"
+import { sectionLabel } from "@/lib/evaluation-utils"
 import {
   BYTES_PER_WORKBOOK,
   SUBJECT_READ_CONCURRENCY,
@@ -55,15 +52,6 @@ function displayedSection(row: DepartmentSubjectResult): string {
   return sectionOf(row) || "—"
 }
 
-/** Arithmetic mean across response-level scores; missing scores stay missing. */
-function responseMean(values: (number | null | undefined)[]): number | null {
-  const scores = values.filter(
-    (value): value is number => typeof value === "number" && Number.isFinite(value),
-  )
-  if (scores.length === 0) return null
-  return scores.reduce((sum, score) => sum + score, 0) / scores.length
-}
-
 /**
  * The subject-section order — the Individual's own: the subject, then the
  * section. ⭐ The comments' groups and the Overall's rows follow it, so the
@@ -77,7 +65,6 @@ function bySubjectThenSection(a: DepartmentSubjectResult, b: DepartmentSubjectRe
 
 /** One subject-section's successful read. */
 interface BuiltSubject {
-  row: DepartmentSubjectResult
   resultSet: SubjectResultSet
 }
 
@@ -138,7 +125,6 @@ export async function buildConsolidatedFacultyZip(
   const rubricCategories = period.rubricGroupId
     ? await rubricRepository.getCategoriesWithItems(period.rubricGroupId)
     : []
-  const criteria = rubricCategories.map((category) => ({ name: category.name }))
   const rubric = rubricCategories.map((category) => ({
     name: category.name,
     items: category.items.map((item) => ({ id: item.id, text: item.text })),
@@ -163,7 +149,7 @@ export async function buildConsolidatedFacultyZip(
       const built = await mapPool(rows, SUBJECT_READ_CONCURRENCY, async (row) => {
         const resultSet = await getSubjectResultSet(row.facultySubjectId, period.id)
         if (!resultSet) throw new Error("no result set")
-        return { row, resultSet }
+        return { resultSet }
       })
 
       const failed = built.filter((outcome) => !outcome.value)
@@ -181,122 +167,18 @@ export async function buildConsolidatedFacultyZip(
         .map((outcome) => outcome.value)
         .filter((value): value is BuiltSubject => value !== null)
 
-      // ⭐ the employee number comes from the first successful subject read
-      const employeeNo =
-        subjects.find((subject) => subject.resultSet.faculty?.employeeNo)?.resultSet.faculty
-          ?.employeeNo ?? null
-
-      const responses: OverallResponse[] = subjects.flatMap((subject) =>
-        subject.resultSet.evaluations.map((evaluation) => ({
-          submittedAt: evaluation.submittedAt,
-          generalRating: evaluation.generalRating,
-          categoryAverages: evaluation.categoryAverages,
-        })),
-      )
-      const averageRating = averageDisplayedRatings(
-        subjects.map((subject) => subject.resultSet.summary.avgRating ?? null),
-      )
-      const averageCategories: Record<string, number> = {}
-      for (const criterion of criteria) {
-        const average = responseMean(
-          responses.map((response) => response.categoryAverages[criterion.name]),
-        )
-        if (average !== null) averageCategories[criterion.name] = average
-      }
-
-      const itemScores: Record<string, number[]> = {}
-      for (const subject of subjects) {
-        for (const evaluation of subject.resultSet.evaluations) {
-          for (const item of evaluation.itemAverages ?? []) {
-            if (!itemScores[item.itemId]) itemScores[item.itemId] = []
-            itemScores[item.itemId].push(item.avg)
-          }
-        }
-      }
-      const itemAverages = Object.fromEntries(
-        Object.entries(itemScores).flatMap(([itemId, scores]) => {
-          const average = responseMean(scores)
-          return average === null ? [] : [[itemId, average]]
-        }),
-      )
-      const responsesForOverall: OverallResponse[] = subjects.flatMap((subject) =>
-        subject.resultSet.evaluations.map((evaluation) => ({
-          submittedAt: evaluation.submittedAt,
-          generalRating: evaluation.generalRating,
-          categoryAverages: evaluation.categoryAverages,
-          subject: `${subject.resultSet.subject?.code ?? ""} ${subject.resultSet.subject?.name ?? ""}`.trim(),
-          section: sectionLabel(subject.resultSet.section.program, subject.resultSet.section.name),
-        })),
-      )
-      const comments = subjects.flatMap((subject) =>
-        subject.resultSet.comments.map((comment) => comment.comment),
-      )
-
+      const averageRating = results.facultyAggregates[member.id]?.avgRating ?? null
+      const remarks = results.facultyAggregates[member.id]?.remarks ?? null
       entries.push({
         name: `${folder}/${entryName(member.name)}/${entryName(member.name)}_consolidated.xlsx`,
         data: buildConsolidatedFacultyWorkbook({
-          individual: buildFacultySummaryModel({
-            semesterTitle: period.semesterTitle ?? null,
-            evaluationPeriodName: period.name ?? null,
-            department: departmentInfo,
-            faculty: {
-              name: member.name,
-              email: member.email,
-              avgRating: averageRating,
-              remarks: getRemark(averageRating),
-            },
-            rows: [{
-              subject: null,
-              section: { program: null, name: null },
-              totalRespondents: responses.length,
-              avgRating: averageRating,
-              highest: [],
-              lowest: [],
-            }],
-          }),
-          form: {
-            semesterTitle: period.semesterTitle ?? null,
-            evaluationPeriodName: period.name ?? null,
-            employeeNo: employeeNo ?? null,
-            facultyName: member.name,
-            avgRating: averageRating,
-            remarks: getRemark(averageRating),
-            program: null,
-            sectionName: null,
-            subject: null,
-            totalRespondents: responses.length,
-            criteria: rubric.map((category) => ({
-              name: category.name,
-              average: averageCategories[category.name] ?? null,
-              statements: category.items.map((item) => ({
-                text: item.text,
-                avg: itemAverages[item.id] ?? null,
-              })),
-            })),
-          },
-          comments: buildCommentsModel(
-            {
-              semesterTitle: period.semesterTitle ?? null,
-              evaluationPeriodName: period.name ?? null,
-              employeeNo,
-              facultyName: member.name,
-              avgRating: averageRating,
-              remarks: getRemark(averageRating),
-            },
-            comments,
-          ),
-          overall: buildOverallModel({
-            semesterTitle: period.semesterTitle ?? null,
-            facultyName: member.name,
-            department: departmentInfo,
-            subject: null,
-            showDateColumn: true,
-            showSubjectHeader: false,
-            showSubjectSectionColumn: true,
-            criteria,
-            responses: responsesForOverall,
-          }),
-          itemAverages,
+          semesterTitle: period.semesterTitle ?? null,
+          evaluationPeriodName: period.name ?? null,
+          department: departmentInfo,
+          faculty: member,
+          avgRating: averageRating,
+          remarks,
+          resultSets: subjects.map((subject) => subject.resultSet),
           rubricCategories: rubric,
         }),
       })

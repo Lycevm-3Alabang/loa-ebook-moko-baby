@@ -10,6 +10,7 @@ import { buildFacultySummaryWorkbook } from "@/lib/xlsx/overall-summary"
 import { loadLetterhead } from "@/lib/xlsx/letterhead"
 import { createDeflatedZip } from "@/lib/zip-deflate"
 import { sectionLabel } from "@/lib/evaluation-utils"
+import { buildConsolidatedFacultyWorkbook } from "./consolidated-workbook"
 
 /**
  * The department ZIP — the assembly.
@@ -44,7 +45,14 @@ export interface DepartmentZipOptions {
 /** What the export produced. */
 export type DepartmentZipResult =
   | { ok: true; bytes: Uint8Array; failures: string[]; count: number }
-  | { ok: false; reason: "too-large"; count: number; estimateBytes: number; limitBytes: number }
+  | {
+      ok: false
+      reason: "too-large"
+      count: number
+      consolidatedCount?: number
+      estimateBytes: number
+      limitBytes: number
+    }
   | { ok: false; reason: "unknown-department"; departmentId: string }
   | { ok: false; reason: "unknown-faculty"; facultyId: string; departmentId: string }
   | { ok: false; reason: "nothing-to-export"; count: number }
@@ -134,11 +142,22 @@ export async function buildDepartmentZip(
     if (!isFiltered) return sum + entry.results.subjects.length
     return sum + entry.results.subjects.filter((row) => selected.has(row.facultyId)).length
   }, 0)
+  const consolidatedCount = loaded.reduce((sum, entry) => {
+    if (!isFiltered) return sum + entry.results.members.length
+    return sum + entry.results.members.filter((member) => selected.has(member.id)).length
+  }, 0)
 
   // ── the guard ─────────────────────────────────────────────────────────────
-  const estimateBytes = count * BYTES_PER_WORKBOOK
+  const estimateBytes = (count + consolidatedCount) * BYTES_PER_WORKBOOK
   if (estimateBytes > ZIP_LIMIT_BYTES) {
-    return { ok: false, reason: "too-large", count, estimateBytes, limitBytes: ZIP_LIMIT_BYTES }
+    return {
+      ok: false,
+      reason: "too-large",
+      count,
+      consolidatedCount,
+      estimateBytes,
+      limitBytes: ZIP_LIMIT_BYTES,
+    }
   }
 
   // ── pass 2 · the workbooks and the consolidated files ─────────────────────
@@ -148,6 +167,7 @@ export async function buildDepartmentZip(
   const logo = loadLetterhead()
 
   const entries: { name: string; data: Uint8Array }[] = []
+  const consolidatedEntries: { name: string; data: Uint8Array }[] = []
   const failures: string[] = []
 
   for (const { department, results } of loaded) {
@@ -188,7 +208,10 @@ export async function buildDepartmentZip(
     const built = await mapPool(subjects, SUBJECT_READ_CONCURRENCY, async (row) => {
       const resultSet = await getSubjectResultSet(row.facultySubjectId, period.id)
       if (!resultSet) throw new Error("no result set")
-      return buildSubjectWorkbook(resultSet, rubricCategories, logo)
+      return {
+        workbook: buildSubjectWorkbook(resultSet, rubricCategories, logo),
+        resultSet,
+      }
     })
 
     for (const outcome of built) {
@@ -202,7 +225,7 @@ export async function buildDepartmentZip(
         name:
           `${folder}/${entryName(outcome.item.facultyName)}/` +
           `${entryName(outcome.item.subjectCode)}_${entryName(sectionLabel(outcome.item.sectionProgram, outcome.item.sectionName))}_evaluation.xlsx`,
-        data: outcome.value,
+        data: outcome.value.workbook,
       })
     }
 
@@ -231,8 +254,34 @@ export async function buildDepartmentZip(
           })),
         }),
       })
+
+      const memberOutcomes = built.filter((outcome) => outcome.item.facultyId === member.id)
+      if (memberOutcomes.some((outcome) => !outcome.value)) {
+        failures.push(`${member.name} — consolidated workbook omitted because a subject-section read failed`)
+        continue
+      }
+      consolidatedEntries.push({
+        name: `${folder}/${entryName(member.name)}/${entryName(member.name)}_consolidated.xlsx`,
+        data: buildConsolidatedFacultyWorkbook({
+          semesterTitle: period.semesterTitle ?? null,
+          evaluationPeriodName: period.name ?? null,
+          department: { name: department.name ?? "", code: department.code ?? "" },
+          faculty: member,
+          avgRating: band?.avgRating ?? null,
+          remarks: band?.remarks ?? null,
+          resultSets: memberOutcomes.flatMap((outcome) =>
+            outcome.value ? [outcome.value.resultSet] : [],
+          ),
+          rubricCategories: rubricCategories.map((category) => ({
+            name: category.name,
+            items: category.items ?? [],
+          })),
+        }),
+      })
     }
   }
+
+  entries.push(...consolidatedEntries)
 
   // ⭐ a partial ZIP is never silent — the file names what is missing
   if (failures.length > 0) {
@@ -279,15 +328,19 @@ export function verdictForDepartmentZip(result: DepartmentZipResult): Department
   if (result.ok) return { kind: "zip", bytes: result.bytes }
 
   switch (result.reason) {
-    case "too-large":
+    case "too-large": {
+      const consolidatedCount = result.consolidatedCount
+        ? ` and ${result.consolidatedCount} consolidated workbook${result.consolidatedCount === 1 ? "" : "s"}`
+        : ""
       return {
         kind: "refusal",
         status: 400,
         error:
-          `This export is too large — ${result.count} subject-sections ≈ ` +
+          `This export is too large — ${result.count} subject-sections${consolidatedCount} ≈ ` +
           `${megabytes(result.estimateBytes)} (the limit is ${megabytes(result.limitBytes)}). ` +
           "Export one department at a time, or one faculty.",
       }
+        }
     case "unknown-department":
       return {
         kind: "refusal",

@@ -60,7 +60,7 @@ export default function ExportConfirmationModal({
                 </span>
                 .{" "}
                 {description ??
-                  "The download contains their subject workbooks and one summary each."}
+                  "The download contains their subject workbooks, one summary, and one consolidated workbook each."}
               </>
             ) : description ? (
               <>
@@ -70,8 +70,8 @@ export default function ExportConfirmationModal({
             ) : (
               <>
                 You are about to export the{" "}
-                <span className="font-bold text-primary">whole department</span> — every faculty member
-                and every subject section.
+                <span className="font-bold text-primary">whole department</span>: every faculty member,
+                subject section, summary, and consolidated workbook.
               </>
             )}
           </p>
