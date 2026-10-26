@@ -239,6 +239,10 @@ export interface RubricItemData {
   weight: number
 }
 
+export interface RubricCategoryWithItems extends RubricCategoryData {
+  items: RubricItemData[]
+}
+
 export interface RubricGroupData {
   id: string
   name: string
@@ -458,7 +462,7 @@ export interface IStudentEnrollmentRepository {
 }
 
 export interface IRubricRepository {
-  getCategoriesWithItems(groupId: string): Promise<RubricCategoryData[]>
+  getCategoriesWithItems(groupId: string): Promise<RubricCategoryWithItems[]>
   replaceRubric(groupId: string, categories: { name: string; displayOrder: number; items: { text: string; displayOrder: number; weight?: number }[] }[]): Promise<RubricCategoryData[]>
   copyFromSource(groupId: string, sourceGroupId: string): Promise<RubricCategoryData[]>
   deleteCategory(id: string): Promise<void>

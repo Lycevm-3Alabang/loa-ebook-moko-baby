@@ -103,6 +103,10 @@ export interface OverallInput {
   showSubjectColumn?: boolean
   /** whether the table carries a SECTION column — the faculty grain */
   showSectionColumn?: boolean
+  /** whether the table carries a DATE column; defaults to true */
+  showDateColumn?: boolean
+  /** whether a subject line appears in the header when there is no subject column */
+  showSubjectHeader?: boolean
   /** the rubric's criteria, in the rubric's order — the table's columns */
   criteria: { name: string }[]
   /** the responses, in the response set's order */
@@ -146,6 +150,7 @@ function departmentLabel(department: { name: string; code: string }): string {
 export function buildOverallModel(input: OverallInput): OverallModel {
   const showSubject = input.showSubjectColumn === true
   const showSection = input.showSectionColumn === true
+  const showDate = input.showDateColumn !== false
 
   const columns: OverallColumn[] = [
     { kind: "no", heading: "NO" },
@@ -153,7 +158,7 @@ export function buildOverallModel(input: OverallInput): OverallModel {
     // names each response's section — the rows span several subject-sections
     ...(showSubject ? [{ kind: "subject" as const, heading: "SUBJECT" }] : []),
     ...(showSection ? [{ kind: "section" as const, heading: "SECTION" }] : []),
-    { kind: "date", heading: "DATE" },
+    ...(showDate ? [{ kind: "date" as const, heading: "DATE" }] : []),
     ...input.criteria.map((criterion, criterionIndex) => ({
       kind: "criterion" as const,
       heading: criterion.name,
@@ -184,7 +189,7 @@ export function buildOverallModel(input: OverallInput): OverallModel {
         ? [{ kind: "subtitle" as const, text: `Department: ${departmentLabel(input.department)}` }]
         : []),
       // ⭐ the subject is a COLUMN at the faculty grain — never both
-      ...(showSubject
+      ...(showSubject || input.showSubjectHeader === false
         ? []
         : [{ kind: "subtitle" as const, text: `Subject: ${orDash(subjectLabel(input.subject))}` }]),
       { kind: "spacer" },

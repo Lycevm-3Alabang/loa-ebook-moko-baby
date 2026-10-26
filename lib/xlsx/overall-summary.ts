@@ -67,6 +67,11 @@ export interface FacultySummaryModel {
   rows: { cells: (string | number | null)[]; height: number }[]
 }
 
+export interface SummaryRubricCategory {
+  name: string
+  items: { id: string; text: string }[]
+}
+
 /** The table's columns — their widths decide the row heights. */
 const COLUMN_WIDTHS = [34, 14, 11, 10, 26, 26]
 
@@ -186,6 +191,8 @@ export function renderFacultySummarySheet(
   // ALL responses across all subject-sections (passed from
   // buildConsolidatedFacultyWorkbook when sheetName === "Individual").
   categoryAverages?: Record<string, number>,
+  itemAverages?: Record<string, number>,
+  rubricCategories?: SummaryRubricCategory[],
 ): SheetSpec {
   // ⭐ NEW — Individual sheet for the consolidated ZIP (only; per‑department ZIP
   // is completely unchanged because it always calls this function with the
@@ -217,17 +224,21 @@ export function renderFacultySummarySheet(
     // Use the live rubric from the database (APP_RUBRIC). Each criterion becomes a
     // "block"; its sub‑items are the rubric statements; the AVERAGE line is computed
     // from the categoryAverages map keyed by the criterion display name.
-    const rubricBlocks = APP_RUBRIC.map((criterion) => {
+    const rubric = rubricCategories ?? APP_RUBRIC.map((criterion) => ({
+      name: criterion.name,
+      items: criterion.statements,
+    }))
+    const rubricBlocks = rubric.map((criterion) => {
       const criterionName = criterion.name
-      // Compute average from the categoryAverages map; fall back to 0.00 if not
-      // available (e.g. per‑department ZIP which never passes this extra arg).
-      const avgValue = categoryAverages?.[criterionName] ?? 0
-      const statements = criterion.statements.map((statement) => ({
+      const avgValue = categoryAverages?.[criterionName] ?? null
+      const statements = criterion.items.map((statement) => ({
+        id: statement.id,
         text: statement.text,
-        avg: avgValue,
+        avg: itemAverages?.[statement.id] ?? null,
       }))
       return {
         title: criterionName,
+        avg: avgValue,
         subItems: statements,
       }
     })
@@ -255,9 +266,16 @@ export function renderFacultySummarySheet(
     // not per subject‑section.
     for (const block of rubricBlocks) {
       allRows.push({ kind: "label", text: block.title })
+      allRows.push({
+        kind: "label",
+        text: `CATEGORY AVERAGE: ${block.avg === null ? "—" : block.avg.toFixed(2)}`,
+      })
       for (const si of block.subItems) {
         allRows.push({ kind: "label", text: `${si.text}  |  Rating` })
-        allRows.push({ kind: "label", text: `AVERAGE: ${si.avg.toFixed(2)}` })
+        allRows.push({
+          kind: "label",
+          text: `AVERAGE: ${si.avg === null ? "—" : si.avg.toFixed(2)}`,
+        })
       }
     }
 
@@ -267,7 +285,9 @@ export function renderFacultySummarySheet(
     allRows.push({ kind: "label", text: `FINAL RATING: ${rating}` })
 
     // ---- now render these rows into the SheetSpec -------------------
-    const letters = ["A", "B", "C", "D", "E", "F", "G", "H"]
+    // ⭐ 10 columns (A-J) to match the template format — the Individual sheet
+    // summarises the whole faculty, not per subject/section.
+    const letters = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]
     const last = letters[letters.length - 1]
     const rows: RowSpec[] = []
     const merges: string[] = []
@@ -296,16 +316,18 @@ export function renderFacultySummarySheet(
 
     return {
       name: "Individual",
-      columns: [
-        { from: "A", to: "A", width: 24 },
-        { from: "B", to: "B", width: 18 },
-        { from: "C", to: "C", width: 18 },
-        { from: "D", to: "D", width: 18 },
-        { from: "E", to: "E", width: 18 },
-        { from: "F", to: "F", width: 18 },
-        { from: "G", to: "G", width: 18 },
-        { from: "H", to: "H", width: 18 },
-      ],
+columns: [
+      { from: "A", to: "A", width: 24 },
+      { from: "B", to: "B", width: 14 },
+      { from: "C", to: "C", width: 11 },
+      { from: "D", to: "D", width: 10 },
+      { from: "E", to: "E", width: 26 },
+      { from: "F", to: "F", width: 26 },
+      { from: "G", to: "G", width: 26 },
+      { from: "H", to: "H", width: 26 },
+      { from: "I", to: "I", width: 18 },
+      { from: "J", to: "J", width: 18 },
+    ],
       rows,
       merges,
       // portrait — the Individual sheet is a summary form, not a wide table

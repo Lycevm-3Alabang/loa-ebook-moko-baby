@@ -69,12 +69,13 @@ const ROW_008_E1 = row({
 })
 const ROW_009_E1 = row({ facultySubjectId: "fs-009-e1" })
 
-function evaluation(id: string, submittedAt: string) {
+function evaluation(id: string, submittedAt: string, score = 4) {
   return {
     evaluationId: id,
     submittedAt,
-    generalRating: 4,
-    categoryAverages: { "Professional Manner": 4 },
+    generalRating: score,
+    categoryAverages: { "Professional Manner": score },
+    itemAverages: [{ itemId: "i1", avg: score }],
   }
 }
 
@@ -84,7 +85,7 @@ const RESULT_SETS: Record<string, unknown> = {
     subject: { code: "1815-ITELEC008", name: "Discrete Mathematics" },
     section: { program: "BSIT", name: "31E1" },
     period: { name: PERIOD.name, semesterTitle: PERIOD.semesterTitle },
-    evaluations: [evaluation("e1", "2026-10-20T08:30:00.000Z")],
+    evaluations: [evaluation("e1", "2026-10-20T08:30:00.000Z", 2)],
     comments: [{ submittedAt: null, comment: "Clear." }],
     summary: {},
     itemAverages: [],
@@ -95,8 +96,8 @@ const RESULT_SETS: Record<string, unknown> = {
     section: { program: "BSIT", name: "31E1" },
     period: { name: PERIOD.name, semesterTitle: PERIOD.semesterTitle },
     evaluations: [
-      evaluation("e2", "2026-10-21T09:15:00.000Z"),
-      evaluation("e3", "2026-10-22T10:00:00.000Z"),
+      evaluation("e2", "2026-10-21T09:15:00.000Z", 4),
+      evaluation("e3", "2026-10-22T10:00:00.000Z", 4),
     ],
     comments: [{ submittedAt: null, comment: "Great." }],
     summary: {},
@@ -107,7 +108,7 @@ const RESULT_SETS: Record<string, unknown> = {
     subject: { code: "1815-ITELEC009", name: "Introduction to Computing" },
     section: { program: "BSIT", name: "31E2" },
     period: { name: PERIOD.name, semesterTitle: PERIOD.semesterTitle },
-    evaluations: [evaluation("e4", "2026-10-23T11:00:00.000Z")],
+    evaluations: [evaluation("e4", "2026-10-23T11:00:00.000Z", 5)],
     comments: [],
     summary: {},
     itemAverages: [],
@@ -162,37 +163,36 @@ describe("the consolidated faculty ZIP", () => {
     expect(parts.has("CCS/CCS_summary.xlsx")).toBe(false)
   })
 
-  it("prints the card's average, the card's rows and — for a member with none", async () => {
+  it("prints the arithmetic response average and count, including a member with none", async () => {
     await buildConsolidatedFacultyZip({ evaluationPeriodId: "p1", departmentIds: ["d1"] })
 
     const member = inputOf(MEMBER_1.name)!
-    expect(member.individual.band[2].text).toBe("Average: 3.40 — Satisfactory")
-    expect(member.individual.rows.map((row: { cells: unknown[] }) => row.cells[0])).toEqual([
-      "1815-ITELEC008 Discrete Mathematics",
-      "1815-ITELEC009 Introduction to Computing",
-      "1815-ITELEC009 Introduction to Computing",
-    ])
+    expect(member.individual.band[2].text).toContain("Average: 3.75")
+    expect(member.individual.rows).toHaveLength(1)
+    expect(member.individual.rows[0].cells[2]).toBe(4)
+    expect(member.itemAverages.i1).toBe(3.75)
+    expect(member.overall.rows).toHaveLength(1)
+    expect(member.overall.rows[0].values[0]).toBe(3.75)
+    expect(member.overall.rows[0].rating).toBe(3.75)
+    expect(member.overall.columns.map((column: { heading: string }) => column.heading)).not.toContain("SUBJECT")
+    expect(member.overall.columns.map((column: { heading: string }) => column.heading)).not.toContain("SECTION")
+    expect(member.overall.columns.map((column: { heading: string }) => column.heading)).not.toContain("DATE")
 
     // ⭐ C6 — an empty member gets a FILE, not a failure or a missing folder
     const empty = inputOf(MEMBER_2.name)!
-    expect(empty.individual.rows).toEqual([])
+    expect(empty.individual.rows).toHaveLength(1)
+    expect(empty.individual.rows[0].cells[2]).toBe(0)
     expect(empty.individual.band[2].text).toBe("Average: —")
     expect(empty.comments.some((row: { kind: string }) => row.kind === "group")).toBe(false)
-    expect(empty.overall.rows).toEqual([])
+    expect(empty.overall.rows).toHaveLength(1)
+    expect(empty.overall.rows[0].rating).toBeNull()
   })
 
-  it("groups the comments in the Individual's order — and skips a section with none", async () => {
+  it("writes comments without subject-section group banners", async () => {
     await buildConsolidatedFacultyZip({ evaluationPeriodId: "p1", departmentIds: ["d1"] })
 
     const member = inputOf(MEMBER_1.name)!
-    const groups = member.comments
-      .filter((row: { kind: string }) => row.kind === "group")
-      .map((row: { text: string }) => row.text)
-    expect(groups).toEqual([
-      "1815-ITELEC008 Discrete Mathematics — BSIT-31E1",
-      "1815-ITELEC009 Introduction to Computing — BSIT-31E1",
-      // ⭐ the 009/31E2 section has no comments — no empty group
-    ])
+    expect(member.comments.some((row: { kind: string }) => row.kind === "group")).toBe(false)
     expect(
       member.comments
         .filter((row: { kind: string }) => row.kind === "comment")
@@ -200,28 +200,16 @@ describe("the consolidated faculty ZIP", () => {
     ).toEqual(["Clear.", "Great."])
   })
 
-  it("carries every response with its own subject and section, in one continuous NO", async () => {
+  it("averages responses across all subject-sections into one faculty row", async () => {
     await buildConsolidatedFacultyZip({ evaluationPeriodId: "p1", departmentIds: ["d1"] })
 
     const member = inputOf(MEMBER_1.name)!
-    expect(member.overall.rows.map((row: { no: number }) => row.no)).toEqual([1, 2, 3, 4])
-    expect(member.overall.rows.map((row: { subject: string }) => row.subject)).toEqual([
-      "1815-ITELEC008 Discrete Mathematics",
-      "1815-ITELEC009 Introduction to Computing",
-      "1815-ITELEC009 Introduction to Computing",
-      "1815-ITELEC009 Introduction to Computing",
-    ])
-    expect(member.overall.rows.map((row: { section: string }) => row.section)).toEqual([
-      "BSIT-31E1",
-      "BSIT-31E1",
-      "BSIT-31E1",
-      "BSIT-31E2",
-    ])
+    expect(member.overall.rows.map((row: { no: number }) => row.no)).toEqual([1])
+    expect(member.overall.rows[0].values[0]).toBe(3.75)
     const texts = member.overall.header.map((line: { kind: string; text?: string }) =>
       line.kind === "spacer" ? "" : (line.text ?? ""),
     )
     expect(texts).toContain("Department: Computer Studies (CCS)")
-    // ⭐ the subject is a column — the header line is absent
     expect(texts.some((text: string) => text.startsWith("Subject:"))).toBe(false)
   })
 

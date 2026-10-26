@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest"
 import { writeFileSync } from "fs"
 import { buildConsolidatedFacultyWorkbook } from "@/lib/xlsx/consolidated-workbook"
 import { buildFacultySummaryModel } from "@/lib/xlsx/overall-summary"
-import { buildGroupedCommentsModel, COMMENTS_BANNER } from "@/lib/xlsx/comments"
-import { buildOverallModel, type OverallResponse } from "@/lib/xlsx/overall"
+import { buildCommentsModel, COMMENTS_BANNER } from "@/lib/xlsx/comments"
+import { buildOverallModel } from "@/lib/xlsx/overall"
 import type { Identity } from "@/lib/xlsx/form-model"
 import { readZip, partText } from "@/lib/xlsx-template"
 import { APP_RUBRIC } from "./fixtures/eval-rubric"
@@ -58,48 +58,27 @@ const IDENTITY: Identity = {
   remarks: "Satisfactory",
 }
 
-const GROUPS = [
-  {
-    label: "1815-ITELEC009 Introduction to Computing — BSIT-31E1",
-    comments: ["Great explanations.", "Clear examples."],
-  },
-  {
-    label: "1815-ITELEC010 Data Structures — BSIT-31E2",
-    comments: ["More practice exercises."],
-  },
-]
-
-const RESPONSES: OverallResponse[] = [
-  {
-    submittedAt: "2026-10-20T08:30:00.000Z",
-    generalRating: 4.25,
-    categoryAverages: averages([4.5, 4.0, 4.5, 4.0, 4.5, 4.0, 4.5, 4.0]),
-    subject: "1815-ITELEC009 Introduction to Computing",
-    section: "BSIT-31E1",
-  },
-  {
-    submittedAt: "2026-10-21T09:15:00.000Z",
-    generalRating: 3.5,
-    categoryAverages: averages([3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5]),
-    subject: "1815-ITELEC010 Data Structures",
-    section: "BSIT-31E2",
-  },
-]
+const COMMENTS = ["Great explanations.", "Clear examples.", "More practice exercises."]
 
 function built() {
   return readZip(
     buildConsolidatedFacultyWorkbook({
       individual: buildFacultySummaryModel(SUMMARY),
-      comments: buildGroupedCommentsModel(IDENTITY, GROUPS),
+      comments: buildCommentsModel(IDENTITY, COMMENTS),
+      itemAverages: { [APP_RUBRIC[0].statements[0].id]: 4.25 },
       overall: buildOverallModel({
         semesterTitle: SUMMARY.semesterTitle,
         facultyName: SUMMARY.faculty.name,
         department: SUMMARY.department,
         subject: null,
-        showSubjectColumn: true,
-        showSectionColumn: true,
+        showDateColumn: false,
+        showSubjectHeader: false,
         criteria: CRITERIA,
-        responses: RESPONSES,
+        responses: [{
+          submittedAt: null,
+          generalRating: 3.875,
+          categoryAverages: averages([4, 3.75, 4, 3.75, 4, 3.75, 4, 3.75]),
+        }],
       }),
     }),
   )
@@ -131,67 +110,54 @@ describe("the consolidated faculty workbook", () => {
     expect(sheet).toContain("3.40")
     expect(sheet).toContain("TOTAL RESPONDENTS:")
     expect(sheet).toContain("FINAL RATING:")
+    expect(sheet).toContain("CATEGORY AVERAGE: 4.00")
+    expect(sheet).toContain("AVERAGE: 4.25")
     // ⭐ no SUBJECT column or 1815-ITELEC009 row in the new Individual layout
   })
 
-  it("groups every comment under its subject-section, with no date", () => {
+  it("lists comments without subject-section group banners or dates", () => {
     const sheet = partText(built(), "xl/worksheets/sheet2.xml")
     expect(sheet).toContain(COMMENTS_BANNER)
-    expect(sheet).toContain("1815-ITELEC009 Introduction to Computing — BSIT-31E1")
-    expect(sheet).toContain("1815-ITELEC010 Data Structures — BSIT-31E2")
     expect(sheet).toContain("Great explanations.")
     expect(sheet).toContain("More practice exercises.")
+    expect(sheet).not.toContain("1815-ITELEC009")
+    expect(sheet).not.toContain("BSIT-31E1")
     expect(/\d{4}-\d{2}-\d{2}/.test(sheet)).toBe(false)
   })
 
-  it("draws the Overall tab with the subject and section columns, continuous NO", () => {
+  it("draws the Overall tab as one faculty-level average row", () => {
     const sheet = partText(built(), "xl/worksheets/sheet3.xml")
-    expect(sheet).toContain("SUBJECT")
-    expect(sheet).toContain("SECTION")
-    expect(sheet).toContain("1815-ITELEC009 Introduction to Computing")
-    expect(sheet).toContain("BSIT-31E1")
-    expect(sheet).toContain("1815-ITELEC010 Data Structures")
+    expect(sheet).not.toContain("SUBJECT")
+    expect(sheet).not.toContain("SECTION")
+    expect(sheet).not.toContain("DATE")
+    expect(sheet).not.toContain("1815-ITELEC009")
     expect(sheet).toContain('<v>1</v>')
-    expect(sheet).toContain('<v>2</v>')
-    // ⭐ the subject is a column — the header line is absent
     expect(sheet).not.toContain("Subject:")
   })
 
   it("writes a sample of the workbook, when a path is given", () => {
-    // ⭐ ACES_SAMPLE_PATH=... writes the REAL workbook for the owner's Excel
-    // proof — the tabs, the columns and the groups, ready to open and print
+    // ⭐ ACES_SAMPLE_PATH=... writes the real faculty-level workbook for review.
     const path = process.env.ACES_SAMPLE_PATH
     if (!path) return
 
-    const responses: OverallResponse[] = Array.from({ length: 12 }, (_, index) => {
-      // ⭐ grouped by subject-section, as the assembly prints them
-      const nine = index < 6
-      return {
-        submittedAt: `2026-10-${String(10 + index).padStart(2, "0")}T09:00:00.000Z`,
-        generalRating: nine ? 4.25 : 3.5,
-        categoryAverages: nine
-          ? averages([4.5, 4.0, 4.5, 4.0, 4.5, 4.0, 4.5, 4.0])
-          : averages([3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5]),
-        subject: nine
-          ? "1815-ITELEC009 Introduction to Computing"
-          : "1815-ITELEC010 Data Structures",
-        section: nine ? "BSIT-31E1" : "BSIT-31E2",
-      }
-    })
-
     const bytes = buildConsolidatedFacultyWorkbook({
       individual: buildFacultySummaryModel(SUMMARY),
-      comments: buildGroupedCommentsModel(IDENTITY, GROUPS),
+      comments: buildCommentsModel(IDENTITY, COMMENTS),
       overall: buildOverallModel({
         semesterTitle: SUMMARY.semesterTitle,
         facultyName: SUMMARY.faculty.name,
         department: SUMMARY.department,
         subject: null,
-        showSubjectColumn: true,
-        showSectionColumn: true,
+        showDateColumn: false,
+        showSubjectHeader: false,
         criteria: CRITERIA,
-        responses,
+        responses: [{
+          submittedAt: null,
+          generalRating: 3.875,
+          categoryAverages: averages([4, 3.75, 4, 3.75, 4, 3.75, 4, 3.75]),
+        }],
       }),
+      itemAverages: { [APP_RUBRIC[0].statements[0].id]: 4.25 },
     })
     writeFileSync(path, bytes)
 

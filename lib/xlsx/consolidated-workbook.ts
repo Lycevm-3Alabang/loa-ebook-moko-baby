@@ -3,6 +3,7 @@ import type { FormRow } from "./form-model"
 import { renderOverallSheet, type OverallModel } from "./overall"
 import {
   renderFacultySummarySheet,
+  type SummaryRubricCategory,
   type FacultySummaryModel,
 } from "./overall-summary"
 import { APP_RUBRIC } from "@/lib/__tests__/fixtures/eval-rubric"
@@ -33,6 +34,10 @@ export interface ConsolidatedFacultyWorkbookInput {
   comments: FormRow[]
   /** the Overall tab — one row per response across the faculty */
   overall: OverallModel
+  /** per-item arithmetic means across the faculty's valid responses */
+  itemAverages?: Record<string, number>
+  /** the evaluation period's rubric, in display order */
+  rubricCategories?: SummaryRubricCategory[]
 }
 
 /** The consolidated workbook, as bytes. */
@@ -44,28 +49,29 @@ export function buildConsolidatedFacultyWorkbook(
   // across ALL subject-sections (not per-section). This matches the
   // requirement: "it averages ALL regardless of subject-section".
   // Each OverallDataRow.values[i] holds the per-criterion average for that response.
-  const criterionCount = input.overall.columns.filter(
-    (c) => c.kind === "criterion",
-  ).length
+  const criteria = input.overall.columns.filter((column) => column.kind === "criterion")
   const categoryAverages: Record<string, number> = {}
-  for (let i = 0; i < criterionCount; i++) {
+  for (const [index, criterion] of criteria.entries()) {
     const scores = input.overall.rows
-      .map((row) => row.values[i])
+      .map((row) => row.values[index])
       .filter((v): v is number => typeof v === "number")
-    const heading = input.overall.columns[i + 1].heading
     if (scores.length > 0) {
-      categoryAverages[heading] = scores.reduce(
+      categoryAverages[criterion.heading] = scores.reduce(
         (sum, s) => sum + s,
         0,
       ) / scores.length
-    } else {
-      categoryAverages[heading] = 0
     }
   }
 
   return buildWorkbook({
     sheets: [
-      renderFacultySummarySheet(input.individual, "Individual", categoryAverages),
+      renderFacultySummarySheet(
+        input.individual,
+        "Individual",
+        categoryAverages,
+        input.itemAverages,
+        input.rubricCategories,
+      ),
       renderCommentsSheet(input.comments),
       renderOverallSheet(input.overall),
     ],
