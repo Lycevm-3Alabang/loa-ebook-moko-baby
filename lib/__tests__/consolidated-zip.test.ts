@@ -163,11 +163,11 @@ describe("the consolidated faculty ZIP", () => {
     expect(parts.has("CCS/CCS_summary.xlsx")).toBe(false)
   })
 
-  it("prints the arithmetic response average and count, including a member with none", async () => {
+  it("matches the non-consolidated faculty average and keeps the member count, including a member with none", async () => {
     await buildConsolidatedFacultyZip({ evaluationPeriodId: "p1", departmentIds: ["d1"] })
 
     const member = inputOf(MEMBER_1.name)!
-    expect(member.individual.band[2].text).toContain("Average: 3.75")
+    expect(member.individual.band[2].text).toContain("Average: 3.67")
     expect(member.individual.rows).toHaveLength(1)
     expect(member.individual.rows[0].cells[2]).toBe(4)
     expect(member.itemAverages.i1).toBe(3.75)
@@ -200,7 +200,7 @@ describe("the consolidated faculty ZIP", () => {
     ).toEqual(["Clear.", "Great."])
   })
 
-  it("averages responses across all subject-sections into one faculty row", async () => {
+  it("uses the subject-section average for the faculty final output while keeping raw response values on Overall", async () => {
     await buildConsolidatedFacultyZip({ evaluationPeriodId: "p1", departmentIds: ["d1"] })
 
     const member = inputOf(MEMBER_1.name)!

@@ -9,7 +9,7 @@ import { buildFacultySummaryModel } from "@/lib/xlsx/overall-summary"
 import { buildCommentsModel } from "@/lib/xlsx/comments"
 import { buildOverallModel, type OverallResponse } from "@/lib/xlsx/overall"
 import { createDeflatedZip } from "@/lib/zip-deflate"
-import { getRemark, sectionLabel } from "@/lib/evaluation-utils"
+import { averageDisplayedRatings, getRemark, sectionLabel } from "@/lib/evaluation-utils"
 import {
   BYTES_PER_WORKBOOK,
   SUBJECT_READ_CONCURRENCY,
@@ -193,7 +193,9 @@ export async function buildConsolidatedFacultyZip(
           categoryAverages: evaluation.categoryAverages,
         })),
       )
-      const averageRating = responseMean(responses.map((response) => response.generalRating))
+      const averageRating = averageDisplayedRatings(
+        subjects.map((subject) => subject.resultSet.summary.avgRating ?? null),
+      )
       const averageCategories: Record<string, number> = {}
       for (const criterion of criteria) {
         const average = responseMean(
