@@ -84,8 +84,6 @@ const settleInitialSelectionReset = async () => {
 }
 
 const zipButton = () => screen.getAllByRole("button", { name: /download excel \(zip\)/i })[0]
-const consolidatedButton = () =>
-  screen.getAllByRole("button", { name: /download consolidated excel \(zip\)/i })[0]
 
 describe("Department Results Page - Excel Export integration", () => {
   describe("Admin Department Page", () => {
@@ -123,12 +121,12 @@ describe("Department Results Page - Excel Export integration", () => {
       expect(screen.queryByRole("button", { name: /download excel \(zip\)/i })).toBeNull()
     })
 
-    it("renders the consolidated button, disabled until a faculty is ticked", () => {
+    it("renders only one ZIP download button", () => {
       render(<AdminDepartmentDetailPage />)
-      expect(consolidatedButton().hasAttribute("disabled")).toBe(true)
+      expect(screen.getAllByRole("button", { name: /download excel \(zip\)/i })).toHaveLength(1)
     })
 
-    it("exports the selected faculty's consolidated workbook from the admin route", async () => {
+    it("exports the selected faculty's combined ZIP from the admin route", async () => {
       mockDownloadFromApi.mockResolvedValue(undefined)
       render(<AdminDepartmentDetailPage />)
       await settleInitialSelectionReset()
@@ -137,14 +135,13 @@ describe("Department Results Page - Excel Export integration", () => {
         name: /Include Doe, John in the export/i,
       })
       fireEvent.click(facultyCheckbox)
-      await waitFor(() => expect(consolidatedButton().getAttribute("disabled")).toBeFalsy())
+      await waitFor(() => expect(zipButton().getAttribute("disabled")).toBeFalsy())
 
-      fireEvent.click(consolidatedButton())
-      // ⭐ the confirmation names the consolidated workbook, not subject workbooks
+      fireEvent.click(zipButton())
       await waitFor(() => {
         const confirmation = screen.getByText((_, element) =>
           element?.tagName === "P" &&
-          /one consolidated workbook per faculty member/i.test(element.textContent ?? ""),
+          /one summary, and one consolidated workbook each/i.test(element.textContent ?? ""),
         )
         expect(confirmation).toBeTruthy()
       })
@@ -152,10 +149,10 @@ describe("Department Results Page - Excel Export integration", () => {
 
       await waitFor(() => expect(mockDownloadFromApi).toHaveBeenCalled())
       expect(mockDownloadFromApi.mock.calls[0][0]).toBe(
-        "/api/admin/evaluation-results/export/consolidated?evaluationPeriodId=p1&departmentIds=d1&facultyIds=f1",
+        "/api/admin/evaluation-results/export/excel?evaluationPeriodId=p1&departmentIds=d1&facultyIds=f1",
       )
       expect(mockDownloadFromApi.mock.calls[0][1]).toBe(
-        "evaluation-results-consolidated-p1.zip",
+        "evaluation-results-excel-p1.zip",
       )
     })
   })
@@ -221,7 +218,7 @@ describe("Department Results Page - Excel Export integration", () => {
       await waitFor(() => expect(zipButton().getAttribute("disabled")).toBeFalsy())
     })
 
-    it("exports the consolidated workbook from the dean's own route", async () => {
+    it("exports the combined ZIP from the dean's own route", async () => {
       mockDownloadFromApi.mockResolvedValue(undefined)
       render(<DeanDepartmentDetailPage />)
       await settleInitialSelectionReset()
@@ -230,17 +227,17 @@ describe("Department Results Page - Excel Export integration", () => {
         name: /Include Doe, John in the export/i,
       })
       fireEvent.click(facultyCheckbox)
-      await waitFor(() => expect(consolidatedButton().getAttribute("disabled")).toBeFalsy())
+      await waitFor(() => expect(zipButton().getAttribute("disabled")).toBeFalsy())
 
-      fireEvent.click(consolidatedButton())
+      fireEvent.click(zipButton())
       fireEvent.click(screen.getByRole("button", { name: /start export/i }))
 
       await waitFor(() => expect(mockDownloadFromApi).toHaveBeenCalled())
       expect(mockDownloadFromApi.mock.calls[0][0]).toBe(
-        "/api/dean/evaluation-results/export/consolidated?evaluationPeriodId=p1&departmentIds=d1&facultyIds=f1",
+        "/api/dean/evaluation-results/export/excel?evaluationPeriodId=p1&departmentIds=d1&facultyIds=f1",
       )
       expect(mockDownloadFromApi.mock.calls[0][1]).toBe(
-        "evaluation-results-consolidated-p1.zip",
+        "evaluation-results-excel-p1.zip",
       )
     })
   })

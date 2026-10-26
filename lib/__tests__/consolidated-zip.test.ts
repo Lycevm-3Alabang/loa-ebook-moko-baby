@@ -163,20 +163,17 @@ describe("the consolidated faculty ZIP", () => {
     expect(parts.has("CCS/CCS_summary.xlsx")).toBe(false)
   })
 
-  it("matches the non-consolidated faculty average and keeps the member count, including a member with none", async () => {
+  it("matches the non-consolidated faculty average and keeps raw Overall responses", async () => {
     await buildConsolidatedFacultyZip({ evaluationPeriodId: "p1", departmentIds: ["d1"] })
 
     const member = inputOf(MEMBER_1.name)!
-    expect(member.individual.band[2].text).toContain("Average: 3.67")
+    expect(member.individual.band[2].text).toContain("Average: 3.40")
     expect(member.individual.rows).toHaveLength(1)
     expect(member.individual.rows[0].cells[2]).toBe(4)
     expect(member.itemAverages.i1).toBe(3.75)
-    expect(member.overall.rows).toHaveLength(1)
-    expect(member.overall.rows[0].values[0]).toBe(3.75)
-    expect(member.overall.rows[0].rating).toBe(3.75)
-    expect(member.overall.columns.map((column: { heading: string }) => column.heading)).not.toContain("SUBJECT")
-    expect(member.overall.columns.map((column: { heading: string }) => column.heading)).not.toContain("SECTION")
-    expect(member.overall.columns.map((column: { heading: string }) => column.heading)).not.toContain("DATE")
+    expect(member.overall.rows.map((row: { rating: number }) => row.rating)).toEqual([2, 4, 4, 5])
+    expect(member.overall.columns.map((column: { heading: string }) => column.heading)).toContain("SUBJECT-SECTION")
+    expect(member.overall.columns.map((column: { heading: string }) => column.heading)).toContain("DATE")
 
     // ⭐ C6 — an empty member gets a FILE, not a failure or a missing folder
     const empty = inputOf(MEMBER_2.name)!
@@ -184,8 +181,7 @@ describe("the consolidated faculty ZIP", () => {
     expect(empty.individual.rows[0].cells[2]).toBe(0)
     expect(empty.individual.band[2].text).toBe("Average: —")
     expect(empty.comments.some((row: { kind: string }) => row.kind === "group")).toBe(false)
-    expect(empty.overall.rows).toHaveLength(1)
-    expect(empty.overall.rows[0].rating).toBeNull()
+    expect(empty.overall.rows).toHaveLength(0)
   })
 
   it("writes comments without subject-section group banners", async () => {
@@ -200,12 +196,13 @@ describe("the consolidated faculty ZIP", () => {
     ).toEqual(["Clear.", "Great."])
   })
 
-  it("uses the subject-section average for the faculty final output while keeping raw response values on Overall", async () => {
+  it("keeps every response across subject-sections on Overall", async () => {
     await buildConsolidatedFacultyZip({ evaluationPeriodId: "p1", departmentIds: ["d1"] })
 
     const member = inputOf(MEMBER_1.name)!
-    expect(member.overall.rows.map((row: { no: number }) => row.no)).toEqual([1])
-    expect(member.overall.rows[0].values[0]).toBe(3.75)
+    expect(member.overall.rows.map((row: { no: number }) => row.no)).toEqual([1, 2, 3, 4])
+    expect(member.overall.rows.map((row: { rating: number }) => row.rating)).toEqual([2, 4, 4, 5])
+    expect(member.individual.band[2].text).toContain("Average: 3.40")
     const texts = member.overall.header.map((line: { kind: string; text?: string }) =>
       line.kind === "spacer" ? "" : (line.text ?? ""),
     )

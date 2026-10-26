@@ -17,6 +17,10 @@ function averages(values: number[]): Record<string, number> {
     out[criterion.name] = values[index]
   })
   return out
+      rubricCategories: APP_RUBRIC.map((criterion) => ({
+        name: criterion.name,
+        items: criterion.statements,
+      })),
 }
 
 const SUMMARY = {
@@ -107,11 +111,12 @@ describe("the consolidated faculty workbook", () => {
     expect(sheet).toContain("FACULTY PERFORMANCE EVALUATION RESULT (POST-EVALUATION)")
     // ⭐ the new Individual sheet has rubric blocks and totals, not a subject table
     expect(sheet).toContain("Alamo, Nino Francisco")
-    expect(sheet).toContain("3.40")
-    expect(sheet).toContain("TOTAL RESPONDENTS:")
-    expect(sheet).toContain("FINAL RATING:")
-    expect(sheet).toContain("CATEGORY AVERAGE: 4.00")
-    expect(sheet).toContain("AVERAGE: 4.25")
+    expect(sheet).toContain("<v>3.4</v>")
+    expect(sheet).toContain("TOTAL RESPONDENTS")
+    expect(sheet).toContain("FINAL RATING")
+    expect(sheet).toContain("I. Professional Manner")
+    expect(sheet).toContain("AVERAGE")
+    expect(sheet).toContain("<v>4.25</v>")
     // ⭐ no SUBJECT column or 1815-ITELEC009 row in the new Individual layout
   })
 

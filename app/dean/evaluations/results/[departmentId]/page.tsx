@@ -194,16 +194,6 @@ export default function DeanDepartmentDetailPage() {
                   disabled={selectedFacultyIds.length === 0}
                   exportApiBase="/api/dean/evaluation-results/export/excel"
                 />
-                <DepartmentZipButton
-                  evaluationPeriodId={evaluationPeriodId}
-                  departmentIds={[departmentId]}
-                  facultyIds={allFacultySelected ? [] : selectedFacultyIds}
-                  disabled={selectedFacultyIds.length === 0}
-                  exportApiBase="/api/dean/evaluation-results/export/consolidated"
-                  label="Download Consolidated Excel (ZIP)"
-                  filenamePrefix="evaluation-results-consolidated"
-                  confirmationDescription="The download contains one consolidated workbook per faculty member — Individual, Comments and Overall in one file."
-                />
               </div>
             </div>
 

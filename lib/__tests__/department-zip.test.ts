@@ -106,9 +106,14 @@ describe("the department ZIP", () => {
       "CCS/CCS_summary.xlsx",
       "CCS/Alamo, Nino Francisco/1815-ITELEC009_BSIT-31E1_evaluation.xlsx",
       "CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_summary.xlsx",
+      "CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_consolidated.xlsx",
     ])
     const facultySummary = readZip(parts.get("CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_summary.xlsx")!)
     expect(partText(facultySummary, "xl/worksheets/sheet1.xml")).toContain("Average: 3.40 — Satisfactory")
+    const consolidated = readZip(parts.get("CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_consolidated.xlsx")!)
+    const consolidatedSheet = partText(consolidated, "xl/worksheets/sheet1.xml")
+    expect(consolidatedSheet).toContain("Satisfactory")
+    expect(consolidatedSheet).toContain("<v>3.4</v>")
   })
 
   it("refuses a selection that cannot fit in one response — with the number", async () => {
@@ -161,6 +166,7 @@ describe("the department ZIP", () => {
     const parts = readZip(result.ok ? result.bytes : new Uint8Array())
     expect(parts.has("_INCOMPLETE.txt")).toBe(true)
     expect(new TextDecoder().decode(parts.get("_INCOMPLETE.txt")!)).toContain("1815-ITELEC009")
+    expect([...parts.keys()].some((name) => name.endsWith("_consolidated.xlsx"))).toBe(false)
   })
 
   it("exports one selected member only — and no department summary", async () => {
@@ -176,6 +182,7 @@ describe("the department ZIP", () => {
     expect([...parts.keys()]).toEqual([
       "CCS/Alamo, Nino Francisco/1815-ITELEC009_BSIT-31E1_evaluation.xlsx",
       "CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_summary.xlsx",
+      "CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_consolidated.xlsx",
     ])
     // ⭐ D34: a per-faculty export carries NO department summary — that ZIP's
     // details are one faculty's, so a whole-department row would read as the
@@ -221,6 +228,8 @@ describe("the department ZIP", () => {
       "CCS/Dela Cruz, Juan/1815-ITELEC010_BSIT-31E2_evaluation.xlsx",
       "CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_summary.xlsx",
       "CCS/Dela Cruz, Juan/Dela Cruz, Juan_summary.xlsx",
+      "CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_consolidated.xlsx",
+      "CCS/Dela Cruz, Juan/Dela Cruz, Juan_consolidated.xlsx",
     ])
     // ⭐ f3 is a member, but was not selected — no folder for them
     expect([...parts.keys()].some((name) => name.startsWith("CCS/Reyes, Ana/"))).toBe(false)
@@ -242,6 +251,7 @@ describe("the department ZIP", () => {
       "CCS/CCS_summary.xlsx",
       "CCS/Alamo, Nino Francisco/1815-ITELEC009_BSIT-31E1_evaluation.xlsx",
       "CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_summary.xlsx",
+      "CCS/Alamo, Nino Francisco/Alamo, Nino Francisco_consolidated.xlsx",
     ])
   })
 
@@ -352,6 +362,7 @@ describe("the verdict", () => {
     if (verdict.kind !== "refusal") return
     expect(verdict.status).toBe(400)
     expect(verdict.error).toContain(`${MAX_SUBJECT_SECTIONS + 1} subject-sections`)
+    expect(verdict.error).toContain("1 consolidated workbook")
     // ⭐ the estimate is rounded UP, so it never reads smaller than it is
     expect(verdict.error).toContain("4.1 MB")
     expect(verdict.error).toContain("the limit is 4.0 MB")
