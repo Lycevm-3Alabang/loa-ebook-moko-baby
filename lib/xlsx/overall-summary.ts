@@ -3,6 +3,7 @@ import { orDash, ROW_ONE_LINE } from "./form-model"
 import { sectionLabel } from "../evaluation-utils"
 import { buildWorkbook, type ColumnSpec, type RowSpec, type SheetSpec } from "./writer"
 import type { StyleToken } from "./styles"
+import { APP_RUBRIC } from "@/lib/__tests__/fixtures/eval-rubric"
 
 /**
  * The faculty's CONSOLIDATED FILE — the summary the faculty cards show.
@@ -181,6 +182,10 @@ export function buildFacultySummaryModel(
 export function renderFacultySummarySheet(
   model: FacultySummaryModel,
   sheetName = "Faculty Summary",
+  // ⭐ NEW — category averages keyed by rubric criterion name, computed from
+  // ALL responses across all subject-sections (passed from
+  // buildConsolidatedFacultyWorkbook when sheetName === "Individual").
+  categoryAverages?: Record<string, number>,
 ): SheetSpec {
   // ⭐ NEW — Individual sheet for the consolidated ZIP (only; per‑department ZIP
   // is completely unchanged because it always calls this function with the
@@ -208,30 +213,24 @@ export function renderFacultySummarySheet(
       { kind: "text", text: rating },
     ]
 
-    // ---- build the rubric‑block rows (rows 8+) --------------------
-    const rubricBlocks = [
-      {
-        title: "I. Professional Manner",
-        subItems: [
-          { text: "The professor has always dressed appropriately and is well groomed", avg: 0 },
-          { text: "(same concept)", avg: 0 },
-        ],
-      },
-      {
-        title: "II. (next rubric)",
-        subItems: [
-          { text: "(sub‑item)", avg: 0 },
-          { text: "(same concept)", avg: 0 },
-        ],
-      },
-      {
-        title: "III. (continue)",
-        subItems: [
-          { text: "(continue)", avg: 0 },
-          { text: "(continue)", avg: 0 },
-        ],
-      },
-    ]
+// ---- build the rubric‑block rows (rows 8+) --------------------
+    // Use the live rubric from the database (APP_RUBRIC). Each criterion becomes a
+    // "block"; its sub‑items are the rubric statements; the AVERAGE line is computed
+    // from the categoryAverages map keyed by the criterion display name.
+    const rubricBlocks = APP_RUBRIC.map((criterion) => {
+      const criterionName = criterion.name
+      // Compute average from the categoryAverages map; fall back to 0.00 if not
+      // available (e.g. per‑department ZIP which never passes this extra arg).
+      const avgValue = categoryAverages?.[criterionName] ?? 0
+      const statements = criterion.statements.map((statement) => ({
+        text: statement.text,
+        avg: avgValue,
+      }))
+      return {
+        title: criterionName,
+        subItems: statements,
+      }
+    })
 
     // ---- assemble all rows for the new Individual sheet -------------
     const allRows: SummaryLine[] = []
@@ -251,7 +250,7 @@ export function renderFacultySummarySheet(
     // row 8: Subject(s): subtitle
     allRows.push({ kind: "subtitle", text: "Subject(s):" })
 
-    // rubric blocks I‑III
+    // rubric blocks – one per criterion from the database
     for (const block of rubricBlocks) {
       allRows.push({ kind: "label", text: block.title })
       for (const si of block.subItems) {

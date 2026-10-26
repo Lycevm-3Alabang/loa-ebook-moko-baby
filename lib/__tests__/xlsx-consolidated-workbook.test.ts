@@ -126,9 +126,12 @@ describe("the consolidated faculty workbook", () => {
   it("draws the Individual tab from the faculty summary — the card's average", () => {
     const sheet = partText(built(), "xl/worksheets/sheet1.xml")
     expect(sheet).toContain("FACULTY PERFORMANCE EVALUATION RESULT (POST-EVALUATION)")
-    expect(sheet).toContain("Average: 3.40 — Satisfactory")
-    expect(sheet).toContain("SUBJECT")
-    expect(sheet).toContain("1815-ITELEC009 Introduction to Computing")
+    // ⭐ the new Individual sheet has rubric blocks and totals, not a subject table
+    expect(sheet).toContain("Alamo, Nino Francisco")
+    expect(sheet).toContain("3.40")
+    expect(sheet).toContain("TOTAL RESPONDENTS:")
+    expect(sheet).toContain("FINAL RATING:")
+    // ⭐ no SUBJECT column or 1815-ITELEC009 row in the new Individual layout
   })
 
   it("groups every comment under its subject-section, with no date", () => {

@@ -5,6 +5,7 @@ import {
   renderFacultySummarySheet,
   type FacultySummaryModel,
 } from "./overall-summary"
+import { APP_RUBRIC } from "@/lib/__tests__/fixtures/eval-rubric"
 import { buildWorkbook } from "./writer"
 
 /**
@@ -38,9 +39,33 @@ export interface ConsolidatedFacultyWorkbookInput {
 export function buildConsolidatedFacultyWorkbook(
   input: ConsolidatedFacultyWorkbookInput,
 ): Uint8Array {
+  // ⭐ NEW — compute overall category averages from all responses,
+  // so the Individual sheet's rubric blocks display the mean score
+  // across ALL subject-sections (not per-section). This matches the
+  // requirement: "it averages ALL regardless of subject-section".
+  // Each OverallDataRow.values[i] holds the per-criterion average for that response.
+  const criterionCount = input.overall.columns.filter(
+    (c) => c.kind === "criterion",
+  ).length
+  const categoryAverages: Record<string, number> = {}
+  for (let i = 0; i < criterionCount; i++) {
+    const scores = input.overall.rows
+      .map((row) => row.values[i])
+      .filter((v): v is number => typeof v === "number")
+    const heading = input.overall.columns[i + 1].heading
+    if (scores.length > 0) {
+      categoryAverages[heading] = scores.reduce(
+        (sum, s) => sum + s,
+        0,
+      ) / scores.length
+    } else {
+      categoryAverages[heading] = 0
+    }
+  }
+
   return buildWorkbook({
     sheets: [
-      renderFacultySummarySheet(input.individual, "Individual"),
+      renderFacultySummarySheet(input.individual, "Individual", categoryAverages),
       renderCommentsSheet(input.comments),
       renderOverallSheet(input.overall),
     ],

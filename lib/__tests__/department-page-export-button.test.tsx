@@ -133,7 +133,7 @@ describe("Department Results Page - Excel Export integration", () => {
 
       fireEvent.click(consolidatedButton())
       // ⭐ the confirmation names the consolidated workbook, not subject workbooks
-      expect(screen.getByText(/one consolidated workbook per faculty member/i)).toBeTruthy()
+      await waitFor(() => expect(screen.getByText(/one consolidated workbook per faculty member/i)).toBeTruthy())
       fireEvent.click(screen.getByRole("button", { name: /start export/i }))
 
       await waitFor(() => expect(mockDownloadFromApi).toHaveBeenCalled())
