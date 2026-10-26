@@ -217,11 +217,15 @@ export async function buildConsolidatedFacultyZip(
           return average === null ? [] : [[itemId, average]]
         }),
       )
-      const overallResponse: OverallResponse = {
-        submittedAt: null,
-        generalRating: averageRating,
-        categoryAverages: averageCategories,
-      }
+      const responsesForOverall: OverallResponse[] = subjects.flatMap((subject) =>
+        subject.resultSet.evaluations.map((evaluation) => ({
+          submittedAt: evaluation.submittedAt,
+          generalRating: evaluation.generalRating,
+          categoryAverages: evaluation.categoryAverages,
+          subject: `${subject.resultSet.subject?.code ?? ""} ${subject.resultSet.subject?.name ?? ""}`.trim(),
+          section: sectionLabel(subject.resultSet.section.program, subject.resultSet.section.name),
+        })),
+      )
       const comments = subjects.flatMap((subject) =>
         subject.resultSet.comments.map((comment) => comment.comment),
       )
@@ -284,10 +288,11 @@ export async function buildConsolidatedFacultyZip(
             facultyName: member.name,
             department: departmentInfo,
             subject: null,
-            showDateColumn: false,
+            showDateColumn: true,
             showSubjectHeader: false,
+            showSubjectSectionColumn: true,
             criteria,
-            responses: [overallResponse],
+            responses: responsesForOverall,
           }),
           itemAverages,
           rubricCategories: rubric,

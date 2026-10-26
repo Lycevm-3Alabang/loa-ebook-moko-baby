@@ -31,6 +31,7 @@ export type OverallColumn =
   | { kind: "no"; heading: string }
   | { kind: "subject"; heading: string }
   | { kind: "section"; heading: string }
+  | { kind: "subjectSection"; heading: string }
   | { kind: "date"; heading: string }
   | { kind: "criterion"; heading: string; criterionIndex: number }
   | { kind: "rating"; heading: string }
@@ -103,6 +104,8 @@ export interface OverallInput {
   showSubjectColumn?: boolean
   /** whether the table carries a SECTION column — the faculty grain */
   showSectionColumn?: boolean
+  /** whether the table carries one combined SUBJECT-SECTION column */
+  showSubjectSectionColumn?: boolean
   /** whether the table carries a DATE column; defaults to true */
   showDateColumn?: boolean
   /** whether a subject line appears in the header when there is no subject column */
@@ -150,14 +153,18 @@ function departmentLabel(department: { name: string; code: string }): string {
 export function buildOverallModel(input: OverallInput): OverallModel {
   const showSubject = input.showSubjectColumn === true
   const showSection = input.showSectionColumn === true
+  const showSubjectSection = input.showSubjectSectionColumn === true
   const showDate = input.showDateColumn !== false
 
   const columns: OverallColumn[] = [
     { kind: "no", heading: "NO" },
+    ...(showSubjectSection
+      ? [{ kind: "subjectSection" as const, heading: "SUBJECT-SECTION" }]
+      : []),
     // ⭐ the faculty grain moves the subject from the header to a column, and
     // names each response's section — the rows span several subject-sections
-    ...(showSubject ? [{ kind: "subject" as const, heading: "SUBJECT" }] : []),
-    ...(showSection ? [{ kind: "section" as const, heading: "SECTION" }] : []),
+    ...(showSubject && !showSubjectSection ? [{ kind: "subject" as const, heading: "SUBJECT" }] : []),
+    ...(showSection && !showSubjectSection ? [{ kind: "section" as const, heading: "SECTION" }] : []),
     ...(showDate ? [{ kind: "date" as const, heading: "DATE" }] : []),
     ...input.criteria.map((criterion, criterionIndex) => ({
       kind: "criterion" as const,
@@ -205,6 +212,7 @@ const WIDTHS: Record<OverallColumn["kind"], number> = {
   no: 6,
   subject: 30,
   section: 14,
+  subjectSection: 28,
   date: 12,
   criterion: 16,
   rating: 15,
@@ -240,6 +248,9 @@ function dataRowHeight(model: OverallModel, data: OverallDataRow): number {
     ...model.columns.map((column) => {
       if (column.kind === "subject") return Math.ceil(data.subject.length / WIDTHS.subject)
       if (column.kind === "section") return Math.ceil(data.section.length / WIDTHS.section)
+      if (column.kind === "subjectSection") {
+        return Math.ceil(`${data.subject} ${data.section}`.trim().length / WIDTHS.subjectSection)
+      }
       return 1
     }),
   )
@@ -301,6 +312,11 @@ export function renderOverallSheet(model: OverallModel): SheetSpec {
         case "section":
           cells.push(cell(row, letter, "tableText", data.section))
           break
+        case "subjectSection": {
+          const label = `${data.subject} ${data.section}`.trim()
+          cells.push(cell(row, letter, "tableText", label || "—"))
+          break
+        }
         case "date":
           cells.push(cell(row, letter, "tableCell", data.date))
           break

@@ -29,6 +29,11 @@ function mean(values: Array<number | null | undefined>): number | null {
   return scores.reduce((sum, score) => sum + score, 0) / scores.length
 }
 
+function round2(value: number | null): number | null {
+  if (value === null || value === undefined) return null
+  return Number(value.toFixed(2))
+}
+
 /** The consolidated workbook, as bytes. */
 export function buildConsolidatedFacultyWorkbook(
   input: ConsolidatedFacultyWorkbookInput,
@@ -39,7 +44,7 @@ export function buildConsolidatedFacultyWorkbook(
     employeeNo: null,
     facultyName: input.individual.band[0]?.kind === "label" ? input.individual.band[0].text : null,
     avgRating: input.individual.band[2]?.kind === "text"
-      ? Number(input.individual.band[2].text.replace("Average: ", "").split(" — ")[0]) || null
+      ? round2(Number(input.individual.band[2].text.replace("Average: ", "").split(" — ")[0]) || null)
       : null,
     remarks: input.individual.band[2]?.kind === "text"
       ? input.individual.band[2].text.includes("—")
@@ -56,10 +61,10 @@ export function buildConsolidatedFacultyWorkbook(
       )
       return {
         name: category.name,
-        average: mean(input.overall.rows.map((row) => row.values[index] ?? null)),
+        average: round2(mean(input.overall.rows.map((row) => row.values[index] ?? null))),
         statements: category.items.map((item) => ({
           text: item.text,
-          avg: input.itemAverages?.[item.id] ?? null,
+          avg: round2(input.itemAverages?.[item.id] ?? null),
         })),
       }
     }),

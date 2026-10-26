@@ -115,6 +115,42 @@ describe("the consolidated faculty workbook", () => {
     // ⭐ no SUBJECT column or 1815-ITELEC009 row in the new Individual layout
   })
 
+  it("rounds the Individual sheet values to two decimals for display", () => {
+    const sheet = partText(
+      readZip(
+        buildConsolidatedFacultyWorkbook({
+          individual: buildFacultySummaryModel({
+            ...SUMMARY,
+            faculty: { ...SUMMARY.faculty, avgRating: 3.679, remarks: "Very Satisfactory" },
+          }),
+          comments: buildCommentsModel(IDENTITY, COMMENTS),
+          overall: buildOverallModel({
+            semesterTitle: SUMMARY.semesterTitle,
+            facultyName: SUMMARY.faculty.name,
+            department: SUMMARY.department,
+            subject: null,
+            showDateColumn: false,
+            showSubjectHeader: false,
+            criteria: CRITERIA,
+            responses: [{
+              submittedAt: null,
+              generalRating: 3.679,
+              categoryAverages: averages([3.679, 3.679, 3.679, 3.679, 3.679, 3.679, 3.679, 3.679]),
+            }],
+          }),
+          itemAverages: { [APP_RUBRIC[0].statements[0].id]: 3.679 },
+          rubricCategories: APP_RUBRIC.map((criterion) => ({
+            name: criterion.name,
+            items: criterion.statements,
+          })),
+        }),
+      ),
+      "xl/worksheets/sheet1.xml",
+    )
+
+    expect(sheet).toContain("3.68")
+  })
+
   it("lists comments without subject-section group banners or dates", () => {
     const sheet = partText(built(), "xl/worksheets/sheet2.xml")
     expect(sheet).toContain(COMMENTS_BANNER)
