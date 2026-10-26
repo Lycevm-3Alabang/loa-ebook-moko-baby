@@ -9,6 +9,11 @@ interface ExportConfirmationModalProps {
   onConfirm: () => void
   /** how many faculty the export is limited to; 0 = the whole department */
   facultyCount?: number
+  /**
+   * ⭐ What the download contains. The consolidated export names its workbook
+   * here; when absent the modal keeps the subject-ZIP wording.
+   */
+  description?: string
 }
 
 export default function ExportConfirmationModal({
@@ -16,6 +21,7 @@ export default function ExportConfirmationModal({
   onClose,
   onConfirm,
   facultyCount = 0,
+  description,
 }: ExportConfirmationModalProps) {
   const handleKey = useCallback((e: KeyboardEvent) => {
     if (e.key === "Escape") onClose()
@@ -52,7 +58,14 @@ export default function ExportConfirmationModal({
                 <span className="font-bold text-primary">
                   {facultyCount} selected faculty member{facultyCount !== 1 ? "s" : ""}
                 </span>
-                . The download contains their subject workbooks and one summary each.
+                .{" "}
+                {description ??
+                  "The download contains their subject workbooks and one summary each."}
+              </>
+            ) : description ? (
+              <>
+                You are about to export the{" "}
+                <span className="font-bold text-primary">whole department</span>. {description}
               </>
             ) : (
               <>

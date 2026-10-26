@@ -39,6 +39,45 @@ export function buildCommentsModel(identity: Identity, comments: string[]): Form
   ]
 }
 
+/** One subject-section's comments, at the faculty grain. */
+export interface CommentGroup {
+  /** the group's banner — the subject and the section */
+  label: string
+  /** the comments under it */
+  comments: string[]
+}
+
+/**
+ * The Comments sheet's rows at the faculty grain: the identity block, the
+ * banner, then each subject-section's group and its comments.
+ *
+ * ⭐ A subject-section with no comments has NO group — an empty banner would
+ * claim the school's sheet had been cut. The identity and the banner still
+ * repeat on every page; the print titles stop before the first group.
+ */
+export function buildGroupedCommentsModel(
+  identity: Identity,
+  groups: CommentGroup[],
+): FormRow[] {
+  return [
+    ...identityRows(identity),
+    { kind: "spacer" },
+    { kind: "banner", text: COMMENTS_BANNER },
+    ...groups.flatMap((group) =>
+      group.comments.length === 0
+        ? []
+        : [
+            { kind: "group" as const, text: group.label },
+            ...group.comments.map((text) => ({
+              kind: "comment" as const,
+              text,
+              height: commentHeight(text),
+            })),
+          ],
+    ),
+  ]
+}
+
 /** The Comments sheet, drawn from its rows. */
 export function renderCommentsSheet(rows: FormRow[]): SheetSpec {
   const sheetRows: RowSpec[] = []
@@ -72,6 +111,13 @@ export function renderCommentsSheet(rows: FormRow[]): SheetSpec {
         merges.push(`A${row}:I${row}`)
         break
 
+      case "group":
+        // ⭐ the group's banner is the same banner style, merged like the
+        // sheet's heading — the subject-section is a heading, not a comment
+        sheetRows.push({ row, height: 13.5, cells: spread(row, "banner", model.text) })
+        merges.push(`A${row}:I${row}`)
+        break
+
       case "comment":
         // ⭐ the TEXT in the anchor — the merge's top-left cell; every other
         // cell in the range is a ghost Excel discards
@@ -84,9 +130,10 @@ export function renderCommentsSheet(rows: FormRow[]): SheetSpec {
     }
   })
 
-  // the rows that repeat on every printed page: the identity block and the banner
-  const firstComment = rows.findIndex((r) => r.kind === "comment")
-  const headerRows = firstComment === -1 ? rows.length : firstComment
+  // the rows that repeat on every printed page: the identity block and the
+  // banner — the first GROUP starts the body, so it is not a print title
+  const firstBody = rows.findIndex((r) => r.kind === "comment" || r.kind === "group")
+  const headerRows = firstBody === -1 ? rows.length : firstBody
 
   return {
     name: "Comments",

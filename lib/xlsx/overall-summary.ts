@@ -171,8 +171,17 @@ export function buildFacultySummaryModel(
   }
 }
 
-/** The sheet, drawn from its model. */
-export function renderFacultySummarySheet(model: FacultySummaryModel): SheetSpec {
+/**
+ * The sheet, drawn from its model.
+ *
+ * ⭐ The tab's name is a parameter because the faculty grain's workbook calls
+ * this sheet `Individual` — the same sheet, the same content, the name the
+ * school's three-tab workbook gives it. The subject grain keeps the default.
+ */
+export function renderFacultySummarySheet(
+  model: FacultySummaryModel,
+  sheetName = "Faculty Summary",
+): SheetSpec {
   const letters = ["A", "B", "C", "D", "E", "F"]
   const last = letters[letters.length - 1]
   const rows: RowSpec[] = []
@@ -230,7 +239,7 @@ export function renderFacultySummarySheet(model: FacultySummaryModel): SheetSpec
   }
 
   return {
-    name: "Faculty Summary",
+    name: sheetName,
     columns: COLUMN_SPECS,
     rows,
     merges,
@@ -243,8 +252,11 @@ export function renderFacultySummarySheet(model: FacultySummaryModel): SheetSpec
 }
 
 /** The file — one sheet, built by the existing writer. */
-export function buildFacultySummaryWorkbook(input: FacultySummaryInput): Uint8Array {
+export function buildFacultySummaryWorkbook(
+  input: FacultySummaryInput,
+  sheetName = "Faculty Summary",
+): Uint8Array {
   return buildWorkbook({
-    sheets: [renderFacultySummarySheet(buildFacultySummaryModel(input))],
+    sheets: [renderFacultySummarySheet(buildFacultySummaryModel(input), sheetName)],
   })
 }

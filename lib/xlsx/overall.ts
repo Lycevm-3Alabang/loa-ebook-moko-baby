@@ -29,6 +29,8 @@ export const OVERALL_TITLE = "Faculty Performance Evaluation Result (Post-evalua
 /** One column of the table. */
 export type OverallColumn =
   | { kind: "no"; heading: string }
+  | { kind: "subject"; heading: string }
+  | { kind: "section"; heading: string }
   | { kind: "date"; heading: string }
   | { kind: "criterion"; heading: string; criterionIndex: number }
   | { kind: "rating"; heading: string }
@@ -48,12 +50,23 @@ export interface OverallResponse {
    * averages and not the app's fixed eight.
    */
   categoryAverages: CategoryAverages
+  /**
+   * ⭐ The subject's label for THIS response — when the sheet spans a
+   * faculty's subject-sections rather than one subject.
+   */
+  subject?: string
+  /** ⭐ The section's label for THIS response — at the faculty grain. */
+  section?: string
 }
 
 /** One response's row, as the model states it. */
 export interface OverallDataRow {
   /** the response's number in the response set */
   no: number
+  /** the response's subject — when the sheet spans subject-sections */
+  subject: string
+  /** the response's section — when the sheet spans subject-sections */
+  section: string
   /** the response's date — YYYY-MM-DD */
   date: string
   /** the criteria's values, in the rubric's order */
@@ -82,8 +95,14 @@ export interface OverallInput {
   semesterTitle: string | null
   /** the teacher's name */
   facultyName: string | null
+  /** the department — printed when the sheet spans a faculty */
+  department?: { name: string; code: string } | null
   /** the subject */
   subject: { code: string; name: string } | null
+  /** whether the table carries a SUBJECT column — the faculty grain */
+  showSubjectColumn?: boolean
+  /** whether the table carries a SECTION column — the faculty grain */
+  showSectionColumn?: boolean
   /** the rubric's criteria, in the rubric's order — the table's columns */
   criteria: { name: string }[]
   /** the responses, in the response set's order */
@@ -118,10 +137,22 @@ function subjectLabel(subject: OverallInput["subject"]): string {
   return `${subject.code} ${subject.name}`.trim()
 }
 
+/** The department's label — the name and the code. */
+function departmentLabel(department: { name: string; code: string }): string {
+  return department.code ? `${department.name} (${department.code})` : department.name
+}
+
 /** The Overall sheet's model: the header block, the table's columns and its rows. */
 export function buildOverallModel(input: OverallInput): OverallModel {
+  const showSubject = input.showSubjectColumn === true
+  const showSection = input.showSectionColumn === true
+
   const columns: OverallColumn[] = [
     { kind: "no", heading: "NO" },
+    // ⭐ the faculty grain moves the subject from the header to a column, and
+    // names each response's section — the rows span several subject-sections
+    ...(showSubject ? [{ kind: "subject" as const, heading: "SUBJECT" }] : []),
+    ...(showSection ? [{ kind: "section" as const, heading: "SECTION" }] : []),
     { kind: "date", heading: "DATE" },
     ...input.criteria.map((criterion, criterionIndex) => ({
       kind: "criterion" as const,
@@ -134,6 +165,8 @@ export function buildOverallModel(input: OverallInput): OverallModel {
 
   const rows: OverallDataRow[] = input.responses.map((response, index) => ({
     no: index + 1,
+    subject: orDash(response.subject),
+    section: orDash(response.section),
     date: response.submittedAt ? response.submittedAt.slice(0, 10) : "—",
     // ⭐ the live average for THAT criterion — a criterion nobody rated is a
     // blank value, never a zero
@@ -147,7 +180,13 @@ export function buildOverallModel(input: OverallInput): OverallModel {
       { kind: "title", text: OVERALL_TITLE },
       { kind: "subtitle", text: `Semester: ${orDash(input.semesterTitle)}` },
       { kind: "subtitle", text: `Faculty: ${orDash(input.facultyName)}` },
-      { kind: "subtitle", text: `Subject: ${orDash(subjectLabel(input.subject))}` },
+      ...(input.department
+        ? [{ kind: "subtitle" as const, text: `Department: ${departmentLabel(input.department)}` }]
+        : []),
+      // ⭐ the subject is a COLUMN at the faculty grain — never both
+      ...(showSubject
+        ? []
+        : [{ kind: "subtitle" as const, text: `Subject: ${orDash(subjectLabel(input.subject))}` }]),
       { kind: "spacer" },
     ],
     columns,
@@ -159,6 +198,8 @@ export function buildOverallModel(input: OverallInput): OverallModel {
 /** The columns' widths — the fixed ones and the criteria's. */
 const WIDTHS: Record<OverallColumn["kind"], number> = {
   no: 6,
+  subject: 30,
+  section: 14,
   date: 12,
   criterion: 16,
   rating: 15,
@@ -179,6 +220,25 @@ function columnSpecs(columns: OverallColumn[]): ColumnSpec[] {
     specs.push({ from: letter, to: letter, width })
   })
   return specs
+}
+
+/**
+ * A data row's height.
+ *
+ * ⭐ At the faculty grain the subject and the section are TEXT in their own
+ * columns — a wrapped label in a one-line row would be clipped, so the row
+ * grows with the label. The subject grain's rows keep their one-line height.
+ */
+function dataRowHeight(model: OverallModel, data: OverallDataRow): number {
+  const lines = Math.max(
+    1,
+    ...model.columns.map((column) => {
+      if (column.kind === "subject") return Math.ceil(data.subject.length / WIDTHS.subject)
+      if (column.kind === "section") return Math.ceil(data.section.length / WIDTHS.section)
+      return 1
+    }),
+  )
+  return lines === 1 ? ROW_ONE_LINE : lines * LINE_HEIGHT + 4
 }
 
 /** The Overall sheet, drawn from its model. */
@@ -230,6 +290,12 @@ export function renderOverallSheet(model: OverallModel): SheetSpec {
         case "no":
           cells.push(cell(row, letter, "tableCell", data.no))
           break
+        case "subject":
+          cells.push(cell(row, letter, "tableText", data.subject))
+          break
+        case "section":
+          cells.push(cell(row, letter, "tableText", data.section))
+          break
         case "date":
           cells.push(cell(row, letter, "tableCell", data.date))
           break
@@ -244,7 +310,7 @@ export function renderOverallSheet(model: OverallModel): SheetSpec {
           break
       }
     })
-    rows.push({ row, height: ROW_ONE_LINE, cells })
+    rows.push({ row, height: dataRowHeight(model, data), cells })
   })
 
   return {

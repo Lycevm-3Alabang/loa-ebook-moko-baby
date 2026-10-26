@@ -72,6 +72,31 @@ describe("DepartmentZipButton", () => {
     )
   })
 
+  it("keeps the existing filename by default", async () => {
+    mockDownloadFromApi.mockResolvedValue(undefined)
+    renderButton()
+    fireEvent.click(screen.getByRole("button", { name: /download excel/i }))
+    fireEvent.click(screen.getByRole("button", { name: /start export/i }))
+    await waitFor(() => expect(mockDownloadFromApi).toHaveBeenCalled())
+    expect(mockDownloadFromApi.mock.calls[0][1]).toBe("evaluation-results-excel-p1.zip")
+  })
+
+  it("takes the consolidated filename prefix and the confirmation copy", async () => {
+    mockDownloadFromApi.mockResolvedValue(undefined)
+    renderButton({
+      exportApiBase: "/api/admin/evaluation-results/export/consolidated",
+      filenamePrefix: "evaluation-results-consolidated",
+      confirmationDescription:
+        "The download contains one consolidated workbook per faculty member.",
+    })
+    fireEvent.click(screen.getByRole("button", { name: /download excel/i }))
+    expect(screen.getByText(/one consolidated workbook per faculty member/i)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /start export/i }))
+    await waitFor(() => expect(mockDownloadFromApi).toHaveBeenCalled())
+    expect(mockDownloadFromApi.mock.calls[0][0]).toContain("/export/consolidated?")
+    expect(mockDownloadFromApi.mock.calls[0][1]).toBe("evaluation-results-consolidated-p1.zip")
+  })
+
   it("does nothing while disabled", () => {
     renderButton({ disabled: true, facultyIds: ["f1"] })
     fireEvent.click(screen.getByRole("button", { name: /download excel/i }))

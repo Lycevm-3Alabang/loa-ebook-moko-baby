@@ -80,6 +80,12 @@ export type FormRow =
   | { kind: "average"; label: string; value: number | null }
   | { kind: "spacer" }
   | { kind: "banner"; text: string }
+  /**
+   * ⭐ A subject-section's banner inside the comments — the faculty grain's
+   * sheet groups its comments by subject-section, so each comment is
+   * attributable without a date.
+   */
+  | { kind: "group"; text: string }
   | { kind: "comment"; text: string; height: number }
   | { kind: "total"; label: string; value: number | null }
   | { kind: "final"; label: string; value: number | null }

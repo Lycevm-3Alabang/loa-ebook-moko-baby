@@ -140,6 +140,17 @@ describe("the faculty's consolidated file", () => {
     expect(partText(parts, "xl/worksheets/sheet1.xml")).toContain('orientation="landscape"')
   })
 
+  it("takes the tab's name — Individual at the faculty grain", () => {
+    // ⭐ the default stays the subject grain's name; the consolidated workbook
+    // names the same sheet Individual
+    expect(partText(readZip(buildFacultySummaryWorkbook(INPUT)), "xl/workbook.xml")).toContain(
+      '<sheet name="Faculty Summary"',
+    )
+    expect(
+      partText(readZip(buildFacultySummaryWorkbook(INPUT, "Individual")), "xl/workbook.xml"),
+    ).toContain('<sheet name="Individual"')
+  })
+
   it("prints the six columns and keeps row ratings unchanged", () => {
     const model = buildFacultySummaryModel(INPUT)
     expect(model.headings).toEqual([
