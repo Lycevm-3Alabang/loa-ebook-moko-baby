@@ -17,10 +17,6 @@ function averages(values: number[]): Record<string, number> {
     out[criterion.name] = values[index]
   })
   return out
-      rubricCategories: APP_RUBRIC.map((criterion) => ({
-        name: criterion.name,
-        items: criterion.statements,
-      })),
 }
 
 const SUMMARY = {
@@ -70,6 +66,10 @@ function built() {
       individual: buildFacultySummaryModel(SUMMARY),
       comments: buildCommentsModel(IDENTITY, COMMENTS),
       itemAverages: { [APP_RUBRIC[0].statements[0].id]: 4.25 },
+      rubricCategories: APP_RUBRIC.map((criterion) => ({
+        name: criterion.name,
+        items: criterion.statements,
+      })),
       overall: buildOverallModel({
         semesterTitle: SUMMARY.semesterTitle,
         facultyName: SUMMARY.faculty.name,
@@ -199,6 +199,10 @@ describe("the consolidated faculty workbook", () => {
         }],
       }),
       itemAverages: { [APP_RUBRIC[0].statements[0].id]: 4.25 },
+      rubricCategories: APP_RUBRIC.map((criterion) => ({
+        name: criterion.name,
+        items: criterion.statements,
+      })),
     })
     writeFileSync(path, bytes)
 
