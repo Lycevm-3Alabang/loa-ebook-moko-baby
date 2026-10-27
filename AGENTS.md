@@ -302,6 +302,10 @@ Renaming DB columns cascade through the full TypeScript stack:
   replaced) or **append to it** (the note grows). ⭐ **One handover at a time** — the old
   `docs/evaluation-results-handover.md` was folded into `docs/evaluation-export-handover.md`
   exactly this way, and the old file was **deleted**.
+- **A handover exists only while its area still has open TODO items.** When the owner certifies
+  the work done — nothing left open in `TODO.md` for that area — the note is **deleted**, not
+  kept as a status log; the specs and the dated run files carry the trail (owner rule,
+  2026-10-27).
 - ⭐ **The durable knowledge belongs in the specs**, not in the handover. A handover is the
   **entry point** — where the work stands, what is open, what not to redo — and it goes stale
   first. It **names** the specs; it does not repeat them.
