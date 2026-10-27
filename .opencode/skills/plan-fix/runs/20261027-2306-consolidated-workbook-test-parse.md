@@ -21,11 +21,13 @@ pending: "slice-1 — proposed, waiting for Apply this slice"
 | 3 | Handoff to implement-fix? | A — Yes, loaded on this run file |
 | 4 | Who implements? | B — agent; `Apply this slice` gates every write |
 | 5 | Slice 1 applied? | yes — 2026-10-27: three edits written to `lib/__tests__/xlsx-consolidated-workbook.test.ts` and read back verified: dangling fragment deleted (`averages()` closes cleanly), `built()` carries `rubricCategories` (69–72), sample test carries it (202–205). Parse error site gone; proof = owner's gate (H1) |
+| 6 | Handover (H5)? | owner (2026-10-27): work done; clear `TODO.md` Next, **delete** `docs/evaluation-export-handover.md` — executed; `TODO.md` Next emptied and the Handovers export line dropped; the sweep found no spec leaning on the note; `AGENTS.md`'s historical fold-in sentence left as-is (flagged); the **superseded** `docs/evaluation-results-cache-handover.md` still exists — surfaced, deletion awaits the owner's word |
+| 7 | "fix" | owner's word: the superseded `docs/evaluation-results-cache-handover.md` deleted — verified first: its own final gate read "no open work remains", contract in `specs/evaluation-results-faculty-card-average.md`, zero live references |
+| 8 | "remove all handovers, handovers are only if there are todo items" | **standing rule declared** (2026-10-27) — a handover note exists only while its area still has open TODO items; when the work closes, the note is deleted, not kept as a log. Executed: `docs/evaluation-coverage-department-drilldown-handover.md` deleted (durable grain rule verified standing in the product seams — `evaluation-status.service.ts:264-269`, `CoveragePage.tsx:341-342` — plus `specs/coverage-faculty-grouping.md`; file git-tracked); `TODO.md`'s `## Handovers` section removed with its last line. `docs/` now holds only non-handover files. Open question: record the rule in AGENTS.md's H5 |
 
 ## Pending
 
-- the owner's proof run (H1): `npx vitest run lib/__tests__/xlsx-consolidated-workbook.test.ts && npx tsc --noEmit && npm run lint && npx vitest run && npm run build` — the slice is written but nothing certifies until these go green; then `gate-and-commit` when the owner says so
-
+- none — closed 2026-10-27. All three handover notes deleted; `TODO.md` carries only its preamble and an empty `## Next`; the standing rule (a handover exists only while its area has open TODO items; when the work closes, delete the note) is recorded in `AGENTS.md` §H5 as its third bullet, sourced "owner rule, 2026-10-27". Session complete.
 ## Decisions
 
 - **Approved fix (owner, B — 2026-10-27):** one file, `lib/__tests__/xlsx-consolidated-workbook.test.ts`, three edits:
